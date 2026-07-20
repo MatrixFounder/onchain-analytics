@@ -33,6 +33,10 @@
 # explicitly (a committed symlink pointing outside the repo would dangle on clone).
 /.agentic-development
 
+# Project-owned skill: keep vm-deploy committed (the framework's own skills above stay ignored)
+!/.agent/skills/vm-deploy/
+!/.agent/skills/vm-deploy/**
+
 # OS / editor cruft
 .DS_Store
 *.swp

@@ -93,3 +93,20 @@ confirmed volumes of the first target don't justify more: Dash Platform — hund
 - **Adapters are hot-swappable** behind a stable internal interface (providers are fragile: Dune
   Sim sunset 2026-08-01, GoldRush/Moralis MCP in churn). Provider DTOs never leak outward
   (anti-corruption layer).
+
+## Infra & VM ops (dev/test)
+
+Dev/test infra runs in a Parallels Ubuntu VM on the Mac — reach it with **`ssh vm`** (never
+hardcode the IP). For any VM / Docker / psql operation follow the **`vm-deploy`** skill
+(`.agent/skills/vm-deploy/SKILL.md`): additive-only on Supabase, destructive ops need explicit
+confirmation, and run SQL by **piping over stdin** into `docker exec -i` (never `-f /tmp/…` — that
+reads the container FS and runs a stale copy).
+
+- **Business data → Supabase** (container `supabase-db`, PostgreSQL 15.8), db `postgres`, schema
+  **`onchain`** (not `public`). Apply migrations:
+  `ssh vm 'docker exec -i supabase-db psql -qU supabase_admin -d postgres -v ON_ERROR_STOP=1' < sql/migrations/001_init.sql`
+- **n8n's own DB** (container `postgres-n8n`) is **off-limits** (DB-SCHEMA §8.1).
+- **n8n** is built/managed via the `n8n-mcp` + `n8n-builtin` MCP servers (project `.mcp.json`,
+  gitignored; loads at Claude Code startup — restart after edits). Snapshotter workflows export to
+  `n8n-workflows/`; existing Postgres credential is "Supabase DB". Secrets stay in n8n Credentials,
+  never in the repo.
