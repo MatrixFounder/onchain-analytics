@@ -96,6 +96,8 @@ confirmed volumes of the first target don't justify more: Dash Platform — hund
 
 ## Infra & VM ops (dev/test)
 
+@CLAUDE.n8n.md
+
 Dev/test infra runs in a Parallels Ubuntu VM on the Mac — reach it with **`ssh vm`** (never
 hardcode the IP). For any VM / Docker / psql operation follow the **`vm-deploy`** skill
 (`.agent/skills/vm-deploy/SKILL.md`): additive-only on Supabase, destructive ops need explicit

@@ -33,6 +33,9 @@
 # explicitly (a committed symlink pointing outside the repo would dangle on clone).
 /.agentic-development
 
+# External n8n-skills plugin — symlink-referenced (not vendored), like .agentic-development above
+/.n8n-skills
+
 # Project-owned skill: keep vm-deploy committed (the framework's own skills above stay ignored)
 !/.agent/skills/vm-deploy/
 !/.agent/skills/vm-deploy/**
