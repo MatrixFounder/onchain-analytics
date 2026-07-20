@@ -1,0 +1,76 @@
+{
+  "name": "onchain-error-alert",
+  "description": null,
+  "active": false,
+  "nodes": [
+    {
+      "id": "sticky",
+      "name": "Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -200
+      ],
+      "parameters": {
+        "content": "## onchain-error-alert\nError Trigger → Telegram. Set as the `errorWorkflow` for onchain-* workflows; fires a Telegram alert (chat 207209924) on any failure. Owner: onchain-intel.",
+        "height": 180,
+        "width": 460
+      }
+    },
+    {
+      "id": "err_trig",
+      "name": "On workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "tg_alert",
+      "name": "Telegram alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "207209924",
+        "text": "=🔴 onchain-intel: workflow FAILED\nWorkflow: {{ $json.workflow?.name }}\nLast node: {{ $json.execution?.lastNodeExecuted }}\nError: {{ $json.execution?.error?.message }}\nExecution: {{ $json.execution?.id }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "cMrsUr48jl2JVEUi",
+          "name": "Onchain bot"
+        }
+      },
+      "webhookId": "ed90f63e-31f6-43c7-8d2d-258ac6bab541"
+    }
+  ],
+  "connections": {
+    "On workflow error": {
+      "main": [
+        [
+          {
+            "node": "Telegram alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "nodeGroups": [],
+  "sourceWorkflowId": null
+}

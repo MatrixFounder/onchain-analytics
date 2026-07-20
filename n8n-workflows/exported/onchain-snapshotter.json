@@ -1,0 +1,226 @@
+{
+  "name": "onchain-snapshotter",
+  "description": null,
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## onchain-snapshotter (hourly)\nDash Platform + ZEC privacy metrics → `onchain.snapshots` (Supabase).\nSources (keyless GET): platform-explorer `/status` + `/transactions/shielded/statistic`, ZecHub shielded/total supply.\nNormalize → 10 rows (`value_raw` as STRING) → executeQuery `jsonb_to_recordset` INSERT ON CONFLICT DO NOTHING (idempotent, dedup key source+asset+metric+ts_bucket).\nDoc: DB-SCHEMA §2/§8. Owner: onchain-intel.",
+        "height": 324,
+        "width": 648
+      },
+      "id": "sticky_overview",
+      "name": "Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "sched",
+      "name": "Every hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://platform-explorer.pshenmic.dev/status",
+        "options": {}
+      },
+      "id": "http_status",
+      "name": "PE status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        224,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "https://platform-explorer.pshenmic.dev/transactions/shielded/statistic",
+        "options": {}
+      },
+      "id": "http_shielded",
+      "name": "PE shielded",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        448,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/ZecHub/zechub-wiki/main/public/data/zcash/shielded_supply.json",
+        "options": {}
+      },
+      "id": "http_zec_shielded",
+      "name": "ZecHub shielded",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        672,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/ZecHub/zechub-wiki/main/public/data/zcash/total_supply.json",
+        "options": {}
+      },
+      "id": "http_zec_total",
+      "name": "ZecHub total",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// onchain-snapshotter — normalize the 4 source responses into snapshot rows.\n// Canon (DB-SCHEMA §1/§8): value_raw is a STRING (never parse credits to a number); ts epoch-ms UTC.\nconst ts = Date.now();\nconst ts_bucket = Math.floor(ts / 3600000) * 3600000;\n\nconst status = $('PE status').first().json;\nconst shielded = $('PE shielded').first().json;\n\n// ZecHub is served as text/plain by raw.githubusercontent, so n8n does NOT parse it:\n// the node yields one item { data: \"<raw JSON string>\" }. Parse it and take the newest close.\nfunction zecLast(nodeName) {\n  const j = $(nodeName).first().json;\n  let arr = j;\n  if (j && typeof j.data === 'string') { try { arr = JSON.parse(j.data); } catch (e) { return null; } }\n  else if (j && Array.isArray(j.data)) arr = j.data;\n  if (!Array.isArray(arr)) return null;\n  return arr.length ? arr[arr.length - 1] : null;\n}\nconst zs = zecLast('ZecHub shielded');\nconst zt = zecLast('ZecHub total');\n\nconst height = (status && status.api && status.api.block && Number.isFinite(status.api.block.height))\n  ? status.api.block.height : null;\n\nconst rows = [];\nfunction push(source, asset, metric, valueRaw, valueNum, h, raw) {\n  const n = (valueNum === null || valueNum === undefined || Number.isNaN(Number(valueNum))) ? null : Number(valueNum);\n  rows.push({\n    ts, ts_bucket, source, asset, metric,\n    value_raw: String(valueRaw),\n    value_num: n,\n    height: (h === null || h === undefined) ? null : h,\n    raw_json: raw === undefined ? null : JSON.stringify(raw),\n    created_at: ts,\n  });\n}\n\n// dash-platform <- platform-explorer /status\npush('platform-explorer', 'dash-platform', 'identities_total', status.identitiesCount, status.identitiesCount, height, status);\npush('platform-explorer', 'dash-platform', 'documents_total', status.documentsCount, status.documentsCount, height, status);\npush('platform-explorer', 'dash-platform', 'data_contracts_total', status.dataContractsCount, status.dataContractsCount, height, status);\npush('platform-explorer', 'dash-platform', 'platform_total_credits', status.totalCredits, status.totalCredits, height, status);\n\n// dash-platform <- platform-explorer /transactions/shielded/statistic\npush('platform-explorer', 'dash-platform', 'shielded_pool_balance_credits', shielded.poolBalance, shielded.poolBalance, height, shielded);\npush('platform-explorer', 'dash-platform', 'shielded_total_in_credits', shielded.totalShieldedIn, shielded.totalShieldedIn, height, shielded);\npush('platform-explorer', 'dash-platform', 'shielded_total_out_credits', shielded.totalShieldedOut, shielded.totalShieldedOut, height, shielded);\npush('platform-explorer', 'dash-platform', 'shielded_transitions_total', shielded.transitionsCount, shielded.transitionsCount, height, shielded);\n\n// zec <- ZecHub latest close point\nif (zs && zs.supply !== undefined && zs.supply !== null) push('zechub', 'zec', 'zec_shielded_supply', zs.supply, zs.supply, null, zs);\nif (zt && zt.supply !== undefined && zt.supply !== null) push('zechub', 'zec', 'zec_total_supply', zt.supply, zt.supply, null, zt);\n\nif (rows.length === 0) {\n  throw new Error('onchain-snapshotter: no rows produced (all sources empty)');\n}\nreturn [{ json: { count: rows.length, rows_json: JSON.stringify(rows) } }];"
+      },
+      "id": "normalize",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO onchain.snapshots (ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at)\nSELECT ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at\nFROM jsonb_to_recordset($onchain${{ $json.rows_json }}$onchain$::jsonb)\n  AS x(ts bigint, ts_bucket bigint, source text, asset text, metric text, value_raw text, value_num double precision, height bigint, raw_json text, created_at bigint)\nON CONFLICT (source, asset, metric, ts_bucket) DO NOTHING;",
+        "options": {}
+      },
+      "id": "pg_write",
+      "name": "Write snapshots",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "cxLk68mkh5BMWchQ",
+          "name": "Supabase DB"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every hour": {
+      "main": [
+        [
+          {
+            "node": "PE status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PE status": {
+      "main": [
+        [
+          {
+            "node": "PE shielded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PE shielded": {
+      "main": [
+        [
+          {
+            "node": "ZecHub shielded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZecHub shielded": {
+      "main": [
+        [
+          {
+            "node": "ZecHub total",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZecHub total": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Write snapshots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "binaryMode": "separate",
+    "errorWorkflow": "WapVxU2SneMiNNyM"
+  },
+  "nodeGroups": [],
+  "sourceWorkflowId": null
+}
