@@ -31,3 +31,63 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
 - Code-node normalization honors the schema canon (DB-SCHEMA §1/§8): `value_raw` as a **string**
   (never parse credits to a JS number), `ts` epoch-ms UTC, `ts_bucket = floor(ts/3600000)*3600000`,
   write via `INSERT … ON CONFLICT DO NOTHING`.
+
+## Gotchas (hard-won — harvested from the n8n-lazy-loading project)
+
+**MCP / build loop**
+- Two MCP servers are wired: `n8n-mcp` (community, `mcp__n8n-mcp__*`, JSON node-graph) and
+  `n8n-builtin` (first-party, `mcp__n8n-builtin__*`, SDK). `search_nodes` / `validate_workflow`
+  exist in **both** with different semantics — pick one and stay consistent (**we use `n8n-mcp`**).
+- **nodeType form trap:** tools (`get_node` / `validate_node`) take SHORT form (`nodes-base.postgres`);
+  workflow JSON (`n8n_create_workflow` / `validate_workflow`) takes LONG form
+  (`n8n-nodes-base.postgres`). Wrong form → "Node not found".
+- Edit incrementally with `n8n_update_partial_workflow` (not full replace); `validate_workflow`
+  after every edit; then `n8n_get_workflow` to eyeball `connections` — validation ≠ correct wiring.
+
+**Expressions & Code nodes**
+- Reference nodes **insert-safe**: `$('Node Name').item.json.field` — **never bare `$json.field`**
+  (breaks when a node is inserted upstream).
+- **Expression fields** wrap in `{{ }}`; **Code nodes never use `{{ }}`** — access vars directly.
+- Webhook payload is under `$json.body`, not `$json`.
+- `$env` is **blocked** in node expressions on this instance (`N8N_BLOCK_ENV_ACCESS_IN_NODE=true`) →
+  `{{ $env.* }}` throws. Config comes from the DB / node params, never env.
+- Code JS: input `$input.all()` / `$input.item.json`; helpers `$helpers.httpRequest()`, `DateTime`
+  (Luxon), `$jmespath()`; **return `[{ json: {…} }]`**; preserve binary with
+  `return [{ json, binary: $input.first().binary }]`. Default mode **"Run Once for All Items"**.
+- Code Python is `pythonNative` (not `python`); input `_items[0]` is a plain dict (no `.json`);
+  `_input.all()` **doesn't exist → silent hang**; stdlib only.
+
+**Postgres (critical for our snapshotter)**
+- `queryReplacement` (`$1..$N`) is **positional CSV**: a value containing a **comma breaks it**, and
+  an **empty value silently shifts every later `$N`**. Unsafe for `raw_json` (commas) and nullables
+  (`value_num` / `height`).
+- **Robust idempotent bulk insert (our pattern):** Code emits one item `{ rows_json: JSON.stringify(rows) }`;
+  Postgres `executeQuery` with a **dollar-quoted `jsonb_to_recordset`** — no `queryReplacement`,
+  comma/quote/null-safe:
+  ```sql
+  INSERT INTO onchain.snapshots (ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at)
+  SELECT ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at
+  FROM jsonb_to_recordset($onchain${{ $json.rows_json }}$onchain$::jsonb)
+    AS x(ts bigint, ts_bucket bigint, source text, asset text, metric text,
+         value_raw text, value_num double precision, height bigint, raw_json text, created_at bigint)
+  ON CONFLICT (source, asset, metric, ts_bucket) DO NOTHING;
+  ```
+  (`jsonb` `null` → SQL `NULL`; the `$onchain$` tag can't appear in JSON output, so it's injection-safe.)
+- If you must use `queryReplacement`: nullable → `__EMPTY__` sentinel + `NULLIF($N,'__EMPTY__')::type`
+  (n8n drops empty strings between nodes).
+- **Postgres node eats binary** — never place it between a binary producer and its consumer; attach
+  DB side-effects as a fan-out sibling branch with `onError: continueRegularOutput`.
+
+**Error handling & runtime**
+- Choose deliberately: `onError: continueRegularOutput` makes a node's error flow on as data (keeps
+  the workflow alive) — good for partial results, **bad when you want a loud alert**. For
+  loud-fail-and-notify use `retryOnFail` + default stop → an **Error Trigger** workflow.
+- `retryOnFail` **multiplies blocking time**: a node can block up to `maxTries × timeout` — budget
+  timeouts/liveness with that, not `timeout` alone.
+- Secrets **never** in data flow / node params / Set nodes — credential system only. If a workflow's
+  nodes render a secret, set `settings.saveDataSuccessExecution` **and** `saveDataErrorExecution` to
+  `"none"` (else the rendered value lands in execution history).
+
+**Docs**
+- **Sticky notes are mandatory:** every workflow carries an Overview sticker + one per section — a
+  workflow isn't "done" without them.
