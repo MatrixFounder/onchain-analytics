@@ -99,13 +99,15 @@ interface ProviderAdapter {
 - **Двухуровневый кеш:** `lru-cache` (горячий) → **SQLite** (персистентный). Ключ = `(provider, capability, normalizedArgs)`; TTL по типу данных (цена 15–60с, балансы 1–5мин, TVL 5–30мин, метки 24ч).
 - **Credit-budget guard:** таблица `usage(provider, day, credits_used)`; перед платным вызовом — проверка дневного потолка; ответы парсятся на фактический `credits_used` где провайдер его отдаёт.
 - **Почему SQLite, не Redis на старте:** zero-ops, embedded, переживает рестарт, идеально для single-instance инди-сборки. Интерфейс `CacheStore`/`BudgetStore` абстрактный → **Redis/Postgres подменяются на масштабе** без переписывания логики.
+- *(Дополнение 2026-07-20 — профиль деплоя «выделенный сервер»)* В этом профиле персистентный слой — **Postgres с первого дня** (не SQLite): кеш/`usage`-таблицы живут в той же БД `onchain_intel`, схема `onchain`. Абстракции `CacheStore`/`BudgetStore` не меняются; SQLite-ветка остаётся в [DB-SCHEMA-CONCEPT](DB-SCHEMA-CONCEPT.md) как reference для embedded/локального профиля. Решение продиктовано операционным ограничением (always-on планировщик, см. D8-дополнение), а не объёмом данных.
 
 ---
 
 ## D7 — Состояние (watchlists, история алертов, job-log): **SQLite → Postgres на масштабе** ✅
 
 - Те же `better-sqlite3` + миграции (`drizzle-orm` или сырой SQL + `node-pg-migrate`-аналог). Drizzle даёт типобезопасность и лёгкий переход на Postgres.
-- *(Дополнение 2026-07-20)* Концепт-схема данных (snapshots / assets / metrics registry / events / aggregates) и пошаговый план миграции SQLite → Postgres вынесены в **[DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md)** — включая portable-конвенции (типы, epoch-ms UTC, TEXT-JSON, app-generated id), которые делают миграцию механической. Подтверждённые объёмы первой цели (Dash Platform: 17 537 documents, 3 038 identities, 133 shielded-tx за всё время, as-of 2026-07-19 — [верификация #4](../../reference/coin-analytics-dialog-verification.md)) — килобайты в день: SQLite-first остаётся верным.
+- *(Дополнение 2026-07-20)* Концепт-схема данных (snapshots / assets / metrics registry / events / aggregates) и пошаговый план миграции SQLite → Postgres вынесены в **[DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md)** — включая portable-конвенции (типы, epoch-ms UTC, TEXT-JSON, app-generated id), которые делают миграцию механической. Подтверждённые объёмы первой цели (Dash Platform: 17 537 documents, 3 038 identities, 133 shielded-tx за всё время, as-of 2026-07-19 — [верификация #4](../../reference/coin-analytics-dialog-verification.md)) — килобайты в день: SQLite-first остаётся верным по объёму.
+- *(Дополнение 2026-07-20 — профиль деплоя «выделенный сервер»)* Для деплоя на выделенном сервере — **Postgres-first с первого дня** (n8n-снапшоттер пишет прямо в Postgres; см. D8-дополнение и [DB-SCHEMA-CONCEPT §8](DB-SCHEMA-CONCEPT.md)). Ветка «SQLite → Postgres на масштабе» остаётся валидной для embedded/локального профиля и как reference-план миграции ([DB-SCHEMA-CONCEPT §5](DB-SCHEMA-CONCEPT.md)). Аргумент «объёмы килобайты/день → SQLite-first» по данным **не отменён** — Postgres-first здесь выбран из-за операционного ограничения (надёжный always-on планировщик), не из-за объёма.
 
 ---
 
@@ -114,6 +116,7 @@ interface ProviderAdapter {
 - MVP-опрос сигналов: `croner` (cron-выражения в процессе) + журнал запусков/ретраев в SQLite.
 - Когда понадобятся durable-ретраи, конкурентность и горизонтальное масштабирование — **BullMQ** поверх Redis. Интерфейс `JobScheduler` абстрактный.
 - Realtime (Bitquery WS, мониторинг новых пар): клиент `ws`; на MVP — поллинг, стриминг — позже.
+- *(Дополнение 2026-07-20 — deploy-profile revisit; пересматривает отказ от n8n в §Revisit)* Для **профиля деплоя «выделенный сервер»** планировщик/оркестратор — **n8n** (self-hosted), не in-process `croner`. **Драйвер:** cron-скрипт на ноутбуке нежизнеспособен (машина спит/выключена → пропуски часовых замеров, а истории в DAPI нет — дыру не восстановить); n8n уже эксплуатируется на выделенном сервере, есть экспертные скиллы (`n8n-skills`) + `n8n-mcp`. Прежние условия возврата (durable-ретраи, визуальный аудит потоков) закрываются самим n8n. `croner` остаётся референсом для одно-бинарного/embedded-профиля (локальный запуск без сервера). Профиль БД и dev→prod — [DB-SCHEMA-CONCEPT §8](DB-SCHEMA-CONCEPT.md).
 
 ---
 
@@ -208,6 +211,7 @@ interface ProviderAdapter {
 - **D1 → ввести Python quant-сервис**, когда нужны: бэктест портфельных стратегий, ta-lib-уровень индикаторов, или ML-сигналы (то, что в TS делается с трудом). Реверсивно: добавляется новый пакет/сервис за тем же внутренним API.
 - **D6/D7/D8 → Redis/Postgres/BullMQ**, когда: >1 инстанса, нужны durable-ретраи, или SQLite-конкуренция становится узким местом. *(Дополнение 2026-07-20:)* пошаговый план перехода SQLite→Postgres и портируемые конвенции схемы — [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md).
 - **D8 → n8n** *(рассмотрен и отклонён 2026-07-20)*: n8n как ETL-оркестрация предлагался в coin-analytics-диалоге; для single-instance снапшоттера с 3–5 эндпоинтами это лишний движущийся компонент (свой процесс, своя БД, свой UI) против zero-ops `croner`. Вернуться к вопросу вместе с BullMQ-триггером (нужны durable-ретраи / много разнородных пайплайнов / визуальный аудит потоков).
+  **Апдейт 2026-07-20 (deploy-profile):** для профиля «выделенный сервер» n8n **принят** (D8-дополнение) — триггером стал не объём/разнородность, а невозможность always-on `croner` на ноутбуке (пропуски часовых замеров невосстановимы: истории в DAPI нет) + n8n уже развёрнут и есть скиллы/`n8n-mcp`. Zero-ops-аргумент `croner` сохраняется для локального/embedded-профиля.
 - **D3 → пересмотреть набор/число tools**, при интеграции каждого провайдера — **пробовать live tool-list** (верификация уже поймала Dune 26≠29). Не хардкодить счётчики.
 - **D12 → отдельный ADR по секретам**, при переходе к командной работе/проду.
 
@@ -218,3 +222,4 @@ interface ProviderAdapter {
 - **2026-06-30** — первая версия (D1–D12), статус Proposed.
 - **2026-07-20** — датированные дополнения по итогам верификации coin-analytics-диалога (run `wf_f294ed8b-f82`, [вердикты](../../reference/coin-analytics-dialog-verification.md)): D4 + capability `privacy.shielded_pool` и режим snapshotter; D5 + тип `Snapshot`; D7 → ссылка на [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md); §Open questions Q1 — вход в пользу TS-core; §Revisit — n8n рассмотрен и отклонён + ссылка на DB-SCHEMA-CONCEPT.md в триггере D6/D7/D8. Решения D1–D12 не пересматривались.
 - **2026-07-20 (sign-off)** — статус **Proposed → Accepted**: закрыты §Open questions — Q1 TS-core подтверждён, Q2 язык команды TS/JS, Q3 хостинг stdio-first (публичный HTTP — позже, §Revisit D3/D12). Решения D1–D12 не менялись.
+- **2026-07-20 (deploy-profile)** — принят профиль деплоя **«выделенный сервер»**: **D8** — n8n **принят** как планировщик/оркестратор (пересмотр отказа того же дня: `croner` на ноутбуке always-on невозможен, n8n уже эксплуатируется, есть скиллы + `n8n-mcp`); **D6/D7** — **Postgres-first с первого дня** для этого профиля (SQLite-ветка — reference для embedded). Новая секция [DB-SCHEMA-CONCEPT §8](DB-SCHEMA-CONCEPT.md). Решения D1–D5, D9–D12 не менялись; D6/D7/D8 — профиль-специфичные дополнения, ядро-абстракции (`CacheStore`/`BudgetStore`/`JobScheduler`) сохранены.
