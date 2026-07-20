@@ -41,6 +41,9 @@
 .env
 .env.*
 !.env.example
+# MCP config holds live n8n API keys (N8N_API_KEY / Bearer) in plaintext — never commit
+.mcp.json
+.mcp.local.json
 
 # Node / TypeScript build output
 node_modules/
