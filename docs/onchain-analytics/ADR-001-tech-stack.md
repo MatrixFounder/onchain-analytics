@@ -1,7 +1,7 @@
 # ADR-001 — Технологический стек системы ончейн-аналитики
 
-- **Статус:** Proposed (требует sign-off; см. §Open questions)
-- **Дата:** 2026-06-30
+- **Статус:** Accepted (sign-off 2026-07-20; см. §Open questions)
+- **Дата:** 2026-06-30 (проект стека) · **Accepted:** 2026-07-20 (Sergey)
 - **Контекст-документы:** [REPORT.md](REPORT.md), [research-digest.md](research-digest.md), [verification-corrections.md](verification-corrections.md)
 - **Решает:** какой язык/рантайм, фреймворк MCP, хранилище/кеш, планировщик, нотификации, секреты, тесты, деплой и раскладку репозитория использовать для проекта-движка `onchain-intel` и сопутствующего скилла.
 
@@ -185,6 +185,17 @@ interface ProviderAdapter {
 
 ## Open questions (нужен ваш sign-off)
 
+> **✅ Sign-off получен 2026-07-20 (Sergey) — ADR переведён в Accepted:**
+> 1. **TS-core — ПОДТВЕРЖДЁН.** In-house ядро одноязычное (TypeScript / Node 22 LTS) на
+>    этапах 0–4; тяжёлый quant/execution — только внешними Python/Rust-движками по MCP/REST.
+>    (Совпадает со входом 2026-07-20: первые задачи — snapshotter + правила-пороги.)
+> 2. **Язык команды — TypeScript / JS** → усиливает D1; вариант B (Python-core) не активируется.
+> 3. **Хостинг — локальный stdio под Claude Code на старте.** Публичный Streamable-HTTP MCP
+>    (мультиклиент) — позже, за абстракцией транспорта D3; конкретный хостинг-провайдер
+>    (Fly.io/Railway/VPS) не выбран — на MVP не нужен. Триггеры HTTP/хостинга — §Revisit (D3/D12).
+>
+> Решения D1–D12 не пересматривались; ниже — исходные формулировки вопросов.
+
 1. **TS-core подтверждаем?** Решение D1 предполагает, что in-house тяжёлый бэктест/quant **не нужен с дня 1** (делегируем Python-движкам). Если ваш кейс — quant/бэктест-центричный с первого релиза, склоняемся к **Python-core (вариант B)**. → нужен ваш ответ про роль quant.
    *(Вход 2026-07-20, не sign-off):* анализ coin-analytics-диалога подтверждает, что первые задачи — HTTP-поллинг (snapshotter) + правила-пороги, т.е. quant с дня 1 не нужен → аргумент за TS-core. Композитные скоры/предикция отклонены до накопления ≥90 дней снапшотов (см. [reference/coin-insights-build-plan.md](../../reference/coin-insights-build-plan.md) §4).
 2. **Ваша языковая беглость / команды** — если основная экспертиза в Python, это перевешивает в сторону B даже при TS-сильном MCP-тулинге.
@@ -206,3 +217,4 @@ interface ProviderAdapter {
 
 - **2026-06-30** — первая версия (D1–D12), статус Proposed.
 - **2026-07-20** — датированные дополнения по итогам верификации coin-analytics-диалога (run `wf_f294ed8b-f82`, [вердикты](../../reference/coin-analytics-dialog-verification.md)): D4 + capability `privacy.shielded_pool` и режим snapshotter; D5 + тип `Snapshot`; D7 → ссылка на [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md); §Open questions Q1 — вход в пользу TS-core; §Revisit — n8n рассмотрен и отклонён + ссылка на DB-SCHEMA-CONCEPT.md в триггере D6/D7/D8. Решения D1–D12 не пересматривались.
+- **2026-07-20 (sign-off)** — статус **Proposed → Accepted**: закрыты §Open questions — Q1 TS-core подтверждён, Q2 язык команды TS/JS, Q3 хостинг stdio-first (публичный HTTP — позже, §Revisit D3/D12). Решения D1–D12 не менялись.
