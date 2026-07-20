@@ -57,6 +57,15 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
 - Code Python is `pythonNative` (not `python`); input `_items[0]` is a plain dict (no `.json`);
   `_input.all()` **doesn't exist → silent hang**; stdlib only.
 
+**HTTP responses (hard-won on the snapshotter)**
+- A JSON body served as `Content-Type: text/plain` (e.g. `raw.githubusercontent.com` for `.json`
+  files) is **NOT auto-parsed** — the HTTP node yields one item `{ data: "<raw JSON string>" }`;
+  `JSON.parse($('Node').first().json.data)` in the Code node. (`application/json` bodies ARE
+  parsed → `json` is the object directly.)
+- A **top-level JSON array** response gets split into one item per element by default; `executeOnce`
+  changes the output shape again. **Don't guess the shape** — when a field is unexpectedly
+  `undefined`, inspect the real output: `n8n_executions get <id> mode=filtered nodeNames=[…] itemsLimit=0`.
+
 **Postgres (critical for our snapshotter)**
 - `queryReplacement` (`$1..$N`) is **positional CSV**: a value containing a **comma breaks it**, and
   an **empty value silently shifts every later `$N`**. Unsafe for `raw_json` (commas) and nullables
