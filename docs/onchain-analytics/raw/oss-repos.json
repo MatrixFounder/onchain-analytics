@@ -1,0 +1,1230 @@
+[
+  {
+    "name": "coingecko/coingecko-typescript (packages/mcp-server)",
+    "url": "https://github.com/coingecko/coingecko-typescript",
+    "what_it_does": "Official CoinGecko TypeScript SDK that ships an MCP server (packages/mcp-server, npm @coingecko/coingecko-mcp). Exposes real-time market data for 15k+ coins across 1000+ exchanges plus on-chain DEX price/liquidity for 8M+ tokens across 200+ networks via GeckoTerminal. Official API client (not scraping).",
+    "relevance": "Core market-data backbone for an agentic analytics/trading system: prices, OHLCV, market caps, trending coins, plus on-chain DEX/pool data. Official-API access, dual demo/pro key support, hosted remote option also exists at mcp.api.coingecko.com.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "55",
+    "last_activity": "active (v6.0.0 released 2026-05-28)",
+    "license": "Apache-2.0",
+    "language": "TypeScript",
+    "caveats": "Official-API access requires a CoinGecko key. Pricing: Demo (free) 100 calls/min, 10k calls/month; paid starts at $35/mo (300 calls/min, 100k/month); Analyst 500 calls/min; overage ~$250 per 500k calls. Stainless/Stainless-generated SDK; MCP runs code against the SDK in a sandbox. Repo star count is modest but it is the genuine vendor repo.",
+    "sources": [
+      "https://github.com/coingecko/coingecko-typescript",
+      "https://www.npmjs.com/package/@coingecko/coingecko-mcp",
+      "https://docs.coingecko.com/docs/mcp-server",
+      "https://www.coingecko.com/en/api/pricing"
+    ]
+  },
+  {
+    "name": "mcpdotdirect/evm-mcp-server",
+    "url": "https://github.com/mcpdotdirect/evm-mcp-server",
+    "what_it_does": "MCP server giving LLMs tools to interact with 60+ EVM networks (34 mainnets + 26 testnets: Ethereum, Base, Arbitrum, Optimism, Polygon, Avalanche, etc.). 25 tools: native/ERC20 balances & allowances, tx details/receipts, ENS resolve+reverse, contract read/write, multicall, ABI fetch from explorers, ERC721/1155 NFTs, message + EIP-712 signing.",
+    "relevance": "Best-in-class open-source generic EVM read/write layer for an on-chain agent: balances, contract reads, tx inspection, ENS, multicall. Works off public RPC (no proprietary API lock-in); Etherscan key only needed for automatic ABI fetch.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "377",
+    "last_activity": "active (v2.0.4 released 2025-11-26)",
+    "license": "MIT",
+    "language": "TypeScript",
+    "caveats": "Community (not a chain vendor). Write/sign tools require a private key in env — sandbox carefully for a trading system. RPC-based so data quality depends on the RPC endpoint you point it at; not an indexed-analytics source. Last release ~7 months before survey date — verify it is still maintained before depending on it.",
+    "sources": [
+      "https://github.com/mcpdotdirect/evm-mcp-server",
+      "https://github.com/badkk/awesome-crypto-mcp-servers"
+    ]
+  },
+  {
+    "name": "heurist-network/heurist-mesh-mcp-server",
+    "url": "https://github.com/heurist-network/heurist-mesh-mcp-server",
+    "what_it_does": "Official MCP server fronting Heurist Mesh — a marketplace of 30+ specialized crypto agents. Tools include token_search/token_profile, get_trending_tokens, twitter_search (X intelligence), get_all_funding_rates, fetch_wallet_tokens, DEX analytics, token security checks, web search. Self-host via UV/Docker or use hosted SSE at mesh.heurist.xyz/mcp/sse.",
+    "relevance": "Aggregator: single MCP that bundles market data, DEX analytics, wallet analysis, funding rates and social sentiment — useful as a breadth layer for an analytics/trading agent without wiring many APIs.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "64",
+    "last_activity": "active (47 commits, ongoing)",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "Requires a Heurist API key (free credits via invite code 'claude'); concrete paid pricing not public on the repo. It is a router to Heurist's hosted Mesh agents, so data provenance/quality varies per underlying agent and you are dependent on their service. Good to adopt selectively or mirror the routing pattern rather than depend wholesale.",
+    "sources": [
+      "https://github.com/heurist-network/heurist-mesh-mcp-server",
+      "https://docs.heurist.ai/agent-framework/heurist-mesh",
+      "https://glama.ai/mcp/servers/@heurist-network/heurist-mesh-mcp-server"
+    ]
+  },
+  {
+    "name": "helius-labs/core-ai (helius-mcp)",
+    "url": "https://github.com/helius-labs/core-ai",
+    "what_it_does": "Official Helius AI tooling repo containing helius-mcp (npm). 10 tools (9 domain-routed: account, wallet, asset, transaction, chain, streaming, knowledge, write, compression + expandResult). Covers Solana SOL/token balances, parsed tx history, NFTs via DAS API, account/block data, network status, priority-fee estimation, webhooks, sending transactions.",
+    "relevance": "The official Solana data+action MCP for an on-chain agent: enhanced tx parsing, DAS asset data, streaming, and write (send tx) — exactly the Solana side of an analytics/trading stack.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "21",
+    "last_activity": "active (helius-cli@2.1.0 released 2026-06-24)",
+    "license": "MIT",
+    "language": "TypeScript",
+    "caveats": "Official but low star count (new repo, Jun 2026 releases). All skills except `svm` need a Helius API key; new accounts must fund a keypair with ~1 USDC for the basic plan plus tx fees. Write tools send real transactions — gate behind approvals for trading. Concrete higher-tier pricing not shown on the repo.",
+    "sources": [
+      "https://github.com/helius-labs/core-ai",
+      "https://www.helius.dev/docs/agents/mcp",
+      "https://www.npmjs.com/package/helius-mcp"
+    ]
+  },
+  {
+    "name": "coinpaprika/dexpaprika-mcp",
+    "url": "https://github.com/coinpaprika/dexpaprika-mcp",
+    "what_it_does": "Official (CoinPaprika) MCP server over the DexPaprika DEX-data API. 14 tools for 33 networks: liquidity-pool details (price, volume, TVL, tokens, txns, OHLCV candles), token details/pricing, DEX comparisons across Uniswap/SushiSwap/Raydium etc. Data refreshed every 15-30s, 100-500ms responses.",
+    "relevance": "Clean, no-key open-source DEX/liquidity analytics source — pool TVL/volume, token prices, and historical OHLCV across 33 chains. Strong complement to CoinGecko for DeFi/DEX-level signals in a trading agent.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "40",
+    "last_activity": "active (2026-06-22)",
+    "license": "MIT",
+    "language": "JavaScript",
+    "caveats": "No API key required; free tier capped at 10,000 requests/day (hosted alt at mcp.dexpaprika.com, also keyless). Free-tier rate limit may be tight for production polling — confirm paid tiers if you need higher throughput. Official-API access (not scraping).",
+    "sources": [
+      "https://github.com/coinpaprika/dexpaprika-mcp",
+      "https://github.com/badkk/awesome-crypto-mcp-servers"
+    ]
+  },
+  {
+    "name": "kukapay/dune-analytics-mcp",
+    "url": "https://github.com/kukapay/dune-analytics-mcp",
+    "what_it_does": "Community MCP server bridging Dune Analytics to agents via the official Dune API. Two tools: get_latest_result (latest results of a saved query) and run_query (execute a query), both returning CSV strings. Requires a Dune API key.",
+    "relevance": "Lightweight open-source way to pull Dune's 100+ chain SQL datasets into an agent when you want a self-hosted MCP instead of Dune's hosted server. Good for canned-query analytics dashboards.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "40",
+    "last_activity": "stale-ish (only 9 commits; no recent-date signal on page — treat as possibly >12 months old, verify before use)",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "Only 2 tools vs Dune's official 30-tool hosted server (discovery, query lifecycle, materialized views, viz, dashboards). Uses official Dune API but you pay Dune credits: free tier 2,500 credits/month, then $5 per 100 extra credits; paid plans add API access + unlimited concurrency. For richer coverage prefer the official hosted Dune MCP and use this only as a self-host pattern.",
+    "sources": [
+      "https://github.com/kukapay/dune-analytics-mcp",
+      "https://docs.dune.com/api-reference/agents/mcp",
+      "https://dune.com/blog/dune-mcp",
+      "https://docs.dune.com/learning/how-tos/pricing-faqs"
+    ]
+  },
+  {
+    "name": "Dune MCP (official, hosted) - api.dune.com/mcp/v1",
+    "url": "https://docs.dune.com/api-reference/agents/mcp",
+    "what_it_does": "Dune's OFFICIAL remote MCP server (single endpoint api.dune.com/mcp/v1). 30 tools across Discovery, Query Lifecycle, Materialized Views, Visualization, Dashboard, Account — full Dune data warehouse (raw + decoded tables across 100+ blockchains), write DuneSQL, execute, retrieve, visualize, build dashboards.",
+    "relevance": "The richest official path to Dune's cross-chain SQL warehouse for an analytics agent. Far more capable than community Dune MCPs, but it is a hosted service, not an open-source repo.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "n/a (hosted, no public source repo)",
+    "last_activity": "active (announced/maintained 2026)",
+    "license": "proprietary (hosted SaaS)",
+    "language": "n/a (remote endpoint)",
+    "caveats": "NOT open source — included only because the user asked for the official Dune MCP. Requires Dune API key; MCP itself has no separate fee but consumes Dune credits (free 2,500/month, then $5/100 credits; paid plans needed for API access + concurrency). Use as the production data source; adopt kukapay's repo if you specifically need self-hosted code.",
+    "sources": [
+      "https://docs.dune.com/api-reference/agents/mcp",
+      "https://dune.com/blog/dune-mcp",
+      "https://docs.dune.com/learning/how-tos/pricing-faqs"
+    ]
+  },
+  {
+    "name": "goat-sdk/goat (adapter-model-context-protocol)",
+    "url": "https://github.com/goat-sdk/goat",
+    "what_it_does": "Great Onchain Agent Toolkit — largest agentic-finance toolkit with 200+ integrations across 15+ chains (EVM, Solana, Aptos, Cosmos, Sui, Starknet, etc.) and 9+ agent frameworks. Ships an MCP adapter (@goat-sdk/adapter-model-context-protocol) plus wallet providers (Crossmint, Safe, Lit). Supports payments, swaps, yield, prediction markets, tokenization.",
+    "relevance": "Best open-source framework for the on-chain ACTION side of a trading agent (send/swap/invest across many chains) and a plugin pattern to wire dozens of DeFi protocols. The MCP adapter exposes its tools to any MCP host.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "1000",
+    "last_activity": "active (689+ commits, ongoing)",
+    "license": "MIT",
+    "language": "TypeScript (with Python)",
+    "caveats": "It's a toolkit/SDK with an MCP adapter, not a turnkey data MCP server — you assemble the plugins you need. Action-heavy (handles funds/keys) so security review is mandatory for trading. Great as a dependency for on-chain execution; pair with a dedicated data MCP (CoinGecko/Dune/Helius) for analytics.",
+    "sources": [
+      "https://github.com/goat-sdk/goat",
+      "https://github.com/goat-sdk/goat/tree/main/typescript/packages/adapters/model-context-protocol"
+    ]
+  },
+  {
+    "name": "strangelove-ventures/web3-mcp",
+    "url": "https://github.com/strangelove-ventures/web3-mcp",
+    "what_it_does": "Multi-chain MCP server ('1 MCP to rule all them chains') for Solana, Ethereum/EVM (Base, Arbitrum, Optimism, BSC, Polygon, Avalanche, Berachain), Cardano, THORChain, XRP Ledger, TON, and UTXO chains (BTC/LTC/DOGE/BCH). Tools: balances, address validation, transfers, swaps (Jupiter on Solana), tx history, pool info, XRP trustlines.",
+    "relevance": "Useful when an agent must span non-EVM chains (Cardano, XRP, TON, UTXO, THORChain) under one MCP — broad chain coverage that EVM-only servers lack.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "95",
+    "last_activity": "active (30 commits; recent)",
+    "license": "Apache-2.0",
+    "language": "TypeScript",
+    "caveats": "Community; breadth over depth — per-chain tooling is shallower than specialist servers (Helius for Solana, evm-mcp-server for EVM). Several optional API keys (Blockfrost, TON Center, BlockCypher, SoChain). Holds private keys in local .env for signing. Good reference for multi-chain routing; adopt specialists for the chains you actually trade.",
+    "sources": [
+      "https://github.com/strangelove-ventures/web3-mcp"
+    ]
+  },
+  {
+    "name": "tatumio/blockchain-mcp",
+    "url": "https://github.com/tatumio/blockchain-mcp",
+    "what_it_does": "Official Tatum MCP server (npm @tatumio/blockchain-mcp) querying 130+ networks (BTC, ETH, SOL, Polygon, Arbitrum, Base, Avalanche...). 13 tools: NFT metadata, wallet balance history, portfolio analysis, token-ownership checks, tx history, block timestamps, token metadata, address security validation, plus an RPC gateway (chain list, method discovery, raw JSON-RPC).",
+    "relevance": "Single official-API MCP for broad multi-chain data + an RPC gateway — convenient breadth layer for an analytics agent that wants one provider across many chains.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "14",
+    "last_activity": "active (23 commits; npm-published, 2026)",
+    "license": "MIT",
+    "language": "TypeScript",
+    "caveats": "Very low stars / small adoption despite being official. Free tier via dashboard.tatum.io; concrete higher-tier pricing not shown on the repo. Vendor-API lock-in to Tatum. Evaluate against CoinGecko + chain specialists before depending on it; better as a fallback/reference.",
+    "sources": [
+      "https://github.com/tatumio/blockchain-mcp",
+      "https://github.com/royyannick/awesome-blockchain-mcps"
+    ]
+  },
+  {
+    "name": "bankless/onchain-mcp",
+    "url": "https://github.com/bankless/onchain-mcp",
+    "what_it_does": "Official Bankless MCP server for on-chain data via the Bankless API. Tools: read_contract (state), get_proxy (implementation address), fetch ABI + verified source, get_events (topic-filtered logs), build_event_topic, get_transaction_history, get_transaction_info (block/gas).",
+    "relevance": "Good pattern for contract-state reads, event-log querying and ABI/source retrieval — handy building blocks for an on-chain analytics agent inspecting protocols.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "79",
+    "last_activity": "stale (README states 'no longer receiving updates')",
+    "license": "MIT",
+    "language": "TypeScript",
+    "caveats": "Explicitly NO LONGER MAINTAINED — do not adopt as a live dependency. Requires a BANKLESS_API_TOKEN (paid Bankless API; pricing not public on repo). Useful only to copy its event-decoding / contract-read tool design.",
+    "sources": [
+      "https://github.com/bankless/onchain-mcp",
+      "https://github.com/badkk/awesome-crypto-mcp-servers"
+    ]
+  },
+  {
+    "name": "Bitquery MCP (hosted) - mcp.bitquery.io",
+    "url": "https://docs.bitquery.io/docs/usecases/MCP/",
+    "what_it_does": "Bitquery's official MCP server (remote, mcp.bitquery.io) over its GraphQL/streaming blockchain data for 40+ chains: token trades/transfers/holders/balances, smart-contract events, money flow, mempool streaming, ClickHouse-backed natural-language queries. OAuth 2.1 login, tokens cached ~30 days.",
+    "relevance": "Deep indexed on-chain analytics (DEX trades, holders, money flow) across 40+ chains — strong data source for a trading/analytics agent, but only as a hosted service.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "n/a (no open-source MCP repo found)",
+    "last_activity": "active (docs current 2026)",
+    "license": "proprietary (hosted SaaS)",
+    "language": "n/a (remote endpoint)",
+    "caveats": "NOT open source — checked the bitquery GitHub org; the only 'mcp'-named repos are unrelated forks (Google's mcp-toolbox for databases, Docker's mcp-registry), 0 stars, not a Bitquery data MCP. Pricing not public on the MCP page (GraphQL API has its own tiers). Included only because the user asked for Bitquery; use the hosted endpoint, there is no code to steal.",
+    "sources": [
+      "https://docs.bitquery.io/docs/usecases/MCP/",
+      "https://mcp.bitquery.io/",
+      "https://github.com/orgs/bitquery/repositories?q=mcp",
+      "https://bitquery.io/"
+    ]
+  },
+  {
+    "name": "Nansen MCP (hosted) - mcp.nansen.ai/ra/mcp",
+    "url": "https://docs.nansen.ai/nansen-mcp/overview/connecting-to-nansen-mcp",
+    "what_it_does": "Nansen's official remote MCP server (mcp.nansen.ai/ra/mcp) exposing its institutional on-chain intelligence over 25+ chains: smart-money wallet labels (millions of addresses), token movements, DEX trades, holdings, PnL, address-level insights. Auth via NANSEN-API-KEY header.",
+    "relevance": "Premium smart-money / wallet-labeling signal that is hard to replicate — high value for a trading agent's alpha layer, but closed-source and gated behind a paid plan.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "n/a (no open-source MCP repo; community 'nansen-skills' has 6 stars)",
+    "last_activity": "active (hosted, 2026)",
+    "license": "proprietary (hosted SaaS)",
+    "language": "n/a (remote endpoint)",
+    "caveats": "NOT open source — nansen-ai GitHub org has NO public MCP server repo (only 'nansen-skills', 6 stars, agent skill files, and a Linear MCP). Bundled with the Nansen Professional subscription; Pioneer testing access gives 1,000 API credits, fuller pricing not public on the page. Use the hosted endpoint with a paid key; there is no community Nansen MCP worth adopting.",
+    "sources": [
+      "https://docs.nansen.ai/nansen-mcp/overview/connecting-to-nansen-mcp",
+      "https://github.com/orgs/nansen-ai/repositories",
+      "https://docs.nansen.ai/getting-started/credits",
+      "https://academy.nansen.ai/articles/8404875-nansen-apimcp-101"
+    ]
+  },
+  {
+    "name": "kukapay/kukapay-mcp-servers",
+    "url": "https://github.com/kukapay/kukapay-mcp-servers",
+    "what_it_does": "Index/suite of 70+ community crypto MCP servers across DeFi & Lending, DEX & Trading, Market Data & Analytics, News, On-Chain & Wallet, Cross-Chain & Bridges, NFT, Utilities. Includes whale-tracker-mcp, crypto-feargreed-mcp, cryptopanic-mcp-server (news/sentiment), nft-analytics-mcp (Dune-backed), uniswap-poolspy-mcp (new-pool tracker).",
+    "relevance": "A grab-bag of narrow, single-purpose MCP servers (whale alerts, fear/greed sentiment, news, new-pool detection) you can cherry-pick as feature signals for an analytics/trading agent. Great catalog to mine for patterns.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "29 (suite index); individual servers vary",
+    "last_activity": "active (catalog maintained)",
+    "language": "Python",
+    "license": "MIT",
+    "caveats": "Community, single-author; quality/maintenance varies per server and many wrap third-party APIs needing their own keys (Whale Alert, CryptoPanic, Dune). Treat individual servers as steal-pattern / reference rather than hard dependencies; vet each one's freshness before adopting.",
+    "sources": [
+      "https://github.com/kukapay/kukapay-mcp-servers",
+      "https://github.com/kukapay/whale-tracker-mcp",
+      "https://github.com/kukapay/crypto-feargreed-mcp",
+      "https://github.com/kukapay/cryptopanic-mcp-server"
+    ]
+  },
+  {
+    "name": "chainstacklabs/rpc-nodes-mcp",
+    "url": "https://github.com/chainstacklabs/rpc-nodes-mcp",
+    "what_it_does": "Chainstack's MCP server for JSON-RPC node interactions across EVM and Solana (main_evm.py, main_solana.py, main_pumpfun.py). Minimal/extensible wrapper over RPC endpoints for real-time blockchain queries and contract calls.",
+    "relevance": "Pattern for an RPC-only MCP (EVM + Solana + pump.fun) from an infra vendor — but superseded.",
+    "recommendation": "reject",
+    "verified": true,
+    "stars_approx": "19",
+    "last_activity": "stale (ARCHIVED/deprecated 2026-04-09)",
+    "license": "Apache-2.0",
+    "language": "Python",
+    "caveats": "DEPRECATED and archived — repo points users to Chainstack's unified hosted MCP at mcp.chainstack.com. Don't adopt; if you want Chainstack, use the remote server. Low stars, no future updates. Listed for completeness on the Chainstack ask.",
+    "sources": [
+      "https://github.com/chainstacklabs/rpc-nodes-mcp",
+      "https://docs.chainstack.com/docs/evm-mcp-server",
+      "https://chainstack.com/mcp-for-web3-builders-solana-evm-and-documentation-server-by-chainstack/"
+    ]
+  },
+  {
+    "name": "deacix/dune-mcp",
+    "url": "https://github.com/deacix/dune-mcp",
+    "what_it_does": "Community MCP server exposing 34 Dune API tools (Executions, Query Management, Materialized Views, Tables/Uploads, Datasets, Pipelines, Usage) over the official Dune API. Async httpx client, Pydantic models, 89% test coverage / 95 unit tests.",
+    "relevance": "The most complete OPEN-SOURCE Dune MCP by tool count (34 vs kukapay's 2), and well-tested — a candidate self-host alternative to Dune's hosted MCP for an analytics agent.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "0",
+    "last_activity": "very new / unproven (2 commits, 0 stars)",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "Zero stars and only 2 commits — essentially unvetted by the community despite good test coverage; do not depend on it yet. Uses official Dune API (same credit-based pricing: free 2,500/month, $5/100 extra). Watch it; revisit if it gains traction, otherwise prefer Dune's official hosted MCP.",
+    "sources": [
+      "https://github.com/deacix/dune-mcp",
+      "https://lobehub.com/mcp/deacix-dune-mcp"
+    ]
+  },
+  {
+    "name": "GOAT SDK (goat-sdk/goat)",
+    "url": "https://github.com/goat-sdk/goat",
+    "what_it_does": "Crossmint's 'agentic finance toolkit' - a TS+Python plugin layer giving LLM agents 200+ onchain tools across 15+ wallet/chain providers (EVM, Solana, Aptos, Cosmos, Sui, Starknet, etc.). Ships official adapters for 11 agent frameworks (LangChain, Vercel AI, CrewAI, OpenAI Agents SDK, Eliza, LlamaIndex, Mastra, Virtuals GAME) AND an official Model-Context-Protocol adapter (typescript/packages/adapters/model-context-protocol). Read-data plugins include coingecko, coinmarketcap, birdeye, allora, etherscan.",
+    "relevance": "Strong fit for the 'act' half of an agentic on-chain system: standardized tool/action layer over wallets + DeFi protocols + data providers, framework-agnostic, with a first-party MCP server so the same tools plug into any MCP host. Data plugins (coingecko/birdeye/etherscan) cover the 'read on-chain data' half via official provider APIs (you bring your own API keys), not scraping.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "1.0k (exactly 1000 per GitHub API)",
+    "last_activity": "Repo pushed 2026-05-30 (~1 month, active). CAVEAT: npm @goat-sdk/core latest is v0.5.0 last published 2025-05-13 (>12 months) - core package release cadence has stalled even though the repo still gets commits.",
+    "license": "MIT",
+    "language": "TypeScript (78%) + Python (21%)",
+    "caveats": "Star count (1k) is modest for the marketing claims; npm core package has not had a release in >1 year (possible maintenance slowdown - verify the specific plugin packages you need are still published before depending). 200+ tools / 15+ wallets / 11 frameworks are README claims. Official MCP adapter is in-repo (community-of-one, i.e. first-party). Data access is via third-party provider official APIs requiring your own keys, not scraping.",
+    "sources": [
+      "https://github.com/goat-sdk/goat",
+      "https://api.github.com/repos/goat-sdk/goat",
+      "https://github.com/goat-sdk/goat/tree/main/typescript/packages/adapters (gh api: model-context-protocol, eliza, langchain, vercel-ai, virtuals-game adapters)",
+      "https://github.com/goat-sdk/goat/tree/main/typescript/packages/plugins (gh: coingecko, birdeye, allora, etherscan, uniswap, jupiter, opensea...)",
+      "https://registry.npmjs.org/@goat-sdk/core (latest 0.5.0, modified 2025-05-13)"
+    ]
+  },
+  {
+    "name": "Coinbase AgentKit (coinbase/agentkit)",
+    "url": "https://github.com/coinbase/agentkit",
+    "what_it_does": "Coinbase Developer Platform's 'every AI agent deserves a wallet' toolkit. Framework- and wallet-agnostic action layer (50+ TS actions, 30+ Python actions) for onchain ops: wallet management, transfers, swaps, fee-free stablecoin (USDC) payments, and protocol integrations (Compound, Morpho, Jupiter). Supports Base, Ethereum, Solana and general EVM/SVM. Ships integrations for LangChain, Vercel AI SDK, Model Context Protocol, OpenAI Agents SDK, Pydantic AI, AutoGen, Strands, Eliza.",
+    "relevance": "Best-in-class for the 'act' / transaction-execution side backed by a real institution (Coinbase CDP). Official CDP API access (not scraping); supports MCP. Pair it with a dedicated data layer (CoinGecko/Heurist/GOAT data plugins) since AgentKit is action-centric rather than analytics-centric.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "1.3k (1257 per GitHub API)",
+    "last_activity": "Repo pushed 2026-06-23 (active, days old)",
+    "license": "Apache-2.0",
+    "language": "TypeScript (54%) + Python (44%)",
+    "caveats": "269 open issues (high, reflects fast iteration / churn). Requires a CDP Secret API Key (and an LLM key). Pricing not public on the AgentKit docs/overview page - CDP API keys are free to create; network gas + any CDP product fees apply separately, but no AgentKit-specific price tiers are published. Data access is official CDP/onchain, not scraping.",
+    "sources": [
+      "https://github.com/coinbase/agentkit",
+      "https://api.github.com/repos/coinbase/agentkit",
+      "https://docs.cdp.coinbase.com/agent-kit/welcome (no pricing/rate-limit details published)"
+    ]
+  },
+  {
+    "name": "ElizaOS (elizaOS/eliza)",
+    "url": "https://github.com/elizaOS/eliza",
+    "what_it_does": "Formerly the flagship ai16z crypto-agent framework; in its current develop branch it has rebranded to an 'open source agentic operating system' (local-first assistant for desktop/mobile/web with messaging, voice, browser automation, non-custodial wallet, doc Q&A). Plugin model via @elizaos/core (actions/providers/services/evaluators) with a catalog at plugins.elizacloud.ai.",
+    "relevance": "Most-starred framework here and historically THE web3-agent platform, but the v2 'OS' pivot moved crypto/data plugins OUT of the core monorepo's packages/ dir (now OS/infra plugins: browser, documents, phone, worker-runtime). Useful as a runtime/character framework and for its huge plugin ecosystem, but on-chain analytics now lives in separate plugin packages (see plugin-evm / plugin-coingecko rows) rather than core.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "18.7k (18653 per GitHub API)",
+    "last_activity": "Very active - pushed 2026-06-30 (today), 51 open issues",
+    "license": "MIT",
+    "language": "TypeScript (57%)",
+    "caveats": "Major architectural churn: the v0/v1 crypto-agent era gave way to a general 'agentic OS' (v2). Core packages/ no longer bundles web3 data/EVM plugins. Heavy, opinionated runtime; if you only need read-on-chain + act, GOAT/AgentKit are lighter. Adopt the runtime only if you want the full character/agent OS; otherwise steal the plugin/provider pattern.",
+    "sources": [
+      "https://github.com/elizaOS/eliza",
+      "https://api.github.com/repos/elizaOS/eliza",
+      "https://api.github.com/repos/elizaOS/eliza/contents/packages (gh: no crypto/data plugins in core; OS/infra only)"
+    ]
+  },
+  {
+    "name": "ElizaOS plugin-evm (@elizaos/plugin-evm)",
+    "url": "https://www.npmjs.com/package/@elizaos/plugin-evm",
+    "what_it_does": "ElizaOS plugin enabling interaction with EVM-compatible chains: token transfers, cross-chain bridging, and swaps via LiFi integration. Distributed as npm @elizaos/plugin-evm.",
+    "relevance": "Adds EVM read+act (transfers/bridge/swap) to an Eliza agent. Relevant only inside the Eliza runtime; not a standalone library. For non-Eliza stacks, GOAT/AgentKit cover the same ground.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "n/a (no standalone repo; npm package)",
+    "last_activity": "npm latest v1.0.13 published 2026-06-16 (actively maintained on npm)",
+    "license": "MIT (per ElizaOS ecosystem)",
+    "language": "TypeScript",
+    "caveats": "IMPORTANT: the standalone GitHub repo github.com/elizaos-plugins/plugin-evm NO LONGER RESOLVES via GitHub API/gh CLI ('Could not resolve to a Repository') - web search returns a cached page only. npm metadata still points at the dead elizaos-plugins/plugin-evm.git URL; the package was consolidated into the eliza monorepo. Functional (recent npm release) but GitHub source location is in flux - verify before depending. Eliza-runtime-bound.",
+    "sources": [
+      "https://www.npmjs.com/package/@elizaos/plugin-evm",
+      "https://registry.npmjs.org/@elizaos/plugin-evm (latest 1.0.13, modified 2026-06-16, repo url git+https://github.com/elizaos-plugins/plugin-evm.git)",
+      "gh repo view elizaos-plugins/plugin-evm -> GraphQL 'Could not resolve to a Repository'"
+    ]
+  },
+  {
+    "name": "ElizaOS plugin-coingecko (@elizaos/plugin-coingecko)",
+    "url": "https://www.npmjs.com/package/@elizaos/plugin-coingecko",
+    "what_it_does": "ElizaOS plugin fetching real-time crypto price + market data from the CoinGecko API for an Eliza agent. npm @elizaos/plugin-coingecko.",
+    "relevance": "The canonical 'read market data' plugin for Eliza. Thin wrapper over the official CoinGecko API (official API, not scraping) - you supply a CoinGecko key. Mainly a reference for how to wrap CoinGecko as an agent provider; outside Eliza you'd call CoinGecko directly.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "n/a (no standalone repo; npm package)",
+    "last_activity": "npm latest v1.0.1 published 2026-06-16 (actively maintained on npm)",
+    "license": "MIT (per ElizaOS ecosystem)",
+    "language": "TypeScript",
+    "caveats": "Same migration caveat as plugin-evm: standalone github.com/elizaos-plugins/plugin-coingecko does NOT resolve via API/gh; npm repository field now points at elizaos/eliza monorepo. Underlying data source = official CoinGecko API (Demo $0 / Basic $35/mo / Analyst $129/mo / Lite $499/mo - see CoinGecko note). Eliza-runtime-bound.",
+    "sources": [
+      "https://www.npmjs.com/package/@elizaos/plugin-coingecko",
+      "https://registry.npmjs.org/@elizaos/plugin-coingecko (latest 1.0.1, modified 2026-06-16, repo https://github.com/elizaos/eliza.git)",
+      "https://www.coingecko.com/en/api/pricing (Demo $0 / Basic $35 / Analyst $129 / Lite $499 per month)"
+    ]
+  },
+  {
+    "name": "Virtuals G.A.M.E SDK - Node (game-by-virtuals/game-node)",
+    "url": "https://github.com/game-by-virtuals/game-node",
+    "what_it_does": "Official Node/TS SDK for Virtuals Protocol's G.A.M.E architecture (Agents = high-level planners, Workers = low-level planners, Functions = executables). Ships a rich plugin set for on-chain data + actions: alchemyPlugin, coingeckoMaopPlugin, ensoPlugin, onChainActionsPlugin, tokenMetricsPlugin, rss3Plugin, d.a.t.aPlugin, plus social (twitter/discord/telegram/farcaster) and ACP (agent commerce protocol). Requires a GAME API key from console.game.virtuals.io.",
+    "relevance": "Directly relevant: a planner/executor agent loop WITH onchain-data plugins (Alchemy, CoinGecko, TokenMetrics, Enso, RSS3) and onChainActions. Good source of provider-integration patterns. But it is tied to the Virtuals GAME hosted API/key and ecosystem, which constrains portability.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "93 (per GitHub API)",
+    "last_activity": "POSSIBLY STALE: repo pushed 2026-03-06 (~4 months ago)",
+    "license": "MIT",
+    "language": "TypeScript (93%)",
+    "caveats": "Low traction (93 stars / 93 forks, 36 open issues) and ~4-month-stale main branch. Tied to Virtuals' proprietary GAME API key (hosted planner). Data plugins call third-party official APIs (Alchemy/CoinGecko/TokenMetrics) - not scraping - but you inherit Virtuals' framework. Treat plugins as reference implementations rather than a core dependency.",
+    "sources": [
+      "https://github.com/game-by-virtuals/game-node",
+      "https://api.github.com/repos/game-by-virtuals/game-node",
+      "https://github.com/game-by-virtuals/game-node/tree/main/plugins (gh api: alchemy, coingeckoMaop, enso, onChainActions, tokenMetrics, rss3, d.a.t.a plugins)"
+    ]
+  },
+  {
+    "name": "Virtuals G.A.M.E SDK - Python (game-by-virtuals/game-python)",
+    "url": "https://github.com/game-by-virtuals/game-python",
+    "what_it_does": "Official Python SDK for the Virtuals G.A.M.E agent architecture (same Agent/Worker/Function model as game-node).",
+    "relevance": "Python equivalent of game-node for the same planner/executor loop; relevant if your stack is Python-first. Same Virtuals GAME hosted-API dependency.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "102 (per GitHub API)",
+    "last_activity": "STALE: last push 2025-10-01 (~9 months ago, no repo description)",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "Staler than the Node SDK (9 months untouched) and undocumented (empty description). Bound to Virtuals' proprietary GAME API key. Prefer game-node if you need the GAME model; treat the Python SDK as reference only given the staleness.",
+    "sources": [
+      "https://github.com/game-by-virtuals/game-python",
+      "https://api.github.com/repos/game-by-virtuals/game-python (pushed 2025-10-01, 102 stars, MIT)"
+    ]
+  },
+  {
+    "name": "Olas / Autonolas - Open Autonomy (valory-xyz/open-autonomy)",
+    "url": "https://github.com/valory-xyz/open-autonomy",
+    "what_it_does": "Valory's framework for building autonomous agent SERVICES as decentralized multi-agent systems (MAS) running as on-chain-registered, replicated 'agent economies' (the Olas/Autonolas stack). Supports arbitrarily complex logic (incl. ML) with crypto-economic security and on-chain service registration.",
+    "relevance": "Different paradigm from LLM-tool SDKs: it is heavyweight decentralized-agent-SERVICE infrastructure (consensus, on-chain registries, replicated FSM apps), not a 'give my LLM a wallet + data tools' library. Relevant only if you need decentralized/trust-minimized agent execution rather than a single in-process trading agent. Steep learning curve.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "123 (per GitHub API)",
+    "last_activity": "Very active - pushed 2026-06-29, latest release v0.21.25 (2026-06-25), 143 releases",
+    "license": "Apache-2.0",
+    "language": "Python (99%)",
+    "caveats": "Low stars (123) but genuinely active and mature (14k+ commits, 143 releases). Not an LLM-agent-tool SDK - it is consensus/MAS service infra; overkill and high-complexity for a single agentic on-chain analytics/trading bot. Adopt only if decentralization/trust-minimization is a hard requirement. Read-on-chain is via your own RPC/contracts, not a packaged data API.",
+    "sources": [
+      "https://github.com/valory-xyz/open-autonomy",
+      "https://api.github.com/repos/valory-xyz/open-autonomy (123 stars, Apache-2.0, v0.21.25 2026-06-25)"
+    ]
+  },
+  {
+    "name": "Fetch.ai uAgents (fetchai/uAgents)",
+    "url": "https://github.com/fetchai/uAgents",
+    "what_it_does": "Lightweight Python framework for building decentralized autonomous agents that auto-register on the Fetch.ai blockchain Almanac, with cryptographic message/wallet security and decorator-based handlers. Agents discover and message each other on the Fetch.ai network (Agentverse).",
+    "relevance": "An agent-COMMUNICATION/identity/registration framework (multi-agent messaging on Fetch.ai) rather than an on-chain-data or DeFi-action toolkit. Relevant if you want a network of discoverable, wallet-bearing agents; you still bolt on your own data/trading tools. Not a read-on-chain-and-trade SDK out of the box.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "1.6k (1643 per GitHub API)",
+    "last_activity": "Active - pushed 2026-06-29, release core@0.4.7 (2026-06-18)",
+    "license": "Apache-2.0",
+    "language": "Python (99.7%)",
+    "caveats": "Solves agent identity/discovery/messaging + Fetch.ai wallet, NOT on-chain analytics or DeFi execution (no bundled CoinGecko/EVM/DeFi tooling). Couples you to the Fetch.ai network/Almanac. Use it for multi-agent orchestration patterns; pair with GOAT/AgentKit for actual onchain read/act.",
+    "sources": [
+      "https://github.com/fetchai/uAgents",
+      "https://api.github.com/repos/fetchai/uAgents (1643 stars, Apache-2.0, core@0.4.7 2026-06-18)"
+    ]
+  },
+  {
+    "name": "Heurist Agent Framework + Heurist Mesh (heurist-network/heurist-agent-framework)",
+    "url": "https://github.com/heurist-network/heurist-agent-framework",
+    "what_it_does": "Multi-interface Python agent framework (Telegram/Discord/Twitter/Farcaster/REST/MCP) with reasoning, tool use, memory, deep research, and blockchain interaction. Bundles Heurist Mesh: 30+ specialized Web3-intelligence agents (on-chain data, token analytics, security) exposed via REST API, MCP, and x402 pay-per-use.",
+    "relevance": "Highly relevant to the 'read on-chain data + intelligence' half: Mesh is a ready-made library of 30+ Web3-data/analytics agents (token data, on-chain intel, security) callable over an official API and an OFFICIAL MCP server. Strong candidate for the data/analytics layer of an agentic on-chain system; combine with GOAT/AgentKit for execution.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "817 (framework repo); official MCP server repo heurist-mesh-mcp-server = 64 stars",
+    "last_activity": "Framework active (1116 commits, recent). Official MCP server (heurist-mesh-mcp-server) last pushed 2026-03-25 (~3 months, MIT).",
+    "license": "BSL 1.1 (framework) - NOT a standard OSI open-source license; Mesh MCP server is MIT",
+    "language": "Python (99.7%)",
+    "caveats": "LICENSE FLAG: the framework is Business Source License 1.1 (source-available, converts to open later; commercial-use restrictions until then) - the only non-OSI license in this set; review terms before commercial adoption. The Mesh MCP server (heurist-mesh-mcp-server) is separately MIT. OFFICIAL MCP server (first-party, in heurist-network org), not community. Mesh data access = official Heurist REST API with x402 pay-per-use + a Mesh Console for private dedicated MCP servers; concrete per-call/x402 pricing is NOT public on the GitHub page (gated behind the Heurist console).",
+    "sources": [
+      "https://github.com/heurist-network/heurist-agent-framework",
+      "https://api.github.com/repos/heurist-network/heurist-agent-framework (817 stars, BSL 1.1)",
+      "https://api.github.com/repos/heurist-network/heurist-mesh-mcp-server (64 stars, MIT, pushed 2026-03-25)"
+    ]
+  },
+  {
+    "name": "CoinGecko API (data-source pricing reference)",
+    "url": "https://www.coingecko.com/en/api/pricing",
+    "what_it_does": "Official market-data API underpinning the CoinGecko plugins above (price, market cap, historical, 50-80+ endpoints). Not an agent framework - included because multiple frameworks (GOAT coingecko plugin, Eliza plugin-coingecko, Virtuals coingeckoMaopPlugin) depend on it and the task asked for concrete pricing.",
+    "relevance": "The de-facto official (non-scraping) price/market-data backend for the 'read on-chain/market data' layer across GOAT, Eliza, and Virtuals plugins. Concrete pricing matters for cost modeling an analytics/trading agent.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "n/a (hosted API, not a repo)",
+    "last_activity": "active (commercial SaaS)",
+    "license": "Commercial API ToS (paid tiers include commercial license)",
+    "language": "n/a (REST API)",
+    "caveats": "Concrete pricing (verified on pricing page): Demo $0/mo (10k monthly credits, 100 calls/min), Basic $35/mo (100k credits, 300/min), Analyst $129/mo (500k credits, 500/min, WebSocket/Webhook), Lite $499/mo (2M credits), Enterprise custom; ~20% annual discount; overage ~$0.0005/call. Official API (not scraping). Listed as a dependency reference, not an agent framework.",
+    "sources": [
+      "https://www.coingecko.com/en/api/pricing"
+    ]
+  },
+  {
+    "name": "Hummingbot",
+    "url": "https://github.com/hummingbot/hummingbot",
+    "what_it_does": "Open-source framework for building and deploying high-frequency market-making and arbitrage trading bots across CEXs and DEXs. Strategy engine + connector layer; DEX/AMM trading routed through its Gateway middleware.",
+    "relevance": "Best fit as the EXECUTION ENGINE for an on-chain agentic system: native DEX connectors (Uniswap, Jupiter, Raydium, Curve, PancakeSwap, Meteora, dYdX, Hyperliquid, Injective) mean signals from your data layer can be acted on on-chain, not just on CEXs. Cleanly separates from the data/signal layer — it expects you to bring the alpha.",
+    "recommendation": "adopt-as-dependency",
+    "stars_approx": "19.0k",
+    "language": "Python",
+    "license": "Apache-2.0",
+    "last_activity": "active (pushed 2026-06-30, v2.15.0 Jun 2026)",
+    "verified": true,
+    "caveats": "AMM/DEX trading requires the separate Gateway component; on-chain execution latency/MEV is your problem to solve. Heavier setup than single-exchange bots.",
+    "sources": [
+      "https://github.com/hummingbot/hummingbot",
+      "gh api repos/hummingbot/hummingbot"
+    ]
+  },
+  {
+    "name": "Hummingbot MCP (official)",
+    "url": "https://github.com/hummingbot/mcp",
+    "what_it_does": "OFFICIAL Model Context Protocol server (under the hummingbot org) that lets AI assistants like Claude and Gemini control Hummingbot via natural language: manage connectors/credentials, view balances/positions, place/modify orders, read market data, and deploy bot instances. Connects to a running Hummingbot API instance (default http://localhost:8000).",
+    "relevance": "This is the direct bridge for an AGENTIC system: your on-chain analytics agent can issue trades on CEX/DEX through Hummingbot using MCP tool calls rather than custom glue code. The single most relevant 'act on signals' integration in the set, and it is first-party.",
+    "recommendation": "adopt-as-dependency",
+    "stars_approx": "58",
+    "language": "Python",
+    "license": "Apache-2.0",
+    "last_activity": "v0.1.0 (Oct 2025); pushed 2026-03-23 (~3 months ago)",
+    "verified": true,
+    "caveats": "Very young / low-star (v0.1.0, 58 stars); API surface likely to churn. Requires running both Hummingbot API and the bot. Lower commit activity than core repo — watch for staleness past late 2026.",
+    "sources": [
+      "https://github.com/hummingbot/mcp",
+      "https://hummingbot.org/mcp/",
+      "gh api repos/hummingbot/mcp"
+    ]
+  },
+  {
+    "name": "NautilusTrader",
+    "url": "https://github.com/nautechsystems/nautilus_trader",
+    "what_it_does": "Production-grade, Rust-native, event-driven trading engine with a Python control plane (PyO3 bindings). Unifies backtesting, simulation, and live execution deterministically across multiple asset classes and venues.",
+    "relevance": "Strongest engineering foundation if you need a low-latency, deterministic backtest-to-live pipeline for on-chain signals. Has on-chain/DEX-adjacent adapters (Hyperliquid, dYdX, Lighter, Derive, Polymarket) plus major CEXs, so on-chain alpha can be executed and rigorously backtested on the same engine.",
+    "recommendation": "adopt-as-dependency",
+    "stars_approx": "24.3k",
+    "language": "Rust (Python control plane)",
+    "license": "LGPL-3.0",
+    "last_activity": "active (pushed 2026-06-30, v1.230.0 Beta Jun 2026)",
+    "verified": true,
+    "caveats": "Still tagged Beta; steeper learning curve. DEX adapters are perp/derivs venues, not AMM swap routing — true spot AMM on-chain execution is thinner than Hummingbot's. No first-party MCP server.",
+    "sources": [
+      "https://github.com/nautechsystems/nautilus_trader",
+      "gh api repos/nautechsystems/nautilus_trader"
+    ]
+  },
+  {
+    "name": "Freqtrade",
+    "url": "https://github.com/freqtrade/freqtrade",
+    "what_it_does": "Mature, free crypto trading bot in Python with backtesting, hyperparameter optimization, FreqAI ML module, Telegram/web UI control, and an official built-in REST API. Primarily CEX (Binance, Kraken, OKX, Bybit, Gate.io) with Hyperliquid as its one DEX.",
+    "relevance": "Best-documented, largest-community engine for CEX execution of signals and a strong reference for strategy/backtest architecture. Its OFFICIAL REST API (JWT auth, WebSocket, freqtrade-client, OpenAPI) is a clean programmatic surface for an agent to drive it. Weak as an on-chain executor (single DEX).",
+    "recommendation": "steal-pattern",
+    "stars_approx": "51.9k",
+    "language": "Python",
+    "license": "GPL-3.0",
+    "last_activity": "active (pushed 2026-06-30, release 2026.6)",
+    "verified": true,
+    "caveats": "Essentially CEX-only for on-chain purposes (Hyperliquid is the lone DEX). GPL-3.0 is copyleft — matters if you embed it in proprietary code. Adopt as a dependency only for CEX legs; otherwise mine its backtest/FreqAI patterns.",
+    "sources": [
+      "https://github.com/freqtrade/freqtrade",
+      "https://www.freqtrade.io/en/stable/rest-api/",
+      "gh api repos/freqtrade/freqtrade"
+    ]
+  },
+  {
+    "name": "freqtrade-mcp (kukapay, COMMUNITY)",
+    "url": "https://github.com/kukapay/freqtrade-mcp",
+    "what_it_does": "COMMUNITY (not official) MCP server that wraps Freqtrade's REST API, exposing ~16 tools so AI agents can read OHLCV/status/balance/profit and execute actions (force buy/sell, start/stop bot, reload config, manage blacklist/locks).",
+    "relevance": "If you choose Freqtrade for the CEX execution leg, this gives an agent natural-language/MCP control without writing the REST glue yourself. Useful as a ready-made bridge or as a template for your own.",
+    "recommendation": "reference-only",
+    "stars_approx": "122",
+    "language": "Python",
+    "license": "MIT",
+    "last_activity": "pushed 2025-12-06 (~7 months ago — borderline; flag as possibly stale)",
+    "verified": true,
+    "caveats": "NOT official Freqtrade — third-party (kukapay). Only 4 commits, ~7 months since last push; treat as a thin wrapper to fork rather than depend on. (A separate yalcin/freqtrade-mcp is read-only codebase introspection, not a trade controller.)",
+    "sources": [
+      "https://github.com/kukapay/freqtrade-mcp",
+      "gh api repos/kukapay/freqtrade-mcp"
+    ]
+  },
+  {
+    "name": "Jesse",
+    "url": "https://github.com/jesse-ai/jesse",
+    "what_it_does": "Python crypto trading framework focused on simple strategy research, backtesting, optimization, and live trading, with 300+ indicators, multi-symbol/timeframe support, and a JesseGPT assistant. Lists spot/futures and a 'DEX' live-trading option.",
+    "relevance": "Good clean-architecture reference for writing/backtesting signal-driven strategies in Python. On-chain relevance is limited — DEX support is a single live-trading mode, not a broad on-chain connector layer, so it is more of a strategy-research tool than an on-chain executor.",
+    "recommendation": "reference-only",
+    "stars_approx": "8.1k",
+    "language": "Python (JS frontend bundle inflates the GitHub language stat to JavaScript)",
+    "license": "MIT",
+    "last_activity": "active (pushed 2026-06-29)",
+    "verified": true,
+    "caveats": "GitHub reports primary language JavaScript and license MIT via API; the trading core is Python and the JS is the bundled web UI. 'DEX' support is thin/underdocumented vs Hummingbot. No MCP server.",
+    "sources": [
+      "https://github.com/jesse-ai/jesse",
+      "gh api repos/jesse-ai/jesse"
+    ]
+  },
+  {
+    "name": "OctoBot",
+    "url": "https://github.com/Drakkar-Software/OctoBot",
+    "what_it_does": "Free open-source crypto trading bot with a visual interface for Grid/DCA/AI/TradingView-signal strategies across 15+ exchanges via CCXT (Binance, Coinbase, Kucoin, MEXC, Hyperliquid).",
+    "relevance": "CEX-only via CCXT — minimal direct on-chain capability (Hyperliquid aside). Relevant only as a CEX execution option or as a reference for TradingView-style signal ingestion and a no-code strategy UI. Has a .claude/agents dir but no real MCP server.",
+    "recommendation": "reference-only",
+    "stars_approx": "6.2k",
+    "language": "Python",
+    "license": "GPL-3.0",
+    "last_activity": "active (pushed 2026-06-30, release 2.1.1 Mar 2026)",
+    "verified": true,
+    "caveats": "No DEX/AMM on-chain execution layer; GPL-3.0 copyleft. Smaller community than Freqtrade/Hummingbot. No official MCP server despite a .claude/agents folder.",
+    "sources": [
+      "https://github.com/Drakkar-Software/OctoBot",
+      "gh api repos/Drakkar-Software/OctoBot"
+    ]
+  },
+  {
+    "name": "Insider-Monitor (AccursedGalaxy)",
+    "url": "https://github.com/AccursedGalaxy/Insider-Monitor",
+    "what_it_does": "Go tool that monitors Solana wallets for balance/holding changes and emits real-time alerts (Discord), positioned for insider/smart-money activity detection. Uses official Solana RPC (Helius/QuickNode recommended), not scraping.",
+    "relevance": "On-chain DATA/SIGNAL layer (wallet-tracking), the upstream half of an agentic on-chain system — pairs with an execution engine like Hummingbot. Clean RPC-based approach is a good pattern to steal for a smart-money signal feed.",
+    "recommendation": "steal-pattern",
+    "stars_approx": "38",
+    "language": "Go",
+    "license": "none (no license file — all-rights-reserved by default)",
+    "last_activity": "active (pushed 2026-06-20; v0.1.5)",
+    "verified": true,
+    "caveats": "Low stars and NO LICENSE (legally not safe to reuse code as-is — would need to request a license). Alerts on balance deltas, not full swap decoding; early-stage (v0.1.x). Use as a pattern reference, not a drop-in dependency.",
+    "sources": [
+      "https://github.com/AccursedGalaxy/Insider-Monitor",
+      "gh api repos/AccursedGalaxy/Insider-Monitor"
+    ]
+  },
+  {
+    "name": "handi-cat_wallet-tracker (DracoR22)",
+    "url": "https://github.com/DracoR22/handi-cat_wallet-tracker",
+    "what_it_does": "TypeScript Telegram bot that tracks Solana wallets in real time and decodes/reports swaps on Raydium, Jupiter, Pump.fun, and PumpSwap (tx hash, token swap details, SOL price, market cap). Uses Solana Web3.js + RPC + Prisma.",
+    "relevance": "Most-starred serious on-chain wallet-tracker here and the richest DEX-swap decoding example (Raydium/Jupiter/Pump.fun/PumpSwap). Strong pattern source for the signal-detection layer that feeds a copy-trade/execution engine.",
+    "recommendation": "steal-pattern",
+    "stars_approx": "205",
+    "language": "TypeScript",
+    "license": "none (no license file)",
+    "last_activity": "pushed 2026-02-17 (~4.5 months ago — watch for staleness)",
+    "verified": true,
+    "caveats": "NO LICENSE (cannot legally reuse code without permission). Tracks/notifies only — it does NOT execute trades. ~4.5 months since last push; Solana-only. Treat as a swap-decoding reference, not a dependency.",
+    "sources": [
+      "https://github.com/DracoR22/handi-cat_wallet-tracker",
+      "gh api repos/DracoR22/handi-cat_wallet-tracker"
+    ]
+  },
+  {
+    "name": "whale-wallet-mirror-copy-trader (Rezzecup)",
+    "url": "https://github.com/Rezzecup/whale-wallet-mirror-copy-trader",
+    "what_it_does": "Python on-chain copy-trading engine for Base & Solana: monitors smart-money wallets and mirrors their swaps with custom slippage, proportional sizing, live wallet scoring, and a paper-trading mode.",
+    "relevance": "One of the few repos that actually EXECUTES on-chain copy trades (most copy-trade repos are Telegram-DM promos). Conceptually the closest single repo to 'act on on-chain wallet signals' end-to-end, and notably multi-chain (Base + Solana).",
+    "recommendation": "reference-only",
+    "stars_approx": "23",
+    "language": "Python",
+    "license": "none (no license file)",
+    "last_activity": "pushed 2026-03-16 (~3.5 months ago)",
+    "verified": true,
+    "caveats": "Very low stars (23), unproven, NO LICENSE, single-maintainer — high abandonment/quality risk. Many sibling Solana copy-trade repos in search results are spam/promo. Use only to validate an approach; do not build production execution on it.",
+    "sources": [
+      "https://github.com/Rezzecup/whale-wallet-mirror-copy-trader",
+      "gh api repos/Rezzecup/whale-wallet-mirror-copy-trader"
+    ]
+  },
+  {
+    "name": "warp-id/solana-trading-bot",
+    "url": "https://github.com/warp-id/solana-trading-bot",
+    "what_it_does": "Popular TypeScript Solana trading bot (Beta) for sniping/trading on Raydium liquidity pools.",
+    "relevance": "High-star Solana on-chain executor, but it is a snipe-on-new-pool bot rather than a signal-driven copy-trader, so it does not map cleanly to acting on external on-chain signals.",
+    "recommendation": "reject",
+    "stars_approx": "2.3k",
+    "language": "TypeScript",
+    "license": "MS-PL",
+    "last_activity": "STALE — pushed 2024-08-10 (~22 months ago)",
+    "verified": true,
+    "caveats": "Abandoned (no commits in ~22 months) — Solana DEX surface area has changed substantially since. Reject: stale and scope-mismatched (pool sniper, not signal/copy executor).",
+    "sources": [
+      "https://github.com/warp-id/solana-trading-bot",
+      "gh api repos/warp-id/solana-trading-bot"
+    ]
+  },
+  {
+    "name": "YZYLAB/solana-trade-bot",
+    "url": "https://github.com/YZYLAB/solana-trade-bot",
+    "what_it_does": "JavaScript example Solana trading bot built on the Solana Tracker Data API SDK, supporting Raydium (V4/CPMM), Pump.fun, Orca, Moonshot, and Jupiter.",
+    "relevance": "Reference for using a third-party data API (Solana Tracker) to trade across Solana DEXs; shows the official-API (not scraping) path for multi-DEX execution.",
+    "recommendation": "reject",
+    "stars_approx": "160",
+    "language": "JavaScript",
+    "license": "none (no license file)",
+    "last_activity": "stale — pushed 2025-06-09 (~12.5 months ago; over the 12-month staleness threshold)",
+    "verified": true,
+    "caveats": "Explicitly a 'proof-of-concept example', no license, and ~12.5 months since last push (past the staleness flag). Depends on the paid third-party Solana Tracker API. Reject for production; mild reference value only.",
+    "sources": [
+      "https://github.com/YZYLAB/solana-trade-bot",
+      "gh api repos/YZYLAB/solana-trade-bot"
+    ]
+  },
+  {
+    "name": "ccxt/ccxt",
+    "url": "https://github.com/ccxt/ccxt",
+    "what_it_does": "Unified multi-provider cryptocurrency exchange trading API covering 106+ exchanges in JS/TS/Python/C#/PHP/Go/Java. Implements full public+private REST and WebSocket APIs for market data, OHLCV, order books, trades, balances and order placement.",
+    "relevance": "Core market-data + execution aggregation layer for an agentic trading system. Single normalized interface across exchanges removes per-venue glue code; CCXT Pro adds streaming WebSocket feeds ideal for real-time agent inputs. This is centralized-exchange (CEX) data, complementary to on-chain analytics.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "43.1k",
+    "last_activity": "active (pushed 2026-06-30)",
+    "license": "MIT",
+    "language": "Python/JS/TS/PHP/C#/Go/Java",
+    "caveats": "Official exchange APIs (not scraping). 1,316 open issues reflects breadth not neglect. Private/trading endpoints need API keys. Public market data needs no key. CEX-only; does not cover on-chain/DEX-native data.",
+    "sources": [
+      "https://github.com/ccxt/ccxt",
+      "https://docs.ccxt.com/",
+      "gh api repos/ccxt/ccxt"
+    ]
+  },
+  {
+    "name": "TensorBlock/awesome-mcp-servers (finance--crypto.md)",
+    "url": "https://github.com/TensorBlock/awesome-mcp-servers/blob/main/docs/finance--crypto.md",
+    "what_it_does": "Comprehensive MCP-server directory; the finance/crypto doc alone enumerates 300+ MCP servers (Polymarket, Kalshi, Uniswap Trader, DeFi Yield Scanner, Solana whale intelligence, Bitcoin Lightning, Sharpe derivatives, Bitcompare yields, etc.).",
+    "relevance": "MOST EXHAUSTIVE enumeration of crypto/on-chain MCP servers found (300+ in the finance section). Best single shopping list for plugging MCP data tools directly into an agentic on-chain analytics/trading stack. Highlights this is a list that enumerates many MCP servers.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "766 (parent repo)",
+    "last_activity": "active (pushed 2026-06-30)",
+    "license": "MIT",
+    "language": "TypeScript",
+    "caveats": "It is a catalog, not runnable infra. Servers listed range from official to community/experimental and many are paid (x402/pay-per-call); vet each individually for official-API vs scraping and maintenance before wiring in.",
+    "sources": [
+      "https://github.com/TensorBlock/awesome-mcp-servers/blob/main/docs/finance--crypto.md",
+      "gh api repos/TensorBlock/awesome-mcp-servers"
+    ]
+  },
+  {
+    "name": "DefiLlama/DefiLlama-Adapters",
+    "url": "https://github.com/DefiLlama/DefiLlama-Adapters",
+    "what_it_does": "Open-source TVL adapters powering DefiLlama: per-protocol JS modules that compute TVL across 200+ chains and thousands of DeFi protocols. The community-maintained data layer behind DefiLlama analytics.",
+    "relevance": "Canonical reference for HOW to normalize heterogeneous DeFi protocol state into comparable on-chain metrics. Steal the adapter pattern (one module per protocol, standard interface) for a multi-protocol on-chain analytics agent; or consume DefiLlama's free public API directly.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "1.2k",
+    "last_activity": "active (pushed 2026-06-30)",
+    "license": "not specified on repo (no SPDX license file)",
+    "language": "JavaScript",
+    "caveats": "NOTE: the older DefiLlama/defillama-server monorepo now returns 404 — the backend was split. Live repos are DefiLlama-Adapters, dimension-adapters (fees/volume), yield-server, defillama-sdk, peggedassets-server, bridges-server. Adapters repo has no explicit license file; for code reuse confirm licensing. For most cases use the hosted DefiLlama API rather than self-hosting.",
+    "sources": [
+      "https://github.com/DefiLlama/DefiLlama-Adapters",
+      "gh api orgs/DefiLlama/repos",
+      "gh api repos/DefiLlama/defillama-server (404)"
+    ]
+  },
+  {
+    "name": "DefiLlama/defillama-sdk",
+    "url": "https://github.com/DefiLlama/defillama-sdk",
+    "what_it_does": "TypeScript SDK used by DefiLlama adapters: helpers for multicall, on-chain reads, block/timestamp lookups, price fetching and cross-chain ABI calls.",
+    "relevance": "Practical building block for an on-chain analytics agent that needs batched contract reads and historical price/block resolution across EVM chains. Useful even outside the DefiLlama context.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "72",
+    "last_activity": "active (pushed 2026-06-26)",
+    "license": "AGPL-3.0",
+    "language": "TypeScript",
+    "caveats": "AGPL-3.0 is copyleft — network use may trigger source-disclosure obligations; review before embedding in a closed-source product. Lower-level than the hosted API.",
+    "sources": [
+      "https://github.com/DefiLlama/defillama-sdk",
+      "gh api repos/DefiLlama/defillama-sdk"
+    ]
+  },
+  {
+    "name": "DefiLlama/defillama-skills",
+    "url": "https://github.com/DefiLlama/defillama-skills",
+    "what_it_does": "Official 'Skills for DefiLlama MCP' — DefiLlama's own MCP-oriented skill definitions for agent access to its analytics (TVL, prices, stablecoins, yields, volumes, fees).",
+    "relevance": "An OFFICIAL (first-party) path to expose DefiLlama on-chain analytics to an agent via MCP, vs the many community defillama-mcp forks. Directly relevant to agentic on-chain analytics.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "18",
+    "last_activity": "stale-ish (pushed 2026-03-26, ~3 months old; still <12mo)",
+    "license": "not specified",
+    "language": "not detected",
+    "caveats": "Small/early. No license file. Many third-party 'defillama-mcp' repos exist (demcp/demcp-defillama-mcp ~62 stars, junct-bot 59-tool variant, Jasperpolak) — those are COMMUNITY, not official; prefer the DefiLlama org repo if you want first-party provenance.",
+    "sources": [
+      "https://github.com/DefiLlama/defillama-skills",
+      "gh api repos/DefiLlama/defillama-skills",
+      "gh search repos defillama mcp"
+    ]
+  },
+  {
+    "name": "hive-intel/awesome-crypto-mcp-servers",
+    "url": "https://github.com/hive-intel/awesome-crypto-mcp-servers",
+    "what_it_does": "Curated, recently-updated list enumerating 150+ crypto/Web3/DeFi/wallet MCP servers across 20+ categories (blockchain data infra, EVM, Solana, Bitcoin, DeFi/markets, security/risk, exchange APIs, RPC nodes), with risk-routing and use-case mapping.",
+    "relevance": "A second strong enumeration of many MCP servers, freshest of the dedicated crypto-MCP lists (curated June 2026). Good for mapping agent tasks -> recommended on-chain data MCP servers.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "9",
+    "last_activity": "active (pushed 2026-06-04; README curated 2026-06-02)",
+    "license": "CC0-1.0",
+    "language": "not applicable (list)",
+    "caveats": "Very low stars / new project — popularity unproven, but content is current and well-structured. Verify each linked server's official-vs-community status and maintenance independently.",
+    "sources": [
+      "https://github.com/hive-intel/awesome-crypto-mcp-servers",
+      "gh api repos/hive-intel/awesome-crypto-mcp-servers"
+    ]
+  },
+  {
+    "name": "badkk/awesome-crypto-mcp-servers",
+    "url": "https://github.com/badkk/awesome-crypto-mcp-servers",
+    "what_it_does": "Curated list (Crypto Edition) of ~11 named crypto MCP servers: Bankless Onchain, DexPaprika, EVM MCP Server, CoinMarketCap, Crypto Fear&Greed, CryptoPanic news, Whale Tracker, GOAT, Solana Agent Kit, etc.",
+    "relevance": "The most-starred dedicated crypto-MCP list (138 stars) and a quick orientation to well-known on-chain/market-data MCP servers. Smaller than the hive-intel/TensorBlock lists.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "138",
+    "last_activity": "STALE — pushed 2025-03-27 (~15 months old, flagged > 12mo); 82 open issues/PRs unmerged",
+    "license": "MIT",
+    "language": "not applicable (list)",
+    "caveats": "Stale: not updated since Mar 2025 in a fast-moving space, so likely missing newer servers and may contain dead links. Highest stars but lowest freshness of the crypto-MCP lists. Use hive-intel or TensorBlock for current coverage.",
+    "sources": [
+      "https://github.com/badkk/awesome-crypto-mcp-servers",
+      "gh api repos/badkk/awesome-crypto-mcp-servers"
+    ]
+  },
+  {
+    "name": "royyannick/awesome-blockchain-mcps",
+    "url": "https://github.com/royyannick/awesome-blockchain-mcps",
+    "what_it_does": "Curated list of ~24-26 blockchain/crypto MCP servers grouped as On-Chain Integration, Blockchain Data, Crypto Payments, and Analytics & Security.",
+    "relevance": "Smaller, focused enumeration emphasizing on-chain integration + analytics/security MCP servers; complements the larger lists.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "34",
+    "last_activity": "active-ish (pushed 2026-03-17; 58 open PRs pending)",
+    "license": "none (no license file)",
+    "language": "not applicable (list)",
+    "caveats": "Large backlog of 58 unmerged PRs suggests light maintenance bandwidth; the README may lag what's been submitted. No license.",
+    "sources": [
+      "https://github.com/royyannick/awesome-blockchain-mcps",
+      "gh api repos/royyannick/awesome-blockchain-mcps"
+    ]
+  },
+  {
+    "name": "thirdweb-dev/ai",
+    "url": "https://github.com/thirdweb-dev/ai",
+    "what_it_does": "Official thirdweb 'AI Agents with Onchain Intelligence' Python toolkit. Provides 'Insight' (multi-chain on-chain data: chains, txs, blocks, events, token prices, balances), plus Engine/EngineCloud for wallet ops and contract calls; ships adapters for OpenAI Agents, LangChain, Coinbase AgentKit and GOAT.",
+    "relevance": "Directly an on-chain-analytics-for-agents library: gives a normalized multi-chain data layer (via thirdweb Insight) wired into mainstream agent frameworks. Strong candidate for the read/analytics side of an agentic on-chain system.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "20",
+    "last_activity": "active (pushed 2026-06-20; last tagged release v0.1.24 May 2025)",
+    "license": "Apache-2.0",
+    "language": "Python",
+    "caveats": "Low stars (early). Underlying Insight data is an official thirdweb hosted API (not scraping) and may require a thirdweb client id / paid tiers for higher volume — pricing not shown on the repo (not public here). Pre-1.0, API may shift.",
+    "sources": [
+      "https://github.com/thirdweb-dev/ai",
+      "gh api repos/thirdweb-dev/ai",
+      "https://pypi.org/project/thirdweb-ai/"
+    ]
+  },
+  {
+    "name": "goat-sdk/goat",
+    "url": "https://github.com/goat-sdk/goat",
+    "what_it_does": "Agentic finance toolkit: plugin framework giving AI agents 200+ on-chain actions/tools (DeFi, tokens, wallets, data) across many chains, with adapters into LangChain, Vercel AI, ElizaOS, etc.",
+    "relevance": "Well-maintained, framework-agnostic tool layer to give an agent on-chain read+write capabilities; strong source of normalized on-chain action/data tooling and an architecture to steal for plugin-based provider aggregation.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "1.0k",
+    "last_activity": "active (pushed 2026-05-30)",
+    "license": "MIT",
+    "language": "TypeScript",
+    "caveats": "Action/execution-oriented more than pure analytics; data depth per chain varies by plugin. Verify which plugins use official APIs vs RPC scraping for the chains you need.",
+    "sources": [
+      "https://github.com/goat-sdk/goat",
+      "gh api repos/goat-sdk/goat"
+    ]
+  },
+  {
+    "name": "lidofinance/web3py-multi-http-provider",
+    "url": "https://github.com/lidofinance/web3py-multi-http-provider",
+    "what_it_does": "web3.py provider offering MultiProvider and FallbackProvider that rotate/failover across multiple Ethereum RPC endpoints so the app stays up when a node fails.",
+    "relevance": "Infrastructure reliability primitive for the data-ingestion layer of an on-chain agent: multi-provider RPC failover prevents a single node outage from blinding the agent. Small, focused, production-used by Lido.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "stars_approx": "13",
+    "last_activity": "active (pushed 2026-06-18)",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "Narrow scope (RPC failover only, Python/web3.py). Not a data aggregator itself — pairs with your own indexing/analytics. Low stars but maintained by Lido.",
+    "sources": [
+      "https://github.com/lidofinance/web3py-multi-http-provider",
+      "gh api repos/lidofinance/web3py-multi-http-provider"
+    ]
+  },
+  {
+    "name": "chainstacklabs/web3-ai-trading-agent",
+    "url": "https://github.com/chainstacklabs/web3-ai-trading-agent",
+    "what_it_does": "Reference/tutorial project building an autonomous Web3 AI trading agent on BASE + Uniswap V4, local-first (Foundry-forked chain + Ollama-served LLM), decentralizing both blockchain access and model inference.",
+    "relevance": "End-to-end example of an on-chain trading agent: shows wiring of LLM decisioning to live DEX (Uniswap V4) data and execution. Good blueprint to steal architecture from, not a library.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "stars_approx": "66",
+    "last_activity": "STALE — pushed 2025-08-21 (~10 months old; under 12mo but aging in a fast space)",
+    "license": "Apache-2.0",
+    "language": "Python",
+    "caveats": "Educational example, not maintained as a product; single-chain (BASE/Uniswap V4). Just under the 12-month line — re-verify dependencies before reuse. Reference architecture only.",
+    "sources": [
+      "https://github.com/chainstacklabs/web3-ai-trading-agent",
+      "gh api repos/chainstacklabs/web3-ai-trading-agent",
+      "https://chainstack.com/building-a-web3-ai-trading-agent-from-scratch/"
+    ]
+  },
+  {
+    "name": "edwardtay/awesome-web3-ai",
+    "url": "https://github.com/edwardtay/awesome-web3-ai",
+    "what_it_does": "Curated list (claims 90+) of Web3 x AI tools, agent frameworks, protocols, infra and data resources (e.g. Covalent listed as a blockchain data API for AI agents). Flags some entries with a maintenance-warning symbol.",
+    "relevance": "Orientation map of the Web3+AI tooling landscape including data-API providers for agents; useful for discovering candidate data sources/frameworks. Notably it flags stale repos with a warning icon.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "stars_approx": "4",
+    "last_activity": "active (pushed 2026-06-29)",
+    "license": "CC0-1.0",
+    "language": "not applicable (list)",
+    "caveats": "Very low stars (4) — popularity unproven despite recent updates. Broad Web3+AI scope, not on-chain-data-specific. Cross-check entries; not all listed projects are maintained (the list itself marks some).",
+    "sources": [
+      "https://github.com/edwardtay/awesome-web3-ai",
+      "gh api repos/edwardtay/awesome-web3-ai"
+    ]
+  },
+  {
+    "name": "taiyangc/awesome-web3-ai-agents",
+    "url": "https://github.com/taiyangc/awesome-web3-ai-agents",
+    "what_it_does": "List of AI autonomous agents operating in Web3 (agent projects/tokens), not primarily a data-library or MCP enumeration.",
+    "relevance": "Marginal — landscape of Web3 agent projects rather than data-aggregation libs or MCP server lists; limited direct value for building an analytics/data layer.",
+    "recommendation": "reject",
+    "verified": true,
+    "stars_approx": "11",
+    "last_activity": "STALE — pushed 2025-01-09 (~18 months old, flagged > 12mo)",
+    "license": "MIT",
+    "language": "not applicable (list)",
+    "caveats": "Stale (no updates since Jan 2025) and focused on agent/token projects rather than data infrastructure or MCP servers. Superseded by edwardtay/awesome-web3-ai and the dedicated MCP lists.",
+    "sources": [
+      "https://github.com/taiyangc/awesome-web3-ai-agents",
+      "gh api repos/taiyangc/awesome-web3-ai-agents"
+    ]
+  },
+  {
+    "name": "TauricResearch/TradingAgents",
+    "url": "https://github.com/TauricResearch/TradingAgents",
+    "what_it_does": "Multi-agent LLM financial trading framework that mirrors a real trading firm: analyst team (fundamentals/sentiment/news/technicals), bull/bear researcher debate, trader, risk manager, portfolio manager — built on LangGraph. v0.3.0 (Jun 2026) added FRED and Polymarket data vendors. EMNLP-adjacent paper (arXiv 2412.20138).",
+    "relevance": "The canonical reference architecture for our agentic system: the analyst->researcher-debate->trader->risk->portfolio graph maps almost 1:1 onto an on-chain analytics/trading pipeline. Equities-first via Yahoo Finance, but BTC-USD/ETH-USD are supported and the agent-graph pattern is asset-agnostic.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "sources": [
+      "https://github.com/TauricResearch/TradingAgents",
+      "https://arxiv.org/abs/2412.20138"
+    ],
+    "stars_approx": "~90k",
+    "last_activity": "active (v0.3.0 released 2026-06-22)",
+    "license": "Apache-2.0",
+    "language": "Python",
+    "caveats": "Data layer is Yahoo Finance/Alpha Vantage/Reddit/StockTwits — NOT on-chain. Crypto support is just 'whatever Yahoo covers' (BTC-USD/ETH-USD spot), no wallet/DeFi/on-chain metrics. Borrow the LangGraph agent topology, replace the data vendors with on-chain providers."
+  },
+  {
+    "name": "auronsun/TradingAgents-crypto",
+    "url": "https://github.com/auronsun/TradingAgents-crypto",
+    "what_it_does": "Crypto-adapted fork of TradingAgents (via 0x0funky/TradingAgents-crypto). Same LangGraph analyst/research/trade/portfolio teams, but wired to crypto data: CoinGecko (prices/mcap/volume), CryptoCompare (history/social), Finnhub, with planned Binance/Coinbase Pro/DeFiPulse. Flask+SocketIO web UI; multi-LLM (OpenAI/Anthropic/Google).",
+    "relevance": "Closest direct analog to 'TradingAgents but for crypto' — shows exactly how to retarget the TradingAgents graph onto crypto market-data providers and add a real-time web UI. A reference for the adaptation work we'd otherwise do ourselves.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "sources": [
+      "https://github.com/auronsun/TradingAgents-crypto"
+    ],
+    "stars_approx": "~8",
+    "last_activity": "fork of an active upstream; small/young (59 commits)",
+    "license": "Apache-2.0",
+    "language": "Python",
+    "caveats": "Tiny adoption (8 stars), maintenance unproven, double-fork lineage. Mostly CEX/market-data (CoinGecko/CryptoCompare), not deep on-chain (wallet/DEX flow) — DeFiPulse/Dune are 'planned'. Treat as an implementation reference, not a dependency."
+  },
+  {
+    "name": "virattt/ai-hedge-fund",
+    "url": "https://github.com/virattt/ai-hedge-fund",
+    "what_it_does": "Famous multi-agent 'AI hedge fund' (19 agents: 13 investor personas like Buffett/Burry/Wood + valuation/sentiment/fundamentals/technicals analysts + risk + portfolio manager). Python backend, TypeScript web app, Poetry. Data via Financial Datasets API.",
+    "relevance": "The reference design the user explicitly named. The investor-persona ensemble + risk-manager/portfolio-manager gating is a reusable pattern for an opinionated analytics agent. Equities-only, so it's an architectural template, not a crypto base.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "sources": [
+      "https://github.com/virattt/ai-hedge-fund",
+      "https://github.com/virattt/ai-hedge-fund/issues/186"
+    ],
+    "stars_approx": "~60k",
+    "last_activity": "active (release 2026-06-17)",
+    "license": "MIT",
+    "language": "Python / TypeScript",
+    "caveats": "No crypto/on-chain support — a crypto feature request (issue #186) was closed 'not planned'. Single official data provider (Financial Datasets API, key-gated). Educational disclaimer. Borrow the agent-persona + risk-gate structure only."
+  },
+  {
+    "name": "Xtra-Computing/CryptoTrade",
+    "url": "https://github.com/Xtra-Computing/CryptoTrade",
+    "what_it_does": "EMNLP 2024 academic agent that explicitly fuses ON-CHAIN data (unique addresses, value transferred, gas usage, tx counts, avg gas price) with off-chain news + technical indicators (MACD), via an on-chain analyst + news analyst + reflection analyst + trader, output scaled -1..1.",
+    "relevance": "One of the few analogs that natively treats on-chain metrics as a first-class analyst input and combines on-chain+off-chain — directly the data-fusion pattern we want. Good source for prompt structure and the on-chain feature set worth computing.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "sources": [
+      "https://github.com/Xtra-Computing/CryptoTrade",
+      "https://aclanthology.org/2024.emnlp-main.63.pdf"
+    ],
+    "stars_approx": "~160",
+    "last_activity": "stale (research code, ~late-2023 data, 11 commits, last touched well over 12 months ago)",
+    "license": "CC BY-NC-SA (non-commercial)",
+    "language": "Jupyter Notebook",
+    "caveats": "STALE and NON-COMMERCIAL license (CC BY-NC-SA blocks commercial use). Notebook research code, hard-coded to GPT-4 and 2023 data. Mine it for the on-chain feature set and prompt design only; do not depend on or ship its code."
+  },
+  {
+    "name": "qrak/LLM_trader",
+    "url": "https://github.com/qrak/LLM_trader",
+    "what_it_does": "Autonomous crypto trading agent that renders 4K candlestick charts and sends them to a multimodal LLM (Gemini Flash, OpenRouter/LM Studio fallback) for pattern recognition, plus 40+ TA indicators, a RAG news engine (CoinDesk/CoinTelegraph/Decrypt/CryptoSlate RSS + Crawl4AI), and a ChromaDB 'brain' that stores past trade outcomes and reflects new rules.",
+    "relevance": "Strong reference for two patterns we'd want: (1) vision-LLM chart analysis, (2) memory-augmented reflection (vector store of past outcomes injected into prompts). Live dashboard and reflection loop are well-built.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "sources": [
+      "https://github.com/qrak/LLM_trader"
+    ],
+    "stars_approx": "~100",
+    "last_activity": "active (307 commits, single-maintainer)",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "CEX-focused (CCXT exchange data + order book); on-chain is shallow (DeFiLlama fundamentals only). Paper-trading only, no live execution in public branch. Borrow the vision-chart + memory/reflection modules, not the trading core."
+  },
+  {
+    "name": "nMaroulis/sibyl",
+    "url": "https://github.com/nMaroulis/sibyl",
+    "what_it_does": "AI-powered crypto insights + trading dashboard. Oracle module (local/API LLM assistant), Wiki module = RAG over thousands of crypto publications (hybrid BM25+FAISS+cosine over ChromaDB) exposed through a custom MCP server with web-search + chat-memory tools; plus TensorFlow LSTM/GRU/ARIMA forecasting. Connects to Binance/Coinbase/Bybit/Kraken.",
+    "relevance": "Good full-stack template for a research copilot: MCP-server + RAG-over-crypto-corpus + dashboard. Shows how to wire an MCP tool surface for a crypto assistant — a pattern we'd reuse.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "sources": [
+      "https://github.com/nMaroulis/sibyl"
+    ],
+    "stars_approx": "~70",
+    "last_activity": "active (271 commits)",
+    "language": "Python",
+    "license": "Apache-2.0",
+    "caveats": "Exchange/CEX-portfolio-focused, NOT on-chain analytics (no wallet/DEX/chain-data layer). The MCP server is community/custom, not vendor-official. Small project. Borrow the RAG+MCP copilot wiring, not on-chain depth."
+  },
+  {
+    "name": "HKUDS/Vibe-Trading",
+    "url": "https://github.com/HKUDS/Vibe-Trading",
+    "what_it_does": "Large multi-agent 'swarm' trading/research platform from HKU Data Science Lab: 60+ MCP tools, 18 market-data sources with fallback chains, 29 preset agent-team configs, 456 pre-built alphas, 13 LLM providers, broker integrations (incl. OKX/Binance), FastAPI + React 19, Docker. Includes some crypto on-chain metrics (funding/basis, liquidation heatmaps, stablecoin flows, DeFi yield, address activity).",
+    "relevance": "Best-in-class reference for engineering scale: multi-source data fallback, MCP tool catalog, agent-team presets, alpha library. The data-source-fallback and MCP-tool-registry patterns are directly reusable for a robust analytics agent.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "sources": [
+      "https://github.com/HKUDS/Vibe-Trading"
+    ],
+    "stars_approx": "~15k",
+    "last_activity": "active (news entries dated 2026-06-30)",
+    "license": "MIT",
+    "language": "Python / TypeScript (React)",
+    "caveats": "Primarily equities/A-share/quant-oriented; crypto/on-chain is a secondary integration, not the core. Tool counts reported inconsistently (54 vs 68). Heavy/complex to adopt wholesale — cherry-pick the data-fallback and MCP-registry patterns."
+  },
+  {
+    "name": "coinbase/agentkit",
+    "url": "https://github.com/coinbase/agentkit",
+    "what_it_does": "Coinbase Developer Platform's OFFICIAL toolkit giving AI agents a crypto wallet + on-chain actions. 50+ actions (TS) / 30+ (Python), framework-agnostic (LangChain, Vercel AI SDK, OpenAI Agents SDK, Pydantic AI) and wallet-agnostic (Coinbase/Privy/Viem). Base-first, plus Ethereum/EVM and Solana. Ships an official agentkit-model-context-protocol extension.",
+    "relevance": "The on-chain ACTION layer (vs analytics) — if our agent ever transacts (swaps, transfers, onramp), this is the official, audited primitive to adopt rather than build. Official MCP extension fits an MCP-tool architecture cleanly.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "sources": [
+      "https://github.com/coinbase/agentkit",
+      "https://docs.cdp.coinbase.com/agent-kit/welcome"
+    ],
+    "stars_approx": "~1.3k",
+    "last_activity": "active (517 commits)",
+    "license": "Apache-2.0",
+    "language": "TypeScript / Python",
+    "caveats": "It is an action/wallet layer, NOT analytics — no data/insight generation. Read-only analytics use cases get little from it. Pricing for underlying CDP services is not fully public; wallet/onramp usage may incur Coinbase fees. Adopt only if we need execution."
+  },
+  {
+    "name": "goat-sdk/goat",
+    "url": "https://github.com/goat-sdk/goat",
+    "what_it_does": "GOAT (Great Onchain Agent Toolkit) by Crossmint: a lightweight, plug-in action layer adding 200+ on-chain tools across 11+ chains to any agent framework (LangChain, Vercel AI SDK, ElizaOS). Wallet-agnostic (keypairs, Crossmint smart wallets, Coinbase); EVM + Solana.",
+    "relevance": "Alternative/complement to AgentKit for the on-chain action+read surface — broadest multi-chain tool coverage. Commonly paired with an agent 'brain' (e.g. ElizaOS) and wired into our tool registry for DeFi/token operations and reads.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "sources": [
+      "https://github.com/goat-sdk/goat",
+      "https://blog.crossmint.com/introducing-goat-great-onchain-agent-toolkit/"
+    ],
+    "stars_approx": "~1k",
+    "last_activity": "active",
+    "license": "MIT",
+    "language": "TypeScript",
+    "caveats": "Action/integration toolkit, not an analytics engine — it gives tools, you supply reasoning/insights. Quality varies per-plugin (200+ tools, community-contributed). Verify the specific chain/protocol plugins you need are maintained."
+  },
+  {
+    "name": "nirholas/UCAI",
+    "url": "https://github.com/nirholas/UCAI",
+    "what_it_does": "Universal Contract AI Interface: one command turns any smart-contract ABI into a production-ready MCP server exposing read (view/pure), write (simulation-first), and event-query tools to Claude/LLMs. EVM chains (Ethereum/Polygon/Arbitrum/Base/Optimism/BSC/Avalanche). Includes a 50+-pattern risk scanner and plain-English contract 'whisperer'.",
+    "relevance": "Directly useful for the 'query arbitrary on-chain contracts/events via natural language' capability — auto-generating MCP tools from ABIs is a fast path to broad protocol coverage in our analytics agent.",
+    "recommendation": "steal-pattern",
+    "verified": true,
+    "sources": [
+      "https://github.com/nirholas/UCAI"
+    ],
+    "stars_approx": "~34",
+    "last_activity": "active (56 commits)",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "COMMUNITY MCP (in Anthropic MCP Registry but not Anthropic-published), single maintainer, low adoption (34 stars). Good idea to borrow (ABI->MCP generation); evaluate carefully before depending on it in production."
+  },
+  {
+    "name": "CoinGecko Official MCP Server",
+    "url": "https://mcp.api.coingecko.com/",
+    "what_it_does": "CoinGecko's OFFICIAL remote MCP server. Exposes CEX market data (15k+ coins, prices/mcap/volume across 1000+ exchanges) AND on-chain DEX analytics via GeckoTerminal: on-chain price + liquidity for 8M+ tokens across 200+ networks. Public endpoint mcp.api.coingecko.com/mcp; authenticated Pro endpoint mcp.pro-api.coingecko.com/mcp.",
+    "relevance": "Prime OFFICIAL data dependency for an on-chain analytics agent — covers both market data and DEX/on-chain token liquidity with zero scraping, and is natively an MCP server so it drops straight into an MCP tool architecture.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "sources": [
+      "https://mcp.api.coingecko.com/",
+      "https://docs.coingecko.com/docs/mcp-server",
+      "https://mcp.pro-api.coingecko.com/"
+    ],
+    "stars_approx": "n/a (hosted service, not a starred repo)",
+    "last_activity": "active (live hosted in 2026)",
+    "license": "proprietary API (CoinGecko ToS)",
+    "language": "hosted MCP (HTTP)",
+    "caveats": "Official-API access (not scraping). Free public tier exists but Pro pricing tiers are NOT shown on the docs page fetched (docs URL 404'd on direct fetch; confirmed via CoinGecko endpoints + search). Verify Pro/Analyst pricing and rate limits before relying on it for high-volume on-chain queries."
+  },
+  {
+    "name": "Bitquery Official MCP Server",
+    "url": "https://docs.bitquery.io/",
+    "what_it_does": "Bitquery's OFFICIAL MCP server over its unified GraphQL schema: indexed real-time + historical on-chain data across 40+ chains (wallet txns, token transfers, DEX trades, balances) via natural language. Also WebSocket subscriptions, Kafka, and Solana gRPC streams. Powers data for Nansen, Chainalysis, Binance.",
+    "relevance": "The deepest OFFICIAL on-chain data backend on this list — exactly the wallet-flow / smart-money / token-transfer querying our agent needs, exposed as an MCP server. Strong candidate as the core on-chain data dependency.",
+    "recommendation": "adopt-as-dependency",
+    "verified": true,
+    "sources": [
+      "https://bitquery.io/",
+      "https://docs.bitquery.io/",
+      "https://github.com/bitquery"
+    ],
+    "stars_approx": "n/a (commercial API + MCP, not a single starred repo)",
+    "last_activity": "active (V2 schema + MCP in 2026)",
+    "license": "proprietary API (Bitquery ToS)",
+    "language": "GraphQL / hosted MCP",
+    "caveats": "Official-API access (not scraping). Paid GraphQL/streaming product; concrete pricing tiers NOT shown on the pages reviewed (treat as 'not public' until you check the pricing page). Query-point/streaming costs can scale fast for heavy on-chain analytics."
+  },
+  {
+    "name": "ekailabs/dune-mcp-server (community) + Dune AI",
+    "url": "https://github.com/ekailabs/dune-mcp-server",
+    "what_it_does": "MCP server bridging Dune Analytics to AI agents — exposes preset/echo endpoints (DEX metrics, EigenLayer operator/AVS stats, Solana token balances) so agents can pull curated on-chain query results. Separately, Dune itself added native AI agents that turn natural language into SQL over indexed chain data.",
+    "relevance": "Dune is the de-facto on-chain SQL analytics layer; an MCP bridge lets our agent reuse community-built dashboards/queries instead of recomputing metrics. Good for higher-level curated on-chain analytics (TVL, DEX volume, cohort flows).",
+    "recommendation": "reference-only",
+    "verified": true,
+    "sources": [
+      "https://mcpservers.org/servers/ekailabs/dune-mcp-server",
+      "https://nansen.ai/post/top-crypto-analytics-platforms-2025"
+    ],
+    "stars_approx": "low (community MCP)",
+    "last_activity": "ecosystem active in 2026 (Dune AI agents live as of Apr 2026)",
+    "license": "varies (community MCP) / Dune API ToS",
+    "language": "hosted/community MCP",
+    "caveats": "This MCP bridge is COMMUNITY, not Dune-official; Dune's own native AI agents are the official path. Underlying Dune API is paid (pricing not captured here — verify). Use as a reference for wiring Dune queries into the agent; prefer Dune's official API/agent for production."
+  },
+  {
+    "name": "Etherscan & DeFiLlama community MCP servers",
+    "url": "https://github.com/huahuayu/etherscan-mcp-server",
+    "what_it_does": "Etherscan MCP (Go) exposes multi-chain Etherscan block-explorer data (txns, contract verification, address analytics) to LLMs; dcSpark/mcp-server-defillama exposes DeFiLlama TVL/yield/protocol data. Both are thin MCP wrappers over the respective official APIs.",
+    "relevance": "Cheap/free building blocks for the on-chain read surface: Etherscan for address/contract/tx lookups, DeFiLlama for TVL/yield. Easy to drop into an MCP tool registry alongside CoinGecko/Bitquery for redundancy.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "sources": [
+      "https://github.com/TensorBlock/awesome-mcp-servers/blob/main/docs/finance--crypto.md",
+      "https://github.com/dcSpark/mcp-server-defillama"
+    ],
+    "stars_approx": "low (multiple small community repos)",
+    "language": "Go / TypeScript",
+    "license": "varies (mostly MIT, per-repo)",
+    "last_activity": "varies per repo (verify individually)",
+    "caveats": "COMMUNITY wrappers (no official Etherscan/DeFiLlama MCP). Underlying Etherscan API has free + paid tiers (rate-limited free key); DeFiLlama is largely free/open. Vet each wrapper's maintenance individually — many are one-off repos. Borrow the wrapper pattern or wrap the official APIs yourself."
+  },
+  {
+    "name": "TensorBlock/awesome-mcp-servers (finance--crypto)",
+    "url": "https://github.com/TensorBlock/awesome-mcp-servers/blob/main/docs/finance--crypto.md",
+    "what_it_does": "Curated, categorized catalog of finance/crypto MCP servers — distinguishes official vendor servers (Bitcompare yield, Sharpe derivatives, LI.FI, deBridge, Relay) from community ones (Etherscan, DeFiLlama, CoinGecko wrappers). Useful map of the MCP data/tool landscape.",
+    "relevance": "Best single index for sourcing on-chain data/tool MCP servers to plug into our agent, and for telling official vs community apart — saves us rediscovering the provider landscape.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "sources": [
+      "https://github.com/TensorBlock/awesome-mcp-servers/blob/main/docs/finance--crypto.md"
+    ],
+    "stars_approx": "n/a (subpage of a large awesome-list)",
+    "last_activity": "active (maintained list)",
+    "license": "list/docs (CC-style, per-repo for entries)",
+    "language": "Markdown",
+    "caveats": "It's a directory, not code — entries vary wildly in quality/maintenance; verify each individually. Official/community labels are curator-assigned, double-check before depending. Many 'official' entries are trading infra (LI.FI/deBridge/Relay), not pure analytics."
+  },
+  {
+    "name": "georgezouq/awesome-ai-in-finance",
+    "url": "https://github.com/georgezouq/awesome-ai-in-finance",
+    "what_it_does": "Large curated list of LLMs, deep-learning strategies, datasets, and tools for financial markets (incl. crypto trading agents, RL, sentiment, backtesting frameworks).",
+    "relevance": "Discovery index to round out our survey — points to additional agent frameworks, backtesting libs, and strategy patterns beyond the on-chain-specific repos found here.",
+    "recommendation": "reference-only",
+    "verified": true,
+    "sources": [
+      "https://github.com/georgezouq/awesome-ai-in-finance"
+    ],
+    "stars_approx": "several k",
+    "last_activity": "maintained list (verify recency of individual entries)",
+    "license": "list (CC-style)",
+    "language": "Markdown",
+    "caveats": "Finance-broad, not on-chain-specific; many entries are TradFi/equities or older. Use only as a lead generator; each linked repo needs its own staleness/license check."
+  },
+  {
+    "name": "9992D/crypto-ai-hedge-fund",
+    "url": "https://github.com/9992D/crypto-ai-hedge-fund",
+    "what_it_does": "A crypto adaptation/proof-of-concept of virattt/ai-hedge-fund (explicitly credits the TradFi original). Python, Poetry, src/ layout. Educational PoC.",
+    "relevance": "Evidence of how the ai-hedge-fund persona-ensemble pattern gets ported to crypto; minor reference if we follow the same template.",
+    "recommendation": "reject",
+    "verified": true,
+    "sources": [
+      "https://github.com/9992D/crypto-ai-hedge-fund"
+    ],
+    "stars_approx": "~3",
+    "last_activity": "unknown / likely stale; abandoned-looking PoC",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "Near-zero adoption (3 stars), no documented data sources/agents/architecture on the page, on-chain capability unconfirmed, looks like a throwaway PoC. Not worth adopting or deeply referencing — the upstream ai-hedge-fund is the better template."
+  },
+  {
+    "name": "The-Swarm-Corporation/CryptoAgent",
+    "url": "https://github.com/The-Swarm-Corporation/CryptoAgent",
+    "what_it_does": "Simple modular agent (built on the 'swarms' framework) that fetches CoinGecko/CoinMarketCap market data and produces GPT-4o-mini text summaries. Etherscan key referenced in env but not used for real on-chain analysis.",
+    "relevance": "Minimal market-data-summarizer pattern; far below the multi-provider+on-chain depth we want. Mostly a thin wrapper.",
+    "recommendation": "reject",
+    "verified": true,
+    "sources": [
+      "https://github.com/The-Swarm-Corporation/CryptoAgent"
+    ],
+    "stars_approx": "~50",
+    "last_activity": "low activity (14 commits)",
+    "license": "MIT",
+    "language": "Python",
+    "caveats": "NOT on-chain analytics despite the name — just summarizes CoinGecko/CMC market data; Etherscan integration is stubbed. Single-LLM, shallow. Nothing here we couldn't build trivially; reject."
+  }
+]

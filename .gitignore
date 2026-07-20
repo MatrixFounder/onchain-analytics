@@ -1,0 +1,57 @@
+# >>> agentic-development framework >>>
+# Managed by the agentic-development installer. Do not edit between the markers.
+
+# Framework content (symlink or local copy) and installer state.
+/.agentic-development/
+/.agentic-installer-state.json
+
+# Framework components.
+/.agent/skills/*
+/.agent/workflows/*
+/.agent/tools
+/.agent/rules
+/.agent/sessions
+/System
+/.claude/skills/*
+/.claude/commands/*
+/.claude/agents/*
+/.claude/hooks
+/.claude/settings.json
+/.claude/settings.local.json
+
+# Claude bridge files (gitignored — they import the framework).
+/CLAUDE.agentic.md
+/CLAUDE.local.md
+
+# .claude runtime locks.
+/.claude/*.lock
+# <<< end agentic-development framework <<<
+
+# --- Project (non-framework) ---
+# Framework symlink — the trailing-slash rule /.agentic-development/ above matches the
+# directory form only; the real entry is a symlink to ../agentic-development, so ignore it
+# explicitly (a committed symlink pointing outside the repo would dangle on clone).
+/.agentic-development
+
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# Secrets — ADR-001 D10: .env is chmod 0600 and MUST never be committed
+.env
+.env.*
+!.env.example
+
+# Node / TypeScript build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Local state — DB-SCHEMA-CONCEPT §1.10: all state lives in DATA_DIR; SQLite files never committed
+/DATA_DIR/
+*.db
+*.sqlite
+*.sqlite3
+*-wal
+*-shm

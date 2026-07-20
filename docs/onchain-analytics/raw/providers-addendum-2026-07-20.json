@@ -1,0 +1,116 @@
+{
+  "_addendum": {
+    "date": "2026-07-20",
+    "reason": "Пробел, найденный при верификации coin-analytics-диалога: privacy-метрики (shielded pool, shield/unshield flows) и Dash Platform L2 не покрыты ни одним из 20 провайдеров основного рана 2026-06-30.",
+    "provenance": "ad-hoc workflow coin-insights-best-practices (run wf_f294ed8b-f82, verified 2026-07-19); полные вердикты и источники: ../../../reference/coin-analytics-dialog-verification.md (путь от этого файла; от корня репо: reference/coin-analytics-dialog-verification.md)",
+    "note": "Файл дополняет providers.json (в этом же каталоге), НЕ изменяя сырые данные исходного рана. Числа — as-of 2026-07-19, перепроверять перед действием."
+  },
+  "providers": [
+    {
+      "name": "Dash Platform (DAPI)",
+      "category": "L2 platform-native data API — Dash Platform/Evolution: identities, data contracts, documents, credits, shielded pool (Orchard)",
+      "api_available": "yes",
+      "api_type": "gRPC (packages/dapi-grpc/protos/platform/v0/platform.proto) + официальные SDK: rs-sdk (Rust), js-evo-sdk (TS)",
+      "auth": "none — публичные децентрализованные эндпоинты, отдаваемые evonode-ами; без ключа и метеринга",
+      "mcp_available": "unknown",
+      "mcp_detail": "MCP-обвязка не искалась в этом дополнении (задача — зафиксировать первичный источник данных). При интеграции — проверить live.",
+      "pricing_summary": "Бесплатно (протокольный публичный API). Оговорка (as-of 2026-07-19): шесть shielded-эндпоинтов добавлены в Platform v4.0.0 и по docs «not yet available on public nodes» — до их появления источник shielded-метрик: Platform Explorer API или собственный evonode.",
+      "data_coverage": [
+        "Identities, Data Contracts, Documents, Credits (getTotalCreditsInPlatform) — состояние Dash Platform L2",
+        "6 shielded-эндпоинтов (v4.0.0): getShieldedPoolState, getShieldedNotesCount, getMostRecentShieldedAnchor, getShieldedAnchors, getShieldedEncryptedNotes, getShieldedNullifiers",
+        "6 типов shielded state-transition (protocol-ref, типы 15–20): Shield, Shielded Transfer, Unshield, Shield from Asset Lock, Shielded Withdrawal, IdentityCreateFromShieldedPool",
+        "ВАЖНО: только ТЕКУЩЕЕ состояние — getShieldedPoolState не принимает height/timestamp (запрос несёт только флаг prove), history-эндпоинтов нет → временной ряд копится только собственными снапшотами (CONFIRMED, verification #5)",
+        "Shielded pool покрывает credits на L2 Platform, НЕ платёжный L1 (там остаётся CoinJoin); Orchard активирован в mainnet 2026-07-17 (CONFIRMED, verification #1)"
+      ],
+      "signal_strengths": [
+        "Единственный первичный (протокольный) источник по Dash Platform L2 — ground truth для всех производных метрик",
+        "Уникальные privacy-метрики, которых нет ни у одного провайдера основной матрицы: баланс shielded pool в credits, число notes, shield/unshield-переходы",
+        "Бесплатно и без ключа — соответствует принципу free-first роадмапа"
+      ],
+      "weaknesses": [
+        "Нет истории: current-state-only для shielded-метрик (подтверждено по platform.proto + rs-sdk FetchCurrent) — каждый день без снапшоттера безвозвратно теряет adoption-кривую",
+        "Shielded-эндпоинты описаны только в latest-доках (stable ветка docs их не содержит) и пока не развёрнуты на публичных нодах",
+        "Поверхность очень молодая: v4.0.0 релиз 2026-07-01, mainnet-активация Orchard 2026-07-17 — API может меняться (v4.1-dev уже в default-ветке)"
+      ],
+      "homepage": "https://www.dash.org",
+      "docs_url": "https://docs.dash.org/projects/platform/en/latest/docs/reference/dapi-endpoints.html",
+      "confidence": "high",
+      "sources": [
+        "https://raw.githubusercontent.com/dashpay/platform/v4.1-dev/packages/dapi-grpc/protos/platform/v0/platform.proto (primary — RPC-определения, shielded lines 123–134)",
+        "https://docs.dash.org/projects/platform/en/latest/docs/reference/dapi-endpoints.html (primary — официальный список эндпоинтов)",
+        "https://docs.dash.org/projects/platform/en/latest/docs/protocol-ref/shielded-pool.html (primary — 6 типов transition, Orchard/Halo 2)",
+        "https://github.com/dashpay/platform/releases (primary — v4.0.0 от 2026-07-01)",
+        "https://raw.githubusercontent.com/dashpay/platform/v4.1-dev/packages/rs-sdk/src/platform/types/shielded.rs (primary — FetchCurrent, отсутствие height-параметра)"
+      ]
+    },
+    {
+      "name": "Dash Platform Explorer (platform-explorer.com, pshenmic)",
+      "category": "community explorer + keyless REST API над Dash Platform L2 — единственный на сегодня готовый источник ИСТОРИИ Platform-метрик",
+      "api_available": "yes",
+      "api_type": "REST (JSON), база https://platform-explorer.pshenmic.dev",
+      "auth": "none (keyless, без регистрации)",
+      "mcp_available": "unknown",
+      "mcp_detail": "Не искалось; open-source бэкенд позволяет при желании поднять свой инстанс.",
+      "pricing_summary": "Бесплатно; open-source (github.com/pshenmic/platform-explorer, 38 релизов, v2.4.0 от 2026-07-13). Community-сервис одного мейнтейнера — SLA нет.",
+      "data_coverage": [
+        "/status → identities: 3 038, data contracts: 59, documents: 17 537, credits in circulation (live-проверка 2026-07-19, verification #4)",
+        "/transactions/shielded/statistic → баланс shielded pool (~5.01 трлн credits as-of 2026-07-19), totalShieldedIn/Out, число переходов (133 shielded-транзакции за всё время as-of 2026-07-19)",
+        "History-эндпоинты API: shield/unshield history, identities history; в UI — графики Jun–Jul 2026, richlist",
+        "Через 2 дня после mainnet-активации Orchard уже отдавал shielded-метрики — закрывает окно, пока DAPI shielded-эндпоинты не появились на публичных нодах"
+      ],
+      "signal_strengths": [
+        "Единственный найденный готовый источник исторических рядов по Dash Platform (частично опровергает тезис «нет никакой аналитики по Dash Platform»)",
+        "Keyless REST — снапшоттер пишется за часы; open-source бэкенд = запасной путь self-host",
+        "Активно поддерживается: релиз v2.4.0 за 4 дня до активации Orchard"
+      ],
+      "weaknesses": [
+        "Вторичный источник (собственный индексер проекта) — числа кросс-чекать с DAPI, когда shielded-эндпоинты станут доступны",
+        "Один мейнтейнер, без SLA и без версионирования API — эндпоинты могут измениться молча",
+        "Глубина/полнота истории не аудирована (проверено наличие эндпоинтов и live-значения, не полнота рядов)"
+      ],
+      "homepage": "https://platform-explorer.com",
+      "docs_url": "https://platform-explorer.com/api",
+      "confidence": "high",
+      "sources": [
+        "https://platform-explorer.pshenmic.dev/status (primary — live-значения 2026-07-19)",
+        "https://platform-explorer.pshenmic.dev/transactions/shielded/statistic (primary — live shielded-статистика 2026-07-19)",
+        "https://platform-explorer.com/api (primary — описание эндпоинтов; JS-rendered)",
+        "https://github.com/pshenmic/platform-explorer (primary — исходники, релизы)"
+      ]
+    },
+    {
+      "name": "ZecHub (zechub-wiki open data)",
+      "category": "open-data репозиторий — исторические on-chain ряды Zcash (shielded supply по пулам, total supply, недельные метрики); калибровочная база для privacy-adoption порогов",
+      "api_available": "yes",
+      "api_type": "статические JSON поверх raw.githubusercontent.com (без API-сервера)",
+      "auth": "none",
+      "mcp_available": "none",
+      "mcp_detail": "Не применимо — статические файлы данных.",
+      "pricing_summary": "Бесплатно, open-source (ZecHub/zechub-wiki).",
+      "data_coverage": [
+        "shielded_supply.json — ряд shielded-массы ZEC 2017–2026 (обновлялся 2026-07-19)",
+        "total_supply.json — ряд общего предложения ZEC",
+        "shieldedStatsJSON.json — недельные метрики Nov 2024 – Jul 2026",
+        "Сверка 2026-07-19: значение Orchard-пула (3 769 670.6 ZEC) байт-в-байт совпадает у zkp.baby и mainnet.zcashexplorer.app; итог 4 385 630.68 ZEC = 26.06% supply (verification #3)"
+      ],
+      "signal_strengths": [
+        "Единственный найденный бесплатный ИСТОРИЧЕСКИЙ ряд shielded-пула ZEC — база калибровки порогов privacy-adoption для Dash (~8–8.8% в начале 2024 → пик ~31% апр 2026 → 26.06% as-of 2026-07-19)",
+        "Данные лежат в git — воспроизводимость и дифф-аудит бесплатно"
+      ],
+      "weaknesses": [
+        "Community-wiki: каденс обновлений не гарантирован — перед использованием сверять хвост ряда с live-explorer (zkp.baby / mainnet.zcashexplorer.app)",
+        "Методология сборки рядов не аудирована (проверена сходимость значений на одну дату, не весь ряд)"
+      ],
+      "homepage": "https://zechub.wiki",
+      "docs_url": "https://github.com/ZecHub/zechub-wiki",
+      "confidence": "high",
+      "sources": [
+        "https://raw.githubusercontent.com/ZecHub/zechub-wiki/main/public/data/zcash/shielded_supply.json (primary)",
+        "https://raw.githubusercontent.com/ZecHub/zechub-wiki/main/public/data/zcash/total_supply.json (primary)",
+        "https://raw.githubusercontent.com/ZecHub/zechub-wiki/main/public/data/zcash/shieldedStatsJSON.json (primary)",
+        "https://zkp.baby/ (primary — кросс-чек live)",
+        "https://mainnet.zcashexplorer.app/ (primary — кросс-чек live)"
+      ]
+    }
+  ]
+}

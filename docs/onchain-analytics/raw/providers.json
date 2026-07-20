@@ -1,0 +1,890 @@
+[
+  {
+    "name": "Nansen",
+    "category": "smart-money intelligence / on-chain analytics (entity-labeled wallet + token + smart-money data)",
+    "api_available": "yes",
+    "api_type": "REST (HTTPS, all endpoints POST with JSON bodies)",
+    "auth": "API key (header `apikey: YOUR_API_KEY`); key generated in-app at app.nansen.ai/auth/agent-setup. No OAuth. MCP server uses a separate header `NANSEN-API-KEY`.",
+    "mcp_available": "official",
+    "mcp_detail": "First-party hosted remote MCP server at https://mcp.nansen.ai/ra/mcp — streamable HTTP transport (clients often connect via `npx -y mcp-remote` or `claude mcp add --transport http nansen https://mcp.nansen.ai/ra/mcp`); auth via NANSEN-API-KEY header; ~24 tools (smart-money holdings/perp trades, token holders/flows/DEX trades/screener/OHLCV/quant+Nansen scores, address portfolio/transactions/counterparties/related-addresses, wallet PnL, Hyperliquid leaderboard, general_search). Docs: https://docs.nansen.ai/mcp/overview. A community wrapper also exists (patriondigital-nansen-mcp on LobeHub) but is NOT the official one.",
+    "pricing_summary": "Subscription simplified on 2025-09-25 to two plans: Free ($0/mo; 100 trial API credits + 10 credits/day refill) and Pro ($49/mo billed annually, or $69/mo monthly; includes 2,000 API credits to start, credits expire 1yr from purchase). Old Pioneer (~$99-129/mo) and Professional ($999+/mo) tiers were RETIRED and folded into the single Pro plan. API is credit-metered per call: most foundational endpoints = 1 credit; Smart Money / indicators ≈ 5 credits; up to 150 (Token God Mode), 500 (Profiler premium labels), and 750 credits (Agent Expert Mode). Extra credits purchasable on either plan; exact $-per-credit for top-ups is not public.",
+    "data_coverage": [
+      "37 networks total: 24 EVM (Ethereum, Arbitrum, Avalanche, Base, Bitlayer, BNB Chain, Celo, Chiliz, Gravity, HyperEVM, IOTA EVM, Linea, Mantle, Monad, Optimism, Plasma, Polygon, Ronin, Scroll, Sei, Sonic, Unichain, Viction, zkSync) + 13 non-EVM (Algorand, Aptos, Bitcoin, Hyperliquid, NEAR, Solana, Stacks, Starknet, Stellar, SUI, TON, Tron)",
+      "NOTE: chain support varies by endpoint (Smart Money ~8 chains, Token God Mode ~7, Profiler ~5)",
+      "Smart Money: curated top ~5,000 highest-performing wallets by realized profit — net flows, holdings, historical holdings, DEX trades, Jupiter DCAs, Hyperliquid perp trades",
+      "Token God Mode: token screener/discovery, holder analysis (with labels), token flows (hourly by segment), DEX trades, transfers, who-bought/sold, OHLCV, quant/Nansen scores, perp positions",
+      "Profiler (wallet): current + historical balances, transactions, wallet PnL summary & per-token PnL, counterparties, related addresses (first funders/signers/deployed contracts), labels",
+      "Entity labels: human-readable labels on hundreds of millions of addresses (exchanges, funds, market makers, notable individuals)",
+      "Additional: Agent (natural-language query, fast/expert modes), Prediction Markets (Polymarket categories/markets/orderbooks/trades/PnL), Portfolio/DeFi positions, Backtesting (historical data)"
+    ],
+    "signal_strengths": [
+      "Best-in-class smart-money tracking: curated ~5k top-performing wallets with net inflow/outflow per token — directly surfaces accumulation/distribution signals",
+      "Proprietary entity labeling at massive scale (exchanges, funds, market makers, named investors) — turns raw addresses into actionable who-is-doing-what intelligence",
+      "Token God Mode flow intelligence segmented by holder type (smart money vs exchanges vs retail) for early token rotation/momentum signals",
+      "Wallet Profiler with realized PnL per wallet/token — identify and follow consistently profitable traders",
+      "Cross-chain breadth incl. Solana, Bitcoin, Hyperliquid perps and Polymarket prediction-market signals",
+      "First-party hosted MCP + 'Agent' NL endpoint make it unusually agent/LLM-ready for autonomous trading-signal pipelines"
+    ],
+    "weaknesses": [
+      "Credit-metered API can get expensive at scale; premium calls (Profiler premium labels 500cr, Agent Expert 750cr) burn the monthly allowance fast and exact $-per-extra-credit is not published",
+      "Chain coverage is uneven — full 37-chain list does not apply to every endpoint (Smart Money/Profiler cover far fewer)",
+      "Smart-money universe is a curated/opaque set (top ~5k wallets) — selection methodology not fully transparent",
+      "MCP server runs over plain HTTP (clients need --allow-http flag), a minor security/config wrinkle",
+      "No free unlimited tier for production API use; Free plan's 10 credits/day refill is only enough for light testing",
+      "Labels/PnL are Nansen-proprietary — vendor lock-in and no easy way to independently audit label accuracy"
+    ],
+    "homepage": "https://www.nansen.ai/",
+    "docs_url": "https://docs.nansen.ai/",
+    "confidence": "high",
+    "sources": [
+      "https://docs.nansen.ai/api/overview.md",
+      "https://docs.nansen.ai/getting-started/credits.md",
+      "https://docs.nansen.ai/getting-started/authentication.md",
+      "https://docs.nansen.ai/reference/chains.md",
+      "https://docs.nansen.ai/mcp/overview.md",
+      "https://docs.nansen.ai/mcp/connecting.md",
+      "https://docs.nansen.ai/mcp/tools.md",
+      "https://nansen.ai/api",
+      "https://academy.nansen.ai/articles/0414043-new-pricing-explained",
+      "https://academy.nansen.ai/articles/9412804-pro-plan-explained",
+      "https://github.com/orgs/nansen-ai/repositories",
+      "https://lobehub.com/mcp/patriondigital-nansen-mcp"
+    ]
+  },
+  {
+    "name": "Surf (AskSurf.ai) — Surf API / Surf Skill (developer data API for AI agents)",
+    "category": "Aggregated crypto data API + analyst-LLM layer for AI agents (smart-money labels, on-chain SQL, market/social/prediction-market data). NOT a single raw-data source — it is a unifier that 'replaces 60+ APIs'.",
+    "api_available": "yes",
+    "api_type": "REST (OpenAPI 3 spec published); includes a raw on-chain SQL endpoint over ClickHouse",
+    "auth": "API key as Bearer token (Authorization: Bearer $SURF_API_KEY). 30 free credits/day anonymously with NO key; full access requires signup at agents.asksurf.ai and pay-as-you-go credits. Separate billing from the consumer Chat/Studio subscription.",
+    "mcp_available": "official",
+    "mcp_detail": "Official: github.com/asksurf-ai/surf-mcp (MIT) → npm @surf-ai/surf-mcp. Transport: stdio, launched via `npx -y @surf-ai/surf-mcp` (or bunx), env SURF_API_KEY. Dynamically generates 12 grouped tools covering 86 endpoints from api.asksurf.ai/gateway/openapi.json via @surf-ai/sdk (HTTP under the hood). Tools: surf_market, surf_exchange, surf_wallet, surf_token, surf_social, surf_project, surf_onchain, surf_search, surf_prediction_market, surf_fund, surf_news, surf_web. Low adoption (~6 stars, 2 forks; last commit Apr 3 2026). Also official: surf-skills (agent Skill, 71 stars, v0.0.6 Jun 12 2026, `npx skills add asksurf-ai/surf-skills`) and surf-cli (Go, the binary the Skill drives).",
+    "pricing_summary": "Developer/API side: 30 free credits/day with no key; then pay-as-you-go credits (buy after signup at agents.asksurf.ai) — credit-metered, each response returns meta.credits_used; per-call credit cost is not published as a public table. Launch promo: $200K in free API credits given away, tiered $3–~$100 per claimant. Consumer side (asksurf.ai Chat/Studio): two paid tiers Pro and Max (Max has 7 sub-tiers); Studio iterations/data-calls/DB-ops consume monthly-refreshing credits. Exact USD/month for Pro & Max are NOT public (pricing page is JS-rendered and did not expose figures). The 'Plus' tier was discontinued 2026-04-01. API key billing is separate from the Chat/Studio subscription.",
+    "data_coverage": [
+      "83+ commands across ~15 data domains (12 grouped tool families via MCP / 86 endpoints)",
+      "Market: real-time prices from 16 CEX (Binance, OKX, Bybit, Bitget, Coinbase...), OHLCV candles, pre-computed technical indicators (RSI, MACD, Bollinger, EMA, SMA), rankings, Fear & Greed, liquidations, futures/options, ETF flows",
+      "Exchange/derivatives: order books, funding rates, long/short ratios, perpetuals; dedicated Hyperliquid domain (positions, fills, traders)",
+      "Wallet: balances, transfers, DeFi positions, net worth, and named wallet LABELS — maps 100M+ wallets across 13 networks (exchanges, whales, funds, protocols, bridges, MEV bots)",
+      "On-chain SQL: direct SQL access to 80+ analyst-ready ClickHouse tables (DEX trades, transfers, prices, TVL, lending, staking, bridges) across 7+ chains, sub-second queries; plus tx lookup, gas prices, structured-query",
+      "Token: holders, DEX trades, transfers, unlock schedules, tokenomics",
+      "Social: X/Twitter profiles, posts, followers, sentiment, mindshare, smart-follower metrics",
+      "Prediction markets: Polymarket & Kalshi (markets, trades, prices, volume, open interest/odds)",
+      "Project/DeFi: protocol profiles, TVL, DeFi rankings; Fund: VC fund profiles/portfolios/rankings",
+      "News & Search: crypto news from 30+ sources auto-classified by AI (category/sentiment/relevance) + Surf-original research; cross-domain entity search; surf_web fetches arbitrary URLs as markdown",
+      "Aggregates 200+ data sources across 40+ blockchains; explicitly markets itself as replacing 60+ independent APIs"
+    ],
+    "signal_strengths": [
+      "Smart-money / entity labeling: named identification of 100M+ wallets (whales, funds, CEX, MEV bots) across 13 networks — strong for following-the-money trade signals",
+      "Unifies normally-siloed signal sources (CEX+DEX prices, on-chain, social mindshare, prediction-market odds, derivatives/Hyperliquid) behind one credit-metered key and one OpenAPI spec",
+      "Raw on-chain SQL over 80+ pre-modeled ClickHouse tables lets agents compute custom signals (flows, accumulation, bridge activity) without running their own indexer",
+      "Pre-computed technical indicators + 16-CEX aggregated prices reduce client-side compute for market signals",
+      "Built specifically for LLM/agent consumption: natural-language→endpoint mapping, structured JSON envelope with credits_used, official MCP + Skill so Claude/Cursor/Windsurf call it with zero glue code",
+      "AI-classified news + Surf-original research adds an analyst/LLM layer on top of raw data (the part that differs from a pure data provider)"
+    ],
+    "weaknesses": [
+      "Aggregator, not the source of truth: it wraps third-party providers, so latency, accuracy and coverage inherit upstream limits, and underlying vendors are not individually named/auditable",
+      "Pricing opacity: consumer Pro/Max USD tiers and per-call credit costs are not published in machine-readable form (marketing pages are JS-rendered); hard to model unit economics in advance",
+      "Credit-metered everything (including raw SQL and web fetch) can make heavy/exploratory signal workloads costly vs. a flat-rate raw provider",
+      "Official MCP repo is early-stage and lightly maintained (~6 stars, last commit Apr 3 2026) and only stdio — no documented hosted/remote MCP endpoint",
+      "On-chain SQL limited to ~7 chains despite '40+ blockchains' marketing for higher-level endpoints; depth varies by chain",
+      "Newer entrant (2026), small GitHub traction; durability/SLA for production agents unproven",
+      "Some headline numbers are inconsistent across pages (83+ vs 86 vs 90+ endpoints, 13 vs 40+ chains) — marketing rounding, treat with caution"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://github.com/asksurf-ai/surf-mcp",
+      "https://raw.githubusercontent.com/asksurf-ai/surf-skills/main/skills/surf/SKILL.md",
+      "https://github.com/asksurf-ai/surf-skills",
+      "https://github.com/asksurf-ai",
+      "https://www.npmjs.com/package/@surf-ai/surf-mcp",
+      "https://docs.asksurf.ai/cli/mcp",
+      "https://agents.asksurf.ai/",
+      "https://asksurf.ai/blog/en/surf-skill-the-crypto-data-api-for-ai-agents",
+      "https://asksurf.ai/faq",
+      "https://asksurf.ai/pricing",
+      "https://www.bitget.com/news/detail/12560605350502",
+      "https://x.com/SurfAI/status/2042087718654730461",
+      "https://api.asksurf.ai/gateway/openapi.json"
+    ]
+  },
+  {
+    "name": "Dune Analytics — Query / Execution API",
+    "category": "querying-platform (custom SQL over decoded on-chain data + community dashboards)",
+    "api_available": "yes",
+    "api_type": "REST. api.dune.com/api/v1: POST /query/{query_id}/execute -> execution_id; GET /execution/{execution_id}/status; GET /execution/{execution_id}/results (JSON) & /results/csv; GET /query/{query_id}/results (latest cached); POST /execution/{execution_id}/cancel. Supports filters on cached results + dynamic query params. Plus Trino connector (SQL warehouse) and dbt connector.",
+    "auth": "API key (X-Dune-API-Key header). Included on all plans, including Free (subject to credit spend limit).",
+    "mcp_available": "official",
+    "mcp_detail": "OFFICIAL hosted Dune MCP: Remote MCP over Streamable HTTP at https://api.dune.com/mcp/v1 (POST /mcp/v1 calls, GET /mcp/v1 stream resume). Auth: OAuth 2.0 + PKCE (S256, scope mcp:dune:full) for browser agents, or API key via x-dune-api-key header / ?api_key=. Exposes 29 tools in 6 categories: Discovery (search docs, find tables by protocol/chain, list chains, contract lookup), Query Lifecycle (create/fetch/update/execute + results), Materialized Views (build/schedule/refresh), Visualization (charts/counters/tables), Dashboard (create/update/archive), Account (credit usage) + 2 resources (DuneSQL perf, function refs). Docs: docs.dune.com/api-reference/agents/mcp. Setup via `claude mcp add`, Cursor/Claude Desktop config, OpenCode/Codex CLI. SEPARATELY, several COMMUNITY (unofficial) MCP servers exist over the REST API: kukapay/dune-analytics-mcp (Python, most popular), ekailabs/dune-mcp-server (TS/Bun), demomagic/dune-mcp-server, deacix/dune-mcp — stdio, not maintained by Dune.",
+    "pricing_summary": "Credit-based, 4 tiers: Free ($0, 2,500 credits/mo), Analyst, Plus, Enterprise (custom). Older naming 'Plus ~$399/mo' and 'Premium ~$999/mo' appears in 2024-25 sources (POSSIBLY STALE — current docs/pricing use Free/Analyst/Plus/Enterprise; exact base $ + included credits for Analyst/Plus are NOT clearly published as of 2026-06). Overage per 100 credits: Free $5.00; Analyst $1.875 monthly / $1.625 annual; Plus $1.596 monthly / $1.396 annual; Enterprise custom. API export conversion: Free & Analyst = 1 credit / 1,000 datapoints; Plus = 1 credit / 5,000 datapoints (datapoint = rows*columns, or bytes/100, whichever greater). Rate limits: Free ~15 rpm low + 40 rpm high (~55 combined); Plus 70 + 200 (~270); Enterprise 350+/1000+ rpm; per-IP 1000 rps all plans.",
+    "data_coverage": [
+      "Custom SQL (DuneSQL / Trino dialect) over decoded on-chain data across 100+ blockchains",
+      "Decoded contract events & calls; raw + abstraction tables (dex.trades, nft.trades, prices, etc.)",
+      "Query execution + cached results (persist 90 days), CSV + JSON export",
+      "Thousands of reusable community queries & dashboards",
+      "Materialized views / scheduled refreshes",
+      "Warehouse/BI access via Trino (Hex, Metabase, DBeaver) and dbt write pipelines"
+    ],
+    "signal_strengths": [
+      "Best-in-class for ARBITRARY custom SQL over decoded multi-chain on-chain data — any metric expressible in SQL",
+      "Massive library of community queries/dashboards (DEX volume, TVL, protocol revenue, wallet flows) reusable as building blocks",
+      "Execution API parametrizes & re-runs any saved query programmatically (execute -> poll status -> fetch results/CSV)",
+      "Official SDKs (Python dune-client, TS @duneanalytics/client, Go duneapi-client-go) auto-handle auth/polling/pagination",
+      "Enterprise warehouse access via Trino + dbt connectors for production pipelines",
+      "Official hosted MCP makes the full query/dashboard lifecycle agent-callable with OAuth or API key"
+    ],
+    "weaknesses": [
+      "NOT realtime — query queue + run + poll latency; analytics-oriented, not low-latency trading signals (use Sim APIs for realtime)",
+      "Credit costs scale with datapoints returned; large exports get expensive on lower tiers",
+      "Requires SQL knowledge + familiarity with Dune table schema/abstractions",
+      "Exact Analyst/Plus base prices & included credit allotments not transparently published (only Free=2,500 + overage rates are concrete)",
+      "Free-tier rate limits (~55 rpm) and credit cap are low for production"
+    ],
+    "confidence": "high",
+    "homepage": "https://dune.com",
+    "docs_url": "https://docs.dune.com/api-reference/overview/introduction",
+    "sources": [
+      "https://docs.dune.com/api-reference/overview/introduction",
+      "https://docs.dune.com/api-reference/executions/execution-object",
+      "https://docs.dune.com/api-reference/agents/mcp",
+      "https://docs.dune.com/api-reference/overview/rate-limits",
+      "https://docs.dune.com/learning/how-tos/pricing-faqs",
+      "https://dune.com/pricing",
+      "https://github.com/duneanalytics",
+      "https://github.com/kukapay/dune-analytics-mcp"
+    ]
+  },
+  {
+    "name": "Dune Sim APIs (sim.dune.com)",
+    "category": "raw EVM/SVM data — realtime multichain wallet/transaction data (DeFi/market data adjacent)",
+    "api_available": "yes",
+    "api_type": "REST. EVM: /v1/evm/balances/{address}, /evm/activity, /evm/transactions, /evm/token-info, /evm/token-holders, /evm/collectibles, /evm/subscriptions (webhooks). SVM (beta): /beta/svm/balances, /beta/svm/transactions (param chains=solana|eclipse|all). JSON responses, HTTPS only.",
+    "auth": "API key via X-Sim-Api-Key header; HTTPS-only (plain HTTP fails). Keys generated in Sim dashboard at sim.dune.com. Single key works across all supported chains.",
+    "mcp_available": "unknown",
+    "mcp_detail": "No dedicated official Sim-specific MCP server documented; the official Dune MCP (api.dune.com/mcp/v1) targets the Query/Dashboard API, not Sim's realtime endpoints. No clearly official Sim MCP found as of 2026-06.",
+    "pricing_summary": "Usage-based (Compute Units / CUs), scales free -> enterprise. Free/developer tier reported at up to ~1,000,000 CUs and 5 RPS for development; billed by monthly CU volume (e.g. Balances ~1 CU per chain per request); 'no hidden fees'. NOTE: sim.dune.com/pricing now 308-redirects to dune.com/pricing (Sim pricing folded into unified Dune pricing) — exact paid CU bundles/$ tiers NOT clearly public as of 2026-06; the 1M CU / 5 RPS free figure is from secondary/search sources, treat as approximate / POSSIBLY STALE.",
+    "data_coverage": [
+      "Realtime EVM data across 60+ chains (Ethereum, Base, Arbitrum, Polygon, Optimism, etc.)",
+      "Realtime SVM data (Solana + Eclipse) — currently BETA",
+      "Token balances (native + ERC20; SPL + SPL-2022 on SVM) with enriched metadata + USD prices",
+      "Wallet activity feed (native/ERC20/NFT transfers, chronological)",
+      "Granular transactions (block info, gas, tx type)",
+      "Token info/metadata + realtime USD price; token holders ranked by balance; NFT collectibles (ERC721/ERC1155)",
+      "Webhook subscriptions (push on balance changes / activity / transactions)"
+    ],
+    "signal_strengths": [
+      "Realtime, indexer-free reads — built for low-latency wallet/portfolio/activity signals (complements Dune's batch SQL)",
+      "Single API key covers 60+ EVM chains plus Solana/Eclipse — strong multichain breadth",
+      "Balances enriched with USD pricing out of the box (live portfolio valuation)",
+      "Webhook/subscription push model for realtime balance-change & activity triggers (event-driven signals)",
+      "Token-holders + activity endpoints useful for near-realtime smart-money / wallet-flow tracking"
+    ],
+    "weaknesses": [
+      "SVM/Solana endpoints in BETA (/beta/svm/...) with different params (chains vs chain_ids); only balances + transactions so far",
+      "Not arbitrary-SQL — fixed endpoint set; custom metrics require falling back to the Dune Query API",
+      "Exact paid pricing/CU bundles not transparently published (pricing page redirects to unified Dune pricing); free-tier CU/RPS from secondary sources",
+      "5 RPS free-tier cap is low for high-throughput realtime use",
+      "Pricing/branding consolidation with Dune in flux — standalone Sim pricing references may be stale"
+    ],
+    "confidence": "medium",
+    "homepage": "https://sim.dune.com",
+    "docs_url": "https://docs.sim.dune.com",
+    "sources": [
+      "https://docs.sim.dune.com",
+      "https://docs.sim.dune.com/evm/overview",
+      "https://docs.sim.dune.com/svm/overview",
+      "https://sim.dune.com/pricing",
+      "https://sim.dune.com/api",
+      "https://zerion.io/blog/zerion-api-vs-dune-sim-api/"
+    ]
+  },
+  {
+    "name": "Arkham Intelligence",
+    "category": "smart-money intelligence / entity & wallet de-anonymization (address attribution + fund-flow tracking)",
+    "api_available": "yes",
+    "api_type": "REST + WebSocket (real-time transfer streaming)",
+    "auth": "API key (sent in 'API-Key' header). Access granted via an application/request form at intel.arkm.com/api; no self-serve signup visible.",
+    "mcp_available": "community",
+    "mcp_detail": "No official Arkham MCP server. Community options only: (1) Vyntral/arkham-intelligence-claude-skill on GitHub (a Claude skill wrapping the API, not a true MCP server); (2) Apify actors 'Arkham Intelligence Wallet Data Scraper' and 'Arkham AI Transaction Analyzer' (scrapers exposed via Apify's API/MCP, not official); (3) Unofficial Arkham API reverse-engineering repos (cipher-rc5.github.io/UnofficialArkhamAPI). None are first-party.",
+    "pricing_summary": "Not public. Operates on a freemium model for the web platform (free tier + paid Pro/Enterprise per third-party reviews), but the developer API has no published price list or tier names — pricing/rate-limit tiers are quoted after an access request at intel.arkm.com/api. WebSocket usage is metered (1 API credit per transfer; caps of 10,000 transfers/hour, 1,000,000/month). The 'new' Arkham API was announced Feb 17, 2026 (recent).",
+    "data_coverage": [
+      "Entity attribution: addresses linked to real-world entities (exchanges, funds, whales, protocols, DAOs, individuals) via the 'Ultra' address-matching engine",
+      "Endpoints: /intelligence/address, /intelligence/entity, /intelligence/entity_predictions (ML-predicted addresses), /intelligence/contract (deployer), /labels, /tag, /cluster (wallet clustering)",
+      "Fund-flow & transactions: /transfers, /swaps (DEX), /tx/{hash}, /counterparties (who an address/entity trades with), token top-flow & volume",
+      "Portfolio & history: /portfolio (entity/address, point-in-time + daily time-series), /history (value over time)",
+      "Token analytics: top/trending tokens, top holders by CoinGecko ID or contract address",
+      "Multi-chain: Ethereum, Bitcoin, Solana, Base, Arbitrum, Polygon, Optimism, Avalanche, BNB Smart Chain and more (full list via /chains)",
+      "User-defined custom entities (create/update address groupings)",
+      "Separate product (not the API): Arkham Intel Exchange — an ARKM-token marketplace for buying/selling wallet labels & intel via bounties/auctions (2.5% maker / 5% taker fee; 90-day exclusive access window)"
+    ],
+    "signal_strengths": [
+      "Best-in-class entity/identity attribution — de-anonymizes wallets to named real-world entities (its core differentiator vs pure raw-data providers)",
+      "Whale & smart-money tracking: counterparty graphs, entity portfolios and historical holdings, ML entity-prediction to expand wallet clusters",
+      "Real-time whale-movement alerting via WebSocket transfer stream",
+      "Deep fund-flow tracing across exchanges, funds and protocols (multi-chain), useful for following money in/out of CEXs",
+      "Token holder concentration and DEX swap flow for early/whale-positioning signals"
+    ],
+    "weaknesses": [
+      "Pricing and API tiers are not transparent — must request access, hard to budget",
+      "No official MCP server; agent integration requires building your own wrapper or relying on unofficial/scraper tooling",
+      "Attribution can include probabilistic/ML 'predictions' (entity_predictions) that may be wrong — labels are not all human-verified",
+      "Heavy endpoints (/transfers, /swaps, /counterparties, top_flow, volume) are throttled to 1 req/sec, limiting bulk historical pulls",
+      "API is relatively new (rebuilt Feb 2026) — endpoint surface may still be changing",
+      "Macro/statistical on-chain indicators (SOPR, MVRV, etc.) are NOT its focus — it is entity/flow-centric, not a market-indicator engine"
+    ],
+    "confidence": "high",
+    "homepage": "https://intel.arkm.com",
+    "docs_url": "https://intel.arkm.com/api (docs at arkm.com/api/docs; mock at docs.intel.arkm.com)",
+    "sources": [
+      "https://intel.arkm.com/api/docs",
+      "https://api-guide.intel.arkm.com/",
+      "https://github.com/Vyntral/arkham-intelligence-claude-skill/blob/main/ARKHAM_API_DOCUMENTATION.md",
+      "https://info.arkm.com/announcements/the-new-arkham-api",
+      "https://info.arkm.com/announcements/arkham-intel-exchange",
+      "https://intel.arkm.com/api",
+      "https://apify.com/muhammetakkurtt/arkham-intelligence-wallet-data-scraper/api"
+    ]
+  },
+  {
+    "name": "Glassnode",
+    "category": "macro on-chain & market-data analytics (statistical on-chain indicators / Studio API)",
+    "api_available": "yes",
+    "api_type": "REST (JSON). Base URL https://api.glassnode.com/v1/ . Also CLI tool and Excel add-in.",
+    "auth": "API key, passed either as 'X-Api-Key' header or 'api_key' query parameter. Key generated at studio.glassnode.com/settings/api. Requests consume data credits tied to subscription tier.",
+    "mcp_available": "official",
+    "mcp_detail": "Official Glassnode MCP server at https://mcp.glassnode.com (HTTP transport, typically via the mcp-remote wrapper). Currently in BETA with temporary free public access (no key needed, but public access is capped to 30-day time ranges); with an X-Api-Key it consumes API credits like the REST API. Exposes ~6-7 tools: get_assets_list, get_metrics_list, get_asset_metrics, get_metric_metadata, fetch_metric, fetch_bulk_metrics. Supports 1,700+ assets and 900+ metrics. Docs: docs.glassnode.com/integrations-and-tools/glassnode-mcp-server",
+    "pricing_summary": "Per live studio.glassnode.com/pricing (2026): ADVANCED $49/mo billed annually — 40+ market + 270+ on-chain metrics, 24h resolution, 4yr history, personal use; full REST API NOT included (only separate 'API Light': 14-day history, daily resolution, 50 calls/day). PROFESSIONAL = custom pricing — 180+ market + 570+ on-chain metrics, up to 10-min resolution, 15+ yr history, commercial license; full Professional API is a paid add-on with credit-based usage (50→unlimited calls/mo) incl. bulk/point-in-time/entity-adjusted/per-exchange endpoints. GLASSNODE VECTOR from $749/mo (separate cycle-navigation product). ENTERPRISE/Data Shares custom. NOTE: some third-party reviews still cite a free 'Standard' tier and a ~$26.10/mo Advanced price — that appears stale vs the current pricing page; flag as possibly outdated.",
+    "data_coverage": [
+      "Indicators: SOPR (and aSOPR, SOPR by age cohort), MVRV (incl. entity-adjusted MVRV, MVRV-Z score), NUPL, NVT, Reserve Risk, Realized Cap, dormancy/lifespan",
+      "Market metrics: price, market cap, realized price, futures/options/derivatives data",
+      "Exchange flows: exchange in/out flows, exchange balances, net position change, per-exchange breakdowns (Professional)",
+      "Addresses & entities: active/new/sending/receiving addresses, addresses by balance band, entity-adjusted metrics (dedupes intra-entity transfers)",
+      "Supply distribution: HODL waves, supply held by cohorts (LTH/STH, whales, miners), unspent supply, UTXO age",
+      "Mining: miner balances, hash rate, block stats; Breakdowns endpoints for cohort decomposition",
+      "Coverage: 1,700+ assets/tokens and 900+ metrics; resolutions from 10-minute (Professional) up to daily; history up to 15+ years"
+    ],
+    "signal_strengths": [
+      "Gold-standard macro on-chain indicators: SOPR, MVRV / MVRV-Z, NUPL, Reserve Risk for cycle-top/bottom and profit-taking regime signals",
+      "Entity-adjusted metrics that strip intra-entity noise for a cleaner economic signal (a Glassnode differentiator)",
+      "Exchange-flow and exchange-balance data for supply-shock / sell-pressure signals, with per-exchange granularity on Professional",
+      "Cohort/HODL-wave and address-balance-band breakdowns (LTH vs STH, whale accumulation) for distribution-phase signals",
+      "Deep history (15+ yr) and fine resolution (10-min) on Professional for backtesting indicator strategies",
+      "First-party, beta-free MCP server makes it directly usable by LLM trading/analytics agents"
+    ],
+    "weaknesses": [
+      "Real API access is expensive/gated: Advanced ($49/mo) only ships the crippled 'API Light' (14-day history, daily res, 50 calls/day); meaningful programmatic use needs Professional, which is custom-priced (effectively four figures historically)",
+      "Aggregate/statistical metrics, NOT wallet-level identity — it will not tell you WHO a wallet is (that's Arkham's lane)",
+      "Credit-based metering on top of subscription can make heavy/bulk pulls costly",
+      "MCP server is beta ('tools subject to change') and public (keyless) access is capped to 30-day ranges, limiting agent-driven historical analysis without a paid key",
+      "Tier gating: best signals (SOPR variants, entity-adjusted, per-exchange, point-in-time) sit in higher tiers; lower tiers see reduced metric set and resolution",
+      "Some publicly indexed pricing is inconsistent/possibly stale (free Standard tier and $26.10 Advanced no longer on the live page)"
+    ],
+    "confidence": "high",
+    "homepage": "https://glassnode.com",
+    "docs_url": "https://docs.glassnode.com",
+    "sources": [
+      "https://docs.glassnode.com/",
+      "https://docs.glassnode.com/basic-api/api",
+      "https://docs.glassnode.com/basic-api/endpoints/indicators",
+      "https://docs.glassnode.com/guides-and-tutorials/metric-guides/sopr",
+      "https://docs.glassnode.com/guides-and-tutorials/metric-guides/mvrv",
+      "https://docs.glassnode.com/integrations-and-tools/glassnode-mcp-server.md",
+      "https://mcp.glassnode.com/",
+      "https://studio.glassnode.com/pricing"
+    ]
+  },
+  {
+    "name": "Allium",
+    "category": "Enterprise on-chain data warehouse / indexed blockchain data platform (raw + decoded + analytics)",
+    "api_available": "yes",
+    "api_type": "mixed (REST Realtime APIs + SQL via Explorer/data-warehouse + streaming: Kafka, GCP Pub/Sub, AWS SNS, WebSocket)",
+    "auth": "API key (X-API-KEY header; keys generated at app.allium.so/settings/api-keys). Also supports machine/agent payments (x402 EIP-712 USDC-on-Base, Tempo MPP) to pay-per-call without signup.",
+    "mcp_available": "official",
+    "mcp_detail": "https://mcp.allium.so — official, maintained by Allium Labs (installer package @allium-labs/mcp). HTTP transport, API-key auth via X-API-KEY header. Tools: explorer_run_query (saved queries), explorer_run_sql (raw SQL), explorer_fetch_schema, explorer_search_schemas, plus Realtime API tools. Marketed as 'AgentHub' (agents.allium.so). Installer supports 13+ clients (Claude Code, Cursor, Claude Desktop, VS Code/Copilot, Codex, Cline, Windsurf, Warp, Gemini CLI, Goose, Zed, Opencode) plus manual setup for ChatGPT/Claude/Copilot/Gemini and LangGraph/LangChain. Docs: docs.allium.so/ai/mcp/overview.",
+    "pricing_summary": "Not public for enterprise — quote-based, contact sales. Web sources indicate enterprise contracts start in the high four figures/month (~$5K+/mo) and scale with event volume; streaming costs more than batch warehouse drops (SLA/throughput). Developer tier: free API key with limited daily usage at app.allium.so for evaluation; production via account upgrade OR per-call machine payments (USDC on Base via x402 / Tempo MPP, no plan commitment).",
+    "data_coverage": [
+      "50-80+ chains for full data warehouse (decoded), 20+ chains for low-latency Realtime API, marketing cites up to 150+ chains for normalized data via MCP/AgentHub",
+      "Raw tables: blocks, transactions, logs, traces",
+      "Decoded events per protocol",
+      "Token tables: ERC-20/721/1155 transfers, token prices (current/historical/volume), metadata",
+      "DEX tables, wallet labels/entity tags, cross-chain transfers",
+      "Realtime: prices, balances/holdings, P&L, tx history, DeFi positions (LP/lending/staking/spot/perps) at 3-5s freshness, ~50-100ms response, P50 3s latency, 99.9% uptime, 100K+ RPS",
+      "Delivery: Datashares into customer's own Snowflake / BigQuery / Databricks; Datastreams (Kafka/PubSub/SNS/WS); Beam custom filtered pipelines"
+    ],
+    "signal_strengths": [
+      "Enterprise data-warehouse model: decoded tables delivered directly into the customer's own Snowflake/BigQuery/Databricks — best for heavy custom SQL analytics and joining on-chain with internal data",
+      "Curated wallet labels / entity tagging (exchanges, protocols, funds) enables smart-money / entity-attribution signals",
+      "Cross-chain transfer + DEX tables normalized across 50+ chains in one schema",
+      "Low-latency Realtime REST (3-5s freshness, 100K+ RPS) for production apps and balances/P&L/DeFi-position signals",
+      "Official MCP + agent-native machine payments (x402/Tempo) positions it well for autonomous trading/analytics agents"
+    ],
+    "weaknesses": [
+      "Pricing opaque and enterprise-gated (high four-figures+/month); not hobbyist-friendly beyond the eval free key",
+      "Full decoded warehouse coverage (50+ chains) is broader than the 20+ chain low-latency Realtime API — real-time chain set is narrower",
+      "Chain-count figures vary across pages (50+/80+/150+), suggesting marketing inconsistency",
+      "Warehouse delivery (Datashares) requires you to bring your own Snowflake/BigQuery/Databricks — added cost/complexity"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://docs.allium.so/",
+      "https://docs.allium.so/ai/mcp/overview",
+      "https://agents.allium.so/",
+      "https://www.allium.so/product/allium-developer",
+      "https://www.allium.so/",
+      "https://docs.allium.so/ai/machine-payments/tempo-mpp",
+      "https://www.allium.so/blog/5-workflows-you-can-build-with-allium-mcp-today/"
+    ]
+  },
+  {
+    "name": "Bitquery",
+    "category": "Indexed multi-chain blockchain data API (GraphQL) + real-time streaming; strong DEX/trading data",
+    "api_available": "yes",
+    "api_type": "mixed — primary unified GraphQL (V1 40+ chains, V2); plus real-time streaming via WebSocket (GraphQL subscriptions), Kafka, and Solana/EVM gRPC (CoreCast); SQL/ClickHouse access and bulk cloud datashares (Snowflake/BigQuery/S3/Azure)",
+    "auth": "API key (OAuth-style access token / Bearer) for GraphQL & streams; MCP uses OAuth 2.1 browser sign-in or query-token. Free tier requires signup; Commercial via sales.",
+    "mcp_available": "official",
+    "mcp_detail": "https://mcp.bitquery.io — official, production-grade, backed by Bitquery's proprietary trading dataset. Connect via `npx -y mcp-remote https://mcp.bitquery.io/mcp` (mcp-remote utility; standard MCP/JSON-RPC, no manual stdio/SSE config). Auth: OAuth 2.1 with browser sign-in (caches ~30-day refresh token) OR query-token (?token=ory_...) for autonomous agents. Tools (small surface): per-trade swap rows (price/USD/trader wallet), pre-built OHLC candles (1s–daily), token economics (mkt cap/FDV/supply), outlier-filtered volume — currently across ~8 chains (trading dataset). Clients: Claude Desktop/Web, ChatGPT, Cursor, Claude Code, VS Code, any MCP client. Note: also exposed as a community-listed toolkit on Composio.",
+    "pricing_summary": "Points-based, usage-driven (revised model rolled out June 2024). Official pricing page (bitquery.io/pricing) currently lists only: Developer = FREE ($0/mo, 1,000 points trial, 10 req/min, 2 concurrent streams, 10 rows/request); Commercial = custom 'talk to our team' (unlimited API calls/no throttling, custom points & streams, SLA, SQL/Cloud/Kafka, dedicated support); Datashares & Exports = custom. Realtime queries charged 5 points per 'cube'. Streams are sold separately as N concurrent streams (no row/rate limits) and do NOT consume points on paid plans. POSSIBLY STALE: third-party/older sources (G2, ~2024) cite fixed tiers Team $249 / Startup $449 / Growth $999 / Business $1999 — these are NOT on the current official page and appear deprecated; treat fixed dollar tiers as stale.",
+    "data_coverage": [
+      "40+ blockchains via one unified GraphQL schema (V1 docs cite 40+; EVM + non-EVM incl. Solana, Tron, etc.)",
+      "DEX: trades/swaps across 300+ DEX protocols, 1.8M+ token pairs (Uniswap V2/V3/V4, PancakeSwap, Curve, Raydium, Jupiter, Aerodrome, etc.)",
+      "OHLCV candles at any interval; USD token prices derived from on-chain swaps",
+      "Liquidity/pools (reserves, TVL, LP events), new-pair detection",
+      "Wallet analytics: top traders by volume/PnL/trade count",
+      "Mempool / pending transactions streaming (EVM)",
+      "Raw transfers, transactions, balances, smart-contract events; historical + real-time on every dataset",
+      "Bulk datashares on Snowflake/BigQuery/S3/Azure"
+    ],
+    "signal_strengths": [
+      "Best-in-class real-time DEX trade & OHLCV streaming: WebSocket ~1s, Kafka <500ms, gRPC/CoreCast <300ms — built for trading bots, scanners, new-pair/liquidity alerting",
+      "New-pair-the-moment-it's-created detection + per-trade swap rows with trader wallet = strong alpha/sniping & smart-money signals",
+      "Single unified GraphQL schema across 40+ chains lowers integration cost vs per-chain indexers",
+      "Mempool/pending-tx streaming for front-run/MEV-aware signals",
+      "Official OAuth-based MCP exposes trading-grade OHLC + token economics directly to agents"
+    ],
+    "weaknesses": [
+      "Paid pricing not transparent on official page (Commercial = contact sales); points model can be hard to forecast/budget",
+      "Free Developer tier is very limited (1k points trial, 10 req/min, 10 rows/request, 2 streams) — evaluation-only",
+      "Public third-party pricing figures are stale/inconsistent with the current usage-based model",
+      "MCP trading dataset currently limited to ~8 chains (narrower than the 40+ GraphQL coverage)",
+      "Heavy real-time streaming requires the Commercial plan; concurrent streams billed separately"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://bitquery.io/pricing",
+      "https://docs.bitquery.io/docs/ide/points/",
+      "https://docs.bitquery.io/docs/ide/paid/",
+      "https://docs.bitquery.io/docs/mcp/mcp-server/",
+      "https://bitquery.io/products/dex",
+      "https://bitquery.io/products/data-streams",
+      "https://docs.bitquery.io/v1/docs/Schema/Cronos/dextrades/",
+      "https://bitquery.io/blog/new-pricing-june-2024",
+      "https://www.g2.com/products/bitquery/reviews"
+    ]
+  },
+  {
+    "name": "The Graph",
+    "category": "Decentralized indexing protocol — custom subgraphs (GraphQL) + Token API (REST) + Substreams streaming; querying platform",
+    "api_available": "yes",
+    "api_type": "mixed — GraphQL (custom Subgraphs via Gateway) + REST (Token API, OpenAPI spec, powered by Pinax) + Substreams (gRPC firehose streaming into custom sinks); newer 'Amp' database",
+    "auth": "Gateway API key from Subgraph Studio for subgraph GraphQL queries; JWT/Bearer access token (thegraph.market) for Token API REST. Billing on Arbitrum (GRT) or credit card.",
+    "mcp_available": "official",
+    "mcp_detail": "TWO official MCP servers (open-source, implement Anthropic MCP), announced by The Graph: (1) Subgraph MCP — endpoint https://subgraphs.mcp.thegraph.com/sse (SSE transport), auth via Gateway API key from Subgraph Studio; tools fetch subgraph schema + execute GraphQL across the network (15,000+/thousands of subgraphs). (2) Token API MCP — endpoint https://token-api.mcp.thegraph.com/ , auth via thegraph.market JWT ACCESS_TOKEN. Clients: Claude Desktop, Cline, Cursor, ChatGPT. SEPARATE community server also exists: kukapay/thegraph-mcp (MIT, NOT official; tools getSubgraphSchema/querySubgraph, THEGRAPH_API_KEY) and PaulieB14/subgraph-mcp-skills. Docs: thegraph.com/docs/en/ai-suite/subgraph-mcp/ and /token-api-mcp/.",
+    "pricing_summary": "Subgraph queries: Free Plan = 100,000 queries/month free; beyond that $2 per 100,000 queries (usage-based; e.g. 300K queries = $4/mo). Pay with credit card or crypto (GRT on Arbitrum; needs ETH on Arbitrum for gas). Unlimited subgraph creation/testing included. Token API and Substreams pricing not detailed on the Studio pricing page (some Token API endpoints marked FREE, e.g. health/version/network lookups; advanced features plan-gated). Q4'25 trend: Substreams revenue up ~4x QoQ while traditional subgraph query fees down ~8.7% QoQ.",
+    "data_coverage": [
+      "60+ networks/chains for indexing (Ethereum, Polygon, Arbitrum, Solana, Bitcoin, Base, Optimism, Avalanche, and more)",
+      "Custom Subgraphs: any smart-contract event/entity the developer defines (fully custom indexing) — 15K+ deployed subgraphs, 75K+ projects, 1.27T+ queries served, 100+ indexer nodes",
+      "Token API (REST, via Pinax): token balances, transfers, holders, NFT data, DEX info, OHLC/prices across ~5 primary chains (Ethereum, Base, Arbitrum, Solana, Tron) + 23+ listed",
+      "Substreams: high-throughput streaming/firehose into custom sinks (gRPC)",
+      "Amp: blockchain-first database (newer product)"
+    ],
+    "signal_strengths": [
+      "Custom subgraph indexing is uniquely flexible — define exactly the protocol/event entities you need (no other vendor lets you author arbitrary indexed schemas) for bespoke DeFi/NFT/DAO/gaming analytics",
+      "Massive ecosystem of 15K+ existing subgraphs covers most major protocols out-of-the-box (queryable via one Gateway)",
+      "Substreams gRPC firehose for high-throughput real-time pipelines into custom sinks (good for backfills + live signal generation)",
+      "Token API gives standardized balances/transfers/holders/OHLC without writing a subgraph",
+      "Transparent, cheap usage pricing ($2/100K queries) and dual official MCP servers (Subgraph + Token API) make it agent- and developer-friendly"
+    ],
+    "weaknesses": [
+      "Subgraphs require development effort to author/deploy — not turnkey for raw 'give me all DEX trades' without a matching subgraph; quality/coverage varies by community-authored subgraph",
+      "Real-time DEX-trade streaming is weaker/less turnkey than Bitquery; subgraphs have indexing lag and are query-pull not low-latency push (Substreams fills streaming but needs setup)",
+      "Token API real-time chain set (~5 primary) is much narrower than the 60+ indexing networks",
+      "Decentralized billing in GRT on Arbitrum (gas in ETH) adds friction vs pure SaaS (credit card option mitigates)",
+      "Token API/Substreams pricing not clearly published; ecosystem fee streams (Horizon, multiple data services) add complexity",
+      "Two official MCPs plus several community ones can confuse which to adopt"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://thegraph.com/docs/en/subgraphs/billing/",
+      "https://thegraph.com/studio-pricing/",
+      "https://thegraph.com/",
+      "https://forum.thegraph.com/t/mcp-servers-subgraph-token-api-help-setup/6628",
+      "https://thegraph.com/docs/en/ai-suite/subgraph-mcp/introduction/",
+      "https://thegraph.com/docs/en/ai-suite/token-api-mcp/introduction/",
+      "https://app.pinax.network/docs/api/",
+      "https://github.com/kukapay/thegraph-mcp",
+      "https://github.com/PaulieB14/subgraph-mcp-skills"
+    ]
+  },
+  {
+    "name": "Covalent / GoldRush (goldrush.dev)",
+    "category": "unified multi-chain raw + DeFi/market on-chain data API (balances, transactions, tokens, NFTs, DEX, pricing) with AI-agent tooling",
+    "api_available": "yes",
+    "api_type": "REST (also JSON-RPC passthrough + WebSocket Streaming API in beta; first-party TS/JS, Python, Rust SDKs)",
+    "auth": "API key — Bearer token (Authorization: Bearer KEY); also Basic-auth username or ?key= query param. Plus keyless x402 pay-per-request (agent pays per call, no account/key).",
+    "mcp_available": "official",
+    "mcp_detail": "Official: github.com/covalenthq/goldrush-mcp-server, npm @covalenthq/goldrush-mcp-server. TypeScript, built on @modelcontextprotocol/sdk + @covalenthq/client-sdk. Transports: stdio (default) + HTTP. Exposes 26 tools (marketing says 27+) across balances/transactions/NFTs/pricing/DEX/cross-chain/Bitcoin. STALE/RISK FLAG: repo ARCHIVED 2026-02-24, last release v0.0.4 on 2025-07-30, only 14 stars — appears superseded by the newer GoldRush Agent Skills approach.",
+    "pricing_summary": "Free Trial: $0, 25,000 credits, 4 RPS, 14 days. Vibe Coding: $10/mo, 10,000 credits/mo, 4 RPS, flex credits $0.00077/credit. Professional: $250/mo, 300,000 credits/mo, 50 RPS, auto-scaling flex credits. Inner Circle (Enterprise): custom (SLA/NDA/dedicated). Also resold on Google Cloud Marketplace & QuickNode from ~$50/mo. Credit cost varies per endpoint. x402: pay-per-request in stablecoins on Base (testnet live, mainnet pending as of May 2026) — fixed price for balances/NFTs, tiered S/M/L/XL for variable-length data; concrete per-call USD not public.",
+    "data_coverage": [
+      "100+ chains (EVM + non-EVM): Ethereum, Base, Polygon, BNB Chain, Arbitrum, Optimism, Avalanche, plus Solana and Bitcoin",
+      "Full archival history from genesis block on every supported chain",
+      "Wallet token balances (ERC-20/721/1155 + native), spot & historical token prices",
+      "Full decoded transaction history, event logs, traces",
+      "NFT metadata + spam-collection flagging",
+      "DEX analytics (XY=K pools: volume, liquidity, swap counts, fees, LP token prices), OHLCV pricing",
+      "Security: token approvals / allowances",
+      "Token holders, gas prices, multichain balances/transactions/activity aggregation",
+      "Streaming API (public beta): sub-second token balances, new Uniswap pairs, wallet activity, OHLCV"
+    ],
+    "signal_strengths": [
+      "Clean, typed JSON normalized to one schema across 100+ chains — no raw hex/ABI decoding needed, ideal for LLM consumption",
+      "Full genesis-to-now archival data, strong for historical/backtesting and wallet-history signals",
+      "First-class AI-agent stack: official MCP server, GoldRush Agent Skills (npx skills add covalenthq/goldrush-agent-skills) that document endpoints/params/credit-costs, and x402 keyless per-request payment for autonomous agents",
+      "WebSocket Streaming API for reactive agents (new DEX pairs, prices, on-chain events)",
+      "Broad non-EVM coverage including Solana and Bitcoin under one API; 99.99% uptime SLA, SOC2, 70k+ devs claimed",
+      "DEX/DeFi pool analytics + NFT spam detection useful for trading/risk signals"
+    ],
+    "weaknesses": [
+      "Official MCP server repo is ARCHIVED (Feb 2026) with very low stars and a mid-2025 last release — likely deprecated in favor of Agent Skills; integration path is in flux",
+      "x402 micropayment rail is mainnet-pending (only Base Sepolia testnet live as of late May 2026) — not production-ready for paid agent traffic yet",
+      "Credit-based metering with per-endpoint variable costs makes cost forecasting harder; heavy/complex endpoints burn more credits",
+      "Free trial is time-boxed (14 days / 25k credits) rather than a perpetual free tier",
+      "Positioned increasingly around 'AI data availability/verifiability' narrative; some marketing tool counts (27+) differ slightly from actual repo (26)"
+    ],
+    "confidence": "high",
+    "homepage": "https://goldrush.dev/",
+    "docs_url": "https://goldrush.dev/docs/",
+    "sources": [
+      "https://goldrush.dev/pricing/",
+      "https://goldrush.dev/agents/",
+      "https://goldrush.dev/blog/goldrush-mcp-server/",
+      "https://goldrush.dev/blog/goldrush-x402-blockchain-data-for-agents/",
+      "https://github.com/covalenthq/goldrush-mcp-server",
+      "https://goldrush.dev/docs/goldrush-foundational-api/authentication",
+      "https://goldrush.dev/chains/",
+      "https://goldrush.dev/guides/how-to-use-covalent-s-dex-api-for-defi-apps/",
+      "gh repo view covalenthq/goldrush-mcp-server (verified: isArchived=true, pushedAt 2026-02-20, 14 stars, MIT)"
+    ]
+  },
+  {
+    "name": "Moralis (moralis.io / moralis.com)",
+    "category": "unified multi-chain Web3 Data API (balances, transactions, tokens, NFTs, DeFi, prices) + AI-native data layer (Cortex/MCP)",
+    "api_available": "yes",
+    "api_type": "REST (Web3 Data API, EVM + Solana; also Streams webhooks and RPC nodes). Official JS/Python SDKs.",
+    "auth": "API key — X-API-Key request header (base URL https://deep-index.moralis.io/api/v2.2). MCP server reads MORALIS_API_KEY env var.",
+    "mcp_available": "official",
+    "mcp_detail": "Official: npm @moralisweb3/api-mcp-server (run via `npx @moralisweb3/api-mcp-server`, needs MORALIS_API_KEY); repo github.com/moralisweb3/moralis-mcp-server (referenced by docs/npm; gh lookup did not resolve the exact slug — npm package is the authoritative official artifact). TypeScript wrapper over the Moralis REST API; local or cloud-deployable; integrations documented for Claude Desktop, Cursor, Windsurf. Part of 'Moralis Cortex' AI-native data layer. NOTE: a separate hosted Cortex REST chat endpoint (https://cortex-api.moralis.io/chat) is being RETIRED 2026-06-04 with users migrated to the MCP/Onchain Skills path. Many third-party community MCP repos exist (a6b8/moralis-mcp etc.) — do not confuse with official.",
+    "pricing_summary": "Free/Starter: $0, 40,000 Compute Units (CU) per day, 40 RPS, 2 RPC nodes, attribution/branding required. Starter: $49/mo (billed annually), 2,000,000 CU/mo, 40 RPS, $11.25 per extra 1M CU, attribution required. Pro: $199/mo (billed annually), 100,000,000 CU/mo, 80 RPS, 20 RPC nodes, $5 per extra 1M CU. Business: $490/mo (billed annually), 500,000,000 CU/mo, 200 RPS, unlimited RPC nodes, $4 per extra 1M CU, NO attribution required. Enterprise: custom (SLAs, 24/7 eng, committed-use discounts). (Monthly/non-annual prices are higher; some legacy pages cite Pro $249 / Business $999.)",
+    "data_coverage": [
+      "20+ EVM chains: Ethereum, Polygon, BNB Chain, Avalanche, Arbitrum, Optimism, Base, Linea, zkSync, Polygon zkEVM, Blast, Mantle, Cronos, Fantom, Gnosis, Moonbeam, Ronin, PulseChain, opBNB, Zetachain, Chiliz, etc.",
+      "Solana (non-EVM) support across Data API",
+      "Wallet token/native balances and full transaction & transfer history",
+      "NFT data: metadata, ownership, collections, transfers, prices",
+      "Token API: prices (spot/historical), metadata, holders, pair/DEX data",
+      "DeFi positions / wallet analytics",
+      "Token & wallet PnL / profitability and analytics endpoints",
+      "Streams (real-time webhook event monitoring) and RPC nodes"
+    ],
+    "signal_strengths": [
+      "Mature, widely-adopted REST Web3 Data API with deep EVM coverage and strong DeFi/token-price/NFT endpoints (good for trading and wallet-intelligence signals)",
+      "Token & wallet PnL/profitability + DeFi position endpoints are useful out-of-the-box trading analytics",
+      "AI-native layer (Cortex) lets LLMs query on-chain data in natural language; official MCP server + documented ElizaOS plugin for agent frameworks",
+      "Streams product gives real-time push (webhook) event monitoring to drive reactive signals",
+      "Simple X-API-Key auth, well-documented OpenAPI, official JS/Python SDKs; generous-feeling daily free CU allotment (40k/day)"
+    ],
+    "weaknesses": [
+      "AI layer is in transition: hosted Cortex chat API scheduled for REMOVAL 2026-06-04; integration story is migrating to MCP / 'Onchain Skills' — moving target",
+      "Official MCP GitHub slug did not resolve via gh during verification (npm package confirms official, but repo discoverability/state is unclear) — possible churn",
+      "No Bitcoin / UTXO chain coverage (EVM + Solana focused), unlike GoldRush",
+      "Free and lower paid tiers require Moralis attribution/branding (only removed at Business $490/mo+)",
+      "CU-based metering with per-endpoint cost weighting; pricing pages vary between annual vs monthly numbers (e.g., Pro shown as $199 annual vs $249 elsewhere), so verify on checkout",
+      "No keyless/agent-native micropayment option comparable to GoldRush x402"
+    ],
+    "confidence": "high",
+    "homepage": "https://moralis.com/",
+    "docs_url": "https://docs.moralis.com/web3-data-api/evm/",
+    "sources": [
+      "https://moralis.com/pricing/",
+      "https://docs.moralis.com/web3-data-api/evm/pricing-plans",
+      "https://docs.moralis.com/cortex/mcp-server",
+      "https://docs.moralis.com/cortex",
+      "https://www.npmjs.com/package/@moralisweb3/api-mcp-server",
+      "https://docs.moralis.com/web3-data-api/evm/reference/Authentication",
+      "https://docs.moralis.com/get-started/supported-chains",
+      "https://docs.moralis.com/data-api/cortex-api/overview (Cortex API retirement 2026-06-04)"
+    ]
+  },
+  {
+    "name": "DeFiLlama",
+    "category": "DeFi/market data (TVL, yields, stablecoins, fees/revenue) — aggregated protocol intelligence",
+    "api_available": "yes",
+    "api_type": "REST",
+    "auth": "none for free API; API key for Pro (key embedded in URL path)",
+    "mcp_available": "community",
+    "mcp_detail": "No official DefiLlama MCP. Multiple third-party servers: dcSpark/mcp-server-defillama (npx @mcp-dockmaster/mcp-server-defillama, stdio, ~9 stars, low maturity), IQAIcom/defillama-mcp, nic0xflamel/defillama-mcp (OpenAPI proxy). All wrap the free public REST API.",
+    "pricing_summary": "Free public API (api.llama.fi): no key, 31 endpoint groups, generous but unspecified rate limit. Pro API (pro-api.llama.fi/{API_KEY}): $300/mo, 1,000 req/min, 1M calls/month, overage $0.60 per 1,000 calls, adds 38 exclusive endpoints (token unlocks, liquidity, ETFs, bridges, RWA, treasuries, equities, advanced yields). Note: a separate $40.83/mo consumer 'Pro Analytics' dashboard subscription exists but does NOT include API access.",
+    "data_coverage": [
+      "TVL (per-protocol and per-chain, historical)",
+      "Token prices current + historical by contract address (coins API)",
+      "Stablecoins circulating supply and market cap",
+      "Yields / APY pool data",
+      "DEX volumes",
+      "Perpetuals / open interest",
+      "Fees and revenue analytics",
+      "Pro-only: token unlocks/emissions, fundraising, treasuries, hacks, bridges, ETFs, RWA, equities"
+    ],
+    "signal_strengths": [
+      "Best-in-class TVL and yield/APY coverage across hundreds of chains and protocols",
+      "Stablecoin flows and supply tracking (de-peg / liquidity-rotation signals)",
+      "Fees/revenue rankings as protocol-health and rotation signals",
+      "Fully free for core TVL/yield/stablecoin/fee data with no key — ideal for low-cost pipelines",
+      "Token unlock schedules (Pro) for supply-overhang / sell-pressure signals"
+    ],
+    "weaknesses": [
+      "Not real-time/tick-level — aggregated and somewhat lagged; weaker for intraday price signals",
+      "No official MCP server (only low-star community wrappers)",
+      "Pro tier is a steep jump ($300/mo) for unlock/bridge/RWA endpoints",
+      "Free rate limit not publicly quantified; subject to throttling",
+      "docs.llama.fi/pro-api page returns 403/404 to bots — must use api-docs.defillama.com or the DefiLlama/docs GitHub repo"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://api-docs.defillama.com/",
+      "https://github.com/DefiLlama/docs/blob/master/pro-api.md",
+      "https://defillama.com/subscription",
+      "https://github.com/dcSpark/mcp-server-defillama",
+      "https://github.com/IQAIcom/defillama-mcp"
+    ]
+  },
+  {
+    "name": "DexScreener",
+    "category": "Raw DEX data (pairs, prices, liquidity, new/boosted tokens) — multi-chain DEX terminal",
+    "api_available": "yes",
+    "api_type": "REST",
+    "auth": "none (keyless, no signup required)",
+    "mcp_available": "community",
+    "mcp_detail": "No official MCP. Community servers: janswist/mcp-dexscreener, openSVM/dexscreener-mcp-server (also on Glama), plus Apify-hosted scraper MCPs. All wrap the free public REST API (stdio for the GitHub ones).",
+    "pricing_summary": "Free, no API key. Rate limits stated in docs: 60 requests/minute for token-profiles, token-boosts, orders, ads, community-takeovers, and metas/trending endpoints; 300 requests/minute for the DEX pairs/search/tokens/token-pairs endpoints. No public paid API tier (paid offerings are for token-profile/boost listings, not API access).",
+    "data_coverage": [
+      "DEX pairs by chainId/pairId with live price, liquidity, volume, txns",
+      "Search across pairs (/latest/dex/search)",
+      "Tokens and token-pairs lookup by chain + token address",
+      "Latest token profiles and recent updates (new launches)",
+      "Token boosts (latest / top) and paid orders/listings",
+      "Trending metas (/metas/trending/v1)"
+    ],
+    "signal_strengths": [
+      "Strongest for NEW PAIR / new-token discovery and freshly listed/boosted tokens (memecoin/early-launch signals)",
+      "Live per-pair liquidity, volume, and price across many chains and DEXs in one keyless API",
+      "Boosts/profiles/trending surface social and promotional momentum signals",
+      "300 rpm on core pair/price endpoints is generous for a free, no-signup API",
+      "Zero onboarding friction — ideal for low-cost real-time DEX price/liquidity feeds"
+    ],
+    "weaknesses": [
+      "No official MCP server (community-only)",
+      "No API key means no per-user higher tier — hard ceiling at the stated rate limits",
+      "Docs are terse: auth/pricing not stated on reference page (confirmed keyless via API terms + multiple sources)",
+      "No historical OHLCV depth comparable to GeckoTerminal/Birdeye; primarily current/near-real-time snapshots",
+      "Some third-party 'DexScreener API' offerings are scrapers (Apify/ScrapingBee), not the official endpoint — easy to conflate"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://docs.dexscreener.com/api/reference",
+      "https://docs.dexscreener.com/api/api-terms-and-conditions",
+      "https://github.com/janswist/mcp-dexscreener",
+      "https://github.com/openSVM/dexscreener-mcp-server"
+    ]
+  },
+  {
+    "name": "GeckoTerminal",
+    "category": "Raw on-chain DEX data (pools, OHLCV, trending/new pools) — DEX-native market terminal",
+    "api_available": "yes",
+    "api_type": "REST",
+    "auth": "none for the free public API (no key); same data also served via CoinGecko API /onchain endpoints with a CoinGecko key",
+    "mcp_available": "official",
+    "mcp_detail": "Surfaced through CoinGecko's OFFICIAL MCP (mcp.api.coingecko.com/mcp) — the /onchain (GeckoTerminal) DEX data is exposed there. No standalone GeckoTerminal-branded MCP; treat the CoinGecko MCP as the official channel.",
+    "pricing_summary": "Free public API, no API key, currently in Beta. Public rate limit ~30 calls/minute. Higher limits require subscribing to a paid CoinGecko API plan (the same on-chain data is available via CoinGecko's /onchain endpoints), which lifts on-chain access to ~250 calls/min on paid tiers.",
+    "data_coverage": [
+      "200+ networks and 1,500+ DEXs",
+      "Pools: trending pools, new pools, top pools per network/dex",
+      "Token price, market data, metadata for 1M+ on-chain tokens (8M+ via CoinGecko /onchain)",
+      "OHLCV candlestick data per pool",
+      "Recent trades per pool",
+      "Search for pools/tokens"
+    ],
+    "signal_strengths": [
+      "Trending-pools and new-pools endpoints are excellent for early DEX momentum and fresh-launch signals",
+      "Pool-level OHLCV + trades give chart/volatility signals without running a node",
+      "Very broad network/DEX coverage (200+ chains) in a free, keyless API",
+      "Shares CoinGecko's data backbone — consistent token identity and metadata",
+      "Free tier enough for prototyping on-chain price/liquidity signals"
+    ],
+    "weaknesses": [
+      "Free rate limit is low (~30 cpm) — too tight for high-frequency polling",
+      "API officially in Beta — schema subject to change",
+      "Scaling up effectively requires paying for CoinGecko API (no cheap GeckoTerminal-only paid tier)",
+      "No GeckoTerminal-branded official MCP; you go through the CoinGecko MCP",
+      "apiguide.geckoterminal.com intro page omits hard rate-limit numbers (sourced from CoinGecko support article)"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://apiguide.geckoterminal.com/",
+      "https://www.geckoterminal.com/dex-api",
+      "https://support.coingecko.com/hc/en-us/articles/23407777579801-The-rate-limit-for-the-public-GeckoTerminal-API-is-too-low-Can-I-request-a-higher-rate-limit",
+      "https://support.coingecko.com/hc/en-us/articles/22612838274841-Does-GeckoTerminal-have-an-API"
+    ]
+  },
+  {
+    "name": "CoinGecko",
+    "category": "DeFi/market data (aggregated CEX+DEX prices, market cap, OHLC) + on-chain via GeckoTerminal /onchain",
+    "api_available": "yes",
+    "api_type": "REST",
+    "auth": "Demo API key for free tier; Pro API key for paid tiers (MCP public endpoint needs no key)",
+    "mcp_available": "official",
+    "mcp_detail": "Official CoinGecko MCP. Hosted free public server at https://mcp.api.coingecko.com/mcp (streamable HTTP) with /sse fallback — no key required. Pro/BYOK server at https://mcp.pro-api.coingecko.com/ (use your key for more tools + higher limits). Also an official npm package @coingecko/coingecko-mcp for local stdio. Exposes prices, market data, OHLC, and on-chain DEX (/onchain GeckoTerminal) tools.",
+    "pricing_summary": "Demo (free): requires free Demo key, ~30 calls/min stable, 10,000 calls/month (some sources cite up to 100 calls/min). Paid (2026): plans start ~$129/mo (Analyst, 500k calls/mo, 500 calls/min), Lite ~$499/mo, Pro ~$999/mo; Enterprise custom. Overage ~$250 per 500,000 calls. Public MCP server is free with no key (shared rate limits).",
+    "data_coverage": [
+      "Aggregated prices, market cap, volume for 15k+ coins across 1,000+ exchanges",
+      "Historical OHLC and market charts",
+      "Coin metadata, categories, exchanges, derivatives, NFTs",
+      "On-chain DEX price + liquidity for 8M+ tokens across 200+ networks via /onchain (GeckoTerminal)",
+      "Global market and dominance data"
+    ],
+    "signal_strengths": [
+      "Official, keyless, hosted MCP — easiest drop-in for AI agents (Claude, Cursor, etc.) with zero setup",
+      "Single source spanning both CEX-aggregated market data AND on-chain DEX data (GeckoTerminal) — broad signal surface",
+      "Reliable canonical token identity/metadata across 200+ chains",
+      "Strong historical OHLC for backtesting price signals",
+      "Free Demo tier plus generous public MCP good for low-cost prototyping"
+    ],
+    "weaknesses": [
+      "Aggregated/market-level — not tick or mempool granularity; weaker for sub-second or brand-new-launch signals than DexScreener/Birdeye",
+      "Free Demo limits are modest (10k calls/mo); meaningful scale jumps to $129/mo+",
+      "Public MCP shares rate limits across all users and may throttle under load",
+      "Paid tiers are pricey relative to DexScreener/GeckoTerminal-free for similar on-chain data",
+      "docs.coingecko.com/docs/mcp-server and /reference/mcp-server return 404 to bots; canonical info via mcp.api.coingecko.com and learn pages"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://docs.coingecko.com/docs/mcp-server",
+      "https://mcp.api.coingecko.com/",
+      "https://www.npmjs.com/package/@coingecko/coingecko-mcp",
+      "https://www.coingecko.com/en/api/pricing",
+      "https://www.coingecko.com/learn/ai-crypto-research-mcp"
+    ]
+  },
+  {
+    "name": "Birdeye (Birdeye Data Services, birdeye.so)",
+    "category": "Raw on-chain + DEX/market data (Solana-first, multi-chain) — token analytics & trading data",
+    "api_available": "yes",
+    "api_type": "REST + WebSocket",
+    "auth": "API key (x-api-key header); free Standard key available",
+    "mcp_available": "official",
+    "mcp_detail": "Official Birdeye MCP server (Beta) at https://mcp.birdeye.so/mcp; requires a Birdeye API key. Local stdio option via npx/Node with key passed in headers. Exposes prices, OHLCV, DEX liquidity, trending/new/gainers-losers, token metadata + security info across 10+ networks. NOTE: do not confuse with birdeye.com — an unrelated business-reviews company that also ships an MCP.",
+    "pricing_summary": "CU (compute-unit) based. Free Standard: 30,000 CU/month, 1 request/sec, limited APIs, no extra CU purchases. Paid: Lite $39/mo (1.5M CU, 15 rps), Starter $99/mo (5M CU, 15 rps), Premium $199/mo (15M CU, 50 rps, WebSocket 500 conns), Business $499/mo (60M CU, 100 rps, WebSocket), up to Business B-50 $2,050/mo (500M CU, 150 rps); Growth AutoScale / Enterprise custom. Overage e.g. $23 per 1M CU (Lite) down to $3.50 (top tiers). 60+ APIs, 8 WebSocket stream types.",
+    "data_coverage": [
+      "Real-time token prices, market cap, volume (15k+ coins / 8M+ on-chain tokens)",
+      "On-chain DEX price + liquidity across 10+ networks (Solana-first: SOL, ETH, BSC, Base, etc.)",
+      "Historical OHLCV",
+      "Trending tokens, new listings, gainers/losers, NFTs",
+      "Token metadata, social links, and security/risk info",
+      "Wallet/portfolio and trade-level data; WebSocket streams (price, txns, new pairs)"
+    ],
+    "signal_strengths": [
+      "Deepest Solana on-chain coverage — top choice for Solana memecoin/new-pair and liquidity signals",
+      "Real-time WebSocket streams (new pairs, price, large txns) for low-latency signals (paid tiers)",
+      "Built-in token security/risk metadata — useful rug/scam-filter signal",
+      "Official MCP server for direct agent access",
+      "Trending / gainers-losers / new-listing endpoints purpose-built for discovery signals"
+    ],
+    "weaknesses": [
+      "Free tier is small (30k CU/mo, 1 rps) and limited to a subset of APIs — quickly exhausted",
+      "CU model makes cost forecasting harder than flat call quotas",
+      "MCP and several features still in Beta",
+      "Requires an API key even for the MCP (unlike CoinGecko's keyless public MCP)",
+      "Name collision: birdeye.com (review/reputation SaaS) is a different company with its own MCP — high risk of source confusion",
+      "docs.birdeye.so/docs/pricing returns 403 to bots; pricing sourced via cached/scraped doc content"
+    ],
+    "confidence": "high",
+    "sources": [
+      "https://docs.birdeye.so/docs/pricing",
+      "https://docs.birdeye.so/docs/compute-unit-cost",
+      "https://docs.birdeye.so/docs/birdeye-ai",
+      "https://bds-support.birdeye.so/hc/en-us/articles/48250867942425-Birdeye-MCP-Server-Real-Time-Crypto-Data-for-AI-Applications",
+      "https://github.com/aiopinions/birdeye-mcp-server"
+    ]
+  },
+  {
+    "name": "Cielo Finance",
+    "category": "smart-money / wallet-intelligence",
+    "api_available": "yes",
+    "api_type": "REST + WebSocket",
+    "auth": "API key (obtained via build.cielo.finance portal)",
+    "mcp_available": "none",
+    "mcp_detail": "No official or notable community MCP server found as of 2026-06. Cielo offers an llms.txt index (developer.cielo.finance/llms.txt) for AI-agent consumption of docs/OpenAPI, but that is not an MCP server.",
+    "pricing_summary": "Credit-based. Free: 5,000 credits/mo, 10 credits/s, access to 1 endpoint only. Builder: $89/mo ($80.10 annual), 100,000 credits/mo, 25 credits/s. Architect: $188/mo ($169.20 annual), 250,000 credits/mo, 75 credits/s. Per-call credit costs vary by endpoint (e.g. Get Tracked Wallets 5 credits, Token PnL 5 credits, Aggregated Token PnL 20 credits). Enterprise/higher tiers not publicly priced.",
+    "data_coverage": [
+      "28 chains incl. Bitcoin, Ethereum, Solana, and other major EVM/non-EVM networks",
+      "2M+ tracked wallets",
+      "Labeled/parsed transactions (swap size, protocol, token)",
+      "Wallet PnL (realized + unrealized), token PnL, aggregated stats",
+      "Real-time transaction feed (feed-api.cielo.finance/api/v1/feed)",
+      "Smart-money / wallet discovery"
+    ],
+    "signal_strengths": [
+      "Copy-trade and wallet-alert primitives: Add Tracked Wallet endpoint with per-wallet notification config (Telegram bot, Discord channel, min USD threshold, tx types, chains)",
+      "Real-time multichain feed of complex/labeled transactions for following smart-money in near-real-time",
+      "Cross-chain PnL leaderboards / wallet stats to surface profitable traders to copy",
+      "WebSocket stream for low-latency transaction events"
+    ],
+    "weaknesses": [
+      "Strict credit + endpoint gating on free tier (only 1 endpoint accessible)",
+      "No MCP server, so agent integration requires custom REST/WS wiring",
+      "Exact per-chain coverage list and some endpoint credit costs require reading individual docs pages",
+      "Higher-volume / enterprise pricing not published"
+    ],
+    "homepage": "https://cielo.finance/",
+    "docs_url": "https://developer.cielo.finance/docs/getting-started",
+    "confidence": "high",
+    "sources": [
+      "https://developer.cielo.finance/docs/getting-started",
+      "https://api-info.cielo.finance/",
+      "https://developer.cielo.finance/reference/addtrackedwallet",
+      "https://developer.cielo.finance/reference/gettrackedwallets",
+      "https://solanacompass.com/projects/cielo"
+    ]
+  },
+  {
+    "name": "DeBank (DeBank Cloud API)",
+    "category": "DeFi / portfolio data",
+    "api_available": "yes",
+    "api_type": "REST (OpenAPI / Pro API)",
+    "auth": "API key — register at cloud.debank.com, pass header `AccessKey: <key>`",
+    "mcp_available": "community",
+    "mcp_detail": "Community: demcp/demcp-debank-mcp (maintained by the DeMCP org, NOT by DeBank). Exposes ~8 tools (get_chain_info, get_protocol_info, get_token_info, get_pool_info, get_user_assets, get_user_activities, get_user_authorizations, get_collection_nft_list). Requires a DeBank API key. No official DeBank-built MCP server found.",
+    "pricing_summary": "Unit-based billing — buy 'units' via the cloud.debank.com dashboard; each endpoint consumes units. Concrete per-unit / per-call price is NOT publicly listed (contact hello.cloud@debank.com). Pro Plan rate limit: up to 100 requests/second (higher on request).",
+    "data_coverage": [
+      "14+ EVM chains explicitly listed (ETH, BSC, xDai/Gnosis, Polygon, Fantom, OEC, HECO, Avalanche, Optimism, Arbitrum, Celo, Moonriver, Cronos, Boba) plus 'all supported chains' aggregate endpoints",
+      "User total balance (cross-chain + per-chain)",
+      "Per-protocol positions (portfolio_item_list), near-real-time (refreshed within ~1 min, 12h worst-case)",
+      "Token list / token balances, NFT lists",
+      "Transaction history / user activities",
+      "Token & NFT approval (authorization) auditing",
+      "Protocol and token metadata"
+    ],
+    "signal_strengths": [
+      "Best-in-class cross-protocol DeFi position decoding (LP, lending, staking, farms) normalized into portfolio items",
+      "Near-real-time portfolio snapshots good for whale/wallet net-worth tracking",
+      "Net-value curves (24h history) for wallet performance signals",
+      "Approval/authorization data useful for risk and exposure signals"
+    ],
+    "weaknesses": [
+      "Pricing opaque — no public per-unit numbers, must contact sales",
+      "EVM-focused; not a Solana/non-EVM realtime source",
+      "Portfolio data is snapshot/refresh-based, not a push/streaming feed (no native webhooks)",
+      "Only a community (DeMCP) MCP server, not official",
+      "Several unofficial scraper APIs exist (e.g. LuKks/debank, RapidAPI listings) that are NOT the official Cloud API and may break"
+    ],
+    "homepage": "https://cloud.debank.com/",
+    "docs_url": "https://docs.cloud.debank.com/en/readme/open-api",
+    "confidence": "high",
+    "sources": [
+      "https://docs.cloud.debank.com/en/readme/open-api",
+      "https://docs.cloud.debank.com/en/readme/api-pro-reference",
+      "https://docs.cloud.debank.com/en/readme/api-pro-reference/user",
+      "https://docs.cloud.debank.com/en/readme/auxiliary-feature/units",
+      "https://github.com/demcp/demcp-debank-mcp"
+    ]
+  },
+  {
+    "name": "Helius",
+    "category": "raw Solana data / RPC + enhanced APIs + webhooks",
+    "api_available": "yes",
+    "api_type": "REST + JSON-RPC + WebSocket (LaserStream WSS) + gRPC + Webhooks",
+    "auth": "API key (per-key, set via dashboard; HELIUS_API_KEY for tooling/MCP)",
+    "mcp_available": "official",
+    "mcp_detail": "Official: helius-labs/core-ai (npm: helius-mcp; install `claude mcp add helius npx helius-mcp@latest`). stdio transport, MIT license, actively maintained (helius-cli@2.1.0 dated 2026-06-24). Exposes 10 tools: heliusAccount, heliusWallet, heliusAsset, heliusTransaction, heliusChain, heliusStreaming (webhook CRUD), heliusKnowledge, heliusWrite, heliusCompression, expandResult. Auth via setHeliusApiKey / HELIUS_API_KEY / ~/.helius/config.json.",
+    "pricing_summary": "Free: $0/mo, 1M credits, 10 req/s (1 sendTx/s), webhooks + LaserStream WSS standard methods, no gRPC/staked. Developer: $49/mo, 10M credits ($5/extra M), 50 req/s, staked connections, transactionSubscribe. Business: $499/mo, 100M credits, 200 req/s, full LaserStream WSS+gRPC. Professional: $999/mo, 200M credits, 500 req/s, data add-ons. Enterprise: custom (1B+ credits). LaserStream gRPC/WSS data add-ons (Professional): $500/mo (5 TB) up to $6,000/mo (100 TB), overage 2 credits/0.1 MB. 99.99% uptime on paid.",
+    "data_coverage": [
+      "Solana mainnet + devnet (single-chain focus)",
+      "Standard Solana JSON-RPC + archival/historical data",
+      "Enhanced/parsed transactions (DAS) and human-readable tx history",
+      "Digital Asset Standard (DAS) API: tokens, NFTs, compressed NFTs, token holders",
+      "Wallet balances/holdings/history",
+      "Webhooks (transaction + account notifications)",
+      "LaserStream WebSocket + gRPC realtime streaming with failover"
+    ],
+    "signal_strengths": [
+      "Solana realtime webhooks (account + transaction triggers) — push notifications for on-chain events, ideal for wallet/whale alerting and copy-trade triggers",
+      "LaserStream (WSS + gRPC) low-latency streaming with automatic failover for high-frequency Solana signal pipelines",
+      "Enhanced/parsed transactions turn raw Solana into labeled swap/transfer data without custom decoding",
+      "DAS API for token-holder and compressed-NFT analytics",
+      "Official MCP server makes all of the above directly agent-accessible"
+    ],
+    "weaknesses": [
+      "Solana-only — no EVM or other chains",
+      "Credit accounting can get expensive for heavy streaming (data add-ons scale to thousands/mo)",
+      "gRPC/staked connections gated behind paid tiers",
+      "It is infrastructure/raw-data, not a curated smart-money product (signals must be derived by the consumer)"
+    ],
+    "homepage": "https://www.helius.dev/",
+    "docs_url": "https://www.helius.dev/docs/billing/plans",
+    "confidence": "high",
+    "sources": [
+      "https://www.helius.dev/pricing",
+      "https://www.helius.dev/docs/billing/plans",
+      "https://www.helius.dev/docs/agents/mcp",
+      "https://github.com/helius-labs/core-ai",
+      "https://www.helius.dev/solana-webhooks-websockets"
+    ]
+  },
+  {
+    "name": "Hyperliquid",
+    "category": "DeFi / perps market & positions data",
+    "api_available": "yes",
+    "api_type": "REST (info endpoint, POST/JSON) + WebSocket (also EVM RPC for HyperEVM)",
+    "auth": "none for public info/market data; signed wallet actions only required for the trading/exchange endpoint (placing orders)",
+    "mcp_available": "community",
+    "mcp_detail": "No official MCP server. Multiple community servers: kukapay/hyperliquid-info-mcp (read-only data/insights), mektigboy/server-hyperliquid, Impa-Ventures/hyperliquid-mcp, edkdev/hyperliquid-mcp (trading interface). These wrap the public info endpoint / Python SDK.",
+    "pricing_summary": "Free / not metered by API key. Public info & market data has no paid tier and no key. Rate-limited by IP: REST shares an aggregated weight budget of 1200 per minute; info weights vary (clearinghouseState/l2Book/allMids = weight 2, userRole = 60, most others = 20; some history endpoints add weight per 20 items). Per-address action limit: 1 request per 1 USDC cumulatively traded, with a 10,000-request starting buffer.",
+    "data_coverage": [
+      "Perps: user open positions + margin/account summary via clearinghouseState (per-address, by 42-char hex)",
+      "Funding: historical, predicted, and per-user funding history",
+      "Market data: open interest, mark/oracle/impact prices, L2 order book, mids, candles",
+      "Metadata: perp universe, margin tables, leverage, asset contexts (metaAndAssetCtxs)",
+      "Multiple perp DEXs (HIP-3 builder-deployed markets), spot markets",
+      "User fills, historical orders, TWAP slice fills"
+    ],
+    "signal_strengths": [
+      "Authoritative perps order/position data straight from the exchange (no key needed) — positions, leverage, margin, liquidation context per wallet",
+      "Funding rate (current + predicted) and open-interest signals for perps sentiment/basis strategies",
+      "Per-address clearinghouseState lets you track any wallet's open perp positions for copy/whale-tracking",
+      "L2 order book + candles + mids for microstructure and execution signals",
+      "Fully public/free for read data — low barrier for analytics"
+    ],
+    "weaknesses": [
+      "Single venue (Hyperliquid only); not multichain wallet intelligence",
+      "No native webhooks for info data — polling REST or WS subscriptions only",
+      "IP + per-address weight limits require careful request budgeting at scale",
+      "Only community MCP servers (no official); trading actions require wallet signing, adding integration complexity"
+    ],
+    "homepage": "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api",
+    "docs_url": "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals",
+    "confidence": "high",
+    "sources": [
+      "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals",
+      "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint",
+      "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits",
+      "https://github.com/kukapay/hyperliquid-info-mcp",
+      "https://github.com/Impa-Ventures/hyperliquid-mcp"
+    ]
+  }
+]
