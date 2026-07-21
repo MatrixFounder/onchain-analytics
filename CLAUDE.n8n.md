@@ -136,11 +136,13 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
 - **Re-import re-dangles ids + duplicates the workflow.** `export.sh` strips the top-level `id` but
   **not** node `credentials.id` nor `settings.errorWorkflow` — the JSON still carries the
   **source-instance** ids for `Supabase DB`, `Onchain bot`, and the `onchain-error-alert` handler.
-  Re-importing corrected JSON (a) mints
+  Re-importing corrected JSON **via the UI** (a) mints
   a **new** workflow id → a duplicate beside the old one, and (b) re-attaches those **stale
-  credential/errorWorkflow ids** that dangle on the target instance. After **any** re-import: dedup
-  (keep one active per name) and re-remap every PG/TG credential + `errorWorkflow` by name (prod
-  procedure: PROD-RUNBOOK §4). The Set-node `ChatID` is a plain param, not an id → survives import.
+  credential/errorWorkflow ids** that dangle on the target instance. Prefer
+  **`./n8n-workflows/import.sh`** (wrapper over `import_with_relink.py`): it **updates in place** by id
+  (idempotent — no duplicate), relinks credentials + `errorWorkflow` by name, and imports error-alert
+  first. After a UI re-import instead: dedup (keep one active per name) and re-remap every PG/TG
+  credential + `errorWorkflow` by name (PROD-RUNBOOK §4). The Set-node `ChatID` is a plain param → survives.
 
 **Docs**
 - **Sticky notes:** every workflow carries an **Overview** sticker (mandatory); add a per-section

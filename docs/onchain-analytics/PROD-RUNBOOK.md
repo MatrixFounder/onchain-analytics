@@ -86,11 +86,13 @@ top-level id but **not** node `credentials.id` nor `settings.errorWorkflow`). Re
      is ignored on create.
 
 ### Re-import (updating an already-deployed workflow) — hard-won
-Import does **not** overwrite — n8n mints a **new** same-name workflow (you now have two), and the
-JSON's source ids **re-dangle**. After **any** re-import: (1) **dedup** — keep exactly one *active*
-workflow per name, archive/delete the stale copy (two active same-name breaks `export.sh` and may bind
-the wrong `errorWorkflow`/executions); (2) **re-remap** every PG/TG credential + `errorWorkflow` by
-name (this table again). The Set-node `ChatID` is a plain param, not an id → it survives import.
+The **UI "Import from File"** does **not** overwrite — n8n mints a **new** same-name workflow (you now
+have two), and the JSON's source ids **re-dangle**. After a UI re-import: (1) **dedup** — keep exactly
+one *active* workflow per name, archive/delete the stale copy (two active same-name breaks `export.sh`
+and may bind the wrong `errorWorkflow`/executions); (2) **re-remap** every PG/TG credential +
+`errorWorkflow` by name (this table again). The Set-node `ChatID` is a plain param, not an id → it
+survives import. **Prefer `./n8n-workflows/import.sh` for re-syncs** — it **updates in place** by id
+(idempotent, no duplicate, relink included) — see below.
 
 ## Validate → activate → smoke test
 - `validate_workflow` (LONG nodeType form) on all three, then eyeball `connections`.
@@ -113,11 +115,16 @@ blockchair) docatch `ON CONFLICT DO NOTHING`; the two `zec_*_supply` aggregates 
 `ON CONFLICT DO UPDATE` (a blanket `DO NOTHING` silently keeps a **stale** supply), or note they
 self-heal because prod re-reads ZecHub hourly and upserts.
 
-## import.sh (optional automation)
-For a one-time deploy the UI path above is simplest. To automate, mirror `export.sh` + a relink pass:
-`POST /api/v1/workflows` each `exported/*.json` after rewriting node `credentials.id` (by name → new
-prod ids) and `settings.errorWorkflow` (→ new error-alert id), stripping `settings.binaryMode`; then
-`POST /workflows/{id}/activate`. It **must inherit `export.sh`'s discipline** (since `e3a8817`): skip
-archived copies and refuse to deploy when two workflows share a name. Ref
-`czlonkowski/n8n-lazy-loading scripts/import_with_relink.py`. Prod `N8N_URL`/API key from env — never
-the dev `.mcp.json`.
+## import.sh — bulk / repeatable import
+`./n8n-workflows/import.sh` (thin wrapper over `import_with_relink.py`; structure mirrors
+czlonkowski/n8n-lazy-loading) imports every `exported/*.json` — relinks node `credentials.id` **by
+name** to the prod ids you pass, points `settings.errorWorkflow` at the (new) `onchain-error-alert`
+(imported first), strips `settings.binaryMode`, and activates each.
+
+- **Idempotent — the safe re-sync:** a same-name workflow already on the target is **UPDATED in place**
+  (PUT by id), *not* duplicated (unlike the UI import — see §Re-import).
+- **Env (prod — never the dev `.mcp.json`):** `N8N_URL`, `N8N_API_KEY`, `PROD_PG_CRED_ID` (prod
+  "Supabase DB" credential id), `PROD_TG_CRED_ID` (prod "Onchain bot" id). **First run `DRY_RUN=1`** to
+  preview the plan.
+- *Dual-stack / `.local` hosts:* Python may resolve to IPv6 and get a proxy `503` where curl (IPv4)
+  works — point `N8N_URL` at the resolvable IPv4 if so (prod DNS is usually single-stack).
