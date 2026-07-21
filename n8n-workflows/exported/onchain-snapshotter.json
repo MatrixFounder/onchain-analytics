@@ -5,7 +5,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## onchain-snapshotter (hourly)\nDash Platform + ZEC privacy metrics → `onchain.snapshots` (Supabase).\nSources (keyless GET): platform-explorer `/status` + `/transactions/shielded/statistic`, ZecHub shielded/total supply.\nNormalize → 10 rows (`value_raw` as STRING) → executeQuery `jsonb_to_recordset` INSERT ON CONFLICT DO NOTHING (idempotent, dedup key source+asset+metric+ts_bucket).\nDoc: DB-SCHEMA §2/§8. Owner: onchain-intel.",
+        "content": "## onchain-snapshotter (hourly)\nSchedule -> PE status + PE shielded (platform-explorer) -> ZecHub shielded/total -> Zcash tip (blockchair) -> Normalize -> 2 writes.\n\nTWO CLOCKS (DB-SCHEMA S1/S8):\n- dash-platform (8 metrics): hourly state, ts=fetch, height=PE block -> Write snapshots (INSERT ... ON CONFLICT DO NOTHING).\n- zec_block_height (blockchair): hourly chain-tip, ts=block time, height=the height -> Write snapshots.\n- zec supply (ZecHub, 2 metrics): DAILY date-keyed aggregate, ts=close-date UTC midnight, height NULL, revisable -> Upsert zec supply (DO UPDATE).\n\nvalue_raw = EXACT string; base64-bound $1 param (no SQLi). Owner: onchain-intel.",
         "height": 324,
         "width": 648
       },
@@ -111,14 +111,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// onchain-snapshotter — normalize the 4 source responses into snapshot rows.\n// Canon (DB-SCHEMA §1/§8): value_raw is a STRING (never parse credits to a number); ts epoch-ms UTC.\nconst ts = Date.now();\nconst ts_bucket = Math.floor(ts / 3600000) * 3600000;\n\nconst status = $('PE status').first().json || {};\nconst shielded = $('PE shielded').first().json || {};\n\n// ZecHub is served text/plain -> n8n leaves it unparsed under json.data; parse + take newest.\nfunction zecLast(nodeName) {\n  const j = $(nodeName).first().json;\n  let arr = j;\n  if (j && typeof j.data === 'string') { try { arr = JSON.parse(j.data); } catch (e) { return null; } }\n  else if (j && Array.isArray(j.data)) arr = j.data;\n  if (!Array.isArray(arr)) return null;\n  return arr.length ? arr[arr.length - 1] : null;\n}\nconst zs = zecLast('ZecHub shielded');\nconst zt = zecLast('ZecHub total');\n\nconst height = (status && status.api && status.api.block && Number.isFinite(status.api.block.height))\n  ? status.api.block.height : null;\n\nconst rows = [];\nconst dropped = [];\nfunction push(source, asset, metric, valueRaw, valueNum, h, raw) {\n  // Guard (vdd H-2): never coerce undefined/null into the string 'undefined' for NOT NULL value_raw.\n  if (valueRaw === undefined || valueRaw === null) { dropped.push(metric); return; }\n  const n = (valueNum === null || valueNum === undefined || Number.isNaN(Number(valueNum))) ? null : Number(valueNum);\n  rows.push({\n    ts, ts_bucket, source, asset, metric,\n    value_raw: String(valueRaw),\n    value_num: n,\n    height: (h === null || h === undefined) ? null : h,\n    raw_json: raw === undefined ? null : JSON.stringify(raw),\n    created_at: ts,\n  });\n}\n\n// dash-platform <- platform-explorer /status  (credits arrive as JSON strings -> exact value_raw)\npush('platform-explorer', 'dash-platform', 'identities_total', status.identitiesCount, status.identitiesCount, height, status);\npush('platform-explorer', 'dash-platform', 'documents_total', status.documentsCount, status.documentsCount, height, status);\npush('platform-explorer', 'dash-platform', 'data_contracts_total', status.dataContractsCount, status.dataContractsCount, height, status);\npush('platform-explorer', 'dash-platform', 'platform_total_credits', status.totalCredits, status.totalCredits, height, status);\n// dash-platform <- platform-explorer /transactions/shielded/statistic\npush('platform-explorer', 'dash-platform', 'shielded_pool_balance_credits', shielded.poolBalance, shielded.poolBalance, height, shielded);\npush('platform-explorer', 'dash-platform', 'shielded_total_in_credits', shielded.totalShieldedIn, shielded.totalShieldedIn, height, shielded);\npush('platform-explorer', 'dash-platform', 'shielded_total_out_credits', shielded.totalShieldedOut, shielded.totalShieldedOut, height, shielded);\npush('platform-explorer', 'dash-platform', 'shielded_transitions_total', shielded.transitionsCount, shielded.transitionsCount, height, shielded);\n// zec <- ZecHub latest close point\nif (zs && zs.supply !== undefined && zs.supply !== null) push('zechub', 'zec', 'zec_shielded_supply', zs.supply, zs.supply, null, zs);\nif (zt && zt.supply !== undefined && zt.supply !== null) push('zechub', 'zec', 'zec_total_supply', zt.supply, zt.supply, null, zt);\n\nif (rows.length === 0) {\n  throw new Error('onchain-snapshotter: no rows produced (all sources empty)');\n}\n// Base64 the payload: provably $-free and comma-free -> safe as a BOUND $1 query parameter\n// (no dollar-quote interpolation of untrusted data). Postgres node: decode($1,'base64').\nconst rows_b64 = Buffer.from(JSON.stringify(rows), 'utf8').toString('base64');\nreturn [{ json: { count: rows.length, dropped, rows_b64 } }];"
+        "jsCode": "// onchain-snapshotter — normalize sources into snapshot rows. TWO CLOCKS (DB-SCHEMA §1/§8):\n//  dash-platform (platform-explorer): hourly state, ts=fetch, height=PE block   -> APPEND (DO NOTHING)\n//  zec_block_height (blockchair):      hourly chain-tip, ts=block time, height=height -> APPEND\n//  zec supply (ZecHub):                DAILY date-keyed aggregate, ts=close-date UTC midnight,\n//                                      height NULL, revisable intraday                 -> UPSERT\nconst fetchTs = Date.now();\nconst hourBucket = (t) => Math.floor(t / 3600000) * 3600000;\n\nconst status = $('PE status').first().json || {};\nconst shielded = $('PE shielded').first().json || {};\n\n// blockchair /zcash/stats is application/json -> parsed; tolerate node failure (continueRegularOutput).\nlet bc = {};\ntry { bc = (($('Zcash tip').first().json) || {}).data || {}; } catch (e) { bc = {}; }\n\n// ZecHub is served text/plain -> unparsed under json.data; parse + take the newest close element.\nfunction zecLast(nodeName) {\n  const j = $(nodeName).first().json;\n  let arr = j;\n  if (j && typeof j.data === 'string') { try { arr = JSON.parse(j.data); } catch (e) { return null; } }\n  else if (j && Array.isArray(j.data)) arr = j.data;\n  if (!Array.isArray(arr)) return null;\n  return arr.length ? arr[arr.length - 1] : null;\n}\nconst zs = zecLast('ZecHub shielded');\nconst zt = zecLast('ZecHub total');\n\n// close 'MM/DD/YYYY' -> epoch-ms UTC midnight of that date (the datum's true day).\nfunction closeToTs(close) {\n  if (typeof close !== 'string') return null;\n  const p = close.split('/');\n  if (p.length !== 3) return null;\n  const mm = Number(p[0]), dd = Number(p[1]), yy = Number(p[2]);\n  if (!Number.isFinite(mm) || !Number.isFinite(dd) || !Number.isFinite(yy)) return null;\n  return Date.UTC(yy, mm - 1, dd);\n}\n// blockchair 'YYYY-MM-DD HH:MM:SS' (UTC) -> epoch-ms.\nfunction bcTimeToTs(t) {\n  if (typeof t !== 'string') return null;\n  const ms = Date.parse(t.replace(' ', 'T') + 'Z');\n  return Number.isFinite(ms) ? ms : null;\n}\n\nconst peHeight = (status && status.api && status.api.block && Number.isFinite(status.api.block.height)) ? status.api.block.height : null;\n\nconst append = [];   // DO NOTHING (immutable hourly observations)\nconst upsert = [];   // DO UPDATE (daily aggregate, converges to ZecHub's latest value)\nconst dropped = [];\n\nfunction mkRow(source, asset, metric, valueRaw, valueNum, height, ts, raw) {\n  // Guard: never coerce undefined/null into the string 'undefined' for NOT NULL value_raw.\n  if (valueRaw === undefined || valueRaw === null) { dropped.push(metric); return null; }\n  if (!Number.isFinite(ts)) { dropped.push(metric + ':bad-ts'); return null; }\n  const n = (valueNum === null || valueNum === undefined || Number.isNaN(Number(valueNum))) ? null : Number(valueNum);\n  return {\n    ts, ts_bucket: hourBucket(ts), source, asset, metric,\n    value_raw: String(valueRaw),\n    value_num: n,\n    height: (height === null || height === undefined) ? null : height,\n    raw_json: raw === undefined ? null : JSON.stringify(raw),\n    created_at: fetchTs,\n  };\n}\nfunction pushAppend() { const r = mkRow.apply(null, arguments); if (r) append.push(r); }\nfunction pushUpsert() { const r = mkRow.apply(null, arguments); if (r) upsert.push(r); }\n\n// dash-platform <- platform-explorer /status (hourly, fetch-time ts, PE block height)\npushAppend('platform-explorer', 'dash-platform', 'identities_total', status.identitiesCount, status.identitiesCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'documents_total', status.documentsCount, status.documentsCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'data_contracts_total', status.dataContractsCount, status.dataContractsCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'platform_total_credits', status.totalCredits, status.totalCredits, peHeight, fetchTs, status);\n// dash-platform <- platform-explorer /transactions/shielded/statistic\npushAppend('platform-explorer', 'dash-platform', 'shielded_pool_balance_credits', shielded.poolBalance, shielded.poolBalance, peHeight, fetchTs, shielded);\npushAppend('platform-explorer', 'dash-platform', 'shielded_total_in_credits', shielded.totalShieldedIn, shielded.totalShieldedIn, peHeight, fetchTs, shielded);\npushAppend('platform-explorer', 'dash-platform', 'shielded_total_out_credits', shielded.totalShieldedOut, shielded.totalShieldedOut, peHeight, fetchTs, shielded);\npushAppend('platform-explorer', 'dash-platform', 'shielded_transitions_total', shielded.transitionsCount, shielded.transitionsCount, peHeight, fetchTs, shielded);\n\n// zec chain-tip height <- blockchair (hourly, block-time ts, height = the height itself; coherent)\nif (bc && Number.isFinite(bc.best_block_height)) {\n  const bcTs = bcTimeToTs(bc.best_block_time) || fetchTs;\n  pushAppend('blockchair', 'zec', 'zec_block_height', bc.best_block_height, bc.best_block_height, bc.best_block_height, bcTs,\n             { best_block_height: bc.best_block_height, best_block_time: bc.best_block_time, best_block_hash: bc.best_block_hash });\n} else { dropped.push('zec_block_height:no-source'); }\n\n// zec supply <- ZecHub latest close (DAILY: ts = close date UTC midnight; height NULL; UPSERT)\nif (zs && zs.supply !== undefined && zs.supply !== null) {\n  const t = closeToTs(zs.close);\n  if (t !== null) pushUpsert('zechub', 'zec', 'zec_shielded_supply', zs.supply, zs.supply, null, t, zs);\n  else dropped.push('zec_shielded_supply:bad-close');\n}\nif (zt && zt.supply !== undefined && zt.supply !== null) {\n  const t = closeToTs(zt.close);\n  if (t !== null) pushUpsert('zechub', 'zec', 'zec_total_supply', zt.supply, zt.supply, null, t, zt);\n  else dropped.push('zec_total_supply:bad-close');\n}\n\nif (append.length === 0 && upsert.length === 0) {\n  throw new Error('onchain-snapshotter: no rows produced (all sources empty)');\n}\nconst enc = (arr) => Buffer.from(JSON.stringify(arr), 'utf8').toString('base64');\nreturn [{ json: { count_append: append.length, count_upsert: upsert.length, dropped, append_b64: enc(append), upsert_b64: enc(upsert) } }];\n"
       },
       "id": "normalize",
       "name": "Normalize",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1104,
+        1300,
         0
       ]
     },
@@ -127,7 +127,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO onchain.snapshots (ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at)\nSELECT ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at\nFROM jsonb_to_recordset(convert_from(decode($1, 'base64'), 'utf8')::jsonb)\n  AS x(ts bigint, ts_bucket bigint, source text, asset text, metric text, value_raw text, value_num double precision, height bigint, raw_json text, created_at bigint)\nON CONFLICT (source, asset, metric, ts_bucket) DO NOTHING;",
         "options": {
-          "queryReplacement": "={{ $json.rows_b64 }}"
+          "queryReplacement": "={{ $json.append_b64 }}"
         }
       },
       "id": "pg_write",
@@ -135,9 +135,53 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1328,
+        1540,
+        -80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "cxLk68mkh5BMWchQ",
+          "name": "Supabase DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "http_zec_tip",
+      "name": "Zcash tip",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1090,
         0
       ],
+      "parameters": {
+        "url": "https://api.blockchair.com/zcash/stats",
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "pg_upsert_zec",
+      "name": "Upsert zec supply",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1540,
+        120
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO onchain.snapshots (ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at)\nSELECT ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at\nFROM jsonb_to_recordset(convert_from(decode($1, 'base64'), 'utf8')::jsonb)\n  AS x(ts bigint, ts_bucket bigint, source text, asset text, metric text, value_raw text, value_num double precision, height bigint, raw_json text, created_at bigint)\nON CONFLICT (source, asset, metric, ts_bucket) DO UPDATE\n  SET value_raw = EXCLUDED.value_raw, value_num = EXCLUDED.value_num, raw_json = EXCLUDED.raw_json, created_at = EXCLUDED.created_at;",
+        "options": {
+          "queryReplacement": "={{ $('Normalize').first().json.upsert_b64 }}"
+        }
+      },
       "credentials": {
         "postgres": {
           "id": "cxLk68mkh5BMWchQ",
@@ -195,7 +239,7 @@
       "main": [
         [
           {
-            "node": "Normalize",
+            "node": "Zcash tip",
             "type": "main",
             "index": 0
           }
@@ -207,6 +251,22 @@
         [
           {
             "node": "Write snapshots",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upsert zec supply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zcash tip": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
             "type": "main",
             "index": 0
           }

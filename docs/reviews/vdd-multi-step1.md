@@ -26,3 +26,34 @@ Cleared by critics (no action): `.mcp.json` never entered git history (verified 
 - Deferred items are tracked here; none block Step-1's DoD (the snapshotter is correct + idempotent for the current, string-typed provider payloads). They feed M0+ hardening.
 
 **VDD Multi-Adversarial complete: Logic ✓ Security ✓ Performance ✓ — load-bearing fixes applied (SQLi bind, undefined-guard, exec-data), remainder triaged. Verdict: PASS (--fail-on=none).**
+
+---
+
+## Follow-up (2026-07-21): data-correctness pass (post-soak audit)
+
+Triggered by a user finding (zec rows had no `height`) → a full audit of the landed data, then a
+"maximally-correct, can't-backfill-later" hardening of the zec path.
+
+**Audit of existing rows (measured, not eyeballed):** `value_raw` = exact integer strings for all
+metrics (live probe confirmed platform-explorer sends big credits as JSON **strings** → exactness is
+robust, not luck — closes the latent risk in finding #5); cumulative counters **strictly
+non-decreasing** (0 decreases); shielded `pool = in − out` **every** bucket (0 mismatches); full
+metric coverage per bucket; `height` (dash) monotonic; `created_at ≥ ts`. **`raw_json` stores the
+COMPLETE source response** (all 13 `/status` keys incl. `api.block.timestamp`, shielded `types`) →
+un-parsed fields are recoverable later without a backfill. `value_num` reads back ~3 low on
+`platform_total_credits` — confirmed the **documented lossy projection** (double ≈15 sig-digits on a
+16-digit integer); `value_raw` is canonical/exact. **No correctness flaws found.**
+
+**Resolved — the LOW "ZecHub polled hourly" item and the missing zec `height`:**
+- New metric **`zec_block_height`** (migration `002`, source **blockchair** `/zcash/stats`) — real
+  chain-tip height + `best_block_time`, coherent (height column filled). ZecHub's broken negative
+  `circulation` ruled it out for supply → height/time only.
+- **Two-clock snapshotter** (rebuilt): dash + `zec_block_height` → `Write snapshots`
+  (`DO NOTHING`, hourly); zec **supply** → `Upsert zec supply` (`DO UPDATE`) keyed to the datum's
+  **`close` date UTC-midnight** → 1 faithful row/day, converges to ZecHub's revised value (the value
+  drifts intraday — `DO NOTHING` would have frozen a partial figure). Collapses the 24×/day dup.
+- Backfill: the transitional fetch-time zec rows collapsed to the daily form (final values kept).
+
+**Still deferred (M0+):** `raw_json` de-duplication (stored per-metric — storage only, not
+correctness); verify `value_raw` content-check + §4 retention job (finding #6); dedicated
+`onchain_writer` least-priv role (#3); dev-API TLS (#7).
