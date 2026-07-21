@@ -44,9 +44,17 @@ LIST=$(curl -sf --max-time 15 -H "X-N8N-API-KEY: $N8N_API_KEY" "$N8N_URL/api/v1/
 echo "$LIST" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
+seen = {}
 for w in d.get('data', d):
-    if w['name'].startswith('$PREFIX'):
-        print(w['id'] + ' ' + w['name'])
+    if not w['name'].startswith('$PREFIX'):
+        continue
+    if w.get('isArchived'):          # skip soft-deleted copies (name-collision → clobbered export)
+        continue
+    if w['name'] in seen:            # two live workflows, same name → refuse to silently overwrite
+        sys.exit('ERROR: duplicate active workflow name %r (ids %s, %s) — resolve before export'
+                 % (w['name'], seen[w['name']], w['id']))
+    seen[w['name']] = w['id']
+    print(w['id'] + ' ' + w['name'])
 " | while read -r id name; do
   curl -sf --max-time 15 -H "X-N8N-API-KEY: $N8N_API_KEY" "$N8N_URL/api/v1/workflows/$id" \
     | python3 -c "$STRIP" > "$OUT_DIR/$name.json"

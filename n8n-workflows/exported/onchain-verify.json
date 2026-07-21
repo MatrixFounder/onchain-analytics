@@ -49,7 +49,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        224,
+        432,
         0
       ],
       "credentials": {
@@ -68,13 +68,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        448,
+        656,
         0
       ]
     },
     {
       "parameters": {
-        "chatId": "207209924",
+        "chatId": "={{ $('Set Parameters').item.json.ChatID }}",
         "text": "={{ $json.text }}",
         "additionalFields": {
           "appendAttribution": false
@@ -85,7 +85,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        672,
+        880,
         0
       ],
       "webhookId": "dc47cc66-76bd-4d4e-b2ff-679ab12d9e2c",
@@ -95,6 +95,29 @@
           "name": "Onchain bot"
         }
       }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "621d8739-33ef-46e6-8b54-9b4ce95c52ca",
+              "name": "ChatID",
+              "value": 207209924,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "2c395703-9eaf-44e0-b441-a8b35c52c76e",
+      "name": "Set Parameters"
     }
   ],
   "connections": {
@@ -102,7 +125,7 @@
       "main": [
         [
           {
-            "node": "Verify query",
+            "node": "Set Parameters",
             "type": "main",
             "index": 0
           }
@@ -125,6 +148,17 @@
         [
           {
             "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Parameters": {
+      "main": [
+        [
+          {
+            "node": "Verify query",
             "type": "main",
             "index": 0
           }
