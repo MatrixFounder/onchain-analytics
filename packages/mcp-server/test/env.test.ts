@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { EnvSchema, loadEnv } from '../src/env.js';
 
 /**
@@ -106,5 +109,44 @@ describe('loadEnv', () => {
     expect(stderrSpy.mock.calls[0]?.join(' ')).toBe(
       "onchain-intel-mcp-server: warning: could not load .env: EACCES: permission denied, open '.env'",
     );
+  });
+
+  // Happy-path exercise of the REAL `process.loadEnvFile()` load-and-apply behavior (001-4, F-4)
+  // — no stub on `process.loadEnvFile` here, unlike the two tests above. Isolated in its own
+  // nested `describe` with local `beforeEach`/`afterEach` (rather than reusing the parent
+  // `loadEnv` describe's hooks) so the cwd change / temp `.env` file / `LOG_LEVEL` mutation this
+  // test needs never leaks into its sibling tests above.
+  describe('loading a real .env file from disk', () => {
+    let tempDir: string;
+    let originalCwd: string;
+    let originalLogLevel: string | undefined;
+
+    beforeEach(() => {
+      originalCwd = process.cwd();
+      // `process.loadEnvFile()` MUTATES `process.env` directly — snapshot and clear `LOG_LEVEL`
+      // first so this test's outcome can't depend on (or be masked by) whatever a developer's
+      // real shell happens to already export.
+      originalLogLevel = process.env.LOG_LEVEL;
+      delete process.env.LOG_LEVEL;
+      tempDir = mkdtempSync(path.join(tmpdir(), 'onchain-intel-env-test-'));
+      writeFileSync(path.join(tempDir, '.env'), 'LOG_LEVEL=warn\n', 'utf8');
+      // process.loadEnvFile() reads `.env` from process.cwd() when called with no path argument.
+      process.chdir(tempDir);
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+      rmSync(tempDir, { recursive: true, force: true });
+      if (originalLogLevel === undefined) {
+        delete process.env.LOG_LEVEL;
+      } else {
+        process.env.LOG_LEVEL = originalLogLevel;
+      }
+    });
+
+    it('loadEnv() with no argument loads LOG_LEVEL from a real .env file via process.loadEnvFile()', () => {
+      const env = loadEnv();
+      expect(env.LOG_LEVEL).toBe('warn');
+    });
   });
 });

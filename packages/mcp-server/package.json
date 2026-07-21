@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke:dist": "node scripts/smoke-dist.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
