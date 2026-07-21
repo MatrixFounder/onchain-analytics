@@ -70,18 +70,24 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
 - `queryReplacement` (`$1..$N`) is **positional CSV**: a value containing a **comma breaks it**, and
   an **empty value silently shifts every later `$N`**. Unsafe for `raw_json` (commas) and nullables
   (`value_num` / `height`).
-- **Robust idempotent bulk insert (our pattern):** Code emits one item `{ rows_json: JSON.stringify(rows) }`;
-  Postgres `executeQuery` with a **dollar-quoted `jsonb_to_recordset`** — no `queryReplacement`,
-  comma/quote/null-safe:
+- **Robust idempotent bulk insert (our pattern):** Code emits one item
+  `{ rows_b64: Buffer.from(JSON.stringify(rows)).toString('base64') }`; the Postgres `executeQuery`
+  node binds it as a **real `$1` parameter** via Query Parameters
+  (`options.queryReplacement = {{ $json.rows_b64 }}`) and decodes it server-side. Base64 has no `,`
+  (survives the positional-CSV binding as one value) and no `$`, and it's **driver-bound, not
+  string-interpolated**:
   ```sql
   INSERT INTO onchain.snapshots (ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at)
   SELECT ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at
-  FROM jsonb_to_recordset($onchain${{ $json.rows_json }}$onchain$::jsonb)
+  FROM jsonb_to_recordset(convert_from(decode($1, 'base64'), 'utf8')::jsonb)
     AS x(ts bigint, ts_bucket bigint, source text, asset text, metric text,
          value_raw text, value_num double precision, height bigint, raw_json text, created_at bigint)
   ON CONFLICT (source, asset, metric, ts_bucket) DO NOTHING;
   ```
-  (`jsonb` `null` → SQL `NULL`; the `$onchain$` tag can't appear in JSON output, so it's injection-safe.)
+  ⚠️ **Do NOT dollar-quote-interpolate untrusted data** (`$tag$…{{ expr }}…$tag$::jsonb`):
+  `JSON.stringify` does not escape `$`, so a `$tag$` token in a third-party response closes the quote
+  early → SQLi / DoS (caught by vdd-multi, 2026-07-21; ZecHub is a community-editable source). Encode
+  + bind instead.
 - If you must use `queryReplacement`: nullable → `__EMPTY__` sentinel + `NULLIF($N,'__EMPTY__')::type`
   (n8n drops empty strings between nodes).
 - **Postgres node eats binary** — never place it between a binary producer and its consumer; attach

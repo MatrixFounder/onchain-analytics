@@ -1,7 +1,7 @@
 {
   "name": "onchain-error-alert",
   "description": null,
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "id": "sticky",
