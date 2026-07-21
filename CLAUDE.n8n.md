@@ -21,23 +21,35 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
 - Instance `http://ubuntu-linux-2404.local:5678` — reach the box with `ssh vm` (see the `vm-deploy` skill).
 - **Busy shared instance** (20+ active workflows): only **CREATE** our `onchain-*` workflows — never
   edit / activate / delete anyone else's.
-- DB writes use the existing Postgres credential **"Supabase DB"** (id `cxLk68mkh5BMWchQ`) → schema
-  `onchain` (DB-SCHEMA §8). Credentials live in **n8n Credentials**, never in workflow JSON.
+- DB writes use the Postgres credential **"Supabase DB"** → schema `onchain` (DB-SCHEMA §8); Telegram
+  alerts (verify report + error-alert) use **"Onchain bot"**; the `errorWorkflow` handler is
+  **`onchain-error-alert`**. Credentials live in **n8n Credentials**, never in workflow JSON — and
+  their **instance ids are not pinned in this doc** (they live in the workflow JSON on the live
+  instance and drift per instance). Always reference credentials/workflows **by name** and remap by
+  name on any other instance (see *Export / re-import* below + PROD-RUNBOOK §4).
 
 ## Build conventions
 - Workflow-oriented names: `onchain-snapshotter`, `onchain-verify` (not `get_data`).
 - **Validate before activation** (`validate_workflow` / `n8n-validation-expert`); export finished
-  workflow JSON to `n8n-workflows/` in this repo (secrets stripped).
-- **Normalize Input pattern (mandatory):** never hardcode field-mapping expressions inside a
-  target/presentation node (Telegram, Postgres, HTTP). Put a **Set node right after the trigger**
-  that maps the raw payload into clean, named fields **with `|| default` fallbacks** (so nothing
-  renders `undefined`); downstream nodes reference it insert-safe by name
-  (`$('Normalize Input').first().json.field`). One node owns the input contract → mapping is
-  visible in one place, easy to extend, and cheap to debug. Reference exemplar on this instance:
-  `TranscribeWorker` → **Normalize Input**; ours: `onchain-error-alert` → **Normalize Input**.
+  workflow JSON via **`./n8n-workflows/export.sh`** → `n8n-workflows/exported/<name>.json` (fetches
+  over the public API, strips volatile metadata + the top-level id; secrets are never returned).
+- **Normalize Input / param-node pattern (mandatory):** never hardcode field-mapping expressions
+  **or config values** inside a target/presentation node (Telegram, Postgres, HTTP). Put a **Set node
+  right after the trigger** that (1) maps the raw payload into clean, named fields **with `|| default`
+  fallbacks** (so nothing renders `undefined`), and (2) carries the workflow's **config params** —
+  e.g. the Telegram target `ChatID` — as named fields. Downstream nodes reference it insert-safe by
+  name (`$('Normalize Input').first().json.field` or `$('Set Parameters').item.json.ChatID`). One node
+  owns the input+config contract → to change the target chat/message, edit the Set node, **never** the
+  Telegram node. **Non-secret config only** (a chat id is fine in a node param; a bot token stays in
+  Credentials — see the secrets rule). Exemplars: `onchain-error-alert` → **Normalize Input** (payload
+  map + `ChatID`); `onchain-verify` → **Set Parameters** (config-only, holds `ChatID`); external
+  `TranscribeWorker` → **Normalize Input**.
 - Code-node normalization honors the schema canon (DB-SCHEMA §1/§8): `value_raw` as a **string**
-  (never parse credits to a JS number), `ts` epoch-ms UTC, `ts_bucket = floor(ts/3600000)*3600000`,
-  write via `INSERT … ON CONFLICT DO NOTHING`.
+  (never parse credits to a JS number), `ts` epoch-ms UTC, `ts_bucket = floor(ts/3600000)*3600000`.
+  **Two write modes (two-clock model):** immutable hourly observations append via
+  `INSERT … ON CONFLICT DO NOTHING`; **recomputable daily aggregates** (the revisable `zec_*_supply`,
+  keyed on the ZecHub `close` date) upsert via `INSERT … ON CONFLICT DO UPDATE`. One `Normalize` Code
+  node emits both batches (`append_b64` + `upsert_b64`) and fans out to two Postgres writers.
 
 ## Gotchas (hard-won — harvested from the n8n-lazy-loading project)
 
@@ -95,6 +107,11 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
   `JSON.stringify` does not escape `$`, so a `$tag$` token in a third-party response closes the quote
   early → SQLi / DoS (caught by vdd-multi, 2026-07-21; ZecHub is a community-editable source). Encode
   + bind instead.
+- **Aggregate (recomputable) variant:** same base64-bound insert, but
+  `ON CONFLICT (source, asset, metric, ts_bucket) DO UPDATE SET value_raw = EXCLUDED.value_raw,
+  value_num = EXCLUDED.value_num, raw_json = EXCLUDED.raw_json, created_at = EXCLUDED.created_at` —
+  update the **value columns only, never the conflict-key columns**. This is the two-clock upsert path
+  for `zec_*_supply` (revised daily); a blanket `DO NOTHING` there would silently pin a **stale** value.
 - If you must use `queryReplacement`: nullable → `__EMPTY__` sentinel + `NULLIF($N,'__EMPTY__')::type`
   (n8n drops empty strings between nodes).
 - **Postgres node eats binary** — never place it between a binary producer and its consumer; attach
@@ -110,6 +127,22 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
   nodes render a secret, set `settings.saveDataSuccessExecution` **and** `saveDataErrorExecution` to
   `"none"` (else the rendered value lands in execution history).
 
+**Export / re-import (hard-won)**
+- `export.sh` writes each workflow to `exported/<name>.json` — **keyed on workflow NAME, not id**. Two
+  same-named workflows collide → the later export **silently clobbers** the earlier. This bit us: a
+  soft-deleted (archived) duplicate `onchain-error-alert` overwrote the live export. `export.sh` now
+  **skips `isArchived`** and **hard-errors on duplicate active names** (commit `e3a8817`) — keep those
+  guards; on that error, dedup on the instance (one active per name) before re-exporting.
+- **Re-import re-dangles ids + duplicates the workflow.** `export.sh` strips the top-level `id` but
+  **not** node `credentials.id` nor `settings.errorWorkflow` — the JSON still carries the
+  **source-instance** ids for `Supabase DB`, `Onchain bot`, and the `onchain-error-alert` handler.
+  Re-importing corrected JSON (a) mints
+  a **new** workflow id → a duplicate beside the old one, and (b) re-attaches those **stale
+  credential/errorWorkflow ids** that dangle on the target instance. After **any** re-import: dedup
+  (keep one active per name) and re-remap every PG/TG credential + `errorWorkflow` by name (prod
+  procedure: PROD-RUNBOOK §4). The Set-node `ChatID` is a plain param, not an id → survives import.
+
 **Docs**
-- **Sticky notes are mandatory:** every workflow carries an Overview sticker + one per section — a
-  workflow isn't "done" without them.
+- **Sticky notes:** every workflow carries an **Overview** sticker (mandatory); add a per-section
+  sticker for any non-trivial branch. Our three onchain-* workflows each ship a single comprehensive
+  Overview — acceptable at their size, provided it fully describes the sections (the snapshotter's does).
