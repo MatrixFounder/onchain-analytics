@@ -28,6 +28,13 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
 - Workflow-oriented names: `onchain-snapshotter`, `onchain-verify` (not `get_data`).
 - **Validate before activation** (`validate_workflow` / `n8n-validation-expert`); export finished
   workflow JSON to `n8n-workflows/` in this repo (secrets stripped).
+- **Normalize Input pattern (mandatory):** never hardcode field-mapping expressions inside a
+  target/presentation node (Telegram, Postgres, HTTP). Put a **Set node right after the trigger**
+  that maps the raw payload into clean, named fields **with `|| default` fallbacks** (so nothing
+  renders `undefined`); downstream nodes reference it insert-safe by name
+  (`$('Normalize Input').first().json.field`). One node owns the input contract → mapping is
+  visible in one place, easy to extend, and cheap to debug. Reference exemplar on this instance:
+  `TranscribeWorker` → **Normalize Input**; ours: `onchain-error-alert` → **Normalize Input**.
 - Code-node normalization honors the schema canon (DB-SCHEMA §1/§8): `value_raw` as a **string**
   (never parse credits to a JS number), `ts` epoch-ms UTC, `ts_bucket = floor(ts/3600000)*3600000`,
   write via `INSERT … ON CONFLICT DO NOTHING`.
