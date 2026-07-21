@@ -1,0 +1,33 @@
+name: CI
+
+# ARCHITECTURE.md §10.2 — single workflow, push + pull_request, Node 22 pinned (R-7/R-8).
+# Step order is load-bearing: `test` runs before `build` because the stdio E2E suite
+# (test/e2e.stdio.test.ts) spawns src/index.ts via tsx, not dist/ — dist/ may not exist yet.
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['22']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build

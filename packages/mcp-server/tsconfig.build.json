@@ -1,0 +1,15 @@
+{
+  // Build-only tsconfig for the `tsc --emitDeclarationOnly` step of `package.json`'s `build`
+  // script (task 001-3, carry-forward reviewer note 1). The package `tsconfig.json` includes
+  // both "src" and "test" (needed so editors / `pnpm typecheck` cover test/*.ts too) and leaves
+  // "rootDir" unset for that reason (see the comment there). The build step is narrower: only
+  // "src" should ever be compiled/emitted (never `dist/test/*.d.ts`), so this config both
+  // restricts `include` to "src" (an `include`/`exclude`/`files` array is replaced, not merged,
+  // when a child tsconfig `extends` a parent — TS docs) AND sets `rootDir: "src"` explicitly —
+  // consistent with that narrower `include`, so no TS6059.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}

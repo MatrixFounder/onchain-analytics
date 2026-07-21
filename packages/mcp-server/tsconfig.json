@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  // No explicit "rootDir" here (task 001-3, carry-forward reviewer note 1): TS raises TS6059
+  // whenever an explicit "rootDir" doesn't cover every included file, and that check fires even
+  // under `tsc --noEmit` (verified empirically) — not just on emit. This config covers "src" AND
+  // "test" (editor / `pnpm typecheck`), so `rootDir` is left for TS to infer as the input files'
+  // common ancestor. The build-only step needs a narrower, `src`-only view with an explicit
+  // `rootDir: "src"` — see tsconfig.build.json.
+  "include": ["src", "test"]
+}

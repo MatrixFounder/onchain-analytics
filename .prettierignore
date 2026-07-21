@@ -1,0 +1,6 @@
+# Shared Prettier ignore file for the onchain-intel monorepo (root, per ARCHITECTURE.md §6.4).
+# Mirrors the `ignores` list in the root eslint.config.js: build output and dependency/coverage
+# directories are never hand-formatted or checked — `dist/` is esbuild (tsup) output, not source.
+dist/
+node_modules/
+coverage/

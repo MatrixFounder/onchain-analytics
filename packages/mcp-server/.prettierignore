@@ -1,0 +1,5 @@
+# Prettier's ignore-file lookup is CWD-relative (unlike its `.prettierrc` config resolution,
+# which searches upward) — the root `.prettierignore` alone does not reach `prettier --check .`
+# run from this package's directory (`pnpm --filter @onchain-intel/mcp-server run format:check`).
+# This package-local file is the minimal fix: `dist/` is tsup/tsc build output, never hand-formatted.
+dist/
