@@ -4,21 +4,31 @@
   "active": true,
   "nodes": [
     {
+      "parameters": {
+        "content": "## onchain-verify (daily)\nHealth check on onchain.snapshots → Telegram report (chat 207209924).\nChecks: freshness (max(ts) < 2h stale per metric), orphans=0, metrics seen vs registered, row/bucket counts. Owner: onchain-intel.",
+        "height": 232,
+        "width": 552
+      },
       "id": "sticky",
       "name": "Overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -40,
-        -220
-      ],
-      "parameters": {
-        "content": "## onchain-verify (daily)\nHealth check on onchain.snapshots → Telegram report (chat 207209924).\nChecks: freshness (max(ts) < 2h stale per metric), orphans=0, metrics seen vs registered, row/bucket counts. Owner: onchain-intel.",
-        "height": 200,
-        "width": 520
-      }
+        -48,
+        -256
+      ]
     },
     {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8,
+              "triggerAtMinute": 7
+            }
+          ]
+        }
+      },
       "id": "sched",
       "name": "Daily 08:07 UTC",
       "type": "n8n-nodes-base.scheduleTrigger",
@@ -26,34 +36,22 @@
       "position": [
         0,
         0
-      ],
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "days",
-              "daysInterval": 1,
-              "triggerAtHour": 8,
-              "triggerAtMinute": 7
-            }
-          ]
-        }
-      }
+      ]
     },
     {
-      "id": "verify",
-      "name": "Verify query",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        220,
-        0
-      ],
       "parameters": {
         "operation": "executeQuery",
         "query": "WITH latest AS (\n  SELECT metric, max(ts) AS max_ts FROM onchain.snapshots GROUP BY metric\n)\nSELECT\n  (SELECT count(*) FROM onchain.snapshots) AS total_rows,\n  (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots) AS buckets,\n  (SELECT count(*) FROM onchain.metrics) AS metrics_registered,\n  (SELECT count(*) FROM latest) AS metrics_seen,\n  (SELECT count(*) FROM latest WHERE max_ts < (extract(epoch from now())*1000)::bigint - 7200000) AS stale_metrics,\n  (SELECT count(*) FROM onchain.snapshots s LEFT JOIN onchain.assets a ON s.asset=a.id LEFT JOIN onchain.metrics m ON s.metric=m.id WHERE a.id IS NULL OR m.id IS NULL) AS orphans,\n  (SELECT to_char(to_timestamp(max(ts)/1000) AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI') FROM onchain.snapshots) AS latest_ts_utc;",
         "options": {}
       },
+      "id": "verify",
+      "name": "Verify query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "cxLk68mkh5BMWchQ",
@@ -62,43 +60,41 @@
       }
     },
     {
+      "parameters": {
+        "jsCode": "const r = $('Verify query').first().json;\nconst num = (x) => Number(x);\nconst ok = num(r.stale_metrics) === 0 && num(r.orphans) === 0 && num(r.metrics_seen) === num(r.metrics_registered);\nconst emoji = ok ? '✅' : '⚠️';\nconst text = emoji + ' onchain-verify (daily)\\n'\n  + 'rows: ' + r.total_rows + ' · buckets: ' + r.buckets + '\\n'\n  + 'metrics seen: ' + r.metrics_seen + '/' + r.metrics_registered + '\\n'\n  + 'stale (>2h): ' + r.stale_metrics + ' · orphans: ' + r.orphans + '\\n'\n  + 'latest: ' + r.latest_ts_utc + ' UTC';\nreturn [{ json: { ok, text } }];"
+      },
       "id": "fmt",
       "name": "Format report",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        440,
+        448,
         0
-      ],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "const r = $('Verify query').first().json;\nconst num = (x) => Number(x);\nconst ok = num(r.stale_metrics) === 0 && num(r.orphans) === 0 && num(r.metrics_seen) === num(r.metrics_registered);\nconst emoji = ok ? '✅' : '⚠️';\nconst text = emoji + ' onchain-verify (daily)\\n'\n  + 'rows: ' + r.total_rows + ' · buckets: ' + r.buckets + '\\n'\n  + 'metrics seen: ' + r.metrics_seen + '/' + r.metrics_registered + '\\n'\n  + 'stale (>2h): ' + r.stale_metrics + ' · orphans: ' + r.orphans + '\\n'\n  + 'latest: ' + r.latest_ts_utc + ' UTC';\nreturn [{ json: { ok, text } }];"
-      }
+      ]
     },
     {
+      "parameters": {
+        "chatId": "207209924",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
       "id": "tg",
       "name": "Report",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        660,
+        672,
         0
       ],
-      "parameters": {
-        "resource": "message",
-        "operation": "sendMessage",
-        "chatId": "207209924",
-        "text": "={{ $json.text }}",
-        "additionalFields": {}
-      },
+      "webhookId": "dc47cc66-76bd-4d4e-b2ff-679ab12d9e2c",
       "credentials": {
         "telegramApi": {
           "id": "cMrsUr48jl2JVEUi",
           "name": "Onchain bot"
         }
-      },
-      "webhookId": "dc47cc66-76bd-4d4e-b2ff-679ab12d9e2c"
+      }
     }
   ],
   "connections": {
@@ -139,7 +135,8 @@
   "settings": {
     "executionOrder": "v1",
     "timezone": "UTC",
-    "errorWorkflow": "WapVxU2SneMiNNyM"
+    "errorWorkflow": "WapVxU2SneMiNNyM",
+    "binaryMode": "separate"
   },
   "nodeGroups": [],
   "sourceWorkflowId": null
