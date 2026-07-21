@@ -1,13 +1,13 @@
 # PLAN — TASK-001 · M0: Discovery & каркас (`onchain-intel`)
 
-| Поле | Значение |
-|---|---|
-| **Task** | [TASK-001 `m0-discovery-skeleton`](TASK.md) |
-| **Architecture** | [ARCHITECTURE.md](ARCHITECTURE.md) — v1, APPROVED |
-| **ADR** | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — Accepted (D1–D3, D10–D12) |
-| **Статус плана** | Draft (готов к Development-фазе) |
-| **Дата** | 2026-07-21 |
-| **Стратегия** | Stub-First (две фазы на каждую dev-задачу: Phase 1 структура/стабы/red → Phase 2 логика/green) |
+| Поле             | Значение                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| **Task**         | [TASK-001 `m0-discovery-skeleton`](TASK.md)                                                    |
+| **Architecture** | [ARCHITECTURE.md](ARCHITECTURE.md) — v1, APPROVED                                              |
+| **ADR**          | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — Accepted (D1–D3, D10–D12)   |
+| **Статус плана** | Draft (готов к Development-фазе)                                                               |
+| **Дата**         | 2026-07-21                                                                                     |
+| **Стратегия**    | Stub-First (две фазы на каждую dev-задачу: Phase 1 структура/стабы/red → Phase 2 логика/green) |
 
 ---
 
@@ -72,89 +72,93 @@ Node), fallback `npm i -g pnpm`.
 > присутствуют как явные токены. Verification-only (R-1, R-2, R-13, R-14) — отдельные проверочные
 > пункты; scope-guard R-15 — сквозная проверка.
 
-### Шаг 1 — [Задача 001-1] Монорепо + toolchain scaffold  (R-3, R-5, R-11)
+### Шаг 1 — [Задача 001-1] Монорепо + toolchain scaffold (R-3, R-5, R-11)
+
 Файл: [task-001-1-monorepo-toolchain-scaffold.md](tasks/task-001-1-monorepo-toolchain-scaffold.md)
 
 - [ ] **[R-3]** pnpm-монорепо: `pnpm-workspace.yaml` + корневой `package.json` + пакет
-  `packages/mcp-server/package.json` с `engines.node: ">=22"`; `pnpm install` в корне проходит без
-  ошибок (lockfile сгенерирован; плейсхолдеры `"^*"` заменены реальными версиями через `pnpm add`).
+      `packages/mcp-server/package.json` с `engines.node: ">=22"`; `pnpm install` в корне проходит без
+      ошибок (lockfile сгенерирован; плейсхолдеры `"^*"` заменены реальными версиями через `pnpm add`).
 - [ ] **[R-5]** ESLint + Prettier настроены: конфиги присутствуют, корневые скрипты `lint` и
-  `format:check` объявлены и проходят на скелете (`pnpm lint`, `pnpm format:check` → 0 ошибок).
+      `format:check` объявлены и проходят на скелете (`pnpm lint`, `pnpm format:check` → 0 ошибок).
 - [ ] **[R-11]** Лицензия Apache-2.0: корневой `LICENSE` содержит полный текст Apache License 2.0;
-  `"license": "Apache-2.0"` в корневом и в `packages/mcp-server/package.json`.
+      `"license": "Apache-2.0"` в корневом и в `packages/mcp-server/package.json`.
 
-### Шаг 2 — [Задача 001-2] MCP-скелет + env-модуль + `onchain_ping`  (R-4, R-9, R-10, R-12)
+### Шаг 2 — [Задача 001-2] MCP-скелет + env-модуль + `onchain_ping` (R-4, R-9, R-10, R-12)
+
 Файл: [task-001-2-mcp-server-env-ping.md](tasks/task-001-2-mcp-server-env-ping.md)
 Stub-First: **Phase 1** — файлы/сигнатуры/стабы, `tsc --noEmit` зелёный (импортируемо); **Phase 2** —
 zod-схемы, `pingHandler`, `registerPingTool`, монтаж `StdioServerTransport` в `src/index.ts`.
 
 - [ ] **[R-4]** TS strict-конфиг (`strict: true`, `noUncheckedIndexedAccess: true` в
-  `tsconfig.base.json`); `pnpm typecheck` (`tsc --noEmit`) — 0 ошибок на скелете; `pnpm build`
-  (tsup) собирает `dist/`; `tsx src/index.ts` стартует без ошибок трансформации.
+      `tsconfig.base.json`); `pnpm typecheck` (`tsc --noEmit`) — 0 ошибок на скелете; `pnpm build`
+      (tsup) собирает `dist/`; `tsx src/index.ts` стартует без ошибок трансформации.
 - [ ] **[R-9]** Скелет MCP-сервера на `@modelcontextprotocol/sdk`, **только stdio**: `src/index.ts`
-  подключает `StdioServerTransport`; в коде нет ни строки HTTP/SSE/Streamable-транспорта.
+      подключает `StdioServerTransport`; в коде нет ни строки HTTP/SSE/Streamable-транспорта.
 - [ ] **[R-10]** Инструмент называется ровно `onchain_ping`; input/output-схема — **zod** как
-  единственный источник правды (валидация ↔ MCP tool-schema, без ручного дублирования); ответ
-  детерминирован (`PingOutput = { ok, service, version, ts }`).
+      единственный источник правды (валидация ↔ MCP tool-schema, без ручного дублирования); ответ
+      детерминирован (`PingOutput = { ok, service, version, ts }`).
 - [ ] **[R-12]** Env-модуль `src/env.ts`: `EnvSchema` (zod, все поля optional в M0) + `loadEnv()`
-  fail-fast; `EnvSchema.parse({})` не бросает (подтверждающий unit-тест поставляется в 001-3);
-  `.env.example` документирует конвенцию `0600` (создаётся в 001-1, значений не содержит).
+      fail-fast; `EnvSchema.parse({})` не бросает (подтверждающий unit-тест поставляется в 001-3);
+      `.env.example` документирует конвенцию `0600` (создаётся в 001-1, значений не содержит).
 
-### Шаг 3 — [Задача 001-3] Тесты: unit + stdio E2E  (R-6)
+### Шаг 3 — [Задача 001-3] Тесты: unit + stdio E2E (R-6)
+
 Файл: [task-001-3-tests-unit-e2e-stdio.md](tasks/task-001-3-tests-unit-e2e-stdio.md)
 Stub-First: **Phase 1** — написать `env.test.ts` / `ping.test.ts` / `e2e.stdio.test.ts` (red или
 против стабов); **Phase 2** — весь сьют зелёный на реальной логике из 001-2.
 
 - [ ] **[R-6]** `pnpm test` запускает vitest; минимум 1 зелёный тест. Фактически поставляются три
-  файла: `env.test.ts` (unit: `EnvSchema.parse({})` не бросает — закрывает контракт R-12),
-  `ping.test.ts` (unit: `pingHandler()` → `PingOutputSchema.parse(...)` проходит), и **обязательный**
-  `e2e.stdio.test.ts` (SDK `Client` + `StdioClientTransport` спавнит `src/index.ts` через `tsx`,
-  `tools/list` содержит `onchain_ping`, `tools/call onchain_ping` возвращает валидную форму).
+      файла: `env.test.ts` (unit: `EnvSchema.parse({})` не бросает — закрывает контракт R-12),
+      `ping.test.ts` (unit: `pingHandler()` → `PingOutputSchema.parse(...)` проходит), и **обязательный**
+      `e2e.stdio.test.ts` (SDK `Client` + `StdioClientTransport` спавнит `src/index.ts` через `tsx`,
+      `tools/list` содержит `onchain_ping`, `tools/call onchain_ping` возвращает валидную форму).
 
-### Шаг 4 — [Задача 001-4] CI-гейт + verification-only + M0 exit  (R-7, R-8, R-1, R-2, R-13, R-14, R-15)
+### Шаг 4 — [Задача 001-4] CI-гейт + verification-only + M0 exit (R-7, R-8, R-1, R-2, R-13, R-14, R-15)
+
 Файл: [task-001-4-ci-verification-exit.md](tasks/task-001-4-ci-verification-exit.md)
 
 - [ ] **[R-7]** `.github/workflows/ci.yml` существует, триггеры `push` + `pull_request`, шаги
-  lint + typecheck + test (порядок: install → lint → format:check → typecheck → **test → build**).
+      lint + typecheck + test (порядок: install → lint → format:check → typecheck → **test → build**).
 - [ ] **[R-8]** CI на Node 22: `actions/setup-node` пиннит `node-version: '22'` (или `'22.x'`/LTS-
-  алиас 22-й линии); в логе прогона видно `Node v22.x.x`.
-- [ ] **[R-1]** *(verification-only)* ADR-001 имеет статус **Accepted** (`Accepted: 2026-07-20
-  (Sergey)`) — проверить заголовок `docs/onchain-analytics/ADR-001-tech-stack.md`, **правок в ADR
-  не вносить**; факт уже зафиксирован ссылкой в TASK.md/ARCHITECTURE.md.
-- [ ] **[R-2]** *(verification-only)* `docs/ARCHITECTURE.md` и `docs/TASK.md` существуют, созданы
-  этим прогоном пайплайна, ARCHITECTURE ссылается на TASK-001 и на ADR-001 (D1–D12) — подтвердить
-  наличие и перекрёстные ссылки, отдельной инженерной работы не требуется.
-- [ ] **[R-13]** *(verification-only)* `.gitignore` уже содержит `.env`, `.env.*`, `!.env.example`
-  — проверить (строки ~47–50), новых правок не вносить, если пробел не найден.
-- [ ] **[R-14]** *(verification-only)* `.gitignore` уже содержит `/DATA_DIR/`, `*.db`, `*.sqlite`,
-  `*.sqlite3`, `*-wal`, `*-shm` — проверить (строки ~61–67); M0 не добавляет БД-кода и артефактов
-  состояния.
-- [ ] **[R-15]** *(cross-cutting scope-guard)* Ревью diff'а: изменения ограничены корневыми
-  манифестами монорепо, `packages/mcp-server` (сервер + `onchain_ping` + env), CI workflow,
-  lint/format/test-конфигами, `LICENSE`, `.env.example` — **ни строки** adapter/provider/cache/
-  scheduler/DB-migration/HTTP-транспорт кода.
+      алиас 22-й линии); в логе прогона видно `Node v22.x.x`.
+- [ ] **[R-1]** _(verification-only)_ ADR-001 имеет статус **Accepted** (`Accepted: 2026-07-20
+(Sergey)`) — проверить заголовок `docs/onchain-analytics/ADR-001-tech-stack.md`, **правок в ADR
+      не вносить**; факт уже зафиксирован ссылкой в TASK.md/ARCHITECTURE.md.
+- [ ] **[R-2]** _(verification-only)_ `docs/ARCHITECTURE.md` и `docs/TASK.md` существуют, созданы
+      этим прогоном пайплайна, ARCHITECTURE ссылается на TASK-001 и на ADR-001 (D1–D12) — подтвердить
+      наличие и перекрёстные ссылки, отдельной инженерной работы не требуется.
+- [ ] **[R-13]** _(verification-only)_ `.gitignore` уже содержит `.env`, `.env.*`, `!.env.example`
+      — проверить (строки ~47–50), новых правок не вносить, если пробел не найден.
+- [ ] **[R-14]** _(verification-only)_ `.gitignore` уже содержит `/DATA_DIR/`, `*.db`, `*.sqlite`,
+      `*.sqlite3`, `*-wal`, `*-shm` — проверить (строки ~61–67); M0 не добавляет БД-кода и артефактов
+      состояния.
+- [ ] **[R-15]** _(cross-cutting scope-guard)_ Ревью diff'а: изменения ограничены корневыми
+      манифестами монорепо, `packages/mcp-server` (сервер + `onchain_ping` + env), CI workflow,
+      lint/format/test-конфигами, `LICENSE`, `.env.example` — **ни строки** adapter/provider/cache/
+      scheduler/DB-migration/HTTP-транспорт кода.
 
 ---
 
 ## 3. Полная трассировка RTM (R-1 … R-15)
 
-| R-ID | Требование (кратко) | Задача | Фаза | Тип |
-|---|---|---|---|---|
-| R-1  | ADR-001 = Accepted (верификация) | 001-4 | verify | verification-only |
-| R-2  | ARCHITECTURE.md + TASK.md как продукт пайплайна | 001-4 | verify | verification-only |
-| R-3  | pnpm-монорепо + `engines.node >= 22`, `pnpm install` ок | 001-1 | setup | dev/config |
-| R-4  | TS strict, tsup-сборка, tsx-dev, typecheck 0 ошибок | 001-2 | Phase 1+2 | dev |
-| R-5  | ESLint + Prettier + lint/format-скрипты | 001-1 | setup | dev/config |
-| R-6  | vitest, ≥1 зелёный тест | 001-3 | Phase 2 | dev/test |
-| R-7  | CI workflow lint+typecheck+test на push/PR | 001-4 | setup | dev/config |
-| R-8  | CI на Node 22 (`setup-node` пин) | 001-4 | setup | dev/config |
-| R-9  | MCP-скелет, только stdio-транспорт | 001-2 | Phase 1+2 | dev |
-| R-10 | `onchain_ping`, zod — единый источник правды | 001-2 | Phase 2 | dev |
-| R-11 | Apache-2.0 (`LICENSE` + license-поля) | 001-1 | setup | dev/config |
-| R-12 | env zod-модуль, `parse({})` не бросает; `.env.example` 0600 | 001-2 | Phase 2 | dev |
-| R-13 | `.gitignore` исключает `.env`/`.env.*` (верификация) | 001-4 | verify | verification-only |
-| R-14 | `.gitignore` исключает state/`*.db`/`*.sqlite*` (верификация) | 001-4 | verify | verification-only |
-| R-15 | Scope-guard: нет adapter/cache/DB/scheduler/HTTP-кода | 001-4 | cross-cut | verification-only |
+| R-ID | Требование (кратко)                                           | Задача | Фаза      | Тип               |
+| ---- | ------------------------------------------------------------- | ------ | --------- | ----------------- |
+| R-1  | ADR-001 = Accepted (верификация)                              | 001-4  | verify    | verification-only |
+| R-2  | ARCHITECTURE.md + TASK.md как продукт пайплайна               | 001-4  | verify    | verification-only |
+| R-3  | pnpm-монорепо + `engines.node >= 22`, `pnpm install` ок       | 001-1  | setup     | dev/config        |
+| R-4  | TS strict, tsup-сборка, tsx-dev, typecheck 0 ошибок           | 001-2  | Phase 1+2 | dev               |
+| R-5  | ESLint + Prettier + lint/format-скрипты                       | 001-1  | setup     | dev/config        |
+| R-6  | vitest, ≥1 зелёный тест                                       | 001-3  | Phase 2   | dev/test          |
+| R-7  | CI workflow lint+typecheck+test на push/PR                    | 001-4  | setup     | dev/config        |
+| R-8  | CI на Node 22 (`setup-node` пин)                              | 001-4  | setup     | dev/config        |
+| R-9  | MCP-скелет, только stdio-транспорт                            | 001-2  | Phase 1+2 | dev               |
+| R-10 | `onchain_ping`, zod — единый источник правды                  | 001-2  | Phase 2   | dev               |
+| R-11 | Apache-2.0 (`LICENSE` + license-поля)                         | 001-1  | setup     | dev/config        |
+| R-12 | env zod-модуль, `parse({})` не бросает; `.env.example` 0600   | 001-2  | Phase 2   | dev               |
+| R-13 | `.gitignore` исключает `.env`/`.env.*` (верификация)          | 001-4  | verify    | verification-only |
+| R-14 | `.gitignore` исключает state/`*.db`/`*.sqlite*` (верификация) | 001-4  | verify    | verification-only |
+| R-15 | Scope-guard: нет adapter/cache/DB/scheduler/HTTP-кода         | 001-4  | cross-cut | verification-only |
 
 **Exit-критерии ROADMAP/TASK §5 → задачи:**
 `onchain_ping` по stdio из Claude Code → R-9, R-10 (001-2) + E2E (001-3);
@@ -169,6 +173,7 @@ ARCHITECTURE.md + TASK.md → R-2 (001-4);
 ## 4. Итоговая проверка плана (Definition of Done для M0)
 
 Локально (без сети/секретов, порядок как в CI):
+
 ```bash
 corepack enable pnpm            # или: npm i -g pnpm
 pnpm install --frozen-lockfile  # lockfile закоммичен
@@ -178,6 +183,7 @@ pnpm typecheck                  # tsc --noEmit — 0 ошибок
 pnpm test                       # vitest run — unit + stdio E2E зелёные
 pnpm build                      # tsup — dist/ (после test)
 ```
+
 Ручная проверка exit-критерия: подключить `packages/mcp-server` в Claude Code как локальный stdio
 MCP-сервер → `onchain_ping` виден в списке tools → вызов возвращает
 `{ ok: true, service: "onchain-intel-mcp-server", version: "0.1.0", ts: <epoch-ms> }`.

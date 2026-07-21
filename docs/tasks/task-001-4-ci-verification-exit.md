@@ -1,19 +1,21 @@
 # Task 001-4 — CI-гейт + verification-only + M0 exit-criteria
 
-| Поле | Значение |
-|---|---|
-| **Родительская задача** | [TASK-001 `m0-discovery-skeleton`](../TASK.md) |
-| **Тип** | Config + verification (single-phase) |
-| **R-IDs** | **R-7**, **R-8** (CI) · **R-1**, **R-2**, **R-13**, **R-14** (verification-only) · **R-15** (scope-guard) |
-| **Зависимости** | 001-3 (локально зелёный сьют), 001-1 (корневые скрипты для CI) |
-| **Разблокирует** | финальный M0 exit + commit-гейт |
+| Поле                    | Значение                                                                                                  |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Родительская задача** | [TASK-001 `m0-discovery-skeleton`](../TASK.md)                                                            |
+| **Тип**                 | Config + verification (single-phase)                                                                      |
+| **R-IDs**               | **R-7**, **R-8** (CI) · **R-1**, **R-2**, **R-13**, **R-14** (verification-only) · **R-15** (scope-guard) |
+| **Зависимости**         | 001-3 (локально зелёный сьют), 001-1 (корневые скрипты для CI)                                            |
+| **Разблокирует**        | финальный M0 exit + commit-гейт                                                                           |
 
 ## Цель
+
 Добавить CI-гейт GitHub Actions (lint + typecheck + test на Node 22) и закрыть все
 verification-only пункты (R-1, R-2, R-13, R-14) + сквозной scope-guard (R-15). Затем — финальная
 проверка exit-критериев M0. Строго по [ARCHITECTURE.md §10.2](../ARCHITECTURE.md).
 
 ## Контекст: файлы
+
 - `.github/workflows/ci.yml` — единственный workflow. Триггеры `push` + `pull_request`. Шаги
   (порядок из ARCHITECTURE §10.2; `test` **до** `build`, нота 4):
   ```
@@ -24,11 +26,13 @@ verification-only пункты (R-1, R-2, R-13, R-14) + сквозной scope-g
   Всё без сети/секретов (пустой env валиден — R-12; платных ключей нет — R-15).
 
 ## CI (R-7, R-8)
+
 - **[R-7]** `.github/workflows/ci.yml` существует, триггеры `push`/`pull_request`, содержит шаги
   lint + typecheck + test.
 - **[R-8]** `actions/setup-node` пиннит `node-version: '22'` (или `'22.x'`/LTS-алиас 22-й линии).
 
 ## Verification-only (правок в код/конфиги не вносить, если проверка прошла)
+
 - **[R-1]** ADR-001 = Accepted. Проверить заголовок:
   ```bash
   grep -nE 'Статус:\**\s*Accepted' docs/onchain-analytics/ADR-001-tech-stack.md
@@ -53,6 +57,7 @@ verification-only пункты (R-1, R-2, R-13, R-14) + сквозной scope-g
   M0 не добавляет БД-кода и артефактов состояния.
 
 ## Scope-guard (R-15) — сквозная проверка
+
 - **[R-15]** Ревью diff'а всей ветки M0: изменения ограничены — корневые манифесты монорепо,
   `packages/mcp-server` (сервер + `onchain_ping` + env), `.github/workflows/ci.yml`,
   lint/format/test-конфиги, `LICENSE`, `.env.example`. Ни строки adapter/provider/cache/scheduler/
@@ -65,12 +70,15 @@ verification-only пункты (R-1, R-2, R-13, R-14) + сквозной scope-g
   ```
 
 ## Финальный гейт — M0 exit-criteria
+
 Локально (порядок как в CI, без сети/секретов):
+
 ```bash
 corepack enable pnpm
 pnpm install --frozen-lockfile
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build
 ```
+
 Ручная проверка: подключить `packages/mcp-server` в Claude Code как stdio MCP-сервер → `onchain_ping`
 в списке tools → вызов возвращает
 `{ ok: true, service: "onchain-intel-mcp-server", version: "0.1.0", ts: <epoch-ms> }`.
@@ -80,6 +88,7 @@ pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build
 логе видно `Node v22.x.x` (закрывает акцептанс R-7/R-8 на remote).
 
 ## Acceptance (сводно)
+
 - **[R-7]/[R-8]** workflow присутствует, корректные триггеры и Node-22 пин; на remote (после
   разрешённого пуша) джобы lint+typecheck+test зелёные.
 - **[R-1]/[R-2]/[R-13]/[R-14]** grep-проверки выше проходят; никаких новых правок в ADR/.gitignore.

@@ -4,3 +4,26 @@
 dist/
 node_modules/
 coverage/
+
+# pnpm's own lockfile format — never hand-formatted, and Prettier's YAML formatting doesn't match
+# pnpm's writer (repo-wide `prettier --check .` would otherwise flag it on every install).
+pnpm-lock.yaml
+
+# Curated / generated / external content — not under the repo format gate:
+# SoT research docs (Russian, curated by hand)
+docs/onchain-analytics/
+# review artifacts from earlier runs
+docs/reviews/
+# n8n export.sh owns the JSON format here
+n8n-workflows/
+# imported source dialogs
+reference/
+# hand-authored SQL docs
+sql/
+# agent prompt files (loaded as system prompts, curated)
+CLAUDE.md
+CLAUDE.n8n.md
+CLAUDE.local.md
+CLAUDE.agentic.md
+# framework dir (partially symlinked/external)
+.agent/

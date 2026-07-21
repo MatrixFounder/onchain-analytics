@@ -2,8 +2,10 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { PingOutputSchema } from '../src/tools/ping.js';
 
 /**
@@ -28,6 +30,7 @@ const packageJson = JSON.parse(readFileSync(path.resolve(packageRoot, 'package.j
 const CONNECT_TIMEOUT_MS = 15_000;
 const CALL_TIMEOUT_MS = 10_000;
 const TEST_TIMEOUT_MS = CONNECT_TIMEOUT_MS + CALL_TIMEOUT_MS;
+const INVALID_ENV_TIMEOUT_MS = 10_000;
 
 describe('onchain_ping — stdio E2E', () => {
   let client: Client | undefined;
@@ -53,8 +56,14 @@ describe('onchain_ping — stdio E2E', () => {
       stderr: 'pipe',
     });
     const c = new Client({ name: 'onchain-intel-e2e-test-client', version: '0.0.0-test' });
-    await c.connect(transport, { timeout: CONNECT_TIMEOUT_MS });
+    // Capture the reference BEFORE awaiting connect(): if `c.connect()` rejects (e.g. the
+    // initialize handshake times out), `afterEach` must still be able to close the
+    // transport/client and reap the spawned child process. Don't rely on the SDK's own
+    // cleanup-on-failed-connect (client/index.js's `connect()` does call `void this.close()` on
+    // an initialize failure, but as a fire-and-forget call it isn't awaited before the error
+    // propagates — and it isn't reached at all if `transport.start()` itself rejects).
     client = c;
+    await c.connect(transport, { timeout: CONNECT_TIMEOUT_MS });
     return c;
   }
 
@@ -84,6 +93,22 @@ describe('onchain_ping — stdio E2E', () => {
       // Read from package.json in the test — no hardcoded version literal in this assertion.
       expect(parsed.version).toBe(packageJson.version);
       expect(Number.isInteger(parsed.ts)).toBe(true);
+
+      // The `content` block (for clients that don't read `structuredContent`) must carry the
+      // exact same payload, JSON-stringified — the two representations must never drift apart.
+      // `callTool`'s inferred return type is a union with the (unused-here) task-based
+      // `toolResult` shape; both union members carry a `[x: string]: unknown` index signature, so
+      // a `'content' in result` guard can't narrow it away (index signatures defeat `in`
+      // narrowing — TS still considers the other member capable of an unknown `content` key).
+      // `onchain_ping` never uses task-based execution, so asserting to the SDK's own
+      // `CallToolResult` type is a safe, documented narrowing rather than an unchecked escape.
+      const { content } = result as CallToolResult;
+      const firstContent = content[0];
+      expect(firstContent?.type).toBe('text');
+      if (firstContent?.type !== 'text') {
+        throw new Error('expected onchain_ping to return a text content block');
+      }
+      expect(JSON.parse(firstContent.text)).toStrictEqual(result.structuredContent);
     },
     TEST_TIMEOUT_MS,
   );
@@ -100,5 +125,50 @@ describe('onchain_ping — stdio E2E', () => {
       expect(result.isError).toBe(true);
     },
     TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'invalid LOG_LEVEL fails startup fast: exit 1, stderr names the key but never the value, stdout stays empty',
+    async () => {
+      // Plain child_process spawn (no MCP client/transport needed here — the server never gets
+      // far enough to speak the protocol) so this test is self-contained: kill-on-timeout is the
+      // only reaping mechanism, independent of the Client/StdioClientTransport machinery used by
+      // the tests above.
+      const child = spawn(process.execPath, [tsxCli, serverEntry], {
+        cwd: packageRoot,
+        env: { ...process.env, LOG_LEVEL: 'bogus' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8');
+      });
+
+      const exitCode = await new Promise<number | null>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          child.kill('SIGKILL');
+          reject(new Error('child process did not exit within the bounded timeout'));
+        }, INVALID_ENV_TIMEOUT_MS);
+        child.on('exit', (code) => {
+          clearTimeout(timer);
+          resolve(code);
+        });
+        child.on('error', (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('LOG_LEVEL');
+      expect(stderr).not.toContain('bogus');
+      expect(stdout).toBe('');
+    },
+    INVALID_ENV_TIMEOUT_MS + 5_000,
   );
 });

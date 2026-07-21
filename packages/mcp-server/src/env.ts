@@ -12,9 +12,16 @@ import { z } from 'zod';
  * unrelated keys (PATH, HOME, ...). Zod's default `z.object()` behavior strips unknown keys
  * instead of rejecting them, so `EnvSchema.parse(process.env)` succeeds regardless of what else
  * is set in the shell.
+ *
+ * `LOG_LEVEL` is preprocessed so an empty string (e.g. a shell exporting `LOG_LEVEL=` with no
+ * value, or an `.env` line `LOG_LEVEL=`) is treated as unset rather than an invalid enum value —
+ * an optional env var left blank should behave the same as the var being absent entirely.
  */
 export const EnvSchema = z.object({
-  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+  LOG_LEVEL: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['debug', 'info', 'warn', 'error']).optional(),
+  ),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
