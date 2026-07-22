@@ -1,0 +1,15 @@
+{
+  "chain": "solana",
+  "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "raw": {
+    "jsonrpc": "2.0",
+    "result": {
+      "context": {
+        "apiVersion": "4.1.0",
+        "slot": 434592058
+      },
+      "value": 515335920971
+    },
+    "id": 1
+  }
+}

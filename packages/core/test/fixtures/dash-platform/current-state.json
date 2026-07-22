@@ -1,0 +1,17 @@
+{
+  "getShieldedPoolState": {
+    "poolBalance": "4611474006200",
+    "metadata": {
+      "height": 403328
+    }
+  },
+  "getTotalCreditsInPlatform": {
+    "credits": "2802452583638438",
+    "metadata": {
+      "height": 403328
+    }
+  },
+  "identitiesCount": 3044,
+  "dataContractsCount": 59,
+  "documentsCount": 17586
+}

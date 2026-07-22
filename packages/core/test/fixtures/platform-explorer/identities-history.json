@@ -1,0 +1,77 @@
+{
+  "chain": "dash",
+  "raw": [
+    {
+      "timestamp": "2026-07-22T21:09:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:14:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:19:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:24:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:29:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:34:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:39:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:44:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:49:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:54:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T21:59:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    },
+    {
+      "timestamp": "2026-07-22T22:04:33.699Z",
+      "data": {
+        "registeredIdentities": 2001
+      }
+    }
+  ]
+}

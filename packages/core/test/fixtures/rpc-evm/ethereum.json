@@ -1,0 +1,9 @@
+{
+  "chain": "ethereum",
+  "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "raw": {
+    "jsonrpc": "2.0",
+    "result": "0x5c08c944ce900737",
+    "id": 1
+  }
+}

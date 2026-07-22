@@ -1,0 +1,64 @@
+{
+  "chain": "dash",
+  "raw": {
+    "epoch": {
+      "number": 76,
+      "firstBlockHeight": "403054",
+      "firstCoreBlockHeight": 2509045,
+      "startTime": 1784714107394,
+      "feeMultiplier": "1000",
+      "endTime": 1785502507394,
+      "totalBlocksInEpoch": null,
+      "totalProcessingFees": null,
+      "totalDistributedStorageFees": null,
+      "totalCreatedStorageFees": null,
+      "coreBlockRewards": null,
+      "blockProposers": null
+    },
+    "transactionsCount": 64187,
+    "totalCredits": "2802452583638438",
+    "totalCollectedFeesDay": 17436900780,
+    "transfersCount": 28866,
+    "dataContractsCount": 59,
+    "documentsCount": 17586,
+    "identitiesCount": 3044,
+    "network": "evo1",
+    "api": {
+      "version": "2.4.1",
+      "block": {
+        "height": 403333,
+        "hash": "9069332A5A2907DC6375B709D8C9CB8425347C948A8CFC395EC7EF1603665594",
+        "timestamp": "2026-07-22T22:06:48.203Z"
+      }
+    },
+    "tenderdash": {
+      "version": "1.6.0",
+      "block": {
+        "height": 403333,
+        "hash": "9069332A5A2907DC6375B709D8C9CB8425347C948A8CFC395EC7EF1603665594",
+        "timestamp": "2026-07-22T22:06:48.203Z"
+      }
+    },
+    "indexer": {
+      "status": "synced",
+      "syncProgress": 100
+    },
+    "versions": {
+      "software": {
+        "dapi": "4.0.0",
+        "drive": "4.0.0",
+        "tenderdash": "1.6.0"
+      },
+      "protocol": {
+        "tenderdash": {
+          "p2p": null,
+          "block": 14
+        },
+        "drive": {
+          "latest": 12,
+          "current": 12
+        }
+      }
+    }
+  }
+}

@@ -40,5 +40,20 @@ export {
 } from './adapters/dexscreener/index.js';
 export { createDefillamaAdapter, type DefillamaAdapterDeps } from './adapters/defillama/index.js';
 
+// Batch B live/stub adapters (task 003-5, R-8..R-12) — same factory convention as batch A above.
+export { createRpcEvmAdapter, type RpcEvmAdapterDeps } from './adapters/rpc-evm/index.js';
+export { createRpcSolanaAdapter, type RpcSolanaAdapterDeps } from './adapters/rpc-solana/index.js';
+export {
+  createPlatformExplorerAdapter,
+  type PlatformExplorerAdapterDeps,
+} from './adapters/platform-explorer/index.js';
+export {
+  createDashPlatformAdapter,
+  type DashPlatformAdapterDeps,
+} from './adapters/dash-platform/index.js';
+export { createDuneAdapter } from './adapters/dune/index.js';
+export { createPgHistoryAdapter, type PgHistoryAdapterDeps } from './adapters/pg-history/index.js';
+export { NotImplementedInM1Error } from './adapters/not-implemented-error.js';
+
 export { createCacheStore } from './cache/two-level-store.js';
 export { getCacheStats } from './cache/stats.js';
