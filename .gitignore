@@ -11,6 +11,7 @@
 /.agent/tools
 /.agent/rules
 /.agent/sessions
+/.agent/feedback
 /System
 /.claude/skills/*
 /.claude/commands/*
