@@ -1,27 +1,45 @@
 import { z } from 'zod';
 
 /**
+ * Wraps an optional zod schema so an empty string is treated identically to the key being unset
+ * (task 001-4's `LOG_LEVEL` fix, generalized here — task 003-6, R-23 — since all 4 new M1 keys
+ * need the identical idiom: a shell exporting `KEY=` with no value, or a blank `.env` line, should
+ * behave the same as the var being absent entirely, not fail validation / silently become `""`).
+ */
+function emptyAsUndefined<T extends z.ZodType>(schema: T): z.ZodPreprocess<T> {
+  return z.preprocess((v) => (v === '' ? undefined : v), schema);
+}
+
+/**
  * Process environment configuration for the MCP server.
  *
  * M0 (ADR-001 free-first phase, R-12): every key is OPTIONAL — there are no required secrets
- * yet. `LOG_LEVEL` is reserved for future diagnostic tuning; no provider API keys are declared
- * here (those arrive M2+ behind `.superRefine`, conditional on `providers.config.ts` — see
- * ARCHITECTURE.md §4.1 "Эволюция (FUTURE, M2+)").
+ * yet. `LOG_LEVEL` is reserved for future diagnostic tuning.
+ *
+ * M1 (ARCHITECTURE.md §3.2/§10.3, R-23) adds 4 more optional keys — still no REQUIRED key
+ * (`EnvSchema.parse({})` keeps succeeding, UC-1/R-27): `COINGECKO_API_KEY`/`DUNE_API_KEY` (read by
+ * `@onchain-intel/core`'s `coingecko`/`dune` adapters), `ONCHAIN_PG_URL` (the `pg-history` read-only
+ * Postgres DSN — `z.string().url()`; confirmed empirically that zod 4.4.3's WHATWG URL parsing
+ * accepts a realistic `postgres://user:pass@host:5432/db` DSN, including a percent-encoded special
+ * character in the password and a query string, ARCHITECTURE.md §11 dev-time check — no fallback
+ * regex needed), `DATA_DIR` (the cache directory override `@onchain-intel/core`'s
+ * `resolveDataDir()` already reads, task 003-3). Every one of these 4 is read ONLY by
+ * `@onchain-intel/core` adapters/cache — never logged, never folded into a cache key (D10/§7.2).
  *
  * Deliberately NOT `.strict()`: the real input is `process.env`, which carries hundreds of
  * unrelated keys (PATH, HOME, ...). Zod's default `z.object()` behavior strips unknown keys
  * instead of rejecting them, so `EnvSchema.parse(process.env)` succeeds regardless of what else
  * is set in the shell.
  *
- * `LOG_LEVEL` is preprocessed so an empty string (e.g. a shell exporting `LOG_LEVEL=` with no
- * value, or an `.env` line `LOG_LEVEL=`) is treated as unset rather than an invalid enum value —
- * an optional env var left blank should behave the same as the var being absent entirely.
+ * Every key here is wrapped in `emptyAsUndefined` so a blank value behaves as absent (see its own
+ * docstring above).
  */
 export const EnvSchema = z.object({
-  LOG_LEVEL: z.preprocess(
-    (v) => (v === '' ? undefined : v),
-    z.enum(['debug', 'info', 'warn', 'error']).optional(),
-  ),
+  LOG_LEVEL: emptyAsUndefined(z.enum(['debug', 'info', 'warn', 'error']).optional()),
+  COINGECKO_API_KEY: emptyAsUndefined(z.string().optional()),
+  DUNE_API_KEY: emptyAsUndefined(z.string().optional()),
+  ONCHAIN_PG_URL: emptyAsUndefined(z.string().url().optional()),
+  DATA_DIR: emptyAsUndefined(z.string().optional()),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
