@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@onchain-intel/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

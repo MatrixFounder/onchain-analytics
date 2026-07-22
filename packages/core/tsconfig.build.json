@@ -1,0 +1,14 @@
+{
+  // Build-only tsconfig, read by the `build` script (`tsc -p tsconfig.build.json`, ARCHITECTURE.md
+  // §3.1/§6.4 — this package builds via plain tsc, no tsup, unlike mcp-server). The package
+  // tsconfig.json includes both "src" and "test" (needed for editors / `pnpm typecheck` to cover
+  // test/*.ts) and leaves "rootDir" unset for that reason (see the comment there). The build step
+  // is narrower: only "src" should ever be compiled/emitted (never `dist/test/*.d.ts`), so this
+  // config restricts `include` to "src" (a child `include`/`exclude`/`files` array replaces the
+  // parent's, it doesn't merge — TS docs) AND sets `rootDir: "src"` explicitly.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src"
+  },
+  "include": ["src"]
+}

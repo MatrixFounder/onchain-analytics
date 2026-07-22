@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  // No explicit "rootDir" here (mirrors packages/mcp-server/tsconfig.json, see its .AGENTS.md):
+  // an explicit "rootDir" that doesn't cover every included file raises TS6059 even under
+  // `tsc --noEmit`, not just on emit. This config covers "src" AND "test" (editors / `pnpm
+  // typecheck`), so "rootDir" is left for TS to infer as the input files' common ancestor. The
+  // build-only step needs a narrower, `src`-only view with an explicit `rootDir: "src"` — see
+  // tsconfig.build.json.
+  "include": ["src", "test"]
+}

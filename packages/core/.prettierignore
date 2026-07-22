@@ -1,0 +1,5 @@
+# Prettier's ignore-file lookup is CWD-relative (unlike its `.prettierrc` config resolution,
+# which searches upward) — the root `.prettierignore` alone does not reach `prettier --check .`
+# run from this package's directory (mirrors packages/mcp-server/.prettierignore, see its
+# .AGENTS.md). `dist/` is `tsc`-built output, never hand-formatted.
+dist/

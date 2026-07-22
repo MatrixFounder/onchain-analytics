@@ -94,8 +94,16 @@ pnpm --filter @onchain-intel/core exec vitest run test/args-hash.test.ts     # c
 pnpm --filter @onchain-intel/core test                                       # весь core-сьют зелёный
 # R-4: 9 адаптеров и routes задекларированы в одном файле:
 grep -cE "id: '(coingecko|dexscreener|defillama|dune|rpc-evm|rpc-solana|dash-platform|platform-explorer|pg-history)'" packages/core/src/providers.config.ts   # ожидается 9
-# R-25: единственная точка HTTP — safeFetch; сырых fetch/http вне net/ быть не должно (guard, растёт в 003-4/5):
-grep -RnE "\bfetch\(|http\.request|https\.request" packages/core/src/adapters && echo "REVIEW: raw fetch in adapters (must use safeFetch)" || echo "no-raw-fetch-ok"
+# R-25: единственная точка HTTP — safeFetch. Гард в двух частях (метод D4-интерфейса легитимно
+# называется fetch, поэтому наивный \bfetch\( ложно срабатывал на adapter.fetch(/декларацию/доки —
+# исправлено 2026-07-22 после первого прогона):
+# (a) сетевые примитивы вне net/ запрещены:
+grep -RnE "globalThis\.fetch|from ['\"]node:https?['\"]|http\.request|https\.request" packages/core/src --exclude-dir=net && echo "REVIEW: raw network primitive outside net/ (must use safeFetch)" || echo "no-raw-net-ok"
+# (b) bare fetch( в ИМПЛЕМЕНТАЦИЯХ адаптеров запрещён; интерфейсные файлы корня adapters/
+#     (types/registry/cache-store — там метод D4 легитимно зовётся fetch) исключены;
+#     adapter.fetch(/this.fetch( не матчатся ([^.] префикс); в комментариях имплементаций bare "fetch(" не писать
+#     (glob-форма adapters/*/ падает в zsh при отсутствии подпапок — потому -R + --exclude):
+grep -RnE "(^|[^.[:alnum:]_])fetch\(" packages/core/src/adapters --exclude=types.ts --exclude=registry.ts --exclude=cache-store.ts && echo "REVIEW: bare fetch( in adapter implementation (must use safeFetch)" || echo "no-raw-fetch-ok"
 ```
 
 - **[R-3]** `ProviderAdapter` типизирован без `any`-протечек в `adapters/types.ts`.
