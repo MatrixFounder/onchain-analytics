@@ -27,3 +27,8 @@ CLAUDE.local.md
 CLAUDE.agentic.md
 # framework dir (partially symlinked/external)
 .agent/
+# run-feedback ledgers & backlog — CLI-written, never formatter-touched
+docs/KNOWN_ISSUES.md
+docs/issues/
+docs/BACKLOG.md
+docs/feedback/
