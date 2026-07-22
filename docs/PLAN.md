@@ -1,192 +1,363 @@
-# PLAN — TASK-001 · M0: Discovery & каркас (`onchain-intel`)
+# PLAN — TASK-003 · M1: MVP read-слой, только free (`m1-read-layer`)
 
-| Поле             | Значение                                                                                       |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| **Task**         | [TASK-001 `m0-discovery-skeleton`](TASK.md)                                                    |
-| **Architecture** | [ARCHITECTURE.md](ARCHITECTURE.md) — v1, APPROVED                                              |
-| **ADR**          | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — Accepted (D1–D3, D10–D12)   |
-| **Статус плана** | Draft (готов к Development-фазе)                                                               |
-| **Дата**         | 2026-07-21                                                                                     |
-| **Стратегия**    | Stub-First (две фазы на каждую dev-задачу: Phase 1 структура/стабы/red → Phase 2 логика/green) |
+| Поле             | Значение                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| **Task**         | [TASK-003 `m1-read-layer`](TASK.md) — APPROVED, R-1…R-28                                               |
+| **Architecture** | [ARCHITECTURE.md](ARCHITECTURE.md) — v2.1, APPROVED (THE design source)                                |
+| **ADR**          | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — Accepted (D4–D7, D10–D12)           |
+| **DB-схема**     | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — применена к кеш-БД                 |
+| **Статус плана** | Draft (готов к Development-фазе)                                                                       |
+| **Дата**         | 2026-07-22                                                                                             |
+| **Стратегия**    | Stub-First (dev-задачи: Phase 1 структура/стабы/red → Phase 2 логика/green), атомарная нарезка 8 задач |
 
 ---
 
 ## 0. Стратегия и границы
 
-M0 — это **минимальный работающий скелет** под уже принятые решения ADR-001, а не проектирование
-стека. План строго следует `docs/ARCHITECTURE.md` (§3.2 — раскладка, §5.2 — интерфейсы, §10.2 —
-CI). Реализуется ровно то, что в скоупе TASK.md §2; всё из §3 (адаптеры/кеш/БД/планировщик/платные
-ключи/HTTP-транспорт) **не трогается** (guard R-15).
+M1 — первый содержательный инженерный срез: движок отвечает на реальные ончейн-вопросы **без единого
+платного ключа** ($0). План строго следует [ARCHITECTURE.md](ARCHITECTURE.md) v2.1 (§3.2 — раскладка
+и компоненты, §5 — интерфейсы, §10.2 — CI, §11 — planner-facing items). Реализуется ровно то, что в
+скоупе TASK.md §3; всё из §4 (платные провайдеры, budget-guard, snapshot-write, планировщик, HTTP-
+транспорт, watchlists) **не трогается** (сквозной guard R-27).
 
-**Ключевые инженерные конвенции (из APPROVED reviewer-заметок — обязательны):**
+**Ключевые инженерные решения (из APPROVED-ревью-заметок и ARCHITECTURE v2.1 — обязательны):**
 
-1. **`version` прокидывается явно** (резолвит неоднозначность ARCHITECTURE §5.2 в пользу explicit
-   deps): `createServer(deps: { env, version })`, `registerPingTool(server, { version })`,
-   `pingHandler(input, ctx: { version })`. Версия читается из `package.json` **один раз** на входе
-   (`src/index.ts`) и прокидывается вниз — не хардкодится строкой в бизнес-коде.
-2. **Плейсхолдеры `"^*"` в `package.json` заменяются реальными пиннутыми диапазонами** на этапе
-   установки: версии проставляет `pnpm add` (резолвит `^latest`), lockfile коммитится, CI ставит с
-   `--frozen-lockfile`.
-3. **`PingOutput = { ok, service, version, ts }`** — намеренно богаче необязательного примера R-10
-   (`{ pong, ts }`). Форма детерминирована; в тестах `ok === true`, `service` и `version` —
-   фиксированные литералы/строка версии, `ts` проверяется как `number` (это `Date.now()`).
-4. **Порядок CI `test` → `build`** — сознательная конвенция (E2E спавнит исходник через `tsx`, не
-   `dist/`), а не жёсткое ограничение.
-5. **Автоматизированный stdio E2E-тест ОБЯЗАТЕЛЕН** (SDK `Client` + `StdioClientTransport` против
-   дочернего процесса) — именно он делает exit-критерий M0 проверяемым в CI.
+1. **`packages/core` — новый библиотечный пакет** (OQ-3, ARCHITECTURE §3.1): канонические типы,
+   chain/address, Adapter+Registry, 9 адаптеров, двухуровневый кеш, SSRF+rate-limit, read-only
+   PG-клиент. Собирается **plain `tsc -p tsconfig.build.json`** (без tsup — обходит dts-баг M0 целиком).
+   `mcp-server` получает `workspace:*`-зависимость на `@onchain-intel/core`.
+2. **PG-клиент = `pg` (node-postgres) + `@types/pg`** — ровно как выбрала ARCHITECTURE §6.1/§3.2
+   (`pg.Pool`, ленивый, SELECT-only). **НЕ** `postgres`/postgres.js. Dedup-guard закрыт.
+3. **`CapabilityRegistry.resolve()` реализует `isAvailable() === false` → skip-to-next** (согласование
+   §3.2 docstring ↔ §9.1): недоступный адаптер (нет ключа/DSN, или заведомо-`false` как `dash-platform`/
+   `dune`) пропускается, маршрут идёт к следующему `adapterId`; при ошибке `fetch()`/`normalize()`
+   текущего — тоже переход к следующему; если все недоступны — `CapabilityUnavailableError` со списком
+   `(adapterId, reason)`, а не тихий пустой ответ (R-11, R-24).
+4. **ВСЕ 4 tool-input-схемы сужают `chain` до `z.enum(['ethereum','solana'])`** там, где `chain`
+   применим (не только `wallet_balances`); `dash` в 4 tools не принимается — dash-платформа покрыта
+   только contract-тестами Capability Registry, а не MCP-tool'ами (ARCHITECTURE §5.1 Major-2).
+5. **OQ-1 РЕШЁН архитектурой:** backend `onchain_wallet_balances` = keyless RPC-адаптеры `rpc-evm`
+   (ethereum) + `rpc-solana` (solana), только `assetType:'native'`. Живой пробник подтвердил:
+   `ethereum-rpc.publicnode.com` ✓, `eth.drpc.org` ✓ (fallback), `api.mainnet-beta.solana.com` ✓.
+   `llamarpc`/`cloudflare-eth` — **DOWN, не использовать**. ERC-20/SPL — вне M1 (см. §5 ниже).
+6. **R-8 (Dune) сужен до interface/config-stub** (ARCHITECTURE §3.2 «dune», §11): `capabilities()`
+   объявляет `token.holders`, `fetch()`/`normalize()`/фикстуры/теста **нет** в M1, `isAvailable()`
+   безусловно `false`. Planner **принимает** это как обновлённый scope R-8 для M1 (ýже буквальной
+   acceptance-формулировки R-8 в TASK.md; резолюция одобрена ревью архитектуры явно, F-2/minor).
+7. **`dash-platform` сужен до interface + fixture-контракта** (ARCHITECTURE §3.2, F-3): `fetch()` —
+   stub, `isAvailable()` безусловно `false`, `@grpc/*` **НЕ** входят в M1-зависимости. Живой gRPC —
+   backlog (§5 «Отложено»). `platform-explorer` — **единственный live Dash-источник M1**.
 
-**Дисциплина коммитов:** dev-задачи **ничего не коммитят и не пушат**. Коммит/пуш (и, как
-следствие, реальный прогон CI на remote `MatrixFounder/onchain-analytics`) выполняется **в самом
-конце**, только по явной команде оркестратора (см. Задача 001-4 §Финальный гейт).
+**Дисциплина коммитов:** dev-задачи **ничего не коммитят и не пушат**. Коммит/пуш и реальный прогон
+CI — **только по явной команде оркестратора на гейтах** (как в M0).
 
-**Окружение:** локально Node v24 (ок — `engines.node >= 22` лишь декларирует минимум); CI пиннит
-Node 22. `pnpm` глобально не установлен → поднять через `corepack enable pnpm` (corepack идёт с
-Node), fallback `npm i -g pnpm`.
+**Окружение (проверено):** локально Node **v24.15.0** (ок — `engines.node >=22` декларирует минимум),
+CI пиннит **Node 22**; **pnpm 11.15.1** через `corepack`. `packages/*` уже покрыт `pnpm-workspace.yaml`
+(новый `packages/core` подхватывается автоматически). Root-скрипты `typecheck`/`test`/`build`
+фан-аутят через `pnpm -r` → **топологический порядок `core` → `mcp-server` подлежит эмпирической
+проверке** (§11, задачи 003-1 и 003-8). **`better-sqlite3` — нативный addon:** в `pnpm-workspace.yaml`
+уже есть `allowBuilds.esbuild: true` → в задаче 003-3 добавляется `allowBuilds.better-sqlite3: true`
+(иначе pnpm 11 блокирует build-скрипт).
+
+**Acceptance-сниппеты — дисциплина RF-1 (R-28, обязательна во всех задачах):** на macOS zsh + pnpm 11
+**запрещены** (а) bare `timeout` (нет бинаря на stock macOS) и (б) `pnpm test -- --flag` (pnpm 11
+форвардит `--` буквально → vitest ест `--reporter` как позиционный фильтр). Разрешённые формы:
+целый сьют — `pnpm --filter <pkg> test`; один файл/флаг — `pnpm --filter <pkg> exec vitest run <path>`
+(бинарь вызывается напрямую, без `--`-форвардинга). Каждый сниппет прогоняется вручную на macOS перед
+фиксацией в task-файле.
 
 ---
 
 ## 1. Граф задач (DAG)
 
 ```
-001-1  Монорепо + toolchain scaffold        (config/setup, без стабов)
-   │
-   └─► 001-2  MCP-скелет + env + onchain_ping   (dev: Phase 1 стабы → Phase 2 логика)
-          │
-          └─► 001-3  Тесты: unit + stdio E2E      (dev: Phase 1 red → Phase 2 green)
-                 │
-                 └─► 001-4  CI + verification-only + M0 exit  (config/verify; зависит также от 001-1)
+003-1  core scaffold + canonical types + chain/address                          (dev)
+  └─► 003-2  ProviderAdapter iface + Registry + providers.config + SSRF + rate-limit   (dev)
+        ├─► 003-3  two-level cache (lru+sqlite DATA_DIR) + metrics counters            (dev)
+        ├─► 003-4  live adapters A: coingecko+dexscreener+defillama + fixtures + golden (dev)
+        │            └ создаёт скелет scripts/record-fixture.mjs
+        └─► 003-5  live adapters B: rpc-evm+rpc-solana+platform-explorer(+history)
+                     + dash-platform stub + dune config-stub + pg-history              (dev)
+              └─► 003-6  env-расширение + graceful degradation                         (dev)
+                    └─► 003-7  4 MCP-tools + e2e.inprocess + spawn-e2e→5               (dev)
+                          └─► 003-8  integration verify + CI/smoke + exit              (verify)
+
+Доп. (не-древесные) рёбра — над деревом:
+  003-3 ─► 003-5   (реальный кеш для сквозного resolve() в registry.fallback.test.ts)
+  003-4 ─► 003-5   (record-fixture.mjs skeleton, здесь расширяется живыми вызовами)
+  003-2 ─► 003-6   (CapabilityUnavailableError)
+  003-4 ─► 003-7   (фикстуры батча A для fixtureRegistry)
 ```
 
-- **001-1** — нет зависимостей.
-- **001-2** — зависит от **001-1** (workspace, tsconfig, зависимости установлены).
-- **001-3** — зависит от **001-2** (src-модули существуют и импортируются; для E2E нужен рабочий
-  `src/index.ts` с транспортом).
-- **001-4** — зависит от **001-3** (локально зелёный сьют lint+typecheck+test) и от **001-1** (CI
-  переиспользует корневые скрипты).
+Зависимости (топология исполнения — авторитетный список; диаграмма выше — читаемое приближение):
+
+- **003-1** — root (расширяет M0; зависимостей внутри M1 нет).
+- **003-2** — зависит от **003-1** (`ChainSchema`, канонические типы; `CacheStore`-интерфейс
+  объявляется здесь, реализация — 003-3).
+- **003-3** — зависит от **003-2** (`adapterRegistrations` для bootstrap `providers`; `CacheStore`-контракт).
+- **003-4** — зависит от **003-2** (`ProviderAdapter`, `providers.config.ts`, `safeFetch`);
+  создаёт скелет `scripts/record-fixture.mjs`.
+- **003-5** — зависит от **003-2**, **003-3** (реальный кеш нужен `registry.fallback.test.ts` для
+  сквозного `resolve()`) и **003-4** (скелет `scripts/record-fixture.mjs` — 003-5 расширяет его живыми
+  вызовами для rpc-evm/rpc-solana/platform-explorer).
+- **003-6** — зависит от **003-2** (`CapabilityUnavailableError`) и **003-5** (`isAvailable()`-reasons
+  адаптеров для доказательства деградации).
+- **003-7** — зависит от **003-4** и **003-5** (fixtureRegistry строится из фикстур обоих батчей) и
+  **003-6** (env).
+- **003-8** — зависит от **003-7** (транзитивно — всё).
 
 ---
 
 ## 2. Шаги плана (по задачам) — RTM checklist
 
-> RTM-линковка: один пункт RTM (TASK.md §4) = один чек-бокс, префикс `[R-ID]`. Все R-1…R-15
-> присутствуют как явные токены. Verification-only (R-1, R-2, R-13, R-14) — отдельные проверочные
-> пункты; scope-guard R-15 — сквозная проверка.
+> RTM-линковка (обязательна): один пункт RTM (TASK.md §5) = один чек-бокс, префикс `[R-N]`. Все
+> R-1…R-28 присутствуют как явные токены (28 owning-пунктов ниже + перекрёстные ссылки на R-11/R-15 в
+> задаче 003-8 + полная трасса §3). Сквозные R-27 (scope-guard) и R-28 (RF-1-сниппеты) — owning-пункты
+> в 003-8, но фактически применяются в **каждой** задаче.
 
-### Шаг 1 — [Задача 001-1] Монорепо + toolchain scaffold (R-3, R-5, R-11)
+### Шаг 1 — [Задача 003-1] core scaffold + canonical types + chain/address (R-1, R-2)
 
-Файл: [task-001-1-monorepo-toolchain-scaffold.md](tasks/task-001-1-monorepo-toolchain-scaffold.md)
+Файл: [task-003-1-core-scaffold-canonical-types.md](tasks/task-003-1-core-scaffold-canonical-types.md)
+Stub-First: **Phase 1** — `packages/core` scaffold (package.json plain-`tsc` build, tsconfig(+build),
+`.prettierignore`, `types:["node"]`), пустые zod-схемы + сигнатуры `normalizeAddress`/`isValidAddress`,
+`workspace:*`-wiring в mcp-server, `tsc --noEmit` зелёный; **Phase 2** — полные zod-схемы + EIP-55/
+base58-логика + unit-тесты.
 
-- [ ] **[R-3]** pnpm-монорепо: `pnpm-workspace.yaml` + корневой `package.json` + пакет
-      `packages/mcp-server/package.json` с `engines.node: ">=22"`; `pnpm install` в корне проходит без
-      ошибок (lockfile сгенерирован; плейсхолдеры `"^*"` заменены реальными версиями через `pnpm add`).
-- [ ] **[R-5]** ESLint + Prettier настроены: конфиги присутствуют, корневые скрипты `lint` и
-      `format:check` объявлены и проходят на скелете (`pnpm lint`, `pnpm format:check` → 0 ошибок).
-- [ ] **[R-11]** Лицензия Apache-2.0: корневой `LICENSE` содержит полный текст Apache License 2.0;
-      `"license": "Apache-2.0"` в корневом и в `packages/mcp-server/package.json`.
+- [ ] **[R-1]** Канонические zod-типы `Token`, `Wallet`, `Balance`, `OHLCV`, `Pool` (D5) в
+      `packages/core/src/types/*`, единый источник правды, реэкспорт из `src/index.ts`; provider-DTO не
+      протекают (ни один `tools/*.ts` не импортирует provider-специфичный тип); unit-тест валидирует
+      каждый тип на примере данных.
+- [ ] **[R-2]** Канонический тип `Snapshot` (D5, версионируемый) — `metric, asset, ts, valueRaw
+(string), valueNum?, source, height?`; согласован с DB-SCHEMA-CONCEPT §1 (camelCase↔snake_case
+      маппинг зафиксирован примечанием, не реализуется в M1 — движок не пишет `snapshots`); unit-тест на
+      сериализацию/валидацию.
 
-### Шаг 2 — [Задача 001-2] MCP-скелет + env-модуль + `onchain_ping` (R-4, R-9, R-10, R-12)
+### Шаг 2 — [Задача 003-2] ProviderAdapter + CapabilityRegistry + providers.config + SSRF + rate-limit (R-3, R-4, R-25, R-26)
 
-Файл: [task-001-2-mcp-server-env-ping.md](tasks/task-001-2-mcp-server-env-ping.md)
-Stub-First: **Phase 1** — файлы/сигнатуры/стабы, `tsc --noEmit` зелёный (импортируемо); **Phase 2** —
-zod-схемы, `pingHandler`, `registerPingTool`, монтаж `StdioServerTransport` в `src/index.ts`.
+Файл: [task-003-2-adapter-registry-net-gate.md](tasks/task-003-2-adapter-registry-net-gate.md)
+Stub-First: **Phase 1** — интерфейсы (`ProviderAdapter`, `CapabilityDescriptor`, `CapabilityRoute`,
+`CacheStore`), `providers.config.ts` (9 регистраций + routes), `registry.resolve()` стаб, `safeFetch`/
+`assertAllowedHost`/`throttle` сигнатуры + тесты red; **Phase 2** — маршрутизация `(capability,chain)`,
+skip-to-next по `isAvailable()===false`/ошибке fetch, SSRF-allowlist + редирект-проверка, token-bucket.
 
-- [ ] **[R-4]** TS strict-конфиг (`strict: true`, `noUncheckedIndexedAccess: true` в
-      `tsconfig.base.json`); `pnpm typecheck` (`tsc --noEmit`) — 0 ошибок на скелете; `pnpm build`
-      (tsup) собирает `dist/`; `tsx src/index.ts` стартует без ошибок трансформации.
-- [ ] **[R-9]** Скелет MCP-сервера на `@modelcontextprotocol/sdk`, **только stdio**: `src/index.ts`
-      подключает `StdioServerTransport`; в коде нет ни строки HTTP/SSE/Streamable-транспорта.
-- [ ] **[R-10]** Инструмент называется ровно `onchain_ping`; input/output-схема — **zod** как
-      единственный источник правды (валидация ↔ MCP tool-schema, без ручного дублирования); ответ
-      детерминирован (`PingOutput = { ok, service, version, ts }`).
-- [ ] **[R-12]** Env-модуль `src/env.ts`: `EnvSchema` (zod, все поля optional в M0) + `loadEnv()`
-      fail-fast; `EnvSchema.parse({})` не бросает (подтверждающий unit-тест поставляется в 001-3);
-      `.env.example` документирует конвенцию `0600` (создаётся в 001-1, значений не содержит).
+- [ ] **[R-3]** `ProviderAdapter` интерфейс (`id/capabilities()/costOf()/fetch()/normalize()/
+isAvailable?()`) в `src/adapters/types.ts`; типизирован без `any`-протечек (минимум 2 адаптера в
+      003-4/003-5 реализуют его).
+- [ ] **[R-4]** Декларативный `src/providers.config.ts` (`routes` + `adapterRegistrations`, 9
+      адаптеров) + `CapabilityRegistry.resolve(capability, chain, args)` — маршрутизация по capability+сети,
+      приоритет free→paid, выбор по доступности; смена приоритета/хоста = правка конфига, без правки
+      вызывающей стороны.
+- [ ] **[R-25]** SSRF-гейт `src/net/safe-fetch.ts`: `assertAllowedHost(hostname, allowlist)` +
+      `safeFetch(url, opts, allowlist)` (per-adapter allowlist, `redirect:'manual'` + проверка Location на
+      каждом хопе, макс. 3); fetch на хост вне allowlist отклоняется **до** сетевого вызова; unit-тест
+      подтверждает.
+- [ ] **[R-26]** Per-provider rate-limit `src/net/rate-limit.ts`: token-bucket `throttle(providerId,
+cfg)` из `providers.config.ts`; превышение лимита задерживает/отклоняет вызов до сети; тест на
+      throttle-логике.
 
-### Шаг 3 — [Задача 001-3] Тесты: unit + stdio E2E (R-6)
+### Шаг 3 — [Задача 003-3] two-level cache + DATA_DIR SQLite + metrics counters (R-13, R-14, R-15)
 
-Файл: [task-001-3-tests-unit-e2e-stdio.md](tasks/task-001-3-tests-unit-e2e-stdio.md)
-Stub-First: **Phase 1** — написать `env.test.ts` / `ping.test.ts` / `e2e.stdio.test.ts` (red или
-против стабов); **Phase 2** — весь сьют зелёный на реальной логике из 001-2.
+Файл: [task-003-3-two-level-cache-sqlite-metrics.md](tasks/task-003-3-two-level-cache-sqlite-metrics.md)
+Stub-First: **Phase 1** — `pnpm-workspace.yaml` `allowBuilds.better-sqlite3:true`, DDL + `CacheStore`-
+реализации (lru+sqlite) сигнатуры + `stats.ts` стаб, тесты red; **Phase 2** — двухуровневая логика
+hit/miss/TTL, `deriveArgsHash` (canonical key-order), upsert-семантика, hit/miss-счётчики.
 
-- [ ] **[R-6]** `pnpm test` запускает vitest; минимум 1 зелёный тест. Фактически поставляются три
-      файла: `env.test.ts` (unit: `EnvSchema.parse({})` не бросает — закрывает контракт R-12),
-      `ping.test.ts` (unit: `pingHandler()` → `PingOutputSchema.parse(...)` проходит), и **обязательный**
-      `e2e.stdio.test.ts` (SDK `Client` + `StdioClientTransport` спавнит `src/index.ts` через `tsx`,
-      `tools/list` содержит `onchain_ping`, `tools/call onchain_ping` возвращает валидную форму).
+- [ ] **[R-13]** Двухуровневый кеш `src/cache/*`: `lru-cache` (hot) → `better-sqlite3` (persistent) в
+      `DATA_DIR`; ключ = `(provider, capability, argsHash)`; TTL параметризован по типу данных (таблица
+      ARCHITECTURE §3.2); unit-тест на hit/miss обоих уровней.
+- [ ] **[R-14]** Схема кеш-БД по DB-SCHEMA-CONCEPT §1: `providers(id PK)` ← `cache_entries` только
+      `TEXT/INTEGER/REAL`; время epoch-ms `INTEGER`; id — ULID `TEXT`; `PRAGMA foreign_keys=ON` при
+      открытии + `journal_mode=WAL`; все 9 `adapterRegistrations` upsert-ятся в `providers` до первой
+      записи; спроектирована под будущую `usage`-таблицу (FK на тот же `providers`) без миграции.
+- [ ] **[R-15]** Cache-hit/miss счётчики `src/cache/stats.ts` (`getCacheStats()`): повторный вызов той
+      же способности с теми же нормализованными аргументами в пределах TTL → `cache=hit`, первый →
+      `cache=miss`; видимо в (a) stderr-строке и (b) `_meta.cache` ответа tool; проверяемо в тесте.
 
-### Шаг 4 — [Задача 001-4] CI-гейт + verification-only + M0 exit (R-7, R-8, R-1, R-2, R-13, R-14, R-15)
+### Шаг 4 — [Задача 003-4] live adapters batch A: coingecko + dexscreener + defillama + fixtures + golden (R-5, R-6, R-7, R-21, R-22)
 
-Файл: [task-001-4-ci-verification-exit.md](tasks/task-001-4-ci-verification-exit.md)
+Файл: [task-003-4-live-adapters-a-cg-ds-dl.md](tasks/task-003-4-live-adapters-a-cg-ds-dl.md)
+Stub-First: **Phase 1** — три адаптера (`fetch`/`normalize` стабы), пустые `*.contract.test.ts`, скелет
+`scripts/record-fixture.mjs`; **Phase 2** — `record-fixture.mjs` (**ручной, живой вызов ОДИН раз на
+адаптер**, evidence-capture) → фикстуры → `normalize()` → golden-тесты зелёные без сети.
 
-- [ ] **[R-7]** `.github/workflows/ci.yml` существует, триггеры `push` + `pull_request`, шаги
-      lint + typecheck + test (порядок: install → lint → format:check → typecheck → **test → build**).
-- [ ] **[R-8]** CI на Node 22: `actions/setup-node` пиннит `node-version: '22'` (или `'22.x'`/LTS-
-      алиас 22-й линии); в логе прогона видно `Node v22.x.x`.
-- [ ] **[R-1]** _(verification-only)_ ADR-001 имеет статус **Accepted** (`Accepted: 2026-07-20
-(Sergey)`) — проверить заголовок `docs/onchain-analytics/ADR-001-tech-stack.md`, **правок в ADR
-      не вносить**; факт уже зафиксирован ссылкой в TASK.md/ARCHITECTURE.md.
-- [ ] **[R-2]** _(verification-only)_ `docs/ARCHITECTURE.md` и `docs/TASK.md` существуют, созданы
-      этим прогоном пайплайна, ARCHITECTURE ссылается на TASK-001 и на ADR-001 (D1–D12) — подтвердить
-      наличие и перекрёстные ссылки, отдельной инженерной работы не требуется.
-- [ ] **[R-13]** _(verification-only)_ `.gitignore` уже содержит `.env`, `.env.*`, `!.env.example`
-      — проверить (строки ~47–50), новых правок не вносить, если пробел не найден.
-- [ ] **[R-14]** _(verification-only)_ `.gitignore` уже содержит `/DATA_DIR/`, `*.db`, `*.sqlite`,
-      `*.sqlite3`, `*-wal`, `*-shm` — проверить (строки ~61–67); M0 не добавляет БД-кода и артефактов
-      состояния.
-- [ ] **[R-15]** _(cross-cutting scope-guard)_ Ревью diff'а: изменения ограничены корневыми
-      манифестами монорепо, `packages/mcp-server` (сервер + `onchain_ping` + env), CI workflow,
-      lint/format/test-конфигами, `LICENSE`, `.env.example` — **ни строки** adapter/provider/cache/
-      scheduler/DB-migration/HTTP-транспорт кода.
+- [ ] **[R-5]** Адаптер `coingecko` (`src/adapters/coingecko/`): `capabilities()` = `token.price`+
+      `token.metadata`; REST `/coins/{platform}/contract/{address}`; работает без ключа (demo/free), опц.
+      `COINGECKO_API_KEY`; contract-тест на записанной фикстуре зелёный.
+- [ ] **[R-6]** Адаптер `dexscreener` (keyless): `capabilities()` = `pairs.new`+`pool.info` (оба
+      объявлены; `pool.info` пока без tool-потребителя); точный endpoint подтверждается при записи фикстуры
+      (§11); contract-тест зелёный без ключа.
+- [ ] **[R-7]** Адаптер `defillama` (free/keyless): `capabilities()` = `protocol.tvl`; REST
+      `/protocol/{slug}`, срез `chainTvls[chain]`; contract-тест зелёный без ключа.
+- [ ] **[R-21]** Контрактные тесты (D11): записанные фикстуры `test/fixtures/<adapter>/*.json` в repo,
+      golden-нормализация; `pnpm test` не делает исходящих сетевых вызовов (фикстуры/моки); детерминизм.
+- [ ] **[R-22]** Ручной dev-скрипт `packages/core/scripts/record-fixture.mjs` (пере)записи фикстур с
+      **probe-evidence** (`<name>.evidence.md`: фактический список полей/endpoint/дата записи, не
+      предположение); **не входит в CI**.
+
+### Шаг 5 — [Задача 003-5] live adapters batch B: rpc-evm + rpc-solana + platform-explorer(+history) + dash-platform stub + dune config-stub + pg-history (R-8, R-9, R-10, R-11, R-12)
+
+Файл: [task-003-5-live-adapters-b-rpc-dash-pg.md](tasks/task-003-5-live-adapters-b-rpc-dash-pg.md)
+Stub-First: **Phase 1** — все адаптеры-скелеты + `pg/read-client.ts` сигнатура + `registry.fallback.test.ts`
+red; **Phase 2** — RPC live (`eth_getBalance`/`getBalance`), platform-explorer live+history, dash-platform
+fixture+`isAvailable()===false`, dune config-stub, pg-history поверх `pg`, fallback-тест green.
+
+- [ ] **[R-8]** Адаптер `dune` — **interface/config-stub** (принято как обновлённый scope R-8, §0 п.6):
+      `capabilities()` = `token.holders`; `fetch()`/`normalize()` не реализованы; `isAvailable()` безусловно
+      `{ ok:false, reason:'dune query authoring deferred to M2' }`; **нет** живого вызова/фикстуры/теста в M1.
+- [ ] **[R-9]** Адаптер `dash-platform` (DAPI, primary, keyless) — **interface + fixture-контракт**
+      (F-3): `capabilities()` = `privacy.shielded_pool`+`platform.identities/contracts/documents/credits`;
+      `normalize()` golden-тестируется на вручную собранной фикстуре; `fetch()` — stub; `isAvailable()`
+      безусловно `false`; `@grpc/*` не в зависимостях; никакого write-кода.
+- [ ] **[R-10]** Адаптер `platform-explorer` (fallback + history, keyless, **единственный live
+      Dash-источник M1**): те же capability, что `dash-platform`, + собственный history-метод
+      (`privacy.shielded_pool.history`/`platform.metrics.history`), первым в history-маршрутах.
+- [ ] **[R-11]** Горячая замена: `dash-platform.isAvailable()` детерминированно `false` → Registry
+      маршрутизирует `privacy.shielded_pool`/`platform.*` на `platform-explorer`; `registry.fallback.test.ts`
+      прогоняет **реальный** (не симулированный) fallback-путь, без падения способности.
+- [ ] **[R-12]** Опциональный READ-ONLY PG-адаптер `pg-history` поверх `src/pg/read-client.ts`
+      (клиент **`pg`**, ленивый `pg.Pool`, `search_path=onchain`, только `SELECT`): при отсутствии
+      `ONCHAIN_PG_URL` — `isAvailable()` = `{ ok:false, reason:'needs ONCHAIN_PG_URL' }` (явно, не крэш);
+      при наличии — только `SELECT`, ни одного `INSERT/UPDATE`; зарегистрирован в `providers` (FK, F-2).
+
+### Шаг 6 — [Задача 003-6] env-расширение + graceful degradation (R-23, R-24)
+
+Файл: [task-003-6-env-graceful-degradation.md](tasks/task-003-6-env-graceful-degradation.md)
+Stub-First: **Phase 1** — 4 новых optional-ключа в `EnvSchema` (стаб) + тест red; **Phase 2** —
+финализация схемы, `ONCHAIN_PG_URL` `z.string().url()`-проверка (§11 dev-time чек), сквозная проверка
+структурированной деградации.
+
+- [ ] **[R-23]** `EnvSchema` (`mcp-server/src/env.ts`) расширен 4 **опциональными** ключами
+      (`COINGECKO_API_KEY`, `DUNE_API_KEY`, `ONCHAIN_PG_URL` как `z.string().url().optional()`, `DATA_DIR`);
+      `EnvSchema.parse({})` не бросает; секреты не логируются, не входят в cache-key.
+- [ ] **[R-24]** Явная деградация при отсутствующем опц. ключе/DSN: вызов способности без нужного
+      ключа/DSN возвращает структурированную ошибку/предупреждение с указанием **какого** ключа не хватает
+      (без утечки значения) — через `isAvailable()`-reason и `CapabilityUnavailableError`, не молча/не крэш.
+
+### Шаг 7 — [Задача 003-7] 4 MCP-tools + e2e.inprocess + spawn-e2e → tools/list===5 (R-16, R-17, R-18, R-19, R-20)
+
+Файл: [task-003-7-mcp-tools-e2e.md](tasks/task-003-7-mcp-tools-e2e.md)
+Stub-First: **Phase 1** — 4 `tools/*.ts` (input/output zod + handler-стаб), регистрация в `createServer`,
+`e2e.inprocess.test.ts` (InMemoryTransport + fixtureRegistry) red; **Phase 2** — handler → `registry.
+resolve()` + `isError`-путь + `_meta.cache`, e2e green, spawn-e2e расширен до `tools/list===5`.
+
+- [ ] **[R-16]** MCP-tool `onchain_get_token` — zod in (`chain: z.enum(['ethereum','solana'])`,
+      `address` + `superRefine` через `isValidAddress`) / out (`Token`); e2e/contract-тест на ethereum и
+      solana — оба ответа валидны по схеме.
+- [ ] **[R-17]** MCP-tool `onchain_wallet_balances` — zod in/out (`Wallet`, `balances` только
+      `assetType:'native'`); backend = `rpc-evm`/`rpc-solana` (OQ-1 решён, §0 п.5); input-схема покрыта
+      unit-тестом на форму, e2e на 2 сетях.
+- [ ] **[R-18]** MCP-tool `onchain_new_pairs` — zod in (`chain` enum, `limit?`) / out (`{chain, pairs:
+Pool[], source, fetchedAt}`); contract/e2e-тест на фикстурах DexScreener для обеих сетей зелёный.
+- [ ] **[R-19]** MCP-tool `onchain_protocol_tvl` — zod in (`chain` enum, `protocolSlug`) / out;
+      contract/e2e-тест на фикстурах DeFiLlama для обеих сетей зелёный.
+- [ ] **[R-20]** Существующий `onchain_ping` не меняется по контракту: `PingInputSchema`/
+      `PingOutputSchema` и M0-regression-тесты остаются зелёными без правок; `tools/list` теперь = 5 tools.
+
+### Шаг 8 — [Задача 003-8] integration verify + CI/smoke + exit-критерии (R-27, R-28) + перепроверка R-11/R-15
+
+Файл: [task-003-8-integration-verify-ci-exit.md](tasks/task-003-8-integration-verify-ci-exit.md)
+
+- [ ] **[R-27]** Scope guard: ревью diff'а подтверждает отсутствие кода вне §3 In Scope — нет платных
+      провайдеров/Nansen, write-путей (`INSERT/UPDATE/DELETE`), планировщика (`croner`/BullMQ), HTTP/SSE/
+      Streamable-транспорта, watchlists, `@grpc/*`, live Dune-запроса, ERC-20/SPL; grep-гейты зелёные.
+- [ ] **[R-28]** Все acceptance-сниппеты во всех task-файлах исполнимы на macOS zsh + pnpm 11 (без bare
+      `timeout`, без `pnpm test -- --flag`-форвардинга) — вручную прогнаны перед фиксацией (RF-1 lesson,
+      `docs/issues/rf-1-...md`); финальный DoD-прогон зелёный.
+- **Перепроверка (exit-mapping, не новые owning-пункты):** **R-15** cache-hit виден в метриках при
+  повторном вызове (интеграционный прогон через tool → `_meta.cache.status: miss→hit`); **R-11**
+  hot-swap DAPI→platform-explorer доказан на реальной M1-конфигурации; топологический порядок
+  `pnpm -r build` (core → mcp-server) проверен эмпирически (§11); CI/`smoke:dist` (ping-only)
+  расширены охватом второго пакета через `pnpm -r`.
 
 ---
 
-## 3. Полная трассировка RTM (R-1 … R-15)
+## 3. Полная трассировка RTM (R-1 … R-28)
 
-| R-ID | Требование (кратко)                                           | Задача | Фаза      | Тип               |
-| ---- | ------------------------------------------------------------- | ------ | --------- | ----------------- |
-| R-1  | ADR-001 = Accepted (верификация)                              | 001-4  | verify    | verification-only |
-| R-2  | ARCHITECTURE.md + TASK.md как продукт пайплайна               | 001-4  | verify    | verification-only |
-| R-3  | pnpm-монорепо + `engines.node >= 22`, `pnpm install` ок       | 001-1  | setup     | dev/config        |
-| R-4  | TS strict, tsup-сборка, tsx-dev, typecheck 0 ошибок           | 001-2  | Phase 1+2 | dev               |
-| R-5  | ESLint + Prettier + lint/format-скрипты                       | 001-1  | setup     | dev/config        |
-| R-6  | vitest, ≥1 зелёный тест                                       | 001-3  | Phase 2   | dev/test          |
-| R-7  | CI workflow lint+typecheck+test на push/PR                    | 001-4  | setup     | dev/config        |
-| R-8  | CI на Node 22 (`setup-node` пин)                              | 001-4  | setup     | dev/config        |
-| R-9  | MCP-скелет, только stdio-транспорт                            | 001-2  | Phase 1+2 | dev               |
-| R-10 | `onchain_ping`, zod — единый источник правды                  | 001-2  | Phase 2   | dev               |
-| R-11 | Apache-2.0 (`LICENSE` + license-поля)                         | 001-1  | setup     | dev/config        |
-| R-12 | env zod-модуль, `parse({})` не бросает; `.env.example` 0600   | 001-2  | Phase 2   | dev               |
-| R-13 | `.gitignore` исключает `.env`/`.env.*` (верификация)          | 001-4  | verify    | verification-only |
-| R-14 | `.gitignore` исключает state/`*.db`/`*.sqlite*` (верификация) | 001-4  | verify    | verification-only |
-| R-15 | Scope-guard: нет adapter/cache/DB/scheduler/HTTP-кода         | 001-4  | cross-cut | verification-only |
+| R-ID | Требование (кратко)                                       | Задача | Фаза      | Тип         |
+| ---- | --------------------------------------------------------- | ------ | --------- | ----------- |
+| R-1  | Канонические zod-типы Token/Wallet/Balance/OHLCV/Pool     | 003-1  | Phase 1+2 | dev         |
+| R-2  | Канонический `Snapshot` (D5, версионируемый)              | 003-1  | Phase 2   | dev         |
+| R-3  | `ProviderAdapter` интерфейс                               | 003-2  | Phase 1   | dev         |
+| R-4  | `providers.config.ts` + `CapabilityRegistry.resolve()`    | 003-2  | Phase 1+2 | dev         |
+| R-5  | Адаптер CoinGecko (free/demo)                             | 003-4  | Phase 2   | dev         |
+| R-6  | Адаптер DexScreener (keyless)                             | 003-4  | Phase 2   | dev         |
+| R-7  | Адаптер DeFiLlama (keyless)                               | 003-4  | Phase 2   | dev         |
+| R-8  | Адаптер Dune — interface/config-stub (принят §0 п.6)      | 003-5  | Phase 2   | dev         |
+| R-9  | Адаптер `dash-platform` — interface+fixture (F-3)         | 003-5  | Phase 2   | dev         |
+| R-10 | Адаптер `platform-explorer` (fallback+history, live)      | 003-5  | Phase 2   | dev         |
+| R-11 | Горячая замена DAPI→platform-explorer (fallback-тест)     | 003-5  | Phase 2   | dev/test    |
+| R-12 | Опц. READ-ONLY `pg-history` (`pg`, SELECT-only)           | 003-5  | Phase 2   | dev         |
+| R-13 | Двухуровневый кеш lru+sqlite DATA_DIR                     | 003-3  | Phase 1+2 | dev         |
+| R-14 | Схема кеш-БД по DB-SCHEMA §1 (portable, ULID, FK)         | 003-3  | Phase 2   | dev         |
+| R-15 | Cache-hit/miss метрики видимы                             | 003-3  | Phase 2   | dev/test    |
+| R-16 | Tool `onchain_get_token` (2 сети)                         | 003-7  | Phase 1+2 | dev         |
+| R-17 | Tool `onchain_wallet_balances` (rpc-evm/rpc-solana, OQ-1) | 003-7  | Phase 1+2 | dev         |
+| R-18 | Tool `onchain_new_pairs` (2 сети)                         | 003-7  | Phase 2   | dev         |
+| R-19 | Tool `onchain_protocol_tvl` (2 сети)                      | 003-7  | Phase 2   | dev         |
+| R-20 | `onchain_ping` без изменений; tools/list===5              | 003-7  | Phase 2   | dev/regress |
+| R-21 | Контрактные тесты на фикстурах, без сети в CI             | 003-4  | Phase 2   | dev/test    |
+| R-22 | Ручной `record-fixture.mjs` + probe-evidence              | 003-4  | Phase 2   | dev/tooling |
+| R-23 | `EnvSchema` + 4 optional-ключа; `parse({})` не бросает    | 003-6  | Phase 1+2 | dev         |
+| R-24 | Явная деградация при отсутствии ключа/DSN                 | 003-6  | Phase 2   | dev         |
+| R-25 | SSRF-гейт `safeFetch`/`assertAllowedHost` (per-adapter)   | 003-2  | Phase 2   | dev         |
+| R-26 | Per-provider rate-limit (token-bucket)                    | 003-2  | Phase 2   | dev         |
+| R-27 | Scope guard (нет out-of-scope кода)                       | 003-8  | cross-cut | verify      |
+| R-28 | Acceptance-сниппеты RF-1-исполнимы на macOS+pnpm 11       | 003-8  | cross-cut | verify      |
 
-**Exit-критерии ROADMAP/TASK §5 → задачи:**
-`onchain_ping` по stdio из Claude Code → R-9, R-10 (001-2) + E2E (001-3);
-CI зелёный (lint+typecheck+test, Node 22) → R-3…R-8 (001-1/2/3/4);
-ADR подписан → R-1 (001-4);
-ARCHITECTURE.md + TASK.md → R-2 (001-4);
-секреты/состояние не протекают → R-11 (001-1), R-12 (001-2), R-13/R-14 (001-4);
-не расширен скоуп → R-15 (001-4).
+**Exit-критерии ROADMAP §M1 (TASK.md §6) → задачи:**
+
+- **Все 4 tools на ≥2 сетях (ethereum+solana)** → R-16/R-17/R-18/R-19 (003-7) поверх R-5/R-6/R-7 (003-4)
+  - R-8 config-stub (003-5); проверка в 003-8.
+- **Cache-hit виден в метриках** → R-13/R-14/R-15 (003-3); интеграционный прогон в 003-8.
+- **$0 трат** → R-4 (003-2), R-5/R-6/R-7 (003-4), R-8/R-9/R-10 (003-5), R-23/R-24 (003-6) — все free/keyless.
+- **Golden-тесты зелёные** → R-1/R-2 (003-1), R-3 (003-2), R-21/R-22 (003-4).
+- **Scope guard (нет платных/write/scheduler/HTTP)** → R-12 (003-5), R-27 (003-8).
 
 ---
 
-## 4. Итоговая проверка плана (Definition of Done для M0)
+## 4. Архитектурные planner-items §11 — явная привязка
 
-Локально (без сети/секретов, порядок как в CI):
+| §11-пункт                                                                | Куда вплетён                                                                          |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Probes при записи фикстур (live-вызов ОДИН раз/адаптер, evidence)        | 003-4 (coingecko/dexscreener/defillama), 003-5 (rpc-evm/rpc-solana/platform-explorer) |
+| DexScreener точный endpoint `pairs.new`/`pool.info`                      | 003-4 (подтверждается при записи фикстуры)                                            |
+| `pnpm -r build`/`test` топология (core→mcp-server) — проверить           | 003-1 (первичная), 003-8 (финальная эмпирическая проверка)                            |
+| `ONCHAIN_PG_URL` `z.string().url()` принимает реальный DSN               | 003-6 (dev-time чек WHATWG URL-парсинга postgres://)                                  |
+| Второй keyless Solana RPC fallback — **не в M1** (одиночная точка+retry) | 003-5 (зафиксировано как ограничение, не добавляется)                                 |
+| `dashpay/platform` license (для `.proto`) — только с backlog-gRPC        | вне M1 (§5 «Отложено»)                                                                |
+
+## 5. Явно ОТЛОЖЕНО (NOT-in-M1) — под guard R-27
+
+- **Живой gRPC DAPI-транспорт** для `dash-platform` (`@grpc/grpc-js`+`@grpc/proto-loader`, вендоринг
+  `.proto`, evonode-host live-пробник, канал-level `assertAllowedHost`) — отдельная backlog-задача,
+  не на критическом пути M1 (ARCHITECTURE §3.2/§11, F-3). `platform-explorer` несёт 100% Dash-трафика.
+- **Живой Dune-запрос** (`token.holders`: query id/SQL, параметризация, фикстура, contract-тест) —
+  M2, первый потребитель `onchain_token_risk` (ARCHITECTURE §11). В M1 — только config-stub.
+- **ERC-20/SPL токен-балансы** — M1.5/M2; `BalanceSchema` уже несёт `assetType`/`contractAddress`,
+  добавление без миграции схемы (ARCHITECTURE §3.2).
+- **Budget-guard (`usage`-таблица), snapshot-write, планировщик, HTTP-транспорт, watchlists, Nansen/
+  платные** — M2/M3/M6 (TASK.md §4).
+
+---
+
+## 6. Итоговая проверка плана (Definition of Done для M1)
+
+Локально (без сети/секретов, порядок как в CI; **RF-1-safe**, задача 003-8):
 
 ```bash
-corepack enable pnpm            # или: npm i -g pnpm
-pnpm install --frozen-lockfile  # lockfile закоммичен
-pnpm lint
-pnpm format:check
-pnpm typecheck                  # tsc --noEmit — 0 ошибок
-pnpm test                       # vitest run — unit + stdio E2E зелёные
-pnpm build                      # tsup — dist/ (после test)
+corepack enable pnpm                          # pnpm 11 через corepack (Node несёт corepack)
+pnpm install --frozen-lockfile                # lockfile закоммичен; better-sqlite3 нативно собран
+pnpm lint                                     # repo-wide, покрывает packages/core
+pnpm format:check                             # repo-wide
+pnpm typecheck                                # pnpm -r: core → mcp-server (топология)
+pnpm test                                     # pnpm -r: core (contract/cache/SSRF/rate-limit) → mcp-server (env/ping/e2e.stdio[spawn,5-tool]/e2e.inprocess[4 tools])
+pnpm build                                    # pnpm -r: core (plain tsc) → mcp-server (tsup+tsc)
+pnpm --filter @onchain-intel/mcp-server run smoke:dist   # ping-only, требует dist/ (после build)
 ```
 
 Ручная проверка exit-критерия: подключить `packages/mcp-server` в Claude Code как локальный stdio
-MCP-сервер → `onchain_ping` виден в списке tools → вызов возвращает
-`{ ok: true, service: "onchain-intel-mcp-server", version: "0.1.0", ts: <epoch-ms> }`.
+MCP-сервер → 5 tools видны → `onchain_get_token`/`onchain_new_pairs`/`onchain_protocol_tvl`/
+`onchain_wallet_balances` на `ethereum` и `solana` → канонический ответ; повторный вызов в пределах
+TTL → `_meta.cache.status === 'hit'` (UC-3, exit-критерий ROADMAP).
 
-Финальный гейт (только по команде оркестратора): commit + push в
-`MatrixFounder/onchain-analytics` → GitHub Actions зелёный (Node v22.x.x в логе).
+Финальный гейт (только по команде оркестратора): commit + push → GitHub Actions зелёный (Node 22).
