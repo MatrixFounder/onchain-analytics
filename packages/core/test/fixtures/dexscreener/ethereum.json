@@ -1,0 +1,1654 @@
+{
+  "chain": "ethereum",
+  "limit": 10,
+  "raw": {
+    "schemaVersion": "1.0.0",
+    "pairs": [
+      {
+        "chainId": "robinhood",
+        "dexId": "uniswap",
+        "url": "https://dexscreener.com/robinhood/0xac3e07600b81b9590bca625a456e777fb68b09c3",
+        "pairAddress": "0xAc3E07600B81b9590bCA625a456e777fB68B09C3",
+        "labels": ["v3"],
+        "baseToken": {
+          "address": "0xEc680B4160DD30A35A30b412e1677cEAE82417f1",
+          "name": "RobinhoodVladRWAPepe67",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+          "name": "WETH",
+          "symbol": "WETH"
+        },
+        "priceNative": "0.000000003029",
+        "priceUsd": "0.000005844",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 1
+          },
+          "h6": {
+            "buys": 0,
+            "sells": 6
+          },
+          "h24": {
+            "buys": 5,
+            "sells": 24
+          }
+        },
+        "volume": {
+          "h24": 773.84,
+          "h6": 217.2,
+          "h1": 185.41,
+          "m5": 0
+        },
+        "priceChange": {
+          "h1": -8.79,
+          "h6": -10.97,
+          "h24": -9.31
+        },
+        "liquidity": {
+          "usd": 5206.09,
+          "base": 669241854,
+          "quote": 0.671
+        },
+        "fdv": 5657,
+        "marketCap": 5657,
+        "pairCreatedAt": 1784394775000,
+        "info": {
+          "imageUrl": "https://cdn.dexscreener.com/cms/images/GoBGZWu_2bI3Z8N1?width=800&height=800&quality=95&format=auto",
+          "header": "https://cdn.dexscreener.com/cms/images/tKEqV9bsmcBQ-zNl?width=1500&height=500&quality=95&format=auto",
+          "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0xec680b4160dd30a35a30b412e1677ceae82417f1?timestamp=1784755800000",
+          "websites": [
+            {
+              "url": "http://rvrp67.com/",
+              "label": "Website"
+            }
+          ],
+          "socials": [
+            {
+              "url": "https://x.com/ETHmeme_",
+              "type": "twitter"
+            },
+            {
+              "url": "https://t.me/RobinhoodVladRWAPepe67",
+              "type": "telegram"
+            }
+          ]
+        }
+      },
+      {
+        "chainId": "bsc",
+        "dexId": "pancakeswap",
+        "url": "https://dexscreener.com/bsc/0x9f599f3d64a9d99ea21e68127bb6ce99f893da61",
+        "pairAddress": "0x9F599F3D64a9D99eA21e68127Bb6CE99f893DA61",
+        "labels": ["v3"],
+        "baseToken": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "name": "Ethereum Token",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x55d398326f99059fF775485246999027B3197955",
+          "name": "Tether USD",
+          "symbol": "USDT"
+        },
+        "priceNative": "1928.5560",
+        "priceUsd": "1928.55",
+        "txns": {
+          "m5": {
+            "buys": 12,
+            "sells": 9
+          },
+          "h1": {
+            "buys": 263,
+            "sells": 212
+          },
+          "h6": {
+            "buys": 4302,
+            "sells": 3130
+          },
+          "h24": {
+            "buys": 15424,
+            "sells": 14151
+          }
+        },
+        "volume": {
+          "h24": 3420840.74,
+          "h6": 899855.01,
+          "h1": 45838.77,
+          "m5": 2181.43
+        },
+        "priceChange": {
+          "m5": -0.01,
+          "h1": 0.03,
+          "h6": -1.03,
+          "h24": 0.2
+        },
+        "liquidity": {
+          "usd": 1379350.44,
+          "base": 402.1925,
+          "quote": 603699
+        },
+        "fdv": 973889469,
+        "marketCap": 973889469,
+        "pairCreatedAt": 1683365205000
+      },
+      {
+        "chainId": "bsc",
+        "dexId": "pancakeswap",
+        "url": "https://dexscreener.com/bsc/0x62fcb3c1794fb95bd8b1a97f6ad5d8a7e4943a1e",
+        "pairAddress": "0x62Fcb3C1794FB95BD8B1A97f6Ad5D8a7e4943a1e",
+        "labels": ["v3"],
+        "baseToken": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "name": "Ethereum Token",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+          "name": "Wrapped BNB",
+          "symbol": "WBNB"
+        },
+        "priceNative": "3.3780",
+        "priceUsd": "1928.14",
+        "txns": {
+          "m5": {
+            "buys": 6,
+            "sells": 19
+          },
+          "h1": {
+            "buys": 137,
+            "sells": 182
+          },
+          "h6": {
+            "buys": 2336,
+            "sells": 2601
+          },
+          "h24": {
+            "buys": 8229,
+            "sells": 10977
+          }
+        },
+        "volume": {
+          "h24": 1887658.85,
+          "h6": 496764.58,
+          "h1": 22225.57,
+          "m5": 1906.33
+        },
+        "priceChange": {
+          "m5": -0.02,
+          "h1": 0.02,
+          "h6": -1.04,
+          "h24": 0.15
+        },
+        "liquidity": {
+          "usd": 598012.81,
+          "base": 215.3833,
+          "quote": 320.1207
+        },
+        "fdv": 973683667,
+        "marketCap": 973683667,
+        "pairCreatedAt": 1681625414000
+      },
+      {
+        "chainId": "ethereum",
+        "dexId": "uniswap",
+        "url": "https://dexscreener.com/ethereum/0x2287a9620adcbf6250dc71be9ee9b2d3a1ec85a464fc6f5c06669e8d07b61bba",
+        "pairAddress": "0x2287a9620adcbf6250dc71be9ee9b2d3a1ec85a464fc6f5c06669e8d07b61bba",
+        "labels": ["v4"],
+        "baseToken": {
+          "address": "0x0000000000000000000000000000000000000000",
+          "name": "Ether",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+          "name": "Tether USD",
+          "symbol": "USDT"
+        },
+        "priceNative": "1927.9732",
+        "priceUsd": "1927.97",
+        "txns": {
+          "m5": {
+            "buys": 7,
+            "sells": 7
+          },
+          "h1": {
+            "buys": 78,
+            "sells": 97
+          },
+          "h6": {
+            "buys": 776,
+            "sells": 755
+          },
+          "h24": {
+            "buys": 2932,
+            "sells": 3127
+          }
+        },
+        "volume": {
+          "h24": 4582146.2,
+          "h6": 1154306.11,
+          "h1": 94918.11,
+          "m5": 1989.55
+        },
+        "priceChange": {
+          "m5": -0.04,
+          "h1": 0.01,
+          "h6": -1.07,
+          "h24": 0.13
+        },
+        "liquidity": {
+          "usd": 1213680.1,
+          "base": 145.3214,
+          "quote": 933504
+        },
+        "pairCreatedAt": 1738339799000
+      },
+      {
+        "chainId": "bsc",
+        "dexId": "pancakeswap",
+        "url": "https://dexscreener.com/bsc/0x531febfeb9a61d948c384acfbe6dcc51057aea7e",
+        "pairAddress": "0x531FEbfeb9a61D948c384ACFBe6dCc51057AEa7e",
+        "labels": ["v2"],
+        "baseToken": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "name": "Ethereum Token",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x55d398326f99059fF775485246999027B3197955",
+          "name": "Tether USD",
+          "symbol": "USDT"
+        },
+        "priceNative": "1932.5482",
+        "priceUsd": "1932.54",
+        "txns": {
+          "m5": {
+            "buys": 13,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 104,
+            "sells": 20
+          },
+          "h6": {
+            "buys": 1451,
+            "sells": 417
+          },
+          "h24": {
+            "buys": 5971,
+            "sells": 1530
+          }
+        },
+        "volume": {
+          "h24": 151805.27,
+          "h6": 37368.13,
+          "h1": 1524.6,
+          "m5": 34.57
+        },
+        "priceChange": {
+          "m5": 0.01,
+          "h1": 0.03,
+          "h6": -0.93,
+          "h24": 0.3
+        },
+        "liquidity": {
+          "usd": 1133835.37,
+          "base": 293.3524,
+          "quote": 566917
+        },
+        "fdv": 975905481,
+        "marketCap": 975905481,
+        "pairCreatedAt": 1619277331000
+      },
+      {
+        "chainId": "ethereum",
+        "dexId": "uniswap",
+        "url": "https://dexscreener.com/ethereum/0x00b9edc1583bf6ef09ff3a09f6c23ecb57fd7d0bb75625717ec81eed181e22d7",
+        "pairAddress": "0x00b9edc1583bf6ef09ff3a09f6c23ecb57fd7d0bb75625717ec81eed181e22d7",
+        "labels": ["v4"],
+        "baseToken": {
+          "address": "0x0000000000000000000000000000000000000000",
+          "name": "Ether",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "1927.1581",
+        "priceUsd": "1927.15",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 4
+          },
+          "h1": {
+            "buys": 62,
+            "sells": 66
+          },
+          "h6": {
+            "buys": 522,
+            "sells": 522
+          },
+          "h24": {
+            "buys": 2022,
+            "sells": 2107
+          }
+        },
+        "volume": {
+          "h24": 2856044.5,
+          "h6": 1037048.69,
+          "h1": 56264.11,
+          "m5": 229.37
+        },
+        "priceChange": {
+          "m5": -0.04,
+          "h1": -0.02,
+          "h6": -1.04,
+          "h24": 60.42
+        },
+        "liquidity": {
+          "usd": 539888,
+          "base": 100.3273,
+          "quote": 346541
+        },
+        "pairCreatedAt": 1737745379000
+      },
+      {
+        "chainId": "starknet",
+        "dexId": "ekubo",
+        "url": "https://dexscreener.com/starknet/0x033068f6539f8e6e6b131e6b2b814e6c34a5224bc66947c47dab9dfee93b35fb-0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-170141183460469235273462165868118016-1000-0x0",
+        "pairAddress": "0x033068f6539f8e6e6b131e6b2b814e6c34a5224bc66947c47dab9dfee93b35fb-0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-170141183460469235273462165868118016-1000-0x0",
+        "baseToken": {
+          "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+          "name": "Ether",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x033068f6539f8e6e6b131e6b2b814e6c34a5224bc66947c47dab9dfee93b35fb",
+          "name": "USDC",
+          "symbol": "USDC"
+        },
+        "priceNative": "1928.2230",
+        "priceUsd": "1928.22",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 15,
+            "sells": 21
+          },
+          "h6": {
+            "buys": 259,
+            "sells": 236
+          },
+          "h24": {
+            "buys": 1181,
+            "sells": 1008
+          }
+        },
+        "volume": {
+          "h24": 527688.88,
+          "h6": 89503.86,
+          "h1": 11828.3,
+          "m5": 0
+        },
+        "priceChange": {
+          "h1": 0.04,
+          "h6": -0.99,
+          "h24": 0.29
+        },
+        "liquidity": {
+          "usd": 1044710.71,
+          "base": 250.06986,
+          "quote": 562520
+        },
+        "fdv": 44693622,
+        "marketCap": 44693622,
+        "pairCreatedAt": 1764584964000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/8iqfhwycegreswnlm8nkg9gc8dvzungzymzuyuscgkmk",
+        "pairAddress": "8iQFhWyceGREsWnLM8NkG9GC8DvZunGZyMzuyUScgkMK",
+        "baseToken": {
+          "address": "2FPyTwcZLUg1MDrwsyoP4D6s1tM7hAkHYRjkNb5w6Pxk",
+          "name": "Wrapped Ethereum (Sollet)",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+          "name": "Raydium",
+          "symbol": "RAY"
+        },
+        "priceNative": "170.1505",
+        "priceUsd": "568744.042",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 31,
+            "sells": 12
+          },
+          "h6": {
+            "buys": 123,
+            "sells": 12
+          },
+          "h24": {
+            "buys": 257,
+            "sells": 14
+          }
+        },
+        "volume": {
+          "h24": 507303.18,
+          "h6": 506858.07,
+          "h1": 506680.07,
+          "m5": 0
+        },
+        "priceChange": {
+          "h1": 491566,
+          "h6": 485720,
+          "h24": 472974
+        },
+        "liquidity": {
+          "usd": 1017023367.5,
+          "base": 895.2235,
+          "quote": 151939
+        },
+        "fdv": 274987606291,
+        "marketCap": 274987606291,
+        "pairCreatedAt": 1669602384000
+      },
+      {
+        "chainId": "bsc",
+        "dexId": "pancakeswap",
+        "url": "https://dexscreener.com/bsc/0xbe141893e4c6ad9272e8c04bab7e6a10604501a5",
+        "pairAddress": "0xBe141893E4c6AD9272e8C04BAB7E6a10604501a5",
+        "labels": ["v3"],
+        "baseToken": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "name": "Ethereum Token",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x55d398326f99059fF775485246999027B3197955",
+          "name": "Tether USD",
+          "symbol": "USDT"
+        },
+        "priceNative": "1928.6570",
+        "priceUsd": "1928.65",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 37,
+            "sells": 46
+          },
+          "h6": {
+            "buys": 913,
+            "sells": 1098
+          },
+          "h24": {
+            "buys": 3372,
+            "sells": 3419
+          }
+        },
+        "volume": {
+          "h24": 8143469.24,
+          "h6": 3174092.97,
+          "h1": 89315.74,
+          "m5": 0
+        },
+        "priceChange": {
+          "h1": 0.04,
+          "h6": -1.02,
+          "h24": 0.22
+        },
+        "liquidity": {
+          "usd": 4885962.05,
+          "base": 2101.3067,
+          "quote": 833261
+        },
+        "fdv": 973940486,
+        "marketCap": 973940486,
+        "pairCreatedAt": 1681214432000
+      },
+      {
+        "chainId": "starknet",
+        "dexId": "ekubo",
+        "url": "https://dexscreener.com/starknet/0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-0x0787150e306e6eae6e3f79dea881770e8bbff2c1b8eb490f969669ee945b3135-170141183460469235273462165868118016-1000-0x0",
+        "pairAddress": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-0x0787150e306e6eae6e3f79dea881770e8bbff2c1b8eb490f969669ee945b3135-170141183460469235273462165868118016-1000-0x0",
+        "baseToken": {
+          "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+          "name": "Ether",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x0787150e306e6eae6e3f79dea881770e8bbff2c1b8eb490f969669ee945b3135",
+          "name": "strkBTC",
+          "symbol": "strkBTC"
+        },
+        "priceNative": "0.02925",
+        "priceUsd": "1927.91",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 3,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 49,
+            "sells": 137
+          },
+          "h24": {
+            "buys": 404,
+            "sells": 305
+          }
+        },
+        "volume": {
+          "h24": 206096.63,
+          "h6": 51177.68,
+          "h1": 288.32,
+          "m5": 0
+        },
+        "priceChange": {
+          "h1": 0.09,
+          "h6": -1,
+          "h24": 0.2
+        },
+        "liquidity": {
+          "usd": 856575.05,
+          "base": 156.3248,
+          "quote": 8.4252
+        },
+        "fdv": 44686474,
+        "marketCap": 44686474,
+        "pairCreatedAt": 1778238407000
+      },
+      {
+        "chainId": "starknet",
+        "dexId": "ekubo",
+        "url": "https://dexscreener.com/starknet/0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8-170141183460469235273462165868118016-1000-0x0",
+        "pairAddress": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8-170141183460469235273462165868118016-1000-0x0",
+        "baseToken": {
+          "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+          "name": "Ether",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "1927.7654",
+        "priceUsd": "1927.76",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 3,
+            "sells": 2
+          },
+          "h6": {
+            "buys": 71,
+            "sells": 74
+          },
+          "h24": {
+            "buys": 263,
+            "sells": 301
+          }
+        },
+        "volume": {
+          "h24": 44296.84,
+          "h6": 12926.14,
+          "h1": 626.58,
+          "m5": 0
+        },
+        "priceChange": {
+          "h1": 0.06,
+          "h6": -1.1,
+          "h24": 0.32
+        },
+        "liquidity": {
+          "usd": 375897.35,
+          "base": 131.3082,
+          "quote": 122765
+        },
+        "fdv": 44683013,
+        "marketCap": 44683013,
+        "pairCreatedAt": 1693052952000
+      },
+      {
+        "chainId": "bsc",
+        "dexId": "pancakeswap",
+        "url": "https://dexscreener.com/bsc/0xd0e226f674bbf064f54ab47f42473ff80db98cba",
+        "pairAddress": "0xD0e226f674bBf064f54aB47F42473fF80DB98CBA",
+        "labels": ["v3"],
+        "baseToken": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "name": "Ethereum Token",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+          "name": "Wrapped BNB",
+          "symbol": "WBNB"
+        },
+        "priceNative": "3.3772",
+        "priceUsd": "1928.24",
+        "txns": {
+          "m5": {
+            "buys": 2,
+            "sells": 1
+          },
+          "h1": {
+            "buys": 20,
+            "sells": 39
+          },
+          "h6": {
+            "buys": 522,
+            "sells": 778
+          },
+          "h24": {
+            "buys": 2206,
+            "sells": 2550
+          }
+        },
+        "volume": {
+          "h24": 6337656.99,
+          "h6": 1568344.82,
+          "h1": 38060.64,
+          "m5": 3866.72
+        },
+        "priceChange": {
+          "m5": 0.02,
+          "h1": 0.02,
+          "h6": -1.02,
+          "h24": 0.21
+        },
+        "liquidity": {
+          "usd": 10345478,
+          "base": 2664.9026,
+          "quote": 9119.5337
+        },
+        "fdv": 973733131,
+        "marketCap": 973733131,
+        "pairCreatedAt": 1680536288000
+      },
+      {
+        "chainId": "polygon",
+        "dexId": "uniswap",
+        "url": "https://dexscreener.com/polygon/0x633f32a01cdf9d5f35dd95786ea3a954b2532db9",
+        "pairAddress": "0x633F32a01cDF9d5F35DD95786eA3A954b2532dB9",
+        "baseToken": {
+          "address": "0x518C9C8be03c19789a00977729A8e295105eB00b",
+          "name": "Ethereum",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+          "name": "Wrapped Polygon Ecosystem Token",
+          "symbol": "WPOL"
+        },
+        "priceNative": "0.5000",
+        "priceUsd": "0.03985",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h24": {
+            "buys": 2,
+            "sells": 1
+          }
+        },
+        "volume": {
+          "h24": 1.19,
+          "h6": 0,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {
+          "h24": 0.39
+        },
+        "liquidity": {
+          "usd": 3953664.3,
+          "base": 99199995,
+          "quote": 2.3069
+        },
+        "fdv": 4762731,
+        "marketCap": 4762731,
+        "pairCreatedAt": 1761676943000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/g4okglv3jptedszrj9az9xwfsgbklf4kz9hr9jtatdu9",
+        "pairAddress": "G4oKGLV3jpTedszRJ9AZ9xwfsgBkLf4Kz9HR9JTatdU9",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "Bho83rVqJLDf3rGXgUJhxDEZwvyevwSTNwjgJYbpwTd9",
+          "name": "Ethereum",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "1757.9900",
+        "priceUsd": "1757.99",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 1,
+            "sells": 1
+          },
+          "h6": {
+            "buys": 3,
+            "sells": 3
+          },
+          "h24": {
+            "buys": 16,
+            "sells": 14
+          }
+        },
+        "volume": {
+          "h24": 268925.01,
+          "h6": 65308.73,
+          "h1": 22000.89,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 1716730046.43,
+          "base": 976530,
+          "quote": 20.2969
+        },
+        "fdv": 1716940968,
+        "marketCap": 1716940968,
+        "pairCreatedAt": 1783220114000
+      },
+      {
+        "chainId": "starknet",
+        "dexId": "ekubo",
+        "url": "https://dexscreener.com/starknet/0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d-0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-1020847100762815411640772995208708096-5982-0x0",
+        "pairAddress": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d-0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-1020847100762815411640772995208708096-5982-0x0",
+        "baseToken": {
+          "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+          "name": "Ether",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+          "name": "Starknet Token",
+          "symbol": "STRK"
+        },
+        "priceNative": "64609.5972",
+        "priceUsd": "1940.22",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 31
+          },
+          "h6": {
+            "buys": 20,
+            "sells": 75
+          },
+          "h24": {
+            "buys": 104,
+            "sells": 176
+          }
+        },
+        "volume": {
+          "h24": 114427.64,
+          "h6": 34499.78,
+          "h1": 11320.15,
+          "m5": 0
+        },
+        "priceChange": {
+          "h1": 0.28,
+          "h6": -0.1,
+          "h24": 1
+        },
+        "liquidity": {
+          "usd": 489880.07,
+          "base": 77.2022,
+          "quote": 11325017
+        },
+        "fdv": 44971837,
+        "marketCap": 44971837,
+        "pairCreatedAt": 1708355917000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/9igtelvhrb4bsjyqtqv6msyjradxespymmbmny74ve4h",
+        "pairAddress": "9iGteLVhRb4bSJYQTQv6MSYjRADxeSPyMMBMNY74ve4H",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "8SUUdzohYHAXjGh62zJe2w7Siih4TTgECYscacBqZjdf",
+          "name": "ETH",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "1773.1758",
+        "priceUsd": "1773.17",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 4,
+            "sells": 4
+          },
+          "h24": {
+            "buys": 14,
+            "sells": 15
+          }
+        },
+        "volume": {
+          "h24": 160205.17,
+          "h6": 46407.36,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 1731557663.85,
+          "base": 976525,
+          "quote": 7096.4043
+        },
+        "fdv": 1731770415,
+        "marketCap": 1731770415,
+        "pairCreatedAt": 1783953750000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/f5g1bcpsut9cknmph9tnzqngh653hxmen9p3qbocmqpw",
+        "pairAddress": "F5g1bCpsUt9CknMpH9tnZqnGH653HXMen9p3QBoCmqPW",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "ETHQHETwbDf7nyXtpK8xCXQAYvTviB29Y7VEsFEBihi1",
+          "name": "ETH",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "2253.8924",
+        "priceUsd": "2253.89",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 1,
+            "sells": 1
+          },
+          "h6": {
+            "buys": 2,
+            "sells": 2
+          },
+          "h24": {
+            "buys": 7,
+            "sells": 7
+          }
+        },
+        "volume": {
+          "h24": 145452.72,
+          "h6": 43885.8,
+          "h1": 23862.8,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 1802854587.97,
+          "base": 799884,
+          "quote": 18.3807
+        },
+        "fdv": 1803113973,
+        "marketCap": 1803113973,
+        "pairCreatedAt": 1778841431000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/b4r43w87hnkykznoe8imctpt7qmfcx9mjeoh7m1awuu",
+        "pairAddress": "B4r43w87hnKykZNoe8iMctPt7qMfcX9MJeoH7M1Awuu",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "e9QNPhgckwLJHQMrX5Ac4PocDuBUaWukkWg3v5YxWjy",
+          "name": "Ethereum",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "1616.3577",
+        "priceUsd": "1616.35",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 2,
+            "sells": 2
+          },
+          "h24": {
+            "buys": 7,
+            "sells": 7
+          }
+        },
+        "volume": {
+          "h24": 145452.72,
+          "h6": 43885.8,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 1578435633.04,
+          "base": 976538,
+          "quote": 18.4232
+        },
+        "fdv": 1578615820,
+        "marketCap": 1578615820,
+        "pairCreatedAt": 1782361984000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/7j8ah2hekywr4agetlvhoikuxkbhanecbqvxw7iasmwc",
+        "pairAddress": "7j8ah2heKywr4ageTLvHoiKUXkbHaNecBQVXW7iASmWc",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "2NajSqzLtFhmmc6z65Mmn8h73R3fYgUzJw4vm1KxFa8c",
+          "name": "Ethereum",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "1992.05125",
+        "priceUsd": "1992.051",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 1,
+            "sells": 1
+          },
+          "h24": {
+            "buys": 7,
+            "sells": 7
+          }
+        },
+        "volume": {
+          "h24": 144248.78,
+          "h6": 20040.99,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 139443610.91,
+          "base": 70000,
+          "quote": 14.1808
+        },
+        "fdv": 159364101,
+        "marketCap": 159364101,
+        "pairCreatedAt": 1774613722000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/bw972lkqyyggjwoe1cnmlq4durufpvm2gcgzjj97tqep",
+        "pairAddress": "Bw972LKqYYgGJWoE1cnmLq4DurUFPvM2gCgZjJ97tqep",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "ETHqqsRvW47U2XHAGDuFJGCYWS3rJknB773fBkxsaVc6",
+          "name": "Ethereum",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "2928.6618",
+        "priceUsd": "2928.66",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 1,
+            "sells": 1
+          },
+          "h24": {
+            "buys": 7,
+            "sells": 7
+          }
+        },
+        "volume": {
+          "h24": 144248.58,
+          "h6": 20040.99,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 175719732.73,
+          "base": 60000,
+          "quote": 11.3516
+        },
+        "fdv": 351436495,
+        "marketCap": 351436495,
+        "pairCreatedAt": 1769004124000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/dlnbmznjqn9rm1g31nxnxlwbzrd2wptsgwwb1lwhymjd",
+        "pairAddress": "DLNBMznjqn9rm1G31NXNxLWBzrd2WpTsgwwB1LWHyMJD",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "ETHkw8B2JM2RTPHjSmjsSwkjoRjhPimSet6VvkZ4iAMx",
+          "name": "ETH",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "1925.6558",
+        "priceUsd": "1925.65",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 1,
+            "sells": 1
+          },
+          "h24": {
+            "buys": 7,
+            "sells": 7
+          }
+        },
+        "volume": {
+          "h24": 144248.58,
+          "h6": 20040.79,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {
+          "h24": -0.01
+        },
+        "liquidity": {
+          "usd": 78951919.49,
+          "base": 41000,
+          "quote": 17.4187
+        },
+        "fdv": 154052464,
+        "marketCap": 154052464,
+        "pairCreatedAt": 1770964471000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/jadb1gwqtemrxfhtbah9ktgspdu4xzybj6asz8ru4ekx",
+        "pairAddress": "JADb1GWQTEMrxfhTbAH9kTGSpdu4xZYBJ6ASZ8Ru4Ekx",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "AzVEkC6oguX32QDTYycDpm2cRrv5LxKPdaRwzDuZcqZq",
+          "name": "ETH",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "2366.8412",
+        "priceUsd": "2366.84",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 1,
+            "sells": 1
+          },
+          "h24": {
+            "buys": 7,
+            "sells": 7
+          }
+        },
+        "volume": {
+          "h24": 144230.78,
+          "h6": 20022.99,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 188406977.5,
+          "base": 79602,
+          "quote": 14.3681
+        },
+        "fdv": 189347301,
+        "marketCap": 189347301,
+        "pairCreatedAt": 1776506911000
+      },
+      {
+        "chainId": "starknet",
+        "dexId": "ekubo",
+        "url": "https://dexscreener.com/starknet/0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d-0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-170141183460469235273462165868118016-1000-0x0",
+        "pairAddress": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d-0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7-170141183460469235273462165868118016-1000-0x0",
+        "baseToken": {
+          "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+          "name": "Ether",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+          "name": "Starknet Token",
+          "symbol": "STRK"
+        },
+        "priceNative": "65055.4558",
+        "priceUsd": "1925.64",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 1,
+            "sells": 1
+          },
+          "h24": {
+            "buys": 3,
+            "sells": 2
+          }
+        },
+        "volume": {
+          "h24": 0.7,
+          "h6": 0.24,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {
+          "h6": -1.19,
+          "h24": -0.36
+        },
+        "liquidity": {
+          "usd": 251728.95,
+          "base": 3.4807,
+          "quote": 8277912
+        },
+        "fdv": 44633783,
+        "marketCap": 44633783,
+        "pairCreatedAt": 1707988702000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/ghzee8jrjwdjferbuequdmcxstotewjprpw9qcmmwo2t",
+        "pairAddress": "GHZEE8JrjwDJFerbueqUDmCXsToTeWJpRpw9QCmMwo2t",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "3FMkqWBHNPu7adoqmoFdwEfgPfwnWPL89Nif7MMemzpm",
+          "name": "Ethereum",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "4109.2013",
+        "priceUsd": "4109.20",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h24": {
+            "buys": 1,
+            "sells": 1
+          }
+        },
+        "volume": {
+          "h24": 5.49,
+          "h6": 0,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 127389359.35,
+          "base": 31001,
+          "quote": 3.4125
+        },
+        "fdv": 493104159,
+        "marketCap": 493104159,
+        "pairCreatedAt": 1760111028000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/bdffaka57z9xbyt3aqmheh1tuaa7rf4t5zc61ti8k4yr",
+        "pairAddress": "BDFfAKA57Z9xBYT3aQmheh1tuaa7rF4t5ZC61ti8K4yr",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "4DEhnjwjtdSUzzUVWN6ekBKQaeSW5Waa7YRXnu2m2SS1",
+          "name": "Eth coin",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "3918.1948",
+        "priceUsd": "3918.19",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h24": {
+            "buys": 1,
+            "sells": 1
+          }
+        },
+        "volume": {
+          "h24": 5.49,
+          "h6": 0,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 381367057.9,
+          "base": 97332,
+          "quote": 0.9182
+        },
+        "fdv": 783638977,
+        "marketCap": 783638977,
+        "pairCreatedAt": 1753683849000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/2asv4sqkzdjeyuh9rrsrwtyz5ttrffp5eym7urzrbt8x",
+        "pairAddress": "2AsV4SqKzdJeyUH9RRSRwTYz5tTRffP5eyM7urZRBt8X",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "8g6hu48QHz9vZZoVvpJSsHBc7QfE8R5xCKiNo7UTBNF9",
+          "name": "Ethereumdog Coin",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "3701.4843",
+        "priceUsd": "3701.48",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h24": {
+            "buys": 1,
+            "sells": 1
+          }
+        },
+        "volume": {
+          "h24": 5.49,
+          "h6": 0,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 48241181.25,
+          "base": 13032,
+          "quote": 9.2031
+        },
+        "fdv": 1110445313,
+        "marketCap": 1110445313,
+        "pairCreatedAt": 1754547422000
+      },
+      {
+        "chainId": "solana",
+        "dexId": "raydium",
+        "url": "https://dexscreener.com/solana/9awnzue4fwzq7hq9tiskouc4cidyoaaq4lwy7j9cry4l",
+        "pairAddress": "9aWnzUe4FWzQ7Hq9tiskouC4CiDyoAaQ4LwY7J9cry4L",
+        "labels": ["CLMM"],
+        "baseToken": {
+          "address": "E5BFDvH6iFmfUKXyrVF85DLUmXaGH2YLpuHgqgADmLAq",
+          "name": "Ethereumdog Coin",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "name": "USD Coin",
+          "symbol": "USDC"
+        },
+        "priceNative": "3913.4961",
+        "priceUsd": "3913.49",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h6": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h24": {
+            "buys": 1,
+            "sells": 1
+          }
+        },
+        "volume": {
+          "h24": 5.49,
+          "h6": 0,
+          "h1": 0,
+          "m5": 0
+        },
+        "priceChange": {},
+        "liquidity": {
+          "usd": 517710637.37,
+          "base": 132288,
+          "quote": 8.311
+        },
+        "fdv": 1174048832,
+        "marketCap": 1174048832,
+        "pairCreatedAt": 1753685246000
+      },
+      {
+        "chainId": "bsc",
+        "dexId": "uniswap",
+        "url": "https://dexscreener.com/bsc/0x0f338ec12d3f7c3d77a4b9fcc1f95f3fb6ad0ea6",
+        "pairAddress": "0x0f338Ec12d3f7C3D77A4B9fcC1f95F3FB6AD0EA6",
+        "baseToken": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "name": "Ethereum Token",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+          "name": "Wrapped BNB",
+          "symbol": "WBNB"
+        },
+        "priceNative": "3.3771",
+        "priceUsd": "1928.041",
+        "txns": {
+          "m5": {
+            "buys": 3,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 16,
+            "sells": 21
+          },
+          "h6": {
+            "buys": 408,
+            "sells": 611
+          },
+          "h24": {
+            "buys": 1879,
+            "sells": 1956
+          }
+        },
+        "volume": {
+          "h24": 2957008.55,
+          "h6": 801290.31,
+          "h1": 20698.38,
+          "m5": 1781.72
+        },
+        "priceChange": {
+          "m5": 0.01,
+          "h6": -1.03,
+          "h24": 0.19
+        },
+        "liquidity": {
+          "usd": 5306663.13,
+          "base": 980.4067,
+          "quote": 5984.1266
+        },
+        "fdv": 973629844,
+        "marketCap": 973629844,
+        "pairCreatedAt": 1678911207000
+      },
+      {
+        "chainId": "bsc",
+        "dexId": "pancakeswap",
+        "url": "https://dexscreener.com/bsc/0x4bba1018b967e59220b22ca03f68821a3276c9a6",
+        "pairAddress": "0x4BBA1018b967e59220b22Ca03f68821A3276c9a6",
+        "labels": ["v3"],
+        "baseToken": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "name": "Ethereum Token",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c",
+          "name": "BTCB Token",
+          "symbol": "BTCB"
+        },
+        "priceNative": "0.02925",
+        "priceUsd": "1927.95",
+        "txns": {
+          "m5": {
+            "buys": 2,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 13,
+            "sells": 17
+          },
+          "h6": {
+            "buys": 197,
+            "sells": 406
+          },
+          "h24": {
+            "buys": 1177,
+            "sells": 1444
+          }
+        },
+        "volume": {
+          "h24": 2446047.35,
+          "h6": 595970.08,
+          "h1": 23508.59,
+          "m5": 171.61
+        },
+        "priceChange": {
+          "h1": 0.05,
+          "h6": -1.13,
+          "h24": 0.15
+        },
+        "liquidity": {
+          "usd": 4015840.64,
+          "base": 1061.3653,
+          "quote": 29.8863
+        },
+        "fdv": 973584353,
+        "marketCap": 973584353,
+        "pairCreatedAt": 1680547462000
+      },
+      {
+        "chainId": "bsc",
+        "dexId": "uniswap",
+        "url": "https://dexscreener.com/bsc/0xf9878a5dd55edc120fde01893ea713a4f032229c",
+        "pairAddress": "0xF9878A5dD55EdC120Fde01893ea713a4f032229c",
+        "baseToken": {
+          "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+          "name": "Ethereum Token",
+          "symbol": "ETH"
+        },
+        "quoteToken": {
+          "address": "0x55d398326f99059fF775485246999027B3197955",
+          "name": "Tether USD",
+          "symbol": "USDT"
+        },
+        "priceNative": "1928.6927",
+        "priceUsd": "1928.69",
+        "txns": {
+          "m5": {
+            "buys": 0,
+            "sells": 0
+          },
+          "h1": {
+            "buys": 9,
+            "sells": 9
+          },
+          "h6": {
+            "buys": 299,
+            "sells": 341
+          },
+          "h24": {
+            "buys": 1251,
+            "sells": 1168
+          }
+        },
+        "volume": {
+          "h24": 120573.71,
+          "h6": 35370.61,
+          "h1": 606.75,
+          "m5": 0
+        },
+        "priceChange": {
+          "h1": 0.04,
+          "h6": -1,
+          "h24": 0.21
+        },
+        "liquidity": {
+          "usd": 153162.61,
+          "base": 59.7583,
+          "quote": 37907
+        },
+        "fdv": 973958513,
+        "marketCap": 973958513,
+        "pairCreatedAt": 1680238062000
+      }
+    ]
+  }
+}

@@ -21,11 +21,13 @@ export default tseslint.config(
   },
   {
     // Plain Node/ESM utility scripts (no bundler, no TypeScript, no `@types/node`) — e.g.
-    // `packages/mcp-server/scripts/smoke-dist.mjs` (task 001-5). `js.configs.recommended`'s
-    // `no-undef` has no Node globals by default outside a TS file (TS files get `process`/
-    // `console`/etc. from `@types/node` via the TS parser, not from ESLint's own scope
-    // analysis) — declare exactly the Node globals these scripts use, scoped narrowly here
-    // rather than pulling in the `globals` npm package for a handful of identifiers.
+    // `packages/mcp-server/scripts/smoke-dist.mjs` (task 001-5), `packages/core/scripts/
+    // record-fixture.mjs` (task 003-4, added `fetch` — its instrumented fetchImpl wraps the
+    // Node 22 built-in global to observe the URL/status of the ONE live call it makes).
+    // `js.configs.recommended`'s `no-undef` has no Node globals by default outside a TS file (TS
+    // files get `process`/`console`/etc. from `@types/node` via the TS parser, not from ESLint's
+    // own scope analysis) — declare exactly the Node globals these scripts use, scoped narrowly
+    // here rather than pulling in the `globals` npm package for a handful of identifiers.
     files: ['**/scripts/**/*.mjs'],
     languageOptions: {
       globals: {
@@ -33,6 +35,7 @@ export default tseslint.config(
         console: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
+        fetch: 'readonly',
       },
     },
   },

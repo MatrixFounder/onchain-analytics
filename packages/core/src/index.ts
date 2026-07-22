@@ -29,5 +29,16 @@ export { routes, adapterRegistrations } from './providers.config.js';
 export { safeFetch, assertAllowedHost } from './net/safe-fetch.js';
 export { throttle } from './net/rate-limit.js';
 
+// Concrete live adapters (task 003-4, R-5/R-6/R-7) — factories, not module singletons (mirrors
+// the CapabilityRegistry/CacheStore "factory, not singleton" principle, ARCHITECTURE.md §8), so
+// mcp-server's bootstrap (003-6/003-7) constructs its own instances and injects them into the
+// adapters Map CapabilityRegistry's constructor takes.
+export { createCoingeckoAdapter, type CoingeckoAdapterDeps } from './adapters/coingecko/index.js';
+export {
+  createDexscreenerAdapter,
+  type DexscreenerAdapterDeps,
+} from './adapters/dexscreener/index.js';
+export { createDefillamaAdapter, type DefillamaAdapterDeps } from './adapters/defillama/index.js';
+
 export { createCacheStore } from './cache/two-level-store.js';
 export { getCacheStats } from './cache/stats.js';
