@@ -3,11 +3,11 @@
 | Поле                      | Значение                                                                                                                      |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | **Статус документа**      | Living document — обновляется **на месте**, никогда не архивируется по задачам                                                |
-| **Текущая задача**        | [TASK-001 `m0-discovery-skeleton`](TASK.md)                                                                                   |
+| **Текущая задача**        | M0 ✅ ([task-001 в архиве](tasks/task-001-m0-discovery-skeleton.md)) → далее M1                                               |
 | **ADR**                   | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20 (Sergey), решения D1–D12 |
 | **Схема данных (future)** | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) — вне скоупа M0, контекст на будущее                           |
 | **Roadmap**               | [ROADMAP.md](onchain-analytics/ROADMAP.md) — фазы M0–M6                                                                       |
-| **Обновлено**             | 2026-07-21, версия v1 (первая версия документа, создана в рамках M0)                                                          |
+| **Обновлено**             | 2026-07-22, v1.1 — синхронизация с пост-адверсариальным состоянием M0 (TASK-002 `m0-docs-sync`); v1 создана 2026-07-21 в M0   |
 
 ---
 
@@ -155,18 +155,24 @@ flowchart LR
 
 - **Назначение:** сделать exit-критерий «`onchain_ping` отвечает по stdio» **проверяемым в CI**,
   а не только вручную (замечание task-reviewer, ADR D11 предвосхищает такой E2E).
-- **Состав:**
-  - `env.test.ts` — unit: `EnvSchema.parse({})` не бросает (R-12); граничный кейс с невалидным
-    значением падает с понятной ошибкой.
+- **Состав** _(после адверсариальных циклов 1–2 — 21 тест, 3 файла)_:
+  - `env.test.ts` — unit: `EnvSchema.parse({})` не бросает (R-12); невалидное значение падает с
+    ошибкой, называющей **только ключ** (D10); пустая строка (`LOG_LEVEL=`) трактуется как unset
+    (`z.preprocess`); no-arg путь `loadEnv()` покрыт со стабом `process.loadEnvFile` (ENOENT —
+    молча, EACCES — warning в stderr без значения) и happy-path'ом с реальным `.env` из temp-dir.
   - `ping.test.ts` — unit: прямой вызов экспортированного pure-хендлера `pingHandler()` (без
     поднятия сервера/транспорта) — проверяет форму ответа и то, что `PingOutputSchema.parse(...)`
     проходит.
   - `e2e.stdio.test.ts` — **E2E**: спавнит `src/index.ts` дочерним процессом через `tsx` (не
     `dist/`, см. §10.2 — порядок CI: `test` идёт **до** `build`), подключается SDK-шными `Client` +
-    `StdioClientTransport`, вызывает `tools/list` (ожидает `onchain_ping` в списке) и
-    `tools/call onchain_ping`, проверяет структуру ответа, закрывает транспорт (убивает процесс).
-    Побочный эффект: если что-то пишет мусор в stdout (нарушая JSON-RPC framing), этот тест
-    падает/виснет — естественный регресс-guard на инвариант «stdout только для протокола» (§7.3).
+    `StdioClientTransport`, вызывает `tools/list` (ожидает ровно один tool `onchain_ping`) и
+    `tools/call onchain_ping`, проверяет `structuredContent` **и** дип-равенство
+    `JSON.parse(content[0].text)`; плюс invalid-env спавн (exit 1, key-only stderr, побайтово
+    пустой stdout). Если что-то пишет мусор в stdout (нарушая JSON-RPC framing), сьют
+    падает/виснет — регресс-guard на инвариант «stdout только для протокола» (§7.3).
+  - `scripts/smoke-dist.mjs` — **post-build смоук собранного артефакта**: сырой JSON-RPC против
+    `node dist/index.js` (ровно один tool; `version === package.json`; stdout только протокол) —
+    закрывает слепую зону «tsup собрался, но shipped-бинарь сломан»; шаг CI после `build` (§10.2).
 
 #### Компоненты вне скоупа M0 (FUTURE, из D12 — только план, не создаются сейчас)
 
@@ -324,20 +330,25 @@ N/A в M0 — никакого DB-кода (R-15). Будущий выбор (SQ
 
 ```
 onchain-analytics/                     # корень репозитория
-├─ pnpm-workspace.yaml                 # packages: ["packages/*"]
+├─ pnpm-workspace.yaml                 # packages: ["packages/*"] + allowBuilds.esbuild (гейт pnpm 11)
 ├─ package.json                        # приватный root, license Apache-2.0, engines.node >=22
-│                                       #   scripts: lint/format:check/typecheck/test/build → "pnpm -r <script>"
+│                                       #   lint/format(:check) — repo-wide ("eslint .", "prettier --check .");
+│                                       #   typecheck/test/build → "pnpm -r <script>";
+│                                       #   root devDeps: eslint, prettier, @eslint/js, typescript-eslint
 ├─ tsconfig.base.json                  # strict, noUncheckedIndexedAccess, module/moduleResolution NodeNext
-├─ .eslintrc / eslint config           # разделяемый, extends из корня
-├─ .prettierrc
+├─ eslint.config.js                    # разделяемый flat-config в корне (+ node-глобалы для **/scripts/**/*.mjs)
+├─ .prettierrc / .prettierignore       # ignore: dist, lockfile, кураторские/генерируемые дирректории и леджеры
 ├─ LICENSE                             # полный текст Apache-2.0 (R-11)
 ├─ .env.example                        # документирует конвенцию 0600 (D10), пуст по секретам
-├─ .github/workflows/ci.yml            # см. §10.2
+├─ .github/workflows/ci.yml            # см. §10.2 (hardened)
 ├─ packages/
 │  └─ mcp-server/                      # единственный пакет M0
 │     ├─ package.json                  # name: @onchain-intel/mcp-server, engines.node >=22, license Apache-2.0
-│     ├─ tsconfig.json                 # extends ../../tsconfig.base.json
-│     ├─ tsup.config.ts                # entry src/index.ts, format esm, target node22
+│     ├─ tsconfig.json                 # extends ../../tsconfig.base.json; include src+test (без rootDir — TS6059)
+│     ├─ tsconfig.build.json           # extends ./tsconfig.json; include только src, rootDir src — для d.ts-эмита
+│     ├─ tsup.config.ts                # entry src/index.ts, format esm, target node22, dts:false (см. ниже)
+│     ├─ scripts/
+│     │  └─ smoke-dist.mjs             # post-build смоук dist/index.js (сырой JSON-RPC, §3.2)
 │     ├─ src/
 │     │  ├─ index.ts                   # bin-entry: единственное место, монтирующее StdioServerTransport
 │     │  ├─ server.ts                  # createServer(): McpServer factory (transport-agnostic)
@@ -365,21 +376,23 @@ onchain-analytics/                     # корень репозитория
   "engines": { "node": ">=22" },
   "bin": { "onchain-intel-mcp-server": "dist/index.js" },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsc --emitDeclarationOnly -p tsconfig.build.json",
     "dev": "tsx src/index.ts",
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "smoke:dist": "node scripts/smoke-dist.mjs",
   },
-  "dependencies": { "@modelcontextprotocol/sdk": "^*", "zod": "^*" },
+  "dependencies": { "@modelcontextprotocol/sdk": "^1.29.0", "zod": "^4.4.3" },
   "devDependencies": {
-    "typescript": "^*",
-    "tsup": "^*",
-    "tsx": "^*",
-    "vitest": "^*",
-    "eslint": "^*",
-    "prettier": "^*",
+    "typescript": "^6.0.3", // НЕ ^7: tsup dts-пайплайн ломается и под TS7 (native API), и под TS6 baseUrl-deprecation — отсюда dts:false + отдельный tsc-эмит
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.1",
+    "vitest": "^4.1.10",
+    "eslint": "^10.7.0",
+    "prettier": "^3.9.5",
+    "@types/node": "^22",
   },
 }
 ```
@@ -485,16 +498,20 @@ M0: только структурированные строки в stderr (бе
 
 `.github/workflows/ci.yml` — единственный workflow, триггеры `push` + `pull_request`, матрица
 `node-version: ['22']` (R-8 — пиннинг Node 22 в CI независимо от локальной версии разработчика).
+Hardening (адверсариальные циклы 1–2): `permissions: contents: read` (least-privilege
+GITHUB_TOKEN), `persist-credentials: false` на checkout, оба action'а запинены на **40-символьные
+commit-SHA** (комментарии `# v7.0.1` / `# v7.0.0`), `timeout-minutes: 15` на джобу.
 Порядок шагов (важен — E2E из §3.2 спавнит `tsx`, не `dist/`, поэтому `test` идёт **до** `build`):
 
 ```
-checkout → corepack enable (pnpm) → setup-node@22 (кеш pnpm store)
+checkout(SHA-pin) → corepack enable (pnpm) → setup-node@22 (кеш pnpm store)
   → pnpm install --frozen-lockfile
-  → pnpm lint            # ESLint по packages/**/*.ts
-  → pnpm format:check    # Prettier --check
-  → pnpm typecheck       # tsc --noEmit
-  → pnpm test            # vitest run — включает stdio E2E
-  → pnpm build           # tsup — dist/ (после теста, не до)
+  → pnpm lint            # ESLint repo-wide ("eslint ." из корня)
+  → pnpm format:check    # Prettier --check repo-wide (минус .prettierignore)
+  → pnpm typecheck       # tsc --noEmit (покрывает src + test)
+  → pnpm test            # vitest run — 21 тест, включая stdio E2E
+  → pnpm build           # tsup (JS) + tsc --emitDeclarationOnly (d.ts)
+  → smoke:dist           # scripts/smoke-dist.mjs против собранного dist/index.js
 ```
 
 Все шаги — без сети/секретов (R-15/R-12: пустой env валиден, платных ключей нет).
@@ -527,8 +544,8 @@ packages/mcp-server/src/index.ts` (dev); конкретная запись в MC
 решение Analyst: единственный пакет M0 — `packages/mcp-server`). Зафиксировано как non-blocking
 на будущее:
 
-- Точное имя SDK-метода регистрации tool (`server.tool()` vs `server.registerTool()`) — зависит от
-  версии `@modelcontextprotocol/sdk`, закрепляемой в Development-фазе (vendor drift — не
-  хардкодим здесь).
-- Механизм чтения `version` в `PingOutput` из `package.json` (import assertion vs build-time
-  инъекция) — деталь реализации, не архитектурное решение.
+- ~~Точное имя SDK-метода регистрации tool~~ — **закрыто в Development**: SDK 1.29.0 →
+  `server.registerTool()` (см. `src/tools/ping.ts`).
+- ~~Механизм чтения `version` в `PingOutput` из `package.json`~~ — **закрыто в Development**:
+  `createRequire(import.meta.url)` + `require('../package.json')` (работает одинаково под `tsx`
+  и из `dist/`; import assertion нестабилен под пином TS6/NodeNext), см. `src/index.ts`.

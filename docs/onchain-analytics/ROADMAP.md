@@ -1,6 +1,6 @@
 # ROADMAP — `onchain-intel` (движок) + `onchain-analytics` (скилл)
 
-- **Дата:** 2026-06-30 · **Обновлён:** 2026-07-20 (снапшоттер Dash Platform + privacy-метрики; см. пометки *(2026-07-20)*) · **Статус:** Proposed
+- **Дата:** 2026-06-30 · **Обновлён:** 2026-07-22 (**M0 выполнен**; ранее 2026-07-20 — снапшоттер Dash Platform + privacy-метрики, пометки *(2026-07-20)*) · **Статус:** Active (M0 ✅ → M1)
 - **Связанные:** [REPORT.md](REPORT.md) · [ADR-001-tech-stack.md](ADR-001-tech-stack.md) · [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md) · [research-digest.md](research-digest.md)
 - **Стек (из ADR-001):** TypeScript / Node 22 · `@modelcontextprotocol/sdk` · SQLite · zod · pnpm-monorepo · Apache-2.0.
 
@@ -22,7 +22,7 @@
 
 | Фаза | Цель | ≈Усилия | Платные ключи | Главный выход |
 |---|---|---|---|---|
-| **M0** Discovery & каркас | решить и заскелетить | 1 нед | нет | репо + MCP «hello» + CI |
+| **M0** Discovery & каркас ✅ *(2026-07-22)* | решить и заскелетить | 1 нед | нет | репо + MCP «hello» + CI |
 | **M1** MVP read-слой (free) | ончейн-ответы без затрат | 1–2 нед | нет | 4 data-tools на free-провайдерах |
 | **M2** Alpha-слой (paid) | «куда идут умные деньги» | 1–2 нед | Nansen $49 | smart-money + метки + budget-guard |
 | **M3** Signal/Alert-движок | проактивные алерты | 2 нед | (как M2) | watchlists + правила + Telegram |
@@ -32,7 +32,18 @@
 
 ---
 
-## M0 — Discovery & каркас (≈1 нед)
+## M0 — Discovery & каркас (≈1 нед) — ✅ ВЫПОЛНЕН 2026-07-22
+
+> ***(2026-07-22) Итог:*** все exit-критерии закрыты. `onchain_ping` отвечает **живым вызовом из
+> Claude Code** (`{"ok":true,"service":"onchain-intel-mcp-server","version":"0.1.0"}`); CI зелёный
+> на GitHub (Node 22: lint → format → typecheck → 21 тест (вкл. stdio E2E) → build → smoke собранного
+> `dist/`); ADR-001 Accepted (2026-07-20). Коммиты: `07cf9f2` (каркас + сервер), `8816799` +
+> `c81f2b8` (13 находок трёхцикловой адверсариальной ревизии), `16c9ae1` (retro-леджеры).
+> Пайплайн: VDD-Enhanced (TASK-001 → ARCHITECTURE → PLAN/4 задачи → dev+review → adversarial
+> convergence). Детали: [ARCHITECTURE](../ARCHITECTURE.md), архив
+> [task-001](../tasks/task-001-m0-discovery-skeleton.md) / [plan-001](../plans/plan-001-m0-discovery-skeleton.md).
+> Примечание к стеку: TypeScript запинен `^6` (dts-пайплайн tsup несовместим с TS7) — см.
+> work-item в [BACKLOG](../BACKLOG.md).
 
 **Цель:** зафиксировать решения и поднять минимальный скелет.
 
@@ -54,6 +65,10 @@
 > 2026-07-17, а единственный сторонний источник истории — community-explorer без SLA с неаудированной
 > полнотой рядов ([верификация #4](../../reference/coin-analytics-dialog-verification.md)) → собственные снапшоты с первого дня. Схема таблицы —
 > [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md) §2. Позже скрипт переезжает в M1 как адаптер `dash-platform`/`platform-explorer` (D4).
+> ***(2026-07-22) Статус: реализован ещё до M0*** — в форме n8n-workflow'ов (`onchain-snapshotter`,
+> `onchain-verify`, `onchain-error-alert`) + Supabase Postgres (schema `onchain`) в dev-VM, по
+> deploy-profile-дополнению ADR-001 (не croner/SQLite из исходного плана). См. CLAUDE.n8n.md,
+> [PROD-RUNBOOK](PROD-RUNBOOK.md), экспорт в `n8n-workflows/exported/`.
 
 ---
 
@@ -176,7 +191,8 @@ graph LR
 
 ## Now / Next / Later
 
-- **Now:** *(2026-07-20)* мини-снапшоттер Dash Platform (pre-M0, вне гейта — время-критично) · закрыть Open questions ADR-001 (TS vs Python, хостинг) → M0 → M1.
+- **Done:** снапшоттер Dash Platform (pre-M0, n8n+Supabase) ✅ · ADR-001 Accepted (2026-07-20) ✅ · **M0 каркас ✅ (2026-07-22)**.
+- **Now:** **M1** — free read-слой (канонические типы, Adapter/Capability Registry, free-адаптеры, кеш, 4 MCP-tools). ⚠️ Перед первой DB-задачей M1 — уточнить у владельца профиль хранилища: Supabase Postgres day-1 (deploy-profile) vs SQLite/`DATA_DIR` (D7).
 - **Next:** M2 (Nansen) → M3 (алерты, вкл. privacy-правила) → M4 (скилл-релиз).
 - **Later (по спросу):** M5 (исполнение за approval-gate), M6 (масштаб/стриминг/обсервабилити).
 
