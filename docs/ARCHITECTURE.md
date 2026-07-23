@@ -7,7 +7,7 @@
 | **ADR**              | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20 (Sergey), решения D1–D12                                                                       |
 | **Схема данных**     | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable-конвенции, применены здесь к кеш-БД (M1)                                                                               |
 | **Roadmap**          | [ROADMAP.md](onchain-analytics/ROADMAP.md) — фазы M0–M6                                                                                                                                             |
-| **Обновлено**        | 2026-07-23, **v2.2** — тест-сьют **284**; полный чейнджлог версий: [architectures/version-history.md](architectures/version-history.md)                                                             |
+| **Обновлено**        | 2026-07-23, **v2.2.1** (CoinGecko Pro-контур: `COINGECKO_PRO_API_KEY`) — тест-сьют **287**; полный чейнджлог версий: [architectures/version-history.md](architectures/version-history.md)           |
 | **Формат**           | **Index-Mode** (skill `architecture-format-core`, 2026-07-23): тела разделов 2–7 и 10–11 — в [docs/architectures/](architectures/); здесь — оглавление, однострочные резюме и малые разделы целиком |
 
 ---
@@ -89,7 +89,7 @@ rate-limiter, `pg-history`, MCP-сервер (5 tools) — с mermaid-диагр
 `@onchain-intel/core` — zod-типы, `ProviderAdapter`/`CapabilityRegistry` (cache best-effort),
 `providers.config.ts` (маршруты, allowlist, rate-limits), сводка девяти адаптеров и их hardening,
 кеш-DDL + TTL-таблица, `safeFetch`/`throttle`, `pg/read-client`; расширение `mcp-server`
-(injectable registry), тест-сьют M1 (284) и диаграмма компонентов.
+(injectable registry), тест-сьют M1 (287) и диаграмма компонентов.
 → [architectures/system-architecture.md](architectures/system-architecture.md)
 
 ## 4. Data Model (Conceptual)

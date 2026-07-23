@@ -37,6 +37,11 @@ function emptyAsUndefined<T extends z.ZodType>(schema: T): z.ZodPreprocess<T> {
 export const EnvSchema = z.object({
   LOG_LEVEL: emptyAsUndefined(z.enum(['debug', 'info', 'warn', 'error']).optional()),
   COINGECKO_API_KEY: emptyAsUndefined(z.string().optional()),
+  // Post-M1 fix (2026-07-23): CoinGecko's Pro subscription is a SEPARATE auth contour (host
+  // pro-api.coingecko.com + `x-cg-pro-api-key` header) — a pro key sent through the demo path
+  // simply fails, so it gets its own explicit key. Which var is set declares the contour (key
+  // format is identical across tiers — cannot be sniffed); pro wins when both are set.
+  COINGECKO_PRO_API_KEY: emptyAsUndefined(z.string().optional()),
   DUNE_API_KEY: emptyAsUndefined(z.string().optional()),
   ONCHAIN_PG_URL: emptyAsUndefined(z.string().url().optional()),
   DATA_DIR: emptyAsUndefined(z.string().optional()),

@@ -38,13 +38,15 @@ describe('EnvSchema', () => {
     expect(() => EnvSchema.parse({})).not.toThrow();
   });
 
-  it('accepts COINGECKO_API_KEY/DUNE_API_KEY/DATA_DIR as plain optional strings', () => {
+  it('accepts COINGECKO_API_KEY/COINGECKO_PRO_API_KEY/DUNE_API_KEY/DATA_DIR as plain optional strings', () => {
     const result = EnvSchema.parse({
       COINGECKO_API_KEY: 'cg-demo-key',
+      COINGECKO_PRO_API_KEY: 'cg-pro-key',
       DUNE_API_KEY: 'dune-key',
       DATA_DIR: '/var/lib/onchain-intel',
     });
     expect(result.COINGECKO_API_KEY).toBe('cg-demo-key');
+    expect(result.COINGECKO_PRO_API_KEY).toBe('cg-pro-key');
     expect(result.DUNE_API_KEY).toBe('dune-key');
     expect(result.DATA_DIR).toBe('/var/lib/onchain-intel');
   });
@@ -78,13 +80,15 @@ describe('EnvSchema', () => {
     expect(result.ONCHAIN_PG_URL).toBeUndefined();
   });
 
-  it('COINGECKO_API_KEY/DUNE_API_KEY/DATA_DIR: "" are treated as unset (empty-string idiom)', () => {
+  it('COINGECKO_API_KEY/COINGECKO_PRO_API_KEY/DUNE_API_KEY/DATA_DIR: "" are treated as unset (empty-string idiom)', () => {
     const result = EnvSchema.parse({
       COINGECKO_API_KEY: '',
+      COINGECKO_PRO_API_KEY: '',
       DUNE_API_KEY: '',
       DATA_DIR: '',
     });
     expect(result.COINGECKO_API_KEY).toBeUndefined();
+    expect(result.COINGECKO_PRO_API_KEY).toBeUndefined();
     expect(result.DUNE_API_KEY).toBeUndefined();
     expect(result.DATA_DIR).toBeUndefined();
   });

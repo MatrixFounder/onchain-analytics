@@ -91,13 +91,25 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
       // already normalized the address before it ever reaches here, but this adapter's own
       // cache-key-adjacent HTTP step re-normalizes anyway rather than trusting caller discipline.
       const normalizedAddress = normalizeAddress(chain, address);
-      const url = `https://api.coingecko.com/api/v3/coins/${chain}/contract/${normalizedAddress}`;
 
-      // COINGECKO_API_KEY is optional (demo tier works without it, only raises rate limits) —
-      // read here, inside the HTTP step, never at module load and never part of a cache key
-      // (ARCHITECTURE.md §7.2).
-      const apiKey = env['COINGECKO_API_KEY'];
-      const headers: Record<string, string> = apiKey ? { 'x-cg-demo-api-key': apiKey } : {};
+      // CoinGecko has TWO disjoint auth contours (live-probed 2026-07-23: the pro host ignores
+      // `x-cg-demo-api-key` entirely — still "API Key Missing" — and only recognizes
+      // `x-cg-pro-api-key`): keyless/demo → api.coingecko.com (+ demo header when a key is set),
+      // Pro subscription → pro-api.coingecko.com + pro header. Both hosts are in this adapter's
+      // SSRF allowlist (providers.config.ts). Which contour applies is declared by WHICH env var
+      // is set — never sniffed from the key's format (both tiers issue `CG-…`-shaped keys, so a
+      // format heuristic cannot distinguish them; vendor-drift discipline). When both are set,
+      // the paid pro key wins. Keys are optional, read here inside the HTTP step, never at
+      // module load and never part of a cache key (ARCHITECTURE.md §7.2).
+      const proApiKey = env['COINGECKO_PRO_API_KEY'];
+      const demoApiKey = env['COINGECKO_API_KEY'];
+      const host = proApiKey ? 'pro-api.coingecko.com' : 'api.coingecko.com';
+      const url = `https://${host}/api/v3/coins/${chain}/contract/${normalizedAddress}`;
+      const headers: Record<string, string> = proApiKey
+        ? { 'x-cg-pro-api-key': proApiKey }
+        : demoApiKey
+          ? { 'x-cg-demo-api-key': demoApiKey }
+          : {};
 
       await throttle('coingecko', RATE_LIMIT);
       const response = await safeFetch(url, { headers }, HOSTS, fetchImpl);

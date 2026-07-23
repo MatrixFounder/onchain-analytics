@@ -86,21 +86,77 @@ describe('coingecko adapter (contract, R-5)', () => {
 
   it('fetch() builds the documented contract endpoint through safeFetch (no real network)', async () => {
     const fixture = loadFixture('ethereum');
-    const calls: string[] = [];
-    const fakeFetchImpl: typeof fetch = async (url) => {
-      calls.push(String(url));
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    const fakeFetchImpl: typeof fetch = async (url, init) => {
+      calls.push({ url: String(url), headers: (init?.headers ?? {}) as Record<string, string> });
       return new Response(JSON.stringify(fixture.raw), { status: 200 });
     };
-    const testAdapter = createCoingeckoAdapter({ fetchImpl: fakeFetchImpl, now: () => FIXED_NOW });
+    const testAdapter = createCoingeckoAdapter({
+      fetchImpl: fakeFetchImpl,
+      now: () => FIXED_NOW,
+      env: {},
+    });
 
     const result = await testAdapter.fetch('token.price', {
       chain: 'ethereum',
       address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     });
 
-    expect(calls).toEqual([
+    expect(calls.map((c) => c.url)).toEqual([
       'https://api.coingecko.com/api/v3/coins/ethereum/contract/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     ]);
+    // Keyless: no auth header of either contour leaks into the request.
+    expect(calls[0]!.headers).not.toHaveProperty('x-cg-demo-api-key');
+    expect(calls[0]!.headers).not.toHaveProperty('x-cg-pro-api-key');
     expect(result).toEqual({ chain: 'ethereum', raw: fixture.raw });
+  });
+
+  // Two disjoint CoinGecko auth contours (live-probed 2026-07-23, see the adapter's fetch()
+  // comment): demo key → free host + x-cg-demo-api-key; Pro key → pro host + x-cg-pro-api-key
+  // (the pro host ignores the demo header entirely, so routing the wrong contour FAILS, it does
+  // not merely degrade). The contour is declared by which env var is set; pro wins over demo.
+  it.each([
+    {
+      label: 'COINGECKO_API_KEY (demo) → free host + x-cg-demo-api-key',
+      env: { COINGECKO_API_KEY: 'CG-demo' },
+      host: 'api.coingecko.com',
+      headers: { 'x-cg-demo-api-key': 'CG-demo' },
+    },
+    {
+      label: 'COINGECKO_PRO_API_KEY → pro host + x-cg-pro-api-key',
+      env: { COINGECKO_PRO_API_KEY: 'CG-pro' },
+      host: 'pro-api.coingecko.com',
+      headers: { 'x-cg-pro-api-key': 'CG-pro' },
+    },
+    {
+      label: 'both keys set → pro contour wins (paid key takes precedence)',
+      env: { COINGECKO_API_KEY: 'CG-demo', COINGECKO_PRO_API_KEY: 'CG-pro' },
+      host: 'pro-api.coingecko.com',
+      headers: { 'x-cg-pro-api-key': 'CG-pro' },
+    },
+  ])('fetch() auth contour: $label', async ({ env, host, headers }) => {
+    const fixture = loadFixture('ethereum');
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    const fakeFetchImpl: typeof fetch = async (url, init) => {
+      calls.push({ url: String(url), headers: (init?.headers ?? {}) as Record<string, string> });
+      return new Response(JSON.stringify(fixture.raw), { status: 200 });
+    };
+    const testAdapter = createCoingeckoAdapter({
+      fetchImpl: fakeFetchImpl,
+      now: () => FIXED_NOW,
+      env,
+    });
+
+    await testAdapter.fetch('token.price', {
+      chain: 'ethereum',
+      address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    });
+
+    expect(calls).toEqual([
+      {
+        url: `https://${host}/api/v3/coins/ethereum/contract/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`,
+        headers,
+      },
+    ]);
   });
 });

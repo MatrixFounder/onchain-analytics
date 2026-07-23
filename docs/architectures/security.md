@@ -15,7 +15,7 @@
 - **Кеш-ключ явно исключает env-значения** (обязательное требование задачи) — `args_hash` в
   `cache_entries` — это `sha256(hex)` от **нормализованных входных аргументов tool-вызова**
   (`chain`, адрес, `protocolSlug`, `limit`, …), полученных **после** валидации zod-схемой и
-  `normalizeAddress`. Ни `COINGECKO_API_KEY`, ни `DUNE_API_KEY`, ни `ONCHAIN_PG_URL` никогда не
+  `normalizeAddress`. Ни `COINGECKO_API_KEY`/`COINGECKO_PRO_API_KEY`, ни `DUNE_API_KEY`, ни `ONCHAIN_PG_URL` никогда не
   входят в объект, который хешируется — они read-only читаются адаптером внутри `fetch()`, после
   того как ключ уже вычислен из args:
 

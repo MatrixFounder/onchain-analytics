@@ -53,7 +53,7 @@ cache + SSRF + rate-limit + 4 tool'а через **два** E2E-сьюта, F-1)
 2. `pnpm build` (`pnpm -r build`: `core` — plain `tsc`, `mcp-server` — tsup+tsc, топологический
    порядок).
 3. `pnpm lint && pnpm typecheck && pnpm test` — всё зелёное без сети/секретов (UC-1, R-21).
-4. (Опционально) `.env` с `COINGECKO_API_KEY`/`DUNE_API_KEY`/`ONCHAIN_PG_URL`/`DATA_DIR` — ни один
+4. (Опционально) `.env` с `COINGECKO_API_KEY`/`COINGECKO_PRO_API_KEY`/`DUNE_API_KEY`/`ONCHAIN_PG_URL`/`DATA_DIR` — ни один
    не обязателен; отсутствующие способности деградируют явно (UC-1 alt, R-24).
 5. Подключение к Claude Code как локальный stdio MCP-сервер — без изменений от M0 (`node
 packages/mcp-server/dist/index.js` или `tsx packages/mcp-server/src/index.ts`).
