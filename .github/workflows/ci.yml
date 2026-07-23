@@ -3,6 +3,15 @@ name: CI
 # ARCHITECTURE.md §10.2 — single workflow, push + pull_request, Node 22 pinned (R-7/R-8).
 # Step order is load-bearing: `test` runs before `build` because the stdio E2E suite
 # (test/e2e.stdio.test.ts) spawns src/index.ts via tsx, not dist/ — dist/ may not exist yet.
+#
+# Task 003-8 (empirical finding, clean-checkout gate): `packages/core`'s package.json exposes
+# `@onchain-intel/core` to consumers ONLY via `main`/`types` pointing at `dist/` (no TS project
+# references, no `exports` "source" condition) — `dist/` is gitignored, so on a genuinely clean
+# checkout `pnpm typecheck` (TS2307) and `pnpm test` (7/9 mcp-server test files: "Failed to
+# resolve entry for package @onchain-intel/core") both fail before core is ever built. The
+# `pnpm --filter @onchain-intel/core build` step below builds ONLY core first so the workspace
+# dependency is resolvable for typecheck/test; the later `pnpm build` (`pnpm -r build`) rebuilds
+# core again (idempotent, plain `tsc`) then builds mcp-server, unchanged.
 on:
   push:
   pull_request:
@@ -35,6 +44,10 @@ jobs:
 
       - run: pnpm lint
       - run: pnpm format:check
+
+      # Build the workspace dependency first — see the top-of-file comment (task 003-8).
+      - run: pnpm --filter @onchain-intel/core build
+
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
