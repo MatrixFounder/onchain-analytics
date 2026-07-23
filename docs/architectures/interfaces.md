@@ -2,7 +2,7 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. Внешние API — 5 MCP-tools
+### 5.1. Внешние API — 5 MCP-tools (M1) + 3 MCP-tools (M2)
 
 `onchain_ping` (M0, не меняется, R-20) — см. v1.1 §5.1 (сохранено ниже в §5.1.1).
 
@@ -77,6 +77,54 @@ export const WalletBalancesInputSchema = z
 // → { "ok": true, "service": "onchain-intel-mcp-server", "version": "0.1.0", "ts": 1784000000000 }
 ```
 
+#### 5.1.2 Новые 3 (M2, TASK-005) — платные, Nansen-backed
+
+```jsonc
+// onchain_smart_money_flows — { chain: "ethereum"|"solana", tokenAddress: string (.max(64)) }
+// → SmartMoneyFlow (§4.1) | isError: true при недоступности ключа/бюджета
+// Capability: smart-money.flows (costOf() = 10cr фикс — netflow 5cr + tgm/holders 5cr, R-41)
+// onchain_entity_label — {
+//   chain: "ethereum"|"solana",
+//   query?: string (.max(200)),        // по имени/символу/адресу, требуется если tokenAddress не задан
+//   tokenAddress?: string (.max(64)),  // токен-scoped обогащение метками; обязателен при exhaustive
+//   exhaustive?: boolean (default false), // opt-in эскалация — budget-gated, требует tokenAddress
+// }
+// → { chain, entities: EntityLabel[] (§4.1), source, fetchedAt } | isError: true
+// Capability: entity.labels — costOf() трёхуровневый: 0cr (query-only) / 5cr (tokenAddress,
+// !exhaustive) / 100cr (exhaustive:true — ТОЛЬКО /profiler/address/labels, не дублирует 5cr-путь)
+// onchain_token_risk — { chain: "ethereum"|"solana", tokenAddress: string (.max(64)) }
+// → TokenRiskScore (§4.1) | isError: true
+// Capability: token.risk (costOf() = 6cr фикс — tgm/indicators 5cr + tgm/token-information 1cr, R-43)
+```
+
+`chain` — сужен до `z.enum(['ethereum','solana'])`, буквально та же пара, что 4 M1-tools (решение
+по OQ-3, §3.2 — три релевантных Nansen-энумератора чейнов не идентичны друг другу, расширение —
+задокументированный backlog, §11). `tokenAddress`/`query` — те же `.max()`-границы и
+`superRefine`/`isValidAddress`-идиом, что `onchain_get_token` выше — переиспользуется, не
+изобретается заново. `onchain_entity_label`'s input — единственный из 7 tools с `superRefine`,
+требующим **хотя бы одно** из `query`/`tokenAddress` (иначе нет способа определить, что искать) и
+`chain`+`tokenAddress` обязательны вместе, когда `exhaustive: true`.
+
+**`_meta.budget` — видимость бюджета вызывающему (R-41 «аналог `_meta.cache`»):**
+
+```ts
+export interface BudgetMeta {
+  provider: 'nansen';
+  creditsUsedToday: number; // usage.credits_used текущего day-бакета ПОСЛЕ этого вызова
+}
+```
+
+Присутствует **только** когда способность платная И реально исполнилась (`_meta.cache.status ===
+'miss'` — на `'hit'` гейт/costOf()/сеть не исполняются вовсе, UC-5, поэтому `_meta.budget`
+**отсутствует** целиком на кеш-хите, не коэрсится в `0`/`null` — тот же принцип, что
+`_meta.cache.ageMs` на `'miss'`, §3.2). **Архитектурное решение (не через
+`CapabilityRegistry.resolve()`'s возвращаемый тип — он общий для всех 10 адаптеров и не растёт ради
+одного платного):** три новых tool-хендлера сами читают `budgetStore.getUsage('nansen',
+dayBucketMs(Date.now()))` **отдельным** SQLite SELECT'ом ПОСЛЕ `registry.resolve()` вернул
+результат — не часть gate-решения (которое уже случилось внутри `nansen.fetch()`, §3.2), чисто
+для отображения. `BudgetStore` инжектируется в контекст этих 3 tool-хендлеров тем же способом,
+что `registry` (task 003-7 паттерн, `GetTokenContext`-подобный интерфейс).
+
 ### 5.2. Внутренние интерфейсы
 
 ```ts
@@ -101,31 +149,49 @@ export { routes, adapterRegistrations } from './providers.config.js';
 export { safeFetch, assertAllowedHost, throttle };
 export { getCacheStats } from './cache/stats.js';
 
+// M2 (TASK-005, minor M-1 review — этот блок раньше не обновлялся): три новых canonical-типа +
+// единственная публично экспортируемая фабрика nansen (уже budget-gated внутри, §3.2 OQ-2 —
+// НЕТ отдельного "сырого" экспорта) + BudgetStore-интерфейс/фабрика (тот же паттерн, что
+// createCacheStore/CacheStore).
+export { SmartMoneyFlowSchema, type SmartMoneyFlow };
+export { EntityLabelSchema, type EntityLabel };
+export { TokenRiskScoreSchema, type TokenRiskScore };
+export { createNansenAdapter, type NansenAdapterDeps } from './adapters/nansen/index.js';
+export { type BudgetStore } from './cache/budget-store.js';
+export { createBudgetStore } from './cache/budget-store.js'; // фабрика, тот же принцип, что createCacheStore (§8)
+
 // packages/mcp-server/src/server.ts — расширенная фабрика (transport-agnostic, D3, не меняется):
 export function createServer(deps: {
   env: Env;
   version: string;
   registry?: CapabilityRegistry; // injectable для тестов (§3.2)
+  budgetStore?: BudgetStore; // M2 — injectable тем же способом, что registry; используется 3 новыми
+  // tool-хендлерами ТОЛЬКО для read-only `_meta.budget` (§5.1.2) — сам gate уже внутри nansen-адаптера
 }): McpServer;
 ```
 
 `registry` по умолчанию — единственная реальная сборка из `providers.config.ts` + `adapterRegistrations`
 (строится один раз в `index.ts`, передаётся в `createServer`); тесты передают собственную реализацию
 того же публичного контракта `resolve()`, собранную из фикстур (не мокая транспорт/сеть глобально).
+`budgetStore` следует тому же правилу — по умолчанию реальный `SqliteBudgetStore` (M-2, §3.2),
+тесты инжектируют in-memory/fixture-реализацию того же интерфейса.
 
 ### 5.3. Интеграции с внешними системами
 
-| Провайдер (`adapter.id`) | Base host(s)                                                                     | Auth                                                                                             | Транспорт                   | Статус в M1                                           |
-| ------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------- | ----------------------------------------------------- |
-| `coingecko`              | `api.coingecko.com`, `pro-api.coingecko.com`                                     | опц. `COINGECKO_API_KEY` (demo-контур) / `COINGECKO_PRO_API_KEY` (Pro-контур → pro-хост, v2.2.1) | REST                        | live                                                  |
-| `dexscreener`            | `api.dexscreener.com`                                                            | none                                                                                             | REST                        | live                                                  |
-| `defillama`              | `api.llama.fi`                                                                   | none                                                                                             | REST                        | live                                                  |
-| `dune`                   | `api.dune.com`                                                                   | `DUNE_API_KEY` (free)                                                                            | REST (Query API)            | **interface/stub, не вызывается** (F-2/minor)         |
-| `rpc-evm`                | `ethereum-rpc.publicnode.com` (primary), `eth.drpc.org` (fallback)               | none                                                                                             | JSON-RPC over HTTP          | live                                                  |
-| `rpc-solana`             | `api.mainnet-beta.solana.com`                                                    | none                                                                                             | JSON-RPC over HTTP          | live                                                  |
-| `dash-platform`          | evonode host(s) — TBD, backlog §11                                               | none                                                                                             | gRPC                        | **interface + fixture-контракт, не вызывается** (F-3) |
-| `platform-explorer`      | `platform-explorer.pshenmic.dev`                                                 | none                                                                                             | REST                        | live — единственный live Dash-источник M1             |
-| `pg-history`             | из `ONCHAIN_PG_URL` (не hostname-allowlist — DSN сам является контролем доступа) | DSN (не логируется)                                                                              | Postgres wire (SELECT-only) | live, опционально (R-12)                              |
+| Провайдер (`adapter.id`) | Base host(s)                                                                     | Auth                                                                                             | Транспорт                              | Статус в M1                                           |
+| ------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------- | ----------------------------------------------------- |
+| `coingecko`              | `api.coingecko.com`, `pro-api.coingecko.com`                                     | опц. `COINGECKO_API_KEY` (demo-контур) / `COINGECKO_PRO_API_KEY` (Pro-контур → pro-хост, v2.2.1) | REST                                   | live                                                  |
+| `dexscreener`            | `api.dexscreener.com`                                                            | none                                                                                             | REST                                   | live                                                  |
+| `defillama`              | `api.llama.fi`                                                                   | none                                                                                             | REST                                   | live                                                  |
+| `dune`                   | `api.dune.com`                                                                   | `DUNE_API_KEY` (free)                                                                            | REST (Query API)                       | **interface/stub, не вызывается** (F-2/minor)         |
+| `rpc-evm`                | `ethereum-rpc.publicnode.com` (primary), `eth.drpc.org` (fallback)               | none                                                                                             | JSON-RPC over HTTP                     | live                                                  |
+| `rpc-solana`             | `api.mainnet-beta.solana.com`                                                    | none                                                                                             | JSON-RPC over HTTP                     | live                                                  |
+| `dash-platform`          | evonode host(s) — TBD, backlog §11                                               | none                                                                                             | gRPC                                   | **interface + fixture-контракт, не вызывается** (F-3) |
+| `platform-explorer`      | `platform-explorer.pshenmic.dev`                                                 | none                                                                                             | REST                                   | live — единственный live Dash-источник M1             |
+| `pg-history`             | из `ONCHAIN_PG_URL` (не hostname-allowlist — DSN сам является контролем доступа) | DSN (не логируется)                                                                              | Postgres wire (SELECT-only)            | live, опционально (R-12)                              |
+| `nansen` (M2)            | `api.nansen.ai`                                                                  | `NANSEN_API_KEY` через заголовок `apiKey` (НЕ `Authorization: Bearer`)                           | REST (POST JSON, кроме `GET /account`) | live, платный — первый M2-адаптер (R-29)              |
 
 Каждая строка — источник `hosts`-allowlist SSRF-гейта для **своего** адаптера (§3.2, §7); `dune` и
 `dash-platform` регистрируют `hosts`/DSN-конфигурацию, но не совершают исходящих вызовов в M1.
+`nansen` — десятая строка (M2, TASK-005) — единственный платный, бюджет-гейтуемый адаптер реестра;
+`NANSEN_API_KEY` подчиняется тому же секретному контракту, что 5 ключей M1 (§7.2 ниже).

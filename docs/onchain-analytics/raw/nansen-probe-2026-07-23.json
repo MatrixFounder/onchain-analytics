@@ -1,0 +1,480 @@
+{
+  "probed_at": "2026-07-23",
+  "probe_method": "live curl; key from .env; zero credits spent (only /account + /openapi.json)",
+  "account": {
+    "plan": "free",
+    "credits_remaining": 100,
+    "endpoint": "GET /api/v1/account",
+    "cost": "0 credits"
+  },
+  "rest": {
+    "base": "https://api.nansen.ai",
+    "auth": {
+      "scheme": "apiKey",
+      "in": "header",
+      "name": "apiKey"
+    },
+    "openapi_url": "https://api.nansen.ai/openapi.json",
+    "path_count": 75,
+    "paths": [
+      "/api/v1/account",
+      "/api/v1/agent/expert",
+      "/api/v1/agent/fast",
+      "/api/v1/chains/chain-rank",
+      "/api/v1/nansen-score/top-tokens",
+      "/api/v1/perp-leaderboard",
+      "/api/v1/perp-screener",
+      "/api/v1/portfolio/defi-holdings",
+      "/api/v1/prediction-market/address-summary",
+      "/api/v1/prediction-market/categories",
+      "/api/v1/prediction-market/event-screener",
+      "/api/v1/prediction-market/market-screener",
+      "/api/v1/prediction-market/ohlcv",
+      "/api/v1/prediction-market/orderbook",
+      "/api/v1/prediction-market/pnl-by-address",
+      "/api/v1/prediction-market/pnl-by-market",
+      "/api/v1/prediction-market/position-detail",
+      "/api/v1/prediction-market/top-holders",
+      "/api/v1/prediction-market/trades-by-address",
+      "/api/v1/prediction-market/trades-by-market",
+      "/api/v1/profiler/address/counterparties",
+      "/api/v1/profiler/address/current-balance",
+      "/api/v1/profiler/address/historical-balances",
+      "/api/v1/profiler/address/labels",
+      "/api/v1/profiler/address/pnl",
+      "/api/v1/profiler/address/pnl-summary",
+      "/api/v1/profiler/address/premium-labels",
+      "/api/v1/profiler/address/related-wallets",
+      "/api/v1/profiler/address/transactions",
+      "/api/v1/profiler/dex-trades",
+      "/api/v1/profiler/perp-positions",
+      "/api/v1/profiler/perp-trades",
+      "/api/v1/search/entity-name",
+      "/api/v1/search/general",
+      "/api/v1/search/token-sectors",
+      "/api/v1/smart-alert",
+      "/api/v1/smart-alert/list",
+      "/api/v1/smart-alert/toggle",
+      "/api/v1/smart-alert/{alert_id}",
+      "/api/v1/smart-money/dcas",
+      "/api/v1/smart-money/dex-trades",
+      "/api/v1/smart-money/historical-holdings",
+      "/api/v1/smart-money/holdings",
+      "/api/v1/smart-money/netflow",
+      "/api/v1/smart-money/perp-trades",
+      "/api/v1/smart-money/pnl-leaderboard",
+      "/api/v1/tgm/dex-trades",
+      "/api/v1/tgm/flow-intelligence",
+      "/api/v1/tgm/flows",
+      "/api/v1/tgm/holders",
+      "/api/v1/tgm/indicators",
+      "/api/v1/tgm/jup-dca",
+      "/api/v1/tgm/perp-pnl-leaderboard",
+      "/api/v1/tgm/perp-positions",
+      "/api/v1/tgm/perp-trades",
+      "/api/v1/tgm/pnl-leaderboard",
+      "/api/v1/tgm/position-intelligence",
+      "/api/v1/tgm/token-information",
+      "/api/v1/tgm/token-ohlcv",
+      "/api/v1/tgm/transfers",
+      "/api/v1/tgm/who-bought-sold",
+      "/api/v1/token-screener",
+      "/api/v1/transaction-with-token-transfer-lookup",
+      "/api/v1beta1/profiler/address/historical-token-balances",
+      "/api/v1beta1/profiler/address/historical-transactions",
+      "/api/v1beta1/profiler/historical-transaction-lookup",
+      "/api/v1beta1/smart-money/historical-token-balances",
+      "/api/v1beta1/tgm/historical-dex-trades",
+      "/api/v1beta1/tgm/historical-pnl-leaderboard",
+      "/api/v1beta1/tgm/historical-token-flow-summary",
+      "/api/v1beta1/tgm/historical-token-ohlcv",
+      "/api/v1beta1/tgm/historical-token-quant-scores",
+      "/api/v1beta1/tgm/historical-top-holders",
+      "/api/v1beta1/tgm/historical-who-bought-sold",
+      "/api/v1beta1/token-screener/historical"
+    ]
+  },
+  "credit_headers": {
+    "used": "X-Nansen-Credits-Used",
+    "remaining": "X-Nansen-Credits-Remaining",
+    "note": "declared per-endpoint in OpenAPI responses.headers; exact per-call metering for D6 budget-guard"
+  },
+  "rate_limit_headers": [
+    "ratelimit-limit",
+    "ratelimit-remaining",
+    "ratelimit-reset",
+    "x-ratelimit-limit-second (150)",
+    "x-ratelimit-limit-minute (3000)",
+    "x-ratelimit-limit (15)",
+    "x-ratelimit-limit-credit-fails-minute (10)",
+    "retry-after"
+  ],
+  "documented_costs": {
+    "free_endpoints": [
+      "/api/v1/search/entity-name",
+      "/api/v1/search/token-sectors",
+      "/api/v1/account"
+    ],
+    "premium_labels_true": "150 credits per call (endpoints: /tgm/holders, /tgm/pnl-leaderboard, /tgm/perp-pnl-leaderboard, /perp-leaderboard)",
+    "note": "other per-endpoint costs NOT documented in the spec -> must be measured from X-Nansen-Credits-Used at runtime, never hardcoded",
+    "status": "SUPERSEDED by credit_cost_table (2026-07-23, task-reviewer C1)"
+  },
+  "mcp": {
+    "url": "https://mcp.nansen.ai/ra/mcp",
+    "auth": "Authorization: Bearer <key>",
+    "server": "nansen-mcp 3.2.4",
+    "protocolVersion": "2025-06-18",
+    "tool_count": 37,
+    "tools": [
+      "smart_traders_and_funds_token_balances",
+      "smart_traders_and_funds_perp_trades",
+      "token_current_top_holders",
+      "token_dex_trades",
+      "token_transfers",
+      "token_flows",
+      "token_pnl_leaderboard",
+      "token_who_bought_sold",
+      "token_recent_flows_summary",
+      "token_discovery_screener",
+      "token_ohlcv",
+      "token_info",
+      "token_quant_scores",
+      "nansen_score_top_tokens",
+      "hyperliquid_leaderboard",
+      "address_historical_balances",
+      "address_related_addresses",
+      "address_counterparties",
+      "address_transactions",
+      "address_dex_trades",
+      "wallet_pnl_for_token",
+      "wallet_pnl_summary",
+      "address_portfolio",
+      "general_search",
+      "growth_chain_rank",
+      "transaction_lookup",
+      "prediction_market_lookup",
+      "prediction_market_screener",
+      "prediction_market_ohlcv",
+      "prediction_market_orderbook",
+      "prediction_market_top_holders",
+      "prediction_market_trades",
+      "prediction_market_pnl_leaderboard",
+      "prediction_market_position_detail",
+      "prediction_market_address_trades",
+      "prediction_market_address_summary",
+      "prediction_market_address_pnl"
+    ],
+    "roadmap_claimed": 24,
+    "note": "ROADMAP's '24 tools' is STALE - live list is 37",
+    "output_format": "several tools explicitly return markdown text (e.g. hyperliquid_leaderboard: 'Returns: ... as markdown') -> unsuitable as a normalization source for canonical zod types (D5)"
+  },
+  "supported_chains_mcp": "scroll, solana, arbitrum, iotaevm, tron, ton, hyperevm, sui, polygon, bitcoin, ronin, near, avalanche, mantra, monad, robinhood, plasma, optimism, mantle, ethereum, evm, zksync, injective, bnb, base, unichain, sei, fantom, hyperliquid, all, sonic, linea",
+  "credit_cost_table": {
+    "source": "x-credit-cost extension, present on ALL 74 operations of nansen-openapi-2026-07-23.json",
+    "correction": "SUPERSEDES the earlier 'documented_costs' note which claimed costs were mostly undocumented - that was a prose-grep artifact. Costs ARE statically documented and PLAN-DEPENDENT {free,pro}; costOf() must read a table GENERATED from this spec, never spend credits to discover a price.",
+    "plan_dependent_examples": {
+      "GET /api/v1/search/token-sectors": {
+        "free": 1,
+        "pro": 0
+      }
+    },
+    "costs": {
+      "GET /api/v1/account": {
+        "free": 0,
+        "pro": 0
+      },
+      "POST /api/v1/smart-money/netflow": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/smart-money/pnl-leaderboard": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/smart-money/dex-trades": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/smart-money/perp-trades": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/smart-money/dcas": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/smart-money/holdings": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/smart-money/historical-holdings": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/profiler/address/transactions": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/transaction-with-token-transfer-lookup": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1beta1/profiler/historical-transaction-lookup": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/profiler/address/pnl-summary": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/profiler/address/current-balance": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/profiler/address/counterparties": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/profiler/address/historical-balances": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/profiler/address/related-wallets": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/profiler/address/pnl": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/profiler/address/labels": {
+        "free": 100,
+        "pro": 100
+      },
+      "POST /api/v1/profiler/address/premium-labels": {
+        "free": 500,
+        "pro": 500
+      },
+      "POST /api/v1/profiler/perp-positions": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/profiler/perp-trades": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/profiler/dex-trades": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/flows": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/who-bought-sold": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/dex-trades": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/transfers": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/holders": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/tgm/pnl-leaderboard": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/tgm/perp-pnl-leaderboard": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/tgm/perp-positions": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/tgm/perp-trades": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/flow-intelligence": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/position-intelligence": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/token-information": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/indicators": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/tgm/token-ohlcv": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/tgm/jup-dca": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1beta1/tgm/historical-dex-trades": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1beta1/tgm/historical-who-bought-sold": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1beta1/tgm/historical-pnl-leaderboard": {
+        "free": 25,
+        "pro": 25
+      },
+      "POST /api/v1beta1/tgm/historical-token-flow-summary": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1beta1/tgm/historical-token-ohlcv": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1beta1/tgm/historical-top-holders": {
+        "free": 25,
+        "pro": 25
+      },
+      "POST /api/v1/token-screener": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/perp-screener": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/portfolio/defi-holdings": {
+        "free": 1,
+        "pro": 1
+      },
+      "GET /api/v1/smart-alert/list": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/smart-alert": {
+        "free": 1,
+        "pro": 1
+      },
+      "DELETE /api/v1/smart-alert/{alert_id}": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/search/entity-name": {
+        "free": 0,
+        "pro": 0
+      },
+      "GET /api/v1/search/token-sectors": {
+        "free": 1,
+        "pro": 0
+      },
+      "POST /api/v1/search/general": {
+        "free": 0,
+        "pro": 0
+      },
+      "POST /api/v1/perp-leaderboard": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/nansen-score/top-tokens": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/ohlcv": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/orderbook": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/top-holders": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/prediction-market/trades-by-market": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/market-screener": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/event-screener": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/pnl-by-market": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/prediction-market/pnl-by-address": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/position-detail": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/prediction-market/trades-by-address": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/categories": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/prediction-market/address-summary": {
+        "free": 1,
+        "pro": 1
+      },
+      "POST /api/v1/agent/fast": {
+        "free": 200,
+        "pro": 200
+      },
+      "POST /api/v1/agent/expert": {
+        "free": 750,
+        "pro": 750
+      },
+      "POST /api/v1beta1/smart-money/historical-token-balances": {
+        "free": 25,
+        "pro": 25
+      },
+      "POST /api/v1beta1/tgm/historical-token-quant-scores": {
+        "free": 25,
+        "pro": 25
+      },
+      "POST /api/v1beta1/token-screener/historical": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1beta1/profiler/address/historical-token-balances": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1beta1/profiler/address/historical-transactions": {
+        "free": 5,
+        "pro": 5
+      },
+      "POST /api/v1/chains/chain-rank": {
+        "free": 1,
+        "pro": 1
+      }
+    }
+  }
+}

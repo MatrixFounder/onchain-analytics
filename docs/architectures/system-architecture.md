@@ -417,6 +417,400 @@ holder-статистику; Registry регистрирует способно�
 схемы — только заполнением дополнительных строк массива `balances`. Зафиксировано как backlog
 work-item, не блокирует M1.
 
+**Десятый адаптер (M2, TASK-005 `m2-alpha-paid`, R-29/R-30): `nansen` — первый платный
+адаптер.** Три способности — `smart-money.flows`, `entity.labels`, `token.risk` — поверх REST
+`api.nansen.ai`, **не** через официальный MCP-сервер Nansen (`mcp.nansen.ai/ra/mcp`, 37 tools,
+решение владельца TASK.md §1 п.2: несколько его tools отдают markdown-текст — непригодно для
+canonical zod-нормализации D5 — и проксирование обошло бы наш собственный кеш/бюджет/SSRF-гейт).
+Источники формы ответа и цены — **только** `nansen-probe-2026-07-23.json` (живой `/account`,
+`credit_cost_table`) и `nansen-openapi-2026-07-23.json` (75 путей, request/response контракты) —
+TASK.md §7 запрещает изобретать что-либо сверх них.
+
+_Регистрация (`providers.config.ts.adapterRegistrations`, 10-я запись):_
+
+```ts
+{
+  id: 'nansen',
+  hosts: ['api.nansen.ai'],
+  // Тот же консервативный старт, что уже используют 5 из 9 M1-адаптеров (dexscreener/defillama/
+  // rpc-evm/rpc-solana/platform-explorer) — заведомо ниже ВСЕХ четырёх документированных вендором
+  // порогов (ratelimit-limit:15/окно не подтверждено, -second:150, -minute:3000,
+  // -credit-fails-minute:10), независимо от того, как трактовать неподтверждённое окно «15» (R-29).
+  rateLimit: { capacity: 5, refillPerSec: 1 },
+  requiresEnv: ['NANSEN_API_KEY'],
+},
+```
+
+_Аутентификация:_ заголовок `apiKey: <NANSEN_API_KEY>`, **не** `Authorization: Bearer` (пробник:
+`auth.scheme: 'apiKey', in: 'header', name: 'apiKey'`) — легко перепутать именно с MCP-эндпоинтом,
+который использует `Authorization: Bearer <key>`; REST — нет. Все используемые эндпоинты, **кроме**
+`GET /api/v1/account`, — `POST` с JSON-телом (подтверждено и пробником, и openapi-путями) — та же
+форма `fetch()`, что `rpc-evm`'s JSON-RPC POST (§3.2 выше): `{method:'POST',
+headers:{'content-type':'application/json', apiKey}, body: JSON.stringify(...)}`; fixture-recorder
+(R-44, расширение `record-fixture.mjs`) обязан сериализовать тело запроса, не только query-string.
+
+_Три маршрута (`providers.config.ts.routes`, без fallback-адаптера — нет бесплатного эквивалента,
+R-30):_
+
+```ts
+{ capability: 'smart-money.flows', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
+{ capability: 'entity.labels', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
+{ capability: 'token.risk', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
+```
+
+_**Chain-scope — решение по OQ-3:** `ethereum`+`solana`, буквально то же подмножество, что M1._
+Живая эвиденция показывает, что три релевантных Nansen-энумератора чейнов **не совпадают друг с
+другом**: `SmartMoneyChain` — 17 сетей, `TGMHoldersChain`/`TGMChain` — по 24, а «~32 сети» из
+`supported_chains_mcp` пробника относится к **другой**, вне-скоупа M2 поверхности (официальный
+MCP-сервер, §1 п.2 — не тот список, с которым вообще стоит сравнивать это решение). Все три
+энумератора — **надмножества** `{ethereum, solana}`, но не идентичны друг другу — «поддержать все
+Nansen-сети» означало бы для каждой из трёх способностей свой, дрейфующий независимо от вендора
+список, без единого проверенного продуктового запроса на такую широту (exit-критерии ROADMAP §M2
+просят «flows+labels» и «budget-guard режет», не многосетевой охват). Держим tool-контракт
+идентичным M1 (`chain: z.enum(['ethereum','solana'])` на все 3 новых tool, тот же `superRefine`
+`isValidAddress`-идиом, §5.1) — меньше когнитивной нагрузки, ноль нового vendor-drift-риска.
+Расширение на более широкий список Nansen-сетей — задокументированный backlog-кандидат (§11), не
+блокирующий M2, требующий отдельного пробника **на способность**, когда появится реальный запрос.
+
+_**Cost-table generation — костяк `costOf()` (R-37):**_ таблица `(method+path, plan) →
+{free,pro}` генерируется **из закоммиченного** `nansen-openapi-2026-07-23.json`'s `x-credit-cost`
+per-operation extension (присутствует на всех 74 операциях спеки — подтверждено grep'ом при
+разведке этой архитектуры) — **не** тратит кредиты на выяснение цены. Механизм — **committed
+`.ts`-модуль, сгенерированный dev-скриптом**, не runtime-парсинг JSON и не build-time codegen в CI:
+
+```ts
+// packages/core/scripts/generate-nansen-cost-table.mjs — ручной dev-скрипт (аналог
+// record-fixture.mjs, ВНЕ CI): читает x-credit-cost из nansen-openapi-<date>.json, пишет
+// packages/core/src/adapters/nansen/cost-table.ts — литерал, коммитится, git-diff'абелен (дрейф
+// вендорских цен при следующей перегенерации виден как обычный diff, не скрыт в бинарнике/кеше).
+export const NANSEN_COST_TABLE: Readonly<Record<string, { free: number; pro: number }>> = {
+  'GET /api/v1/account': { free: 0, pro: 0 },
+  'POST /api/v1/smart-money/netflow': { free: 5, pro: 5 },
+  'POST /api/v1/tgm/holders': { free: 5, pro: 5 },
+  'POST /api/v1/search/general': { free: 0, pro: 0 },
+  'POST /api/v1/search/entity-name': { free: 0, pro: 0 },
+  'POST /api/v1/profiler/address/labels': { free: 100, pro: 100 },
+  'POST /api/v1/tgm/indicators': { free: 5, pro: 5 },
+  'POST /api/v1/tgm/token-information': { free: 1, pro: 1 },
+  // Only the ~8 endpoints M2's 3 capabilities actually call — NOT all 74 (out of scope, TASK.md §4).
+};
+```
+
+Выбор в пользу committed-`.ts` (не `resolveJsonModule`-импорт `.json`, не runtime-fetch спеки):
+согласуется со стилем `providers.config.ts` (декларативные литералы, регенерируемые правкой файла,
+не рантайм-парсингом), не требует `resolveJsonModule`/import-attributes возни под NodeNext-ESM
+(`core`'s build — plain `tsc`, §6.1), и держит артефакт человекочитаемым/ревьюабельным в PR-диффе.
+
+`nansen`-адаптер's собственный `costOf(cap, args)` (интерфейсный метод `ProviderAdapter` уже
+существует с M1 — все 9 адаптеров тривиально возвращают `{credits: 0}`; `nansen` — первый, кто
+реализует его по-настоящему) мэпит capability → фиксированный список `(method,path)` **и суммирует**
+их цены под живым `plan` (см. account-state ниже) — **не оценка**, ровно то число, которое реально
+спишется:
+
+| Capability                                                          | HTTP-вызовы (метод+путь)                                                   | `costOf()`              |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------- |
+| `smart-money.flows`                                                 | `POST /smart-money/netflow` + `POST /tgm/holders` (всегда оба — R-41)      | **10** (5+5, оба плана) |
+| `entity.labels`, дефолт (только `query`)                            | `POST /search/general` [+ `POST /search/entity-name`]                      | **0**                   |
+| `entity.labels`, token-scoped (`tokenAddress`, `exhaustive: false`) | + `POST /tgm/holders`                                                      | **5**                   |
+| `entity.labels`, `exhaustive: true`                                 | **только** `POST /profiler/address/labels` (не дублирует дешёвый путь)     | **100**                 |
+| `token.risk`                                                        | `POST /tgm/indicators` + `POST /tgm/token-information` (всегда оба — R-43) | **6** (5+1, оба плана)  |
+
+**Неизвестный `(method,path)` в `NANSEN_COST_TABLE` → `costOf()` возвращает
+`Number.POSITIVE_INFINITY`, никогда `0`** (R-37 MIN-3, буквально второй вариант из требования —
+«отказ / бесконечная цена»): защита от будущего дрейфа спеки (перегенерация таблицы теряет ключ),
+хотя при текущей, ручно-подобранной capability→endpoint карте это не должно срабатывать. Гейт (ниже)
+проверяет `Number.isFinite(cost)` **до** любого обращения к `BudgetStore`/сети — `Infinity` никогда
+не достигает SQLite-параметра (нечего было бы туда биндить).
+
+_**Account-state — общая опора для `costOf()`'s "живой plan" и потолка бюджета (OQ-1):**_
+`ProviderAdapter.costOf()` остаётся **синхронным** (существующая сигнатура, ломать её ради одного
+адаптера — межпакетная breaking change, задевающая всех 9 M1-адаптеров) — «живой план» читается из
+мутируемого объекта состояния, который сам адаптер обновляет асинхронно ДО синхронного вызова
+`costOf()`:
+
+```ts
+// packages/core/src/adapters/nansen/account-state.ts
+export interface NansenAccountSnapshot {
+  plan: 'free' | 'pro';
+  creditsRemainingAtObserve: number;
+  usageAtObserve: number; // usage.credits_used(provider, dayBucketMs) в ТОТ ЖЕ логический шаг, что /account
+  observedAtMs: number;
+  dayBucketMs: number; // floor(observedAtMs/86400000)*86400000 — какой бакет этот снимок обслуживает
+}
+export interface NansenAccountState {
+  get(): NansenAccountSnapshot | undefined; // undefined = ни разу не резолвилось (cold start)
+  set(snapshot: NansenAccountSnapshot): void;
+  markUnreconciled(): void; // R-38 — транспортная ошибка/402 после резервации
+  isUnreconciled(): boolean;
+  clearUnreconciled(): void;
+}
+export function createNansenAccountState(): NansenAccountState {
+  /* plain mutable object, in-memory */
+}
+```
+
+**Инициализация — консервативный дефолт `plan: 'free'`, не «неизвестно/0»:** таблица цен показывает
+`free` цену `>= pro` цену на **каждом** из 8 используемых эндпоинтов (единственная во всей 74-путей
+таблице пара, где `free≠pro`, — `GET /search/token-sectors` (1 vs 0) — не используется M2), так
+`plan:'free'` как дефолт до первого резолва не переоценивает бюджет ни на одном пути M2 (в худшем
+случае недооценивает щедрость Pro-плана на один кредит на неиспользуемом эндпоинте — безопасное
+направление ошибки).
+
+**Когда происходит resync (`GET /api/v1/account`, 0cr, тот же rate-limit bucket, что любой другой
+nansen-вызов):**
+
+1. **Cold start** — `accountState.get()` возвращает `undefined` (ни разу не резолвилось в этом
+   процессе) **или** снимок принадлежит **прошлому** day-бакету (`snapshot.dayBucketMs !==
+floor(now/86400000)*86400000`) — новый бакет начинается с обязательного 0-кредитного resync,
+   не с непроверенного переноса вчерашнего остатка.
+2. **Unreconciled** (`accountState.isUnreconciled()`) — предыдущий вызов оставил резервацию
+   несверенной (транспортная ошибка/таймаут без ответа — R-38, **или** `402 Payment Required` —
+   UC-6, оба используют один и тот же флаг/путь восстановления, а не два разных механизма).
+3. **Иначе — НЕ резолвится на каждый вызов.** `/account` бесплатен по кредитам, но не бесплатен по
+   rate-limit-слоту и латентности; резолвить на каждый платный вызов означало бы удвоить сетевые
+   round-trip'ы без функциональной пользы поверх (1)/(2). Между resync'ами потолок бакета —
+   **зафиксированный на момент последнего снимка** остаток (см. формулу ниже) — не «текущий живой».
+
+_**Формула потолка бакета (OQ-1, снимает ловушку двойного счёта из UC-4/§7 open-questions) — ДВА
+раздельных условия, не один `min()`:**_ первая версия этого раздела схлопывала вендорский лимит и
+`NANSEN_DAILY_CREDIT_CAP` в один `min(...)`, сравниваемый с **бакет-суммарным** `usage` — это
+корректно только при resync НА старте бакета (`usageAtObserve` тогда неявно `0`), но resync-триггер
+(2) («unreconciled») срабатывает **посреди** бакета, когда `creditsRemainingAtObserve` уже учитывает
+весь потраченный в этом бакете расход, а `usage.credits_used(bucket)` — тот же самый расход ещё раз:
+двойной счёт, ровно та ловушка, которую формула должна была исключать (найдено координатором на
+ревью этой архитектуры). **Исправление — якорить остаток на `usageAtObserve`, а не на старте бакета,
+и считать вендорский лимит от расхода "с якоря", а не от расхода "с начала бакета":**
+
+```
+spentSinceAnchor = usage.credits_used(provider, bucket) - snapshot.usageAtObserve
+
+allowed  ⟺  (spentSinceAnchor + costOf()) <= snapshot.creditsRemainingAtObserve            // вендорский лимит, anchor-relative
+           ∧  (usage.credits_used(provider, bucket) + costOf()) <= (NANSEN_DAILY_CREDIT_CAP ?? Infinity)  // self-imposed cap, bucket-relative
+```
+
+**Оба условия обязательны одновременно** — намеренно измеряют РАЗНЫЕ вещи (anchor-relative vs
+bucket-relative), поэтому **сырой** `creditsRemainingAtObserve` НЕ схлопывается в один `min()` с
+`NANSEN_DAILY_CREDIT_CAP` напрямую (это и была ошибка первой версии этого раздела, которую нашло
+координаторское ревью). Но `BudgetStore.checkAndReserve()` (интерфейс — §«Модуль `src/cache/*»`
+ниже, M-1) намеренно принимает **один** скалярный `ceiling` — он provider-agnostic, ничего не
+знает про якоря, D7-совместим. Оба условия **алгебраически сводятся** к одному bucket-relative
+скаляру, если сначала перебазировать вендорский член на `usageAtObserve` — и только так:
+
+```
+spentSinceAnchor + cost <= creditsRemainingAtObserve
+⟺  usage(bucket) - usageAtObserve + cost <= creditsRemainingAtObserve
+⟺  usage(bucket) + cost <= usageAtObserve + creditsRemainingAtObserve
+
+effectiveCeiling = min( snapshot.usageAtObserve + snapshot.creditsRemainingAtObserve,
+                        NANSEN_DAILY_CREDIT_CAP ?? Infinity )
+
+allowed  ⟺  usage.credits_used(provider, bucket) + costOf() <= effectiveCeiling
+```
+
+**Это — единственная корректная точка, где `min()` разрешён** (наивный `min(creditsRemainingAt
+Observe, CAP)` БЕЗ перебазирования на `usageAtObserve` — ровно тот дефект, что был исправлен
+предыдущим раундом; координатор явно указал, что интерфейс с одним скалярным `ceiling` без этой
+формулы-мостика выглядит как приглашение написать именно наивный вариант заново). `effectiveCeiling`
+— **то самое значение**, которое адаптер вычисляет из `NansenAccountSnapshot` и передаёт как
+четвёртый аргумент в `checkAndReserve(provider, bucket, cost, effectiveCeiling)`; `BudgetStore` со
+своей стороны сравнивает его буквально с `usage.credits_used(bucket) + cost` — простое
+bucket-relative сравнение, вся anchor-арифметика уже свёрнута ДО вызова, снаружи `BudgetStore`
+(тот же R-35-паттерн разделения ответственности, что уже задокументирован выше: `BudgetStore` —
+provider-agnostic леджер, живой ceiling/anchor — Nansen-специфичная забота вызывающего). **`/account`
+и чтение `usage.credits_used(provider, bucket)` для `usageAtObserve` — один логический шаг
+resync'а** (оба значения читаются друг за другом без промежуточного платного вызова, попадают в
+ОДИН `NansenAccountSnapshot`) — иначе сам якорь мог бы устареть до того, как станет частью снимка.
+
+**Проверка на cold start:** `usageAtObserve` при самом первом resync'е бакета — это то, что уже
+персистентно накоплено в `usage` (обычно `0` для нового дня, но НЕ обязательно `0` при рестарте
+процесса посреди уже начатого бакета — та же формула корректно обрабатывает и этот случай, не
+только «unreconciled»-триггер).
+
+**Числовой пример (реальный free/100cr аккаунт, ровно кейс координаторского ревью; `NANSEN_DAILY_
+CREDIT_CAP` не задан ⇒ `Infinity`, не влияет на `min()` ниже):**
+
+| Шаг                               | `usage.credits_used`                                                                                                             | `creditsRemainingAtObserve`                           | `usageAtObserve`                                | `spentSinceAnchor`     | `effectiveCeiling` = `usageAtObserve + creditsRemainingAtObserve`  | Итог                                                                                                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------- | ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Cold start, resync #1             | 0                                                                                                                                | 100                                                   | 0                                               | 0                      | `0 + 100 = 100`                                                    | снимок: remaining=100, anchor=0, ceiling=100                                                                          |
+| 5× вызов по 5cr, все успешны      | 25                                                                                                                               | 100 (снимок не менялся)                               | 0                                               | 25                     | 100 (снимок не менялся)                                            | допустимо: `25+5≤100` (bucket-relative проверка через `effectiveCeiling`, алгебраически = `25+5≤100` anchor-relative) |
+| 6-й вызов — таймаут ДО ответа     | 25 (резервация делалась, но не была реконсилирована — прибавка на резервацию произошла отдельно, здесь считаем уже осевший факт) | 100                                                   | 0                                               | —                      | 100                                                                | `markUnreconciled()`                                                                                                  |
+| Следующий вход в gate → resync #2 | 25                                                                                                                               | **75** (живой remaining ПОСЛЕ всех пяти успешных 5cr) | **25** (= `usage.credits_used` в тот же момент) | 0 (сразу после снимка) | **`25 + 75 = 100`** (НЕ `75` — перебазировано на `usageAtObserve`) | новый снимок: remaining=75, anchor=25, ceiling=100                                                                    |
+| 7-й вызов, 5cr                    | 25                                                                                                                               | 75                                                    | 25                                              | 0                      | 100                                                                | допустимо: `25+5≤100` (`BudgetStore` видит только это) → **проходит**                                                 |
+
+Со СТАРОЙ (однопеременной, наивно-схлопнутой) формулой шаг resync #2 дал бы `ceiling=min(75,
+Infinity)=75` — **без** перебазирования на `usageAtObserve=25` — и сравнение `25+5≤75` тоже прошло
+бы на ЭТОМ шаге, но потолок для ВСЕХ последующих вызовов уже занижен на 25 (было доступно 75
+**новых** кредитов сверх уже потраченных 25, наивная формула видит только 75 суммарно, т.е. 50
+новых) — при накоплении повторных resync'ов (таймауты, рестарты процесса) каждый следующий resync
+**снова** вычитает уже посчитанный расход, пока доступный остаток не сойдётся к нулю раньше
+физического исчерпания счёта — именно тот phantom-lockout, для лечения которого и был введён resync
+R-38. С ПЕРЕБАЗИРОВАННЫМ `effectiveCeiling` (`usageAtObserve + creditsRemainingAtObserve = 100`,
+не меняется между resync'ами до тех пор, пока вендорский остаток на самом деле не меняется иначе,
+чем через наш же учтённый `usage`) ни один resync не съедает уже учтённый расход повторно, сколько
+бы раз он ни срабатывал.
+
+**OQ-5 — решение: ДА, вводим необязательный `NANSEN_DAILY_CREDIT_CAP`.** Читается через
+`EnvSchema` (пустой/отсутствующий = без ограничения, поведение не меняется от live-derived базы —
+решение владельца TASK.md §1 п.1 не нарушается: cap может только **сузить** живой потолок, никогда
+не расширить его сверх `credits_remaining`). Дешёвая, полностью опциональная защёлка для оператора,
+опасающегося неконтролируемого расхода агентом за один день, без встраивания в обязательный путь.
+
+_**Budget gate — размещение (OQ-2) и почему НЕ registry-generic и НЕ отдельный wrapper-объект:**_
+Ни `CapabilityRegistry.resolve()` (там гейт был бы Nansen-специфичным кодом внутри универсального
+компонента — code smell, которого TASK.md явно просит избежать, ЛИБО потребовал бы добавить
+generic `BudgetStore`/`costOf()`-плюмбинг в `registry.ts`, задевающий все 9 M1-путей ради одного
+платного), ни MCP tool-хендлер (`CapabilityRegistry` сам владеет cache lookup — гейт на уровне
+хендлера неизбежно исполнялся бы **до** него, ломая обязательный порядок R-37/UC-5 — TASK.md уже
+исключает этот вариант явно). **Решение: гейт живёт как внутренний слой РЕАЛИЗАЦИИ `fetch()` самого
+`nansen`-адаптера** (`packages/core/src/adapters/nansen/index.ts`) — ровно на существующем шве,
+которым `CapabilityRegistry.resolve()` уже вызывает `adapter.fetch(cap, args)` **после**
+cache-miss и **до** `normalize()` (шов задокументирован собственным docstring `registry.ts`, §3.2
+выше, ноль правок туда не требуется). Это не «wrapper-объект вокруг адаптера» (два экспортируемых
+конструктора, где по ошибке можно зарегистрировать несгейченный) — единственная публично
+экспортируемая фабрика пакета — `createNansenAdapter(deps): ProviderAdapter`, и singleflight/
+gate/reconcile — приватные, не экспортируемые шаги ВНУТРИ её `fetch()`. **Небайпассируемость —
+структурная, не конвенция:** `adapters: Map<string, ProviderAdapter>`, которым
+`CapabilityRegistry` инициализируется, — единственная точка, где что-либо регистрируется под
+ключом `'nansen'` (все три M2-маршрута ссылаются на один и тот же id) — «сырых», не прошедших
+gate-логику примитивов **нет в публичном API пакета** вовсе (`src/index.ts` не реэкспортирует ничего
+кроме `createNansenAdapter`; внутренние helper'ы `adapters/nansen/*.ts` доступны только
+package-internal коду — тестам `packages/core/test/` и dev-скрипту `record-fixture.mjs`,
+сознательно и документированно обходящим гейт при **записи фикстур**, не в проде).
+
+**Из этого размещения бесплатно следует ключевой инвариант:** с точки зрения
+`CapabilityRegistry.resolve()` отказ гейта **неотличим** от обычного сетевого сбоя адаптера — оба
+суть `throw` из `adapter.fetch()`, пойманный **уже существующим** try/catch `resolve()`
+(`registry.ts`, §3.2 выше) и записанный в `tried`; поскольку у всех трёх M2-маршрутов нет
+fallback-адаптера (`adapterIds: ['nansen']` — единственный элемент), цикл сразу завершается
+`CapabilityUnavailableError` → tool возвращает `isError: true` — **тот же самый** R-24/R-40-путь,
+что и «ключ не задан», **без единой строки правок в `registry.ts` или `resolve-capability.ts`**
+(M1's 287 тестов и `_meta.cache`-контракт остаются побитово теми же).
+
+_**Атомарный check+reserve (R-37 concurrency-требование):**_ `BudgetStore.checkAndReserve(...)`
+(интерфейс — §«Модуль `src/cache/*`» ниже) реализован через `better-sqlite3`'s
+`db.transaction(fn).immediate()` — **`IMMEDIATE`, не `DEFERRED`** (default) — СИНХРОННУЮ
+читай-сравни-пиши секцию (тот же приём конкурентной безопасности, что уже задокументирован и
+провёрен для `net/rate-limit.ts`'s `throttle()`, §3.2 выше: «refill+consume+decide — целиком
+синхронный шаг» — здесь то же самое для «прочитать usage + сравнить с потолком + аддитивно
+записать резервацию», плюс настоящая SQLite-транзакция поверх, а не только JS-семантика отсутствия
+`await`). В рамках одного процесса два конкурентных логических вызова, чья суммарная цена превышает
+остаток, детерминированно дают **ровно один** `{ok:true}` и один `{ok:false}` — второй никогда не
+достигает сети (R-37(c) acceptance). Отказ **не пишет** резервацию вовсе (не «откат», а просто «нет
+записи») — `usage` остаётся нетронутым (R-37 acceptance a/b); ответ `{ok:false, reason}` называет
+**какой именно** из двух пределов сработал («vendor: need X, remaining (as of last resync) Y» vs
+«self-imposed cap: need X, NANSEN_DAILY_CREDIT_CAP allows Y») — иначе оператор не может отличить
+реальное исчерпание вендорского счёта от собственной защёлки (OQ-5).
+
+**`dayBucketMs` фиксируется ОДИН раз на вход в gate (M-2 review) — не пересчитывается при
+реконсиляции.** Локальная переменная `const bucket = dayBucketMs(Date.now())`, вычисленная **до**
+`checkAndReserve`, передаётся дальше по всей цепочке одного логического вызова (резервация → HTTP →
+реконсиляция) как параметр, а не пересчитывается из `Date.now()` на каждом шаге. Без этого вызов,
+зарезервированный в 23:59:59.8, чей ответ приходит в 00:00:00.2, писал бы отрицательную дельту в
+**новый** день-бакет (чужая проблема чужого дня, плюс отрицательный `credits_used` ломает
+задокументированный аддитивный/never-overwritten инвариант `usage`, §4.2) — резервация и
+реконсиляция одного вызова всегда бьют в ОДНУ и ту же строку `usage`, независимо от того, что
+`Date.now()` успел показать между ними.
+
+**Cross-process контракт (M-3 review) — `DATA_DIR` по умолчанию общий на машину
+(`~/.onchain-intel`), т.е. несколько stdio-сессий Claude Code одновременно — несколько writer-
+соединений к одному `cache.sqlite3`.** Атомарность `checkAndReserve` внутри одного процесса не
+означает атомарность между процессами — но `BEGIN IMMEDIATE` (не `DEFERRED`) берёт write-lock СРАЗУ,
+поэтому штатный busy-handler/таймаут действительно применяется (с `DEFERRED` конкурентная запись
+другого процесса между read и upgrade-to-write даёт `SQLITE_BUSY_SNAPSHOT` **немедленно**, минуя
+busy-handler целиком — WAL-специфика, не гипотетическая). `SqliteBudgetStore`'s соединение
+открывается явным `new Database(path, { timeout: 5000 })` (не дефолтный 0мс) — при конкуренции
+`checkAndReserve` подождёт до 5с занятой БД, а не бросит сразу. Бюджет при этом **никогда не
+портится** — транзакция либо целиком коммитится, либо целиком абортится (anchor-формула, §выше,
+уже cross-process-корректна по построению — она не зависит от того, кто именно инкрементировал
+`usage` между resync'ами); единственный наблюдаемый эффект конкуренции — редкий
+`CapabilityUnavailableError` вместо мгновенного успеха, если таймаут всё же истёк (в один stdio-
+процесс на пользователя это практически недостижимо, в многопроцессном сценарии — не порча данных,
+а лишний повтор). **Singleflight (R-39, ниже) — принципиально per-process**, не per-machine: два
+РАЗНЫХ процесса, сделавших идентичный запрос одновременно, — это два настоящих запроса, каждый
+законно платит свою цену; коалессинг здесь не нужен и не применяется.
+
+_**Singleflight (R-39) — где именно:**_ САМЫЙ внешний слой `fetch()`'s реализации, ДО
+check-and-reserve (иначе два одновременных **идентичных** вызова оба зарезервировали бы кредиты —
+двойной счёт для того, что логически один запрос). In-memory `Map<string, Promise<unknown>>`,
+ключ — `deriveArgsHash(capability, args)` (переиспользование существующего `net/args-hash.js`
+экспорта, не новый примитив), запись стирается в `finally` по расчёту промиса — второй одновременный
+идентичный вызов ждёт **тот же** промис (ни второй резервации, ни второго HTTP-запроса, ни второй
+записи в `usage`); вызов, пришедший ПОСЛЕ того как первый уже разрешился, стартует заново
+(корректно — это новый по времени запрос, ему нужна собственная свежая проверка бюджета).
+
+_**Post-call reconciliation + transport-failure/402 resync (R-38, UC-6) — ОБЯЗАТЕЛЬНЫЙ инвариант:
+реконсиляция происходит РОВНО ОДИН РАЗ на логический `fetch()`, ПОСЛЕ того как ВСЕ под-вызовы этого
+`fetch()` завершились** (найдено на ревью, C-1 — предыдущая формулировка «после успешного HTTP-
+ответа» читалась per-response, что для двух-под-вызовных способностей давало `usage += (5-10) +
+(5-10) = 0` вместо реально потраченных 10 — счётчик обнулял сам себя на каждом платном вызове
+`smart-money.flows`/`token.risk`):_
+
+- `actualTotal = Σ(X-Nansen-Credits-Used)` по **всем** под-ответам этого `fetch()` (одно число для
+  `smart-money.flows`/`token.risk`, совпадает с единственным под-ответом для `entity.labels`, у
+  которой всегда ровно один платный HTTP-вызов на escalation-путях), `delta = actualTotal -
+reservedTotal` (та же `reservedTotal`, что была передана в `checkAndReserve`, §выше — сумма ОБОИХ
+  цен из `costOf()`-таблицы, не по одной за раз). Пишется ОДНИМ вызовом `budgetStore.recordDelta(
+'nansen', bucket, delta)` тем же аддитивным upsert, что и резервация (не отдельная замещающая
+  запись — R-34/R-38).
+- **Отсутствующий/непарсящийся заголовок `X-Nansen-Credits-Used` ХОТЯ БЫ на ОДНОМ под-ответе →
+  вся реконсиляция этого `fetch()` деградирует к `delta = 0` целиком** (`Number()`+
+  `Number.isFinite`-guard на каждый под-ответ) — **никогда** частичная сумма по тем под-ответам, у
+  которых заголовок распарсился: частичная сумма систематически НЕДО-считает факт (те же −5/+0
+  математически, только по одной стороне) — хуже, чем консервативный ноль. Резервация остаётся
+  единственным известным фактом (никогда не обнуляется молча) + `accountState.markUnreconciled()`.
+- Транспортная ошибка/таймаут на ЛЮБОМ под-вызове (ответ не пришёл вовсе) — тот же
+  `markUnreconciled()`, реконсиляция для этого `fetch()` не запускается вовсе (нечего суммировать).
+- **`402 Payment Required`** (UC-6, openapi: `PaymentRequiredError`, headers `Payment-Required`/
+  `WWW-Authenticate: Payment .../Payment-Receipt`) на любом под-вызове — трактуется как
+  авторитетный сигнал «бюджета сейчас нет»: `fetch()` бросает целиком (см. «Частичный отказ» ниже),
+  резервация остаётся в силе как консервативная оценка факта, плюс `markUnreconciled()` →
+  следующий вход в gate обязательно резолвит `/account`, а не доверяет устаревшему локальному
+  счётчику. Один и тот же механизм покрывает и «сеть отвалилась», и «Nansen сам сказал нет» — не
+  два разных пути.
+- **`bucket` в `recordDelta(...)` — тот же `dayBucketMs`, что был зафиксирован ДО `checkAndReserve`
+  для ЭТОГО ЖЕ логического вызова** (C-2, §выше) — никогда пересчитанный из `Date.now()` заново на
+  момент, когда пришёл ответ.
+
+**Частичный отказ композитных способностей (`smart-money.flows`/`token.risk` — по два HTTP-вызова
+каждая):** если ВТОРОЙ под-вызов упал после того, как первый успел вернуться, весь `fetch()`
+адаптера бросает целиком (нет частичных canonical-результатов в M2 — YAGNI, тот же fail-fast
+принцип, что любой другой M1-адаптер) — **и, по инварианту выше, реконсиляция для этого вызова НЕ
+запускается вовсе** (не «частичная сумма по одному ответившему под-вызову» — ровно тот же
+недо-счёт, которого C-1 избегает). Резервация (сделанная на СУММУ обоих под-вызовов) остаётся
+несверенной, `markUnreconciled()` срабатывает как в общем случае, следующий resync подтягивает
+фактический остаток. Отдельного механизма для «частичной» реконсиляции не заводится — переиспользует
+уже описанный путь.
+
+**429 Too Many Requests (UC-7) — решение: без retry внутри адаптера.** YAGNI-ограничение задачи
+(«no retry/circuit-breaker framework») и явная альтернатива из UC-7 («либо явная ошибка… либо один
+ограниченный retry — точный выбор Architecture-фазы») разрешаются в пользу **явной, немедленной
+ошибки** с `retry-after` в тексте — простейший вариант, ноль нового retry-механизма, не
+взаимодействует с уже сделанной (до HTTP-вызова) резервацией бюджета никаким особым случаем.
+Единый unit-тест на этот путь — R-29 acceptance.
+
+**Полный список аддитивных касаний существующего M1-кода (minor — ревью указал, что «единственная
+точечная правка» в предыдущей версии этого раздела/ARCHITECTURE.md/version-history.md была
+неточной; ни один из пунктов ниже не переписывает существующую логику, все — чистые добавления):**
+
+- `cache/sqlite-store.ts`'s `PAID_PROVIDER_IDS` — `'nansen'` добавляется рядом с `'dune'` (чисто
+  информационная `providers.kind`-классификация, ничего не читает эту колонку в логике, см. её
+  собственный docstring — но пропустить строку значило бы молча разойтись с задокументированным
+  инвариантом «paid providers listed here»).
+- `cache/ddl.ts` — `usage`-таблица дописывается в тот же `CACHE_DDL`-темплейт (§4.2, forward-compat
+  комментарий уже подготовлен с M1).
+- `providers.config.ts` — 10-я запись `adapterRegistrations` + 3 новых `routes` (тот же паттерн,
+  что 9 существующих — не структурная правка).
+- `mcp-server/src/env.ts` — `NANSEN_API_KEY` + `NANSEN_DAILY_CREDIT_CAP` в `EnvSchema` (тот же
+  `emptyAsUndefined`-паттерн, что 6 существующих ключей).
+- `.env.example` — `NANSEN_API_KEY` переезжает из «M2+ зарезервировано» в «код читает сейчас»
+  (R-46).
+- `scripts/record-fixture.mjs` — расширяется на `nansen` (сериализация POST JSON-тела, не только
+  query-string, R-44) — сам скрипт остаётся вне CI, как и был.
+
+Ни `registry.ts`, ни `resolve-capability.ts`, ни один из 4 M1 tool-файлов, ни один из 9 существующих
+адаптеров **не редактируются** — это утверждение (в отличие от «единственной правки») буквально
+верно и проверяемо диффом.
+
 **Модуль: `src/cache/*`** (D6, R-13/R-14/R-15)
 
 Двухуровневый: `lru-cache` (hot, in-process, TTL встроен в `set()`) перед `better-sqlite3`
@@ -497,6 +891,112 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. Обычный 
   передаёт `createdAt = Date.now() - coldHit.ageMs` (не момент промоушена) — иначе каждый
   последующий hot-хит показывал бы `_meta.cache.ageMs` сброшенным к ~0, занижая реальный возраст
   значения.
+
+**M2-дополнение: `BudgetStore` — интерфейс (M-1 review — этот блок отсутствовал в предыдущей
+версии раздела, хотя на него уже ссылались §выше и data-model.md §4.2; определение здесь, тот же
+`CacheStore`-паттерн, R-35):**
+
+```ts
+// packages/core/src/cache/budget-store.ts
+export interface BudgetStore {
+  /** Атомарно (см. §выше — db.transaction(fn).immediate()) сравнивает `usage.credits_used(bucket)
+   * + cost` с `ceiling` и пишет резервацию, ЕСЛИ проходит; `ok:false` НИЧЕГО не пишет (usage
+   * остаётся нетронутым).
+   *
+   * `ceiling` — ВСЕГДА `effectiveCeiling` (§выше «Формула потолка бакета»), уже перебазированный
+   * ВЫЗЫВАЮЩИМ (`usageAtObserve + creditsRemainingAtObserve`, затем `min()` с
+   * `NANSEN_DAILY_CREDIT_CAP`) — НЕ сырой `creditsRemainingAtObserve`. `BudgetStore` сам по себе
+   * ничего не знает про anchor/`usageAtObserve`/`NansenAccountSnapshot` — принимает уже готовый
+   * bucket-relative скаляр и сравнивает его с bucket-relative `usage`, простое неравенство без
+   * какой-либо anchor-арифметики внутри (тот же R-35-паттерн разделения, что и отсутствие
+   * "прочитать потолок"-метода, ниже). */
+  checkAndReserve(
+    provider: string,
+    dayBucketMs: number,
+    cost: number,
+    ceiling: number,
+  ): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** Безусловная аддитивная запись подписанной дельты (резервация ИЛИ post-call reconciliation —
+   * оба используют этот метод, §выше). Никогда не отклоняется — вызывающий уже проверил ceiling
+   * через checkAndReserve; recordDelta сам по себе НЕ гейтует. */
+  recordDelta(provider: string, dayBucketMs: number, signedDelta: number): Promise<void>;
+  /** Read-only — текущий накопленный credits_used за бакет. Используется и внутри checkAndReserve,
+   * и отдельно tool-хендлерами для `_meta.budget` (interfaces.md §5.1.2). */
+  getUsage(provider: string, dayBucketMs: number): Promise<number>;
+}
+```
+
+**`Promise<...>` — интерфейсная сигнатура (согласованность с `CacheStore`, которую `registry.ts`
+уже `await`-ит), но атомарность `checkAndReserve` держится на том, что ТЕЛО транзакции внутри
+СИНХРОННО (minor, ревью).** `SqliteBudgetStore`'s реализация оборачивает `db.transaction(fn)` —
+сам `fn` не содержит ни одного `await` (читает `usage`, сравнивает, пишет — всё синхронным
+`better-sqlite3`-API, тот же приём, что `throttle()`, §выше) — снаружи это выглядит как обычная
+async-функция (для единообразия с `CacheStore`/для будущего Postgres-бэкенда, D7), но именно
+отсутствие `await` ВНУТРИ `db.transaction(fn)` — необходимое условие всей atomicity-гарантии этого
+раздела. **Явное предупреждение будущей Postgres-реализации `BudgetStore` (D7):** если её
+`checkAndReserve` выполнит настоящую асинхронную работу (сетевой round-trip к БД) МЕЖДУ чтением
+`usage` и записью резервации внутри одной "транзакции" — она потеряет ту же atomicity-гарантию,
+которую здесь даёт исключительно синхронность `better-sqlite3`; корректный Postgres-эквивалент
+обязан использовать настоящую SQL-транзакцию с уровнем изоляции, эквивалентным `SELECT ... FOR
+UPDATE` внутри одного `BEGIN`/`COMMIT`, а не просто `await`-нуть два раздельных запроса.
+
+**Осознанное отклонение от буквального текста R-35 (тот же паттерн честного расхождения, что уже
+применён к Dune/R-8, §выше) — `BudgetStore` НЕ содержит метода «прочитать текущий выведенный
+потолок».** R-35 буквально перечисляет три метода как «минимум», включая его; в этой архитектуре
+третий сознательно вынесен в `NansenAccountState` (`creditsRemainingAtObserve`/`usageAtObserve`,
+§выше), не в `BudgetStore`. Причина: «потолок» здесь — не universal-провайдерское понятие (D7
+engine-swap-safety касается ХРАНЕНИЯ usage-леджера, который действительно один и тот же интерфейс
+для любого будущего платного провайдера), а Nansen-специфичная живая величина (`credits_remaining`
+из `/account`, `plan`) — заставить `BudgetStore` знать её означало бы протащить Nansen-специфику в
+предположительно provider-generic интерфейс, тот же анти-паттерн, которого OQ-2's решение (гейт
+внутри адаптера, не в Registry) как раз избегает. `BudgetStore` остаётся чистым «леджером»
+(read/reserve/record), инжектируемым и engine-swap-safe (SQLite→Postgres, D7) независимо от того,
+сколько платных провайдеров появится; каждый провайдер несёт свой собственный live-ceiling-source
+рядом с собой, не в общей таблице. Planner/task-reviewer: это обновлённый scope R-35, аналогично
+тому, как Dune/R-8 был принят ýже буквального текста в M1.
+
+**`SqliteBudgetStore` — self-sufficient bootstrap (M-2 review).** С включённым `PRAGMA
+foreign_keys=ON` первый `INSERT INTO usage` с `provider='nansen'` падает `SQLITE_CONSTRAINT_
+FOREIGNKEY`, если строка `providers` для `'nansen'` ещё не существует на ЭТОМ соединении — а
+единственное место, где M1-код её сегодня upsert'ит, это `SqliteCacheStore.bootstrapProviders()`
+(другой класс, другое соединение). Полагаться на порядок конструирования («сначала
+`SqliteCacheStore`, потом `SqliteBudgetStore`») — временная связанность, которую ни один тест не
+поймает и с которой первая же stub-first Dev-задача, строящая `SqliteBudgetStore({dbPath:
+':memory:'})` изолированно, столкнётся как с непонятной FK-ошибкой, выглядящей как баг бюджета.
+**Решение — `SqliteBudgetStore` сам себе bootstrap-ит `providers`:**
+
+```ts
+export interface SqliteBudgetStoreOptions {
+  dbPath?: string; // по умолчанию тот же cacheDbPath() — тот же файл, что SqliteCacheStore
+  providers?: AdapterRegistration[]; // по умолчанию adapterRegistrations (все 10, включая nansen)
+}
+```
+
+Конструктор выполняет `db.exec(CACHE_DDL)` (та же идемпотентная строка, теперь включающая и
+`usage`) и тот же upsert-в-`providers`-паттерн, что `SqliteCacheStore.bootstrapProviders()` (один
+переиспользуемый `prepare()`'d statement, тот же приём, что уже задокументирован для
+`SqliteCacheStore`, §выше) — **до** любой записи в `usage`. Оба стора теперь идемпотентно
+upsert'ят одни и те же строки `providers` на своих отдельных соединениях к одному файлу — не
+конфликт (upsert, не insert-only), а independence: ни один из двух не обязан быть сконструирован
+первым.
+
+**Budget-warning threshold — именованный конфиг, не хардкод (R-37 «порог — конфиг»):**
+`NANSEN_BUDGET_WARN_RATIO` (опциональный env, `z.coerce.number().min(0).max(1).optional()`,
+дефолт `0.8` — как доля от `ceiling`, не абсолютное число кредитов, т.к. `ceiling` сам живой/
+может меняться между resync'ами) — при `spentSinceAnchor/creditsRemainingAtObserve >=
+NANSEN_BUDGET_WARN_RATIO` (или аналогично для `NANSEN_DAILY_CREDIT_CAP`, если задан) — одна
+stderr-строка (тот же канал, что M1 cache-метрики, §9.3 индекса), не более одного раза на пересечение
+порога за бакет (простой boolean-флаг в `NansenAccountState`, сбрасывается на следующем resync).
+
+**`clearUnreconciled()` — где именно вызывается, и cold-start-resync-fails — что происходит:**
+флаг снимается **только** успешным `refreshAccount()`-resync'ом (тем самым, что читает `/account`
+
+- `usageAtObserve`, §выше) — не самим успешным платным вызовом (успешная reconciliation оставляет
+  флаг как есть; он существует именно для «между этим моментом и следующим resync'ом доверять
+  живому счётчику нельзя», а не «этот конкретный вызов не удался»). Если сам resync (cold-start ИЛИ
+  unreconciled-триггер) падает (сеть недоступна для `/account`) — `fetch()` целиком бросает **до**
+  `checkAndReserve` (нет валидного `ceiling`, вычислять нечего) → тот же R-24/R-40 `isError`-путь,
+  что «ключ не задан» — fail-closed, не fail-open с устаревшим/нулевым потолком.
 
 **Модуль: `src/net/*`** (SSRF, R-25 + rate-limit, R-26)
 
