@@ -60,11 +60,14 @@ export interface GetTokenContext {
   registry: CapabilityRegistry;
 }
 
-/** `token.metadata` (not `token.price`) — both route to `coingecko` and its `normalize()` produces
+/** `token.price` (not `token.metadata`) — both route to `coingecko` and its `normalize()` produces
  * the byte-identical `Token` either way (CoinGecko's one contract endpoint returns price and
- * metadata together, task 003-4's own adapter docstring) — `token.metadata` is the more accurate
- * capability name for what `onchain_get_token`'s full-object contract represents. */
-const CAPABILITY = 'token.metadata';
+ * metadata together). The combined payload is cached under the TTL of its most VOLATILE
+ * constituent: `priceUsd` freshness is governed by `token.price` = 60s (D6 TTL table), whereas
+ * caching under `token.metadata` (3600s) would legally serve an hour-stale price — the exact
+ * defect adversarial cycle 3 flagged. The `token.metadata` route stays registered for future
+ * metadata-only consumers that can afford the longer TTL. */
+const CAPABILITY = 'token.price';
 
 export type GetTokenOutcome =
   { ok: true; output: GetTokenOutput; cache: CacheMeta } | { ok: false; reason: string };

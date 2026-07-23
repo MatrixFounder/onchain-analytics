@@ -14,7 +14,7 @@ const ETH_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
 const SOL_ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 const ROUTES: CapabilityRoute[] = [
-  { capability: 'token.metadata', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
+  { capability: 'token.price', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
 ];
 
 const FAKE_TOKEN = {
@@ -29,7 +29,7 @@ const FAKE_TOKEN = {
 function fakeCoingeckoAdapter(): ProviderAdapter {
   return {
     id: 'coingecko',
-    capabilities: () => [{ id: 'token.metadata', chains: ['ethereum', 'solana'] }],
+    capabilities: () => [{ id: 'token.price', chains: ['ethereum', 'solana'] }],
     costOf: () => ({ credits: 0 }),
     fetch: async () => ({}),
     normalize: () => FAKE_TOKEN,
@@ -96,7 +96,7 @@ describe('getTokenHandler', () => {
     expect(outcome.cache).toStrictEqual({
       status: 'miss',
       provider: 'coingecko',
-      capability: 'token.metadata',
+      capability: 'token.price',
     });
   });
 
@@ -109,7 +109,7 @@ describe('getTokenHandler', () => {
 
     expect(outcome.ok).toBe(false);
     if (outcome.ok) throw new Error('expected ok:false');
-    expect(outcome.reason).toContain('token.metadata');
+    expect(outcome.reason).toContain('token.price');
     expect(outcome.reason).not.toContain(ETH_ADDRESS);
   });
 });

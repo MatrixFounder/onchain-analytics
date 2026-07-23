@@ -210,7 +210,7 @@ describe('4 new MCP tools — in-process E2E (InMemoryTransport, fixture-backed 
       expect(meta1).toMatchObject({
         status: 'miss',
         provider: 'coingecko',
-        capability: 'token.metadata',
+        capability: 'token.price',
       });
 
       expect(second.isError).not.toBe(true);
@@ -380,7 +380,7 @@ describe('capability unavailable — isError path (no adapter registered for the
       expect(block?.type).toBe('text');
       if (block?.type !== 'text') throw new Error('expected a text content block');
       expect(block.text.length).toBeGreaterThan(0);
-      expect(block.text).toContain('token.metadata');
+      expect(block.text).toContain('token.price');
     },
     CALL_TIMEOUT_MS,
   );
