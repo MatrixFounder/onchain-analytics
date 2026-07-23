@@ -1,6 +1,21 @@
 #!/usr/bin/env node
 import { createRequire } from 'node:module';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+  CapabilityRegistry,
+  createCacheStore,
+  createCoingeckoAdapter,
+  createDashPlatformAdapter,
+  createDefillamaAdapter,
+  createDexscreenerAdapter,
+  createDuneAdapter,
+  createPgHistoryAdapter,
+  createPlatformExplorerAdapter,
+  createRpcEvmAdapter,
+  createRpcSolanaAdapter,
+  routes,
+  type ProviderAdapter,
+} from '@onchain-intel/core';
 import { loadEnv, type Env } from './env.js';
 import { createServer } from './server.js';
 
@@ -10,6 +25,32 @@ import { createServer } from './server.js';
  */
 interface PackageJson {
   readonly version: string;
+}
+
+/**
+ * Assembles the ONE real, network-capable `CapabilityRegistry` for production (task 003-7,
+ * ARCHITECTURE.md §3.2/§5.2 — "registry по умолчанию... строится один раз в index.ts, передаётся
+ * в createServer"): all 9 real `ProviderAdapter`s from `@onchain-intel/core` (`coingecko`/
+ * `dune` read `env` for their optional API keys; the other 7 are keyless or DSN-gated the same
+ * way) + the real two-level cache (`createCacheStore()` — its `DATA_DIR` resolution already reads
+ * `process.env.DATA_DIR`, which `loadEnv()` above has already synced via `process.loadEnvFile()`
+ * by the time this runs). `server.ts`'s own `registry` default is a separate, deliberately INERT
+ * fallback (see its docstring) — this function is the only place the real 9-adapter set is ever
+ * constructed (single point, per this task's own instruction).
+ */
+function buildRegistry(env: Env): CapabilityRegistry {
+  const adapters = new Map<string, ProviderAdapter>([
+    ['coingecko', createCoingeckoAdapter({ env })],
+    ['dexscreener', createDexscreenerAdapter()],
+    ['defillama', createDefillamaAdapter()],
+    ['rpc-evm', createRpcEvmAdapter()],
+    ['rpc-solana', createRpcSolanaAdapter()],
+    ['dash-platform', createDashPlatformAdapter()],
+    ['platform-explorer', createPlatformExplorerAdapter()],
+    ['dune', createDuneAdapter()],
+    ['pg-history', createPgHistoryAdapter({ env })],
+  ]);
+  return new CapabilityRegistry(routes, adapters, createCacheStore());
 }
 
 // `createRequire` + `require('../package.json')` works identically whether this file runs as
@@ -31,7 +72,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const server = createServer({ env, version });
+  const registry = buildRegistry(env);
+  const server = createServer({ env, version, registry });
   // The only place a transport is chosen (D3) — stdio only in M0 (R-9); a future (M6)
   // alternative HTTP-based transport would be attached here too, `createServer` stays unchanged.
   await server.connect(new StdioServerTransport());

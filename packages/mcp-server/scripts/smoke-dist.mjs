@@ -12,16 +12,25 @@
 // no package.json `dependencies` entry to maintain here).
 //
 // Sequence: initialize -> notifications/initialized -> tools/list -> tools/call onchain_ping.
-// Asserts (a) tools/list returns exactly one tool, onchain_ping; (b) the call's
-// structuredContent.version matches package.json's version (read here, never hardcoded); (c)
-// every line the child writes to stdout parses as JSON (a non-JSON line would mean something
-// other than MCP protocol touched stdout, ARCHITECTURE §7.3 — the same invariant the stdio E2E
-// suite checks for the tsx-run server, now checked for the built one too). Exits 0 on success, 1
-// with a clear stderr message otherwise. Bounded by an overall timeout that SIGKILLs a hung child
-// rather than hanging CI.
+// Asserts (a) tools/list returns exactly 5 tools (onchain_ping + the 4 new M1 tools added task
+// 003-7, checked by name); (b) the call's structuredContent.version matches package.json's
+// version (read here, never hardcoded); (c) every line the child writes to stdout parses as JSON
+// (a non-JSON line would mean something other than MCP protocol touched stdout, ARCHITECTURE
+// §7.3 — the same invariant the stdio E2E suite checks for the tsx-run server, now checked for
+// the built one too). Exits 0 on success, 1 with a clear stderr message otherwise. Bounded by an
+// overall timeout that SIGKILLs a hung child rather than hanging CI.
+//
+// Deliberately stays PING-ONLY for the actual `tools/call` (architect decision, task 003-7,
+// ARCHITECTURE.md §3.2): this script runs `dist/index.js` — the REAL entrypoint, wired to the
+// REAL, network-capable `CapabilityRegistry` (`index.ts`'s `buildRegistry()`), not a fixture one.
+// Calling any of the 4 new tools here would mean live network calls from a CI-run smoke test —
+// exactly the dependency R-21 forbids. `test/e2e.inprocess.test.ts` (on `tsx`, not `dist/`)
+// already covers all 4 tools' behavior against fixtures; duplicating that in this build-specific
+// smoke test isn't needed.
 
 import { spawn } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -45,9 +54,18 @@ if (!existsSync(distEntry)) {
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 
+// Task 003-7: `dist/index.js`'s `main()` now unconditionally builds the REAL `CapabilityRegistry`
+// (all 9 real adapters + the real two-level cache) before registering any tool, even though this
+// script only ever calls `onchain_ping` — the `SqliteCacheStore` constructor touches disk
+// immediately (task 003-3). Point `DATA_DIR` at a fresh temp directory (never the real
+// `~/.onchain-intel`) so this build-artifact smoke test stays filesystem-hygienic; removed once
+// the child is reaped in `finish()`.
+const dataDir = mkdtempSync(path.join(tmpdir(), 'onchain-intel-smoke-dist-'));
+
 const child = spawn(process.execPath, [distEntry], {
   cwd: packageRoot,
   stdio: ['pipe', 'pipe', 'pipe'],
+  env: { ...process.env, DATA_DIR: dataDir },
 });
 
 let stdoutTail = '';
@@ -78,6 +96,11 @@ function finish(exitCode, message) {
     child.kill('SIGKILL');
   } catch {
     // already dead — nothing to do
+  }
+  try {
+    rmSync(dataDir, { recursive: true, force: true });
+  } catch {
+    // best-effort cleanup — never let a cleanup failure mask the real pass/fail result
   }
   process.exitCode = exitCode;
 }
@@ -164,13 +187,27 @@ async function run() {
 
   const listResult = await sendRequest('tools/list', {});
   const tools = listResult && listResult.tools;
+  const expectedNames = [
+    'onchain_get_token',
+    'onchain_new_pairs',
+    'onchain_ping',
+    'onchain_protocol_tvl',
+    'onchain_wallet_balances',
+  ];
+  const actualNames = Array.isArray(tools)
+    ? tools
+        .map((tool) => tool && tool.name)
+        .filter((name) => typeof name === 'string')
+        .sort()
+    : [];
   if (
     !Array.isArray(tools) ||
-    tools.length !== 1 ||
-    !tools[0] ||
-    tools[0].name !== 'onchain_ping'
+    tools.length !== 5 ||
+    JSON.stringify(actualNames) !== JSON.stringify(expectedNames)
   ) {
-    throw new Error(`tools/list did not return exactly [onchain_ping]: ${JSON.stringify(tools)}`);
+    throw new Error(
+      `tools/list did not return exactly the 5 expected tools ${JSON.stringify(expectedNames)}: got ${JSON.stringify(tools)}`,
+    );
   }
 
   const callResult = await sendRequest('tools/call', { name: 'onchain_ping', arguments: {} });

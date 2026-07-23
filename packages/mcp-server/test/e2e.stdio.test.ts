@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -16,6 +17,15 @@ import { PingOutputSchema } from '../src/tools/ping.js';
  * A regression-guard by construction (ARCHITECTURE §7.3): if anything ever writes non-protocol
  * output to stdout, JSON-RPC framing breaks and this suite fails/hangs instead of passing —
  * bounded per-test timeouts turn a hang into an explicit failure rather than a stuck CI run.
+ *
+ * **`DATA_DIR` override (task 003-7):** since `index.ts`'s `main()` now unconditionally builds
+ * the REAL `CapabilityRegistry` (all 9 real adapters + the real two-level cache, R-16..R-19)
+ * before ever registering a tool — even though this suite only ever calls `onchain_ping` — every
+ * spawned server here would otherwise eagerly create/open `~/.onchain-intel/cache.sqlite3` (the
+ * `SqliteCacheStore` constructor touches disk immediately on construction, task 003-3). `connect()`
+ * points the spawned child's `DATA_DIR` at a fresh `mkdtempSync` temp directory instead (never the
+ * real `DATA_DIR`), removed in `afterEach` — offline/hygiene discipline, mirrors
+ * `packages/core/test/cache.test.ts`'s own established convention.
  */
 
 const packageRoot = path.resolve(fileURLToPath(import.meta.url), '..', '..');
@@ -34,6 +44,7 @@ const INVALID_ENV_TIMEOUT_MS = 10_000;
 
 describe('onchain_ping — stdio E2E', () => {
   let client: Client | undefined;
+  let dataDir: string | undefined;
 
   // Reliable teardown for every test, pass or fail — StdioClientTransport#close() ends the
   // child's stdin, then escalates to SIGTERM/SIGKILL if it doesn't exit on its own (verified by
@@ -46,14 +57,22 @@ describe('onchain_ping — stdio E2E', () => {
       // already closed / never connected — nothing to do
     }
     client = undefined;
+    if (dataDir) {
+      rmSync(dataDir, { recursive: true, force: true });
+      dataDir = undefined;
+    }
   });
 
   async function connect(): Promise<Client> {
+    dataDir = mkdtempSync(path.join(tmpdir(), 'onchain-intel-e2e-stdio-'));
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [tsxCli, serverEntry],
       cwd: packageRoot,
       stderr: 'pipe',
+      // Real `process.env` (not the SDK's curated safe-subset default) so tsx/module resolution
+      // behaves exactly like a normal dev run — plus the `DATA_DIR` override above.
+      env: { ...process.env, DATA_DIR: dataDir },
     });
     const c = new Client({ name: 'onchain-intel-e2e-test-client', version: '0.0.0-test' });
     // Capture the reference BEFORE awaiting connect(): if `c.connect()` rejects (e.g. the
@@ -68,12 +87,27 @@ describe('onchain_ping — stdio E2E', () => {
   }
 
   it(
-    'tools/list contains exactly one tool: onchain_ping',
+    // Extended task 003-7 (R-20/F-1): tools/list grows to 5 (ping + the 4 new M1 tools), but this
+    // spawn suite still calls ONLY onchain_ping through the wire — the 4 new tools' fixture-backed
+    // registry injection is in-process-only and unreachable across this spawned child process
+    // boundary (ARCHITECTURE.md §3.2 F-1); calling them here would mean a REAL, network-capable
+    // registry answering under spawn, which is exactly the live-network dependency R-21 forbids.
+    // `test/e2e.inprocess.test.ts` (InMemoryTransport) is what actually exercises the 4 new tools.
+    'tools/list contains exactly 5 tools: onchain_ping + the 4 new M1 tools (by name)',
     async () => {
       const c = await connect();
       const { tools } = await c.listTools(undefined, { timeout: CALL_TIMEOUT_MS });
-      expect(tools).toHaveLength(1);
-      expect(tools[0]?.name).toBe('onchain_ping');
+      expect(tools).toHaveLength(5);
+      const names = tools.map((tool) => tool.name).sort();
+      expect(names).toStrictEqual(
+        [
+          'onchain_get_token',
+          'onchain_new_pairs',
+          'onchain_ping',
+          'onchain_protocol_tvl',
+          'onchain_wallet_balances',
+        ].sort(),
+      );
     },
     TEST_TIMEOUT_MS,
   );
