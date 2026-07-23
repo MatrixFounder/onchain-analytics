@@ -1,6 +1,6 @@
 # ROADMAP — `onchain-intel` (движок) + `onchain-analytics` (скилл)
 
-- **Дата:** 2026-06-30 · **Обновлён:** 2026-07-23 (**M1 выполнен**; ранее — **M0 выполнен** 2026-07-22; ранее 2026-07-20 — снапшоттер Dash Platform + privacy-метрики, пометки *(2026-07-20)*) · **Статус:** Active (M0 ✅ → M1)
+- **Дата:** 2026-06-30 · **Обновлён:** 2026-07-23 (**M1 выполнен**; ранее — **M0 выполнен** 2026-07-22; ранее 2026-07-20 — снапшоттер Dash Platform + privacy-метрики, пометки *(2026-07-20)*) · **Статус:** Active (M0 ✅ · M1 ✅ → M2)
 - **Связанные:** [REPORT.md](REPORT.md) · [ADR-001-tech-stack.md](ADR-001-tech-stack.md) · [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md) · [research-digest.md](research-digest.md)
 - **Стек (из ADR-001):** TypeScript / Node 22 · `@modelcontextprotocol/sdk` · SQLite · zod · pnpm-monorepo · Apache-2.0.
 
