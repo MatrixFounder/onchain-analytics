@@ -79,6 +79,11 @@ function errorMessage(error: unknown): string {
  *   which throw their own already-safe, DSN-free messages) is logged to stderr with its full
  *   detail, then rethrown as the single sanitized `SANITIZED_QUERY_FAILURE_MESSAGE` — the DSN's
  *   host/port/user never reach the caller (and, transitively, never reach an MCP client).
+ *
+ * **Hardened further (post-M1 polish, cheap-fix backlog item 3):** `new PoolCtor(...)` itself is
+ * now wrapped in the SAME sanitize-and-rethrow pattern as the `pool.query(...)` failure above — a
+ * synchronous constructor throw (e.g. `pg` rejecting a malformed connection string) used to
+ * propagate its raw message, which may itself embed DSN fragments, straight to the caller.
  */
 export function createReadClient(deps: ReadClientDeps = {}): ReadClient {
   const env = deps.env ?? process.env;
@@ -106,12 +111,28 @@ export function createReadClient(deps: ReadClientDeps = {}): ReadClient {
       if (!pool) {
         // Lazy: constructed HERE, on the first query() call — never at module load or at
         // createReadClient()'s own call time.
-        pool = new PoolCtor({
-          connectionString,
-          options: '-c search_path=onchain',
-          connectionTimeoutMillis: DEFAULT_CONNECTION_TIMEOUT_MS,
-          max: DEFAULT_MAX_POOL_SIZE,
-        });
+        //
+        // Post-M1 polish fix 3: `new PoolCtor(...)` is a SYNCHRONOUS constructor call that sits
+        // outside the query-failure try/catch below — a throw from it (e.g. `pg`'s own DSN-parsing
+        // validation rejecting a malformed connection string) used to propagate RAW, potentially
+        // embedding the DSN's host/port/user in its own message, exactly the class of leak fix D2
+        // already closed for `pool.query()` failures. Same sanitize-and-rethrow pattern applied
+        // here: the raw detail goes to stderr ONLY, the caller only ever sees the single sanitized
+        // `SANITIZED_QUERY_FAILURE_MESSAGE`, with `{ cause: error }` attached (same rationale as D2
+        // — never read by this codebase's own error handling, satisfies `preserve-caught-error`).
+        try {
+          pool = new PoolCtor({
+            connectionString,
+            options: '-c search_path=onchain',
+            connectionTimeoutMillis: DEFAULT_CONNECTION_TIMEOUT_MS,
+            max: DEFAULT_MAX_POOL_SIZE,
+          });
+        } catch (error) {
+          process.stderr.write(
+            `pg/read-client: pool construction failed (full detail on stderr only, never surfaced to the caller): ${errorMessage(error)}\n`,
+          );
+          throw new Error(SANITIZED_QUERY_FAILURE_MESSAGE, { cause: error });
+        }
         pool.on?.('error', (err: Error) => {
           process.stderr.write(
             `pg/read-client: idle pool error (connection details never logged): ${errorMessage(err)}\n`,

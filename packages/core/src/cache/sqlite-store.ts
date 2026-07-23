@@ -18,6 +18,14 @@ export interface SqliteCacheStoreOptions {
    * Defaults to `DEFAULT_SWEEP_EVERY_N_WRITES` (50); tests override this to a small number so the
    * sweep path is reachable without looping 50 times. */
   sweepEveryNWrites?: number;
+  /** TEST-ONLY seam (post-M1 polish, cheap-fix backlog item 4) — NEVER set by production code.
+   * When supplied, called as the very first post-open step, before the PRAGMA/DDL/bootstrap/
+   * statement-prepare sequence below runs. Lets `test/cache.test.ts` simulate an arbitrary
+   * post-open constructor failure (standing in for a real DDL-exec/bootstrap/prepare throw)
+   * without needing a genuinely malformed DDL string or corrupt provider row, to prove the
+   * constructor closes the already-opened `better-sqlite3` handle before rethrowing rather than
+   * leaking it. */
+  postOpenTestHook?: () => void;
 }
 
 /** Default sweep cadence (adversarial cycle 1, fix H) — see `sweepExpired()`'s own docstring for
@@ -46,6 +54,12 @@ interface CacheEntryRow {
  * bootstraps `providers` from the supplied adapter registrations BEFORE any `cache_entries` write
  * can reference one as a foreign key, then serves `get`/`set` with upsert + read-time TTL-expiry
  * semantics (`cache_entries` is a recomputable projection, not an append-only log — see `ddl.ts`).
+ *
+ * **Leak-safe constructor (post-M1 polish, cheap-fix backlog item 4):** every step that runs AFTER
+ * the connection opens (PRAGMA/DDL exec, providers bootstrap, statement prepare) is wrapped in a
+ * try/catch — a throw from any of them now best-effort `close()`s the already-opened handle
+ * (swallowing any close-time error) before rethrowing the original failure, instead of leaking an
+ * open file descriptor/connection.
  */
 export class SqliteCacheStore implements CacheStore {
   private readonly db: Database.Database;
@@ -73,36 +87,55 @@ export class SqliteCacheStore implements CacheStore {
     }
 
     this.db = new Database(dbPath);
-    // Re-issued on EVERY connection open (DB-SCHEMA-CONCEPT §1.6) — the engine does not enforce a
-    // reference column by default, and this pragma is connection-scoped, not persisted in the file.
-    // Issued via `exec()` (literal `PRAGMA foreign_keys = ON`, not `.pragma('foreign_keys = ON')`)
-    // so this line is greppable verbatim (task 003-3 acceptance).
-    this.db.exec('PRAGMA foreign_keys = ON;');
-    // Persisted in the file itself (unlike `foreign_keys`) — concurrent reads aren't blocked by a
-    // write (ARCHITECTURE.md §3.2).
-    this.db.pragma('journal_mode = WAL');
-    this.db.exec(CACHE_DDL);
 
-    if (options.providers) {
-      this.bootstrapProviders(options.providers);
+    // Post-M1 polish, fix 4: every step below runs AFTER the connection is already open — a throw
+    // from any of them (DDL exec, providers bootstrap, statement prepare, or the TEST-ONLY hook)
+    // used to leak the already-opened `better-sqlite3` handle, since nothing closed it before the
+    // exception propagated out of the constructor. Best-effort `close()` (swallowing any close-time
+    // error, which must never mask the ORIGINAL failure) before rethrowing the original error
+    // unchanged.
+    try {
+      options.postOpenTestHook?.();
+
+      // Re-issued on EVERY connection open (DB-SCHEMA-CONCEPT §1.6) — the engine does not enforce a
+      // reference column by default, and this pragma is connection-scoped, not persisted in the
+      // file. Issued via `exec()` (literal `PRAGMA foreign_keys = ON`, not
+      // `.pragma('foreign_keys = ON')`) so this line is greppable verbatim (task 003-3 acceptance).
+      this.db.exec('PRAGMA foreign_keys = ON;');
+      // Persisted in the file itself (unlike `foreign_keys`) — concurrent reads aren't blocked by a
+      // write (ARCHITECTURE.md §3.2).
+      this.db.pragma('journal_mode = WAL');
+      this.db.exec(CACHE_DDL);
+
+      if (options.providers) {
+        this.bootstrapProviders(options.providers);
+      }
+
+      this.selectStmt = this.db.prepare(
+        `SELECT value_json, created_at, expires_at FROM cache_entries
+         WHERE provider = ? AND capability = ? AND args_hash = ?`,
+      );
+      this.deleteStaleStmt = this.db.prepare(
+        `DELETE FROM cache_entries WHERE provider = ? AND capability = ? AND args_hash = ?`,
+      );
+      this.upsertStmt = this.db.prepare(
+        `INSERT INTO cache_entries (id, provider, capability, args_hash, value_json, created_at, expires_at)
+         VALUES (@id, @provider, @capability, @argsHash, @valueJson, @createdAt, @expiresAt)
+         ON CONFLICT (provider, capability, args_hash) DO UPDATE SET
+           value_json = excluded.value_json,
+           created_at = excluded.created_at,
+           expires_at = excluded.expires_at`,
+      );
+      this.sweepStmt = this.db.prepare(`DELETE FROM cache_entries WHERE expires_at <= ?`);
+    } catch (error) {
+      try {
+        this.db.close();
+      } catch {
+        // Swallow — a close-time failure on an already-broken connection must never mask the
+        // ORIGINAL error being rethrown below.
+      }
+      throw error;
     }
-
-    this.selectStmt = this.db.prepare(
-      `SELECT value_json, created_at, expires_at FROM cache_entries
-       WHERE provider = ? AND capability = ? AND args_hash = ?`,
-    );
-    this.deleteStaleStmt = this.db.prepare(
-      `DELETE FROM cache_entries WHERE provider = ? AND capability = ? AND args_hash = ?`,
-    );
-    this.upsertStmt = this.db.prepare(
-      `INSERT INTO cache_entries (id, provider, capability, args_hash, value_json, created_at, expires_at)
-       VALUES (@id, @provider, @capability, @argsHash, @valueJson, @createdAt, @expiresAt)
-       ON CONFLICT (provider, capability, args_hash) DO UPDATE SET
-         value_json = excluded.value_json,
-         created_at = excluded.created_at,
-         expires_at = excluded.expires_at`,
-    );
-    this.sweepStmt = this.db.prepare(`DELETE FROM cache_entries WHERE expires_at <= ?`);
   }
 
   /**

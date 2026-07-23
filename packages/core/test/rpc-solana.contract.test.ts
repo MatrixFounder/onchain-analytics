@@ -106,4 +106,27 @@ describe('rpc-solana adapter (contract, R-16/R-17 backend, OQ-1)', () => {
       ).toThrow(/invalid lamports value/);
     });
   });
+
+  it('bounds an oversized raw response inside a normalize() error message to a truncated, fixed-size string (post-M1 polish, fix 5)', () => {
+    const oversizedContext = { slot: 1, extra: 'y'.repeat(50_000) };
+    let thrown: Error | undefined;
+    try {
+      adapter.normalize('wallet.balances.native', {
+        chain: 'solana',
+        address: ADDRESS,
+        raw: { jsonrpc: '2.0', id: 1, result: { context: oversizedContext, value: -1 } },
+      });
+    } catch (error) {
+      thrown = error as Error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown!.message).toContain(
+      'rpc-solana.normalize: invalid lamports value in "result.value":',
+    );
+    expect(thrown!.message).toContain('…[truncated]');
+    // The full raw payload is ~50KB — the message must stay bounded (well under 1KB), never
+    // proportional to the (potentially up-to-10MB) response body.
+    expect(thrown!.message.length).toBeLessThan(600);
+  });
 });

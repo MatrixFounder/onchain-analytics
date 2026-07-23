@@ -49,18 +49,36 @@ export interface NewPairsContext {
 
 const CAPABILITY = 'pairs.new';
 
+/** `dexscreener`'s own default when a caller omits `limit` (`packages/core/src/adapters/
+ * dexscreener/index.ts`'s `DEFAULT_LIMIT`) — duplicated here rather than widening
+ * `@onchain-intel/core`'s public export surface for one internal constant (developer-guidelines
+ * §1.6). Kept in sync manually; `pairs.new`'s only registered adapter is `dexscreener`
+ * (`providers.config.ts`), so this literal is this tool's own canonical default too. **Post-M1
+ * polish fix 1:** materializing it HERE, before `args` is built, is what fixes the cache-key split
+ * below — see `newPairsHandler`'s own docstring. */
+const DEFAULT_LIMIT = 10;
+
 export type NewPairsOutcome =
   { ok: true; output: NewPairsOutput; cache: CacheMeta } | { ok: false; reason: string };
 
-/** Pure handler — no address to (re-)normalize here, unlike `get-token.ts`/`wallet-balances.ts`. */
+/**
+ * Pure handler — no address to (re-)normalize here, unlike `get-token.ts`/`wallet-balances.ts`.
+ *
+ * **Cache-key split fix (post-M1 polish, cheap-fix backlog item 1):** an omitted `limit` used to
+ * build `args = {chain}` while an explicit, default-valued `limit: 10` built
+ * `args = {chain, limit: 10}` — two DIFFERENT `deriveArgsHash` keys for the exact same logical
+ * query, so the two calls never shared a cache entry (a duplicate upstream `dexscreener` fetch for
+ * what a caller would reasonably expect to be one cached query). The default is now materialized
+ * into `limit` BEFORE `args` is built, so both call shapes produce the byte-identical `args` object
+ * (and therefore the identical cache key) regardless of whether the caller passed the default
+ * explicitly or omitted it.
+ */
 export async function newPairsHandler(
   input: NewPairsInput,
   ctx: NewPairsContext,
 ): Promise<NewPairsOutcome> {
-  const args: Record<string, unknown> = { chain: input.chain };
-  if (input.limit !== undefined) {
-    args['limit'] = input.limit;
-  }
+  const limit = input.limit ?? DEFAULT_LIMIT;
+  const args: Record<string, unknown> = { chain: input.chain, limit };
 
   const outcome = await resolveCapability(ctx.registry, CAPABILITY, input.chain, args);
   if (!outcome.ok) return outcome;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CapabilityRegistry } from '@onchain-intel/core';
+import { CapabilityRegistry, createCacheStore } from '@onchain-intel/core';
 import type { CapabilityRoute, Pool, ProviderAdapter } from '@onchain-intel/core';
 import { NewPairsInputSchema, newPairsHandler } from '../../src/tools/new-pairs.js';
 
@@ -113,5 +113,46 @@ describe('newPairsHandler', () => {
     );
 
     await expect(newPairsHandler({ chain: 'ethereum' }, { registry })).rejects.toThrow();
+  });
+
+  it('materializes the default limit BEFORE building cache-key args — an omitted limit and an explicit default-valued limit share the SAME cache entry, never a duplicate upstream fetch (post-M1 polish, fix 1)', async () => {
+    let fetchCalls = 0;
+    function countingDexscreenerAdapter(): ProviderAdapter {
+      return {
+        id: 'dexscreener',
+        capabilities: () => [{ id: 'pairs.new', chains: ['ethereum', 'solana'] }],
+        costOf: () => ({ credits: 0 }),
+        fetch: async () => {
+          fetchCalls += 1;
+          return {};
+        },
+        normalize: () => FAKE_POOLS,
+        isAvailable: () => ({ ok: true }),
+      };
+    }
+
+    // A real two-level cache (in-memory sqlite) — the same seam `test/e2e.inprocess.test.ts` uses
+    // — so this test proves the fix via actually-observed cache-hit behavior, not just by reaching
+    // into `deriveArgsHash` internals.
+    const registry = new CapabilityRegistry(
+      ROUTES,
+      new Map([['dexscreener', countingDexscreenerAdapter()]]),
+      createCacheStore({ dbPath: ':memory:' }),
+    );
+
+    const first = await newPairsHandler({ chain: 'ethereum' }, { registry }); // limit omitted
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error('expected ok:true');
+    expect(first.cache.status).toBe('miss');
+
+    // dexscreener's own DEFAULT_LIMIT, passed EXPLICITLY this time — before the fix, this built a
+    // different `args` shape (`{chain, limit: 10}` vs. `{chain}`) and therefore a different cache
+    // key, causing a second, redundant upstream fetch for the identical logical query.
+    const second = await newPairsHandler({ chain: 'ethereum', limit: 10 }, { registry });
+    expect(second.ok).toBe(true);
+    if (!second.ok) throw new Error('expected ok:true');
+    expect(second.cache.status).toBe('hit');
+
+    expect(fetchCalls).toBe(1);
   });
 });

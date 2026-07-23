@@ -5,6 +5,7 @@ import { adapterRegistrations } from '../../providers.config.js';
 import { WalletSchema, type Wallet } from '../../types/wallet.js';
 import type { Chain } from '../../types/chain.js';
 import type { ProviderAdapter } from '../types.js';
+import { stringifyTruncated } from '../stringify-truncated.js';
 
 const REGISTRATION = adapterRegistrations.find((r) => r.id === 'rpc-evm');
 if (!REGISTRATION) {
@@ -68,6 +69,11 @@ function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; addres
  * on ethereum via JSON-RPC `eth_getBalance` — keyless, no env precondition. The hex-wei `result`
  * is converted to an exact **decimal string** via `BigInt`, never parsed into a JS `number`
  * (DB-SCHEMA-CONCEPT §1.7 — wei routinely exceeds the safe 2^53 integer range).
+ *
+ * **Bounded error messages (post-M1 polish, cheap-fix backlog item 5):** the JSON-RPC error
+ * payload and the invalid-response envelope are embedded via `stringifyTruncated()`
+ * (`../stringify-truncated.js`), never a raw, unbounded `JSON.stringify(...)` — an oversized or
+ * malicious response body no longer produces an equally-oversized `Error` message.
  */
 export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch;
@@ -106,7 +112,7 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
           const raw = (await response.json()) as JsonRpcResponse;
           if (raw.error) {
             throw new Error(
-              `rpc-evm: JSON-RPC error from ${endpoint}: ${JSON.stringify(raw.error)}`,
+              `rpc-evm: JSON-RPC error from ${endpoint}: ${stringifyTruncated(raw.error)}`,
             );
           }
           return { chain, address: normalizedAddress, raw };
@@ -124,7 +130,7 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
       const body = raw as JsonRpcResponse;
       if (typeof body.result !== 'string' || !HEX_BALANCE_RE.test(body.result)) {
         throw new Error(
-          `rpc-evm.normalize: invalid balance hex in "result": ${JSON.stringify(raw)}`,
+          `rpc-evm.normalize: invalid balance hex in "result": ${stringifyTruncated(raw)}`,
         );
       }
       // Exact integer as a decimal string via BigInt — never Number() (>2^53 for large balances).

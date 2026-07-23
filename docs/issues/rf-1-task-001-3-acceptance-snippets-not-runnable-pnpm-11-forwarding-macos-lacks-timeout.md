@@ -1,8 +1,10 @@
 ---
 id: RF-1
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-07-22
+resolved_at: 2026-07-23
+resolved_by: developer round post-M1 (user-authorized), orchestrator ledger flip
 category: workflow-docs
 severity: SEV-4
 slug: rf-1-task-001-3-acceptance-snippets-not-runnable-pnpm-11-forwarding-macos-lacks-timeout
@@ -13,6 +15,14 @@ finding_ref: fnd-20260722-025104-e94d8057
 ---
 
 # RF-1 — task-001-3 acceptance snippets not runnable (pnpm 11 '--' forwarding; macOS lacks timeout)
+
+> **Resolution (2026-07-23).** Both defects fixed and verified live on the target machine:
+> (1) `docs/tasks/task-001-3-tests-unit-e2e-stdio.md` — extra `--` dropped
+> (`test --reporter=verbose`); the grep now shows real E2E lines. (2) The bare-`timeout` line
+> actually lived in `docs/tasks/task-001-2-mcp-server-env-ping.md:74` — this issue's original
+> Fix path mis-attributed it to task-001-3; fixed there with the prescribed portable equivalent
+> (`pnpm --filter @onchain-intel/mcp-server dev </dev/null`, exits 0 on stdin EOF, verified
+> EXIT=0). File-location correction noted here rather than rewriting the historical Fix path.
 
 > Owning decision: docs/tasks/task-001-3-tests-unit-e2e-stdio.md (M0, TASK-001) — acceptance snippet authored by the Planner, flagged by Developer and Code Reviewer in the same run.
 

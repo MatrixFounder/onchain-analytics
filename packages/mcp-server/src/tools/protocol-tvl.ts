@@ -11,12 +11,15 @@ const SUPPORTED_CHAIN = z.enum(['ethereum', 'solana']);
 /**
  * Input contract for `onchain_protocol_tvl` (ARCHITECTURE.md §5.1, R-19): `protocolSlug` is the
  * DeFiLlama protocol slug (e.g. `'uniswap'`, `'raydium'`) — a plain non-empty string, not an
- * address, so there's no `superRefine` step here.
+ * address, so there's no `superRefine` step here. **Bounded (post-M1 polish, cheap-fix backlog
+ * item 2):** `.max(128)` — no real DeFiLlama protocol slug is anywhere near that long; this rejects
+ * a pathologically long input (e.g. a 10k-character string) at the schema layer, cheaply, before it
+ * could otherwise be built into a URL/cache-key args.
  */
 export const ProtocolTvlInputSchema = z
   .object({
     chain: SUPPORTED_CHAIN,
-    protocolSlug: z.string().min(1),
+    protocolSlug: z.string().min(1).max(128),
   })
   .strict();
 export type ProtocolTvlInput = z.infer<typeof ProtocolTvlInputSchema>;

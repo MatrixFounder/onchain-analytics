@@ -54,6 +54,16 @@ describe('ProtocolTvlInputSchema', () => {
       ProtocolTvlInputSchema.parse({ chain: 'ethereum', protocolSlug: 'uniswap', unexpected: 'x' }),
     ).toThrow();
   });
+
+  it('rejects a pathologically long protocolSlug FAST (post-M1 polish, fix 2 — bounded .max(128))', () => {
+    const hugeSlug = 'x'.repeat(10_000);
+    const start = performance.now();
+    const result = ProtocolTvlInputSchema.safeParse({ chain: 'ethereum', protocolSlug: hugeSlug });
+    const elapsedMs = performance.now() - start;
+
+    expect(result.success).toBe(false);
+    expect(elapsedMs).toBeLessThan(100);
+  });
 });
 
 describe('protocolTvlHandler', () => {

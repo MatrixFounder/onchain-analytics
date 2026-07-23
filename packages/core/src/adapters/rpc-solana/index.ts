@@ -5,6 +5,7 @@ import { adapterRegistrations } from '../../providers.config.js';
 import { WalletSchema, type Wallet } from '../../types/wallet.js';
 import type { Chain } from '../../types/chain.js';
 import type { ProviderAdapter } from '../types.js';
+import { stringifyTruncated } from '../stringify-truncated.js';
 
 const REGISTRATION = adapterRegistrations.find((r) => r.id === 'rpc-solana');
 if (!REGISTRATION) {
@@ -61,6 +62,11 @@ function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; addres
  * can recover — `amountRaw` is still emitted as a string (DB-SCHEMA-CONCEPT §1.7 convention), but
  * for values already-imprecise past that threshold, the string merely reflects the JSON-parsed
  * (already lossy) number, not a true arbitrary-precision integer.
+ *
+ * **Bounded error messages (post-M1 polish, cheap-fix backlog item 5):** the JSON-RPC error
+ * payload and the invalid-response envelope are embedded via `stringifyTruncated()`
+ * (`../stringify-truncated.js`), never a raw, unbounded `JSON.stringify(...)` — an oversized or
+ * malicious response body no longer produces an equally-oversized `Error` message.
  */
 export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): ProviderAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch;
@@ -93,7 +99,7 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
       const raw = (await response.json()) as JsonRpcGetBalanceResponse;
       if (raw.error) {
         throw new Error(
-          `rpc-solana: JSON-RPC error from ${ENDPOINT}: ${JSON.stringify(raw.error)}`,
+          `rpc-solana: JSON-RPC error from ${ENDPOINT}: ${stringifyTruncated(raw.error)}`,
         );
       }
       return { chain, address: normalizedAddress, raw };
@@ -114,7 +120,7 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
         lamports > Number.MAX_SAFE_INTEGER
       ) {
         throw new Error(
-          `rpc-solana.normalize: invalid lamports value in "result.value": ${JSON.stringify(raw)}`,
+          `rpc-solana.normalize: invalid lamports value in "result.value": ${stringifyTruncated(raw)}`,
         );
       }
 

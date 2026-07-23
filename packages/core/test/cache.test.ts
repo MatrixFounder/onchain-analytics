@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CacheGetResult, CacheStore } from '../src/adapters/cache-store.js';
 import { cacheDbPath, resolveDataDir } from '../src/cache/data-dir.js';
 import { LruHotLayer } from '../src/cache/lru.js';
@@ -201,6 +201,31 @@ describe('SqliteCacheStore (R-13/R-14)', () => {
     raw2.close();
 
     expect(rows.map((r) => r.args_hash)).toEqual(['hash-fresh']);
+  });
+
+  it('closes the already-opened db handle before rethrowing when a post-open step fails (post-M1 polish, fix 4)', () => {
+    const closeSpy = vi.spyOn(Database.prototype, 'close');
+
+    let thrown: unknown;
+    try {
+      new SqliteCacheStore({
+        dbPath,
+        providers: adapterRegistrations,
+        postOpenTestHook: () => {
+          throw new Error('simulated post-open failure (fix 4 test-only seam)');
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe('simulated post-open failure (fix 4 test-only seam)');
+    // Proves the leak-safety fix actually ran: the already-opened handle was closed as part of
+    // handling the post-open failure, not merely left open with the error propagating past it.
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+
+    closeSpy.mockRestore();
   });
 });
 

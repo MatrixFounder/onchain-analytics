@@ -57,7 +57,7 @@
 
 ```bash
 pnpm test                      # vitest run — все тесты зелёные (R-6)
-pnpm --filter @onchain-intel/mcp-server test -- --reporter=verbose | grep -Ei 'e2e|stdio'  # виден E2E
+pnpm --filter @onchain-intel/mcp-server test --reporter=verbose | grep -Ei 'e2e|stdio'  # виден E2E
 ```
 
 - **[R-6]** `pnpm test` запускает vitest, ≥1 зелёный тест; фактически — три файла (unit env, unit

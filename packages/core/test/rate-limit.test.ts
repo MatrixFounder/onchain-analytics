@@ -163,5 +163,46 @@ describe('throttle (token-bucket) [Phase 2, injectable clock — no real timers]
       // Never actually waits — rejected fast instead of blocking for hundreds of thousands of ms.
       expect(clock.wait).not.toHaveBeenCalled();
     });
+
+    it('refunds the reserved token after a saturation rejection — a subsequent call sees the SAME bucket state as before the rejected attempt, never a growing double-pay backlog (post-M1 polish, fix 6)', async () => {
+      const clock = fakeClock(); // frozen unless advanced — never advances on its own here
+      const throttle = createThrottle(clock);
+      const config = { capacity: 1, refillPerSec: 0.001 }; // any 2nd call computes a multi-hundred-thousand-ms wait
+
+      await throttle('saturated-refund-check', config); // consumes the only token, succeeds immediately
+
+      function extractComputedWaitMs(error: unknown): number {
+        const match = /computed wait (\d+)ms/.exec((error as Error).message);
+        expect(match).not.toBeNull();
+        return Number(match![1]);
+      }
+
+      // 1st saturating call — rejected, but per fix 7's own contract its reserved token is
+      // refunded (`bucket.tokens += 1`) BEFORE the throw.
+      let firstWaitMs: number | undefined;
+      try {
+        await throttle('saturated-refund-check', config);
+        expect.unreachable();
+      } catch (error) {
+        firstWaitMs = extractComputedWaitMs(error);
+      }
+
+      // A 2nd saturating call, clock still frozen (zero elapsed time, so refill contributes
+      // nothing either way). If the 1st rejection's reservation had NOT been refunded, the bucket's
+      // deficit would have grown by a further unit (double-pay), and this call would compute a
+      // LARGER waitMs than the 1st did. With the refund in place, this call sees the IDENTICAL
+      // pre-rejection bucket state (proven by computing the exact same waitMs).
+      let secondWaitMs: number | undefined;
+      try {
+        await throttle('saturated-refund-check', config);
+        expect.unreachable();
+      } catch (error) {
+        secondWaitMs = extractComputedWaitMs(error);
+      }
+
+      expect(secondWaitMs).toBe(firstWaitMs);
+      // Neither rejection ever actually waits.
+      expect(clock.wait).not.toHaveBeenCalled();
+    });
   });
 });

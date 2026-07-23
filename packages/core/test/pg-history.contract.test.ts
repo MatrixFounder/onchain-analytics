@@ -288,5 +288,35 @@ describe('pg-history adapter (contract, R-12 — mocked pg client, no live PG)',
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('db.internal'));
       stderrSpy.mockRestore();
     });
+
+    it('read-client.ts: a SYNCHRONOUS Pool constructor throw is sanitized before it ever reaches the caller — the raw DSN-bearing detail goes to stderr only (post-M1 polish, fix 3)', async () => {
+      resetFakePool();
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      class ThrowingPoolCtor {
+        constructor() {
+          throw new Error(`invalid connection string: ${SECRET_DSN}`);
+        }
+      }
+
+      const client = createReadClient({
+        env: { ONCHAIN_PG_URL: SECRET_DSN },
+        PoolCtor: ThrowingPoolCtor as unknown as PgPoolCtor,
+      });
+
+      await expect(client.query('SELECT 1')).rejects.toThrow('pg-history: database unavailable');
+
+      try {
+        await client.query('SELECT 1');
+        expect.unreachable();
+      } catch (error) {
+        expect(String(error)).not.toContain(SECRET_DSN);
+        expect(String(error)).not.toContain('db.internal');
+        expect(String(error)).not.toContain('sup3r-secret-pw');
+      }
+
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining(SECRET_DSN));
+      stderrSpy.mockRestore();
+    });
   });
 });
