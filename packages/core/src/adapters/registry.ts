@@ -1,5 +1,5 @@
 import { PassthroughCacheStore } from './cache-store.js';
-import type { CacheStore } from './cache-store.js';
+import type { CacheGetResult, CacheStore } from './cache-store.js';
 import type { CapabilityRoute, ProviderAdapter } from './types.js';
 import { deriveArgsHash } from '../net/args-hash.js';
 import type { Chain } from '../types/chain.js';
@@ -85,6 +85,21 @@ export class CapabilityRegistry {
    *
    * Anti-corruption layer: only the `normalize()` result is ever returned — the raw provider DTO
    * from `fetch()` never leaves this method.
+   *
+   * **Cache-fault contract (adversarial cycle 1, findings A1/A2) — cache errors are ALWAYS
+   * best-effort, never fatal:** a faulty/misbehaving `CacheStore` must never turn an otherwise
+   * successful `fetch`/`normalize` into a `CapabilityUnavailableError`, and must never abort the
+   * whole `resolve()` call. Concretely:
+   * - A throw from `cache.get(...)` is caught, logged to stderr (one line, no args/secret values),
+   *   and treated exactly like a cache MISS — `resolve()` falls straight through to `fetch`.
+   * - A throw from `cache.set(...)` is caught in its OWN try/catch, nested inside the
+   *   `fetch`/`normalize` try block (never sharing that block's catch) — it is logged to stderr and
+   *   otherwise ignored; the already-fetched/normalized `result` is still returned as a `'miss'`.
+   *
+   * This is a DIFFERENT contract from the `fetch`/`normalize` catch above: a `fetch`/`normalize`
+   * failure means "this adapter couldn't answer, try the next one" (recorded in `tried`); a cache
+   * failure means "the cache itself is unwell, but the adapter it wraps answered fine" — the cache
+   * is a pure side channel and is never allowed to fail the call it's merely trying to memoize.
    */
   async resolve(
     capability: string,
@@ -118,7 +133,19 @@ export class CapabilityRegistry {
         continue;
       }
 
-      const cached = await this.cache.get(adapter.id, capability, argsHash);
+      // Cache-read fault (finding A2): never abort resolve() — log and treat as a plain miss,
+      // falling through to fetch/normalize exactly as if nothing had ever been cached.
+      let cached: CacheGetResult | undefined;
+      try {
+        cached = await this.cache.get(adapter.id, capability, argsHash);
+      } catch (error) {
+        process.stderr.write(
+          `cache.get failed provider=${adapter.id} capability=${capability}: ${
+            error instanceof Error ? error.message : String(error)
+          } — treating as a miss\n`,
+        );
+        cached = undefined;
+      }
       if (cached) {
         return { result: cached.value, source: adapter.id, cache: 'hit', ageMs: cached.ageMs };
       }
@@ -126,7 +153,19 @@ export class CapabilityRegistry {
       try {
         const raw = await adapter.fetch(capability, args);
         const result = adapter.normalize(capability, raw);
-        await this.cache.set(adapter.id, capability, argsHash, result);
+        // Cache-write fault (finding A1): its OWN try/catch, deliberately NOT sharing the
+        // fetch/normalize catch below — a cache.set() failure must never be recorded as a
+        // "tried" failure for this adapter (it already answered successfully) and must never
+        // fall through to the next adapterId; the result is still returned as a genuine 'miss'.
+        try {
+          await this.cache.set(adapter.id, capability, argsHash, result);
+        } catch (error) {
+          process.stderr.write(
+            `cache.set failed provider=${adapter.id} capability=${capability}: ${
+              error instanceof Error ? error.message : String(error)
+            } — result still returned (best-effort cache write)\n`,
+          );
+        }
         return { result, source: adapter.id, cache: 'miss' };
       } catch (error) {
         tried.push({ adapterId, reason: error instanceof Error ? error.message : String(error) });

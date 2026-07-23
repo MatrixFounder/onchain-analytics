@@ -91,4 +91,27 @@ describe('newPairsHandler', () => {
     if (outcome.ok) throw new Error('expected ok:false');
     expect(outcome.reason).toContain('pairs.new');
   });
+
+  it('still validates the adapter output against the Pool schema after removing the redundant standalone z.array(PoolSchema) pass (fix I)', async () => {
+    function fakeAdapterWithMalformedPools(): ProviderAdapter {
+      return {
+        id: 'dexscreener',
+        capabilities: () => [{ id: 'pairs.new', chains: ['ethereum', 'solana'] }],
+        costOf: () => ({ credits: 0 }),
+        fetch: async () => ({}),
+        // Missing required Pool fields (e.g. `id`, `fetchedAt`) — must still fail validation via
+        // the single remaining NewPairsOutputSchema.parse(...) call, proving the dedup didn't
+        // silently drop the validation itself.
+        normalize: () => [{ chain: 'ethereum', dexId: 'uniswap' }],
+        isAvailable: () => ({ ok: true }),
+      };
+    }
+
+    const registry = new CapabilityRegistry(
+      ROUTES,
+      new Map([['dexscreener', fakeAdapterWithMalformedPools()]]),
+    );
+
+    await expect(newPairsHandler({ chain: 'ethereum' }, { registry })).rejects.toThrow();
+  });
 });

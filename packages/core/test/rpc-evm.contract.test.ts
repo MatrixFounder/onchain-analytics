@@ -122,4 +122,14 @@ describe('rpc-evm adapter (contract, R-16/R-17 backend, OQ-1)', () => {
       testAdapter.fetch('wallet.balances.native', { chain: 'ethereum', address: ADDRESS }),
     ).rejects.toThrow();
   });
+
+  it('normalize() rejects a bare "0x" result with a clear "invalid balance hex" error, never a raw SyntaxError (adversarial cycle 1, fix E)', () => {
+    expect(() =>
+      adapter.normalize('wallet.balances.native', {
+        chain: 'ethereum',
+        address: ADDRESS,
+        raw: { jsonrpc: '2.0', id: 1, result: '0x' },
+      }),
+    ).toThrow(/invalid balance hex/);
+  });
 });

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createThrottle, throttle as productionThrottle } from '../src/net/rate-limit.js';
+import {
+  createThrottle,
+  RateLimitRejectedError,
+  throttle as productionThrottle,
+} from '../src/net/rate-limit.js';
 
 /** Builds an injectable, real-timer-free clock: `now()` returns a controllable counter; `wait(ms)`
  * never actually sleeps — it advances the same counter by `ms` and resolves immediately, so tests
@@ -91,5 +95,55 @@ describe('throttle (token-bucket) [Phase 2, injectable clock — no real timers]
 
   it('the production `throttle` singleton is a real, callable Throttle built with real timers (smoke check only, not exercised for timing)', () => {
     expect(typeof productionThrottle).toBe('function');
+  });
+
+  describe('concurrency-safe token bucket (adversarial cycle 1, fix C)', () => {
+    it('serializes 3 concurrent callers against a 1-capacity bucket into distinct, cascading wait durations — never all firing after the same single wait', async () => {
+      // A frozen clock (`now()` never advances on its own) — `wait()` only records the requested
+      // duration, with NO clock mutation — isolates the spacing logic under test from the
+      // real-time-elapsed refill logic the tests above already cover via `clock.advance()`. This
+      // matters because 3 calls issued via `Promise.all` all run their synchronous bucket-math
+      // prefix back-to-back, in the same real instant, before any of them awaits a real timer.
+      const waitCalls: number[] = [];
+      const deps = {
+        now: () => 0,
+        wait: vi.fn((ms: number) => {
+          waitCalls.push(ms);
+          return Promise.resolve();
+        }),
+      };
+      const throttle = createThrottle(deps);
+      const config = { capacity: 1, refillPerSec: 2 }; // 1 token every 500ms
+
+      await Promise.all([
+        throttle('shared', config),
+        throttle('shared', config),
+        throttle('shared', config),
+      ]);
+
+      // 1st caller consumes the initial token immediately (no wait call at all); the 2nd and 3rd
+      // each get their OWN, progressively later slot — never the same duration twice (the bug
+      // this fix closes: both used to compute the identical 500ms wait).
+      expect(waitCalls).toEqual([500, 1000]);
+    });
+
+    it('rejects with a typed RateLimitRejectedError when refillPerSec is 0 — never busy-spins or hangs forever', async () => {
+      const clock = fakeClock();
+      const throttle = createThrottle(clock);
+
+      await expect(
+        throttle('broken-provider', { capacity: 1, refillPerSec: 0 }),
+      ).rejects.toBeInstanceOf(RateLimitRejectedError);
+      expect(clock.wait).not.toHaveBeenCalled();
+    });
+
+    it('rejects with a typed RateLimitRejectedError for a negative refillPerSec too', async () => {
+      const clock = fakeClock();
+      const throttle = createThrottle(clock);
+
+      await expect(
+        throttle('broken-provider', { capacity: 1, refillPerSec: -1 }),
+      ).rejects.toBeInstanceOf(RateLimitRejectedError);
+    });
   });
 });

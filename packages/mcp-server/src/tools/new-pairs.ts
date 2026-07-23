@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { PoolSchema, type CapabilityRegistry, type Pool } from '@onchain-intel/core';
+import { PoolSchema, type CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
 
 /** The two supported networks (task 003-7 reviewer note, Major-2 — see `get-token.ts`'s
@@ -65,10 +65,13 @@ export async function newPairsHandler(
   const outcome = await resolveCapability(ctx.registry, CAPABILITY, input.chain, args);
   if (!outcome.ok) return outcome;
 
-  const pairs: Pool[] = z.array(PoolSchema).parse(outcome.output);
+  // Adversarial cycle 1, fix I: `outcome.output` (the adapter's `Pool[]`) is validated exactly
+  // ONCE, as part of the single `NewPairsOutputSchema.parse(...)` below (its `pairs` field is
+  // `z.array(PoolSchema)`) — this used to ALSO run a standalone `z.array(PoolSchema).parse(...)`
+  // first, a redundant double-validation of the same data against the same schema.
   const output = NewPairsOutputSchema.parse({
     chain: input.chain,
-    pairs,
+    pairs: outcome.output,
     source: outcome.cache.provider,
     fetchedAt: Date.now(),
   });

@@ -109,9 +109,21 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
     normalize: (_cap: string, rawResult: unknown): Pool[] => {
       const { chain, limit, raw } = rawResult as DexscreenerFetchResult;
       const body = raw as DexscreenerSearchResponse;
-      const pairs = (body.pairs ?? []).filter((pair) => pair.chainId === chain).slice(0, limit);
+      const candidates = (body.pairs ?? [])
+        .filter((pair) => pair.chainId === chain)
+        .slice(0, limit);
 
-      return pairs.map((pair) => {
+      // Adversarial cycle 1, fix G — explicit degradation instead of an all-or-nothing throw:
+      // one malformed pair in an otherwise-good batch used to fail the ENTIRE onchain_new_pairs
+      // call. Each candidate is validated independently (a manual type-narrowing guard, since the
+      // wire fields are `unknown`, followed by `PoolSchema.safeParse` as the canonical contract
+      // check); a malformed one is DROPPED, not thrown, and counted. Only if EVERY candidate in
+      // this batch turns out malformed does this still throw (an empty result would otherwise
+      // look identical to "no new pairs right now" — a silent, misleading success).
+      const pools: Pool[] = [];
+      let malformedCount = 0;
+
+      for (const pair of candidates) {
         const pairAddress = pair.pairAddress;
         const dexId = pair.dexId;
         const baseSymbol = pair.baseToken?.symbol;
@@ -122,7 +134,8 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
           typeof baseSymbol !== 'string' ||
           typeof quoteSymbol !== 'string'
         ) {
-          throw new Error(`dexscreener.normalize: malformed pair entry ${JSON.stringify(pair)}`);
+          malformedCount += 1;
+          continue;
         }
 
         const pool: Pool = {
@@ -138,8 +151,27 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
           ...(typeof pair.liquidity?.usd === 'number' ? { liquidityUsd: pair.liquidity.usd } : {}),
           ...(typeof pair.volume?.h24 === 'number' ? { volume24hUsd: pair.volume.h24 } : {}),
         };
-        return PoolSchema.parse(pool);
-      });
+        const parsed = PoolSchema.safeParse(pool);
+        if (!parsed.success) {
+          malformedCount += 1;
+          continue;
+        }
+        pools.push(parsed.data);
+      }
+
+      if (malformedCount > 0) {
+        process.stderr.write(
+          `dexscreener.normalize: skipped ${malformedCount} malformed pair(s) of ${candidates.length} for chain=${chain}\n`,
+        );
+      }
+
+      if (candidates.length > 0 && pools.length === 0) {
+        throw new Error(
+          `dexscreener.normalize: all ${candidates.length} candidate pair(s) for chain=${chain} were malformed`,
+        );
+      }
+
+      return pools;
     },
     isAvailable: () => ({ ok: true }),
   };

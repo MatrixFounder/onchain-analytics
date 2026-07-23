@@ -172,6 +172,36 @@ describe('SqliteCacheStore (R-13/R-14)', () => {
 
     expect(hit.value).toEqual({ priceUsd: 9 });
   });
+
+  it('opportunistically sweeps already-expired rows every Nth write (adversarial cycle 1, fix H — counter forced small for the test)', async () => {
+    const store = new SqliteCacheStore({
+      dbPath,
+      providers: adapterRegistrations,
+      sweepEveryNWrites: 2,
+    });
+
+    // Write an entry, then force it into the past directly (same white-box technique the
+    // TTL-expiry test above uses) — this row must NOT be read again, so it can only ever be
+    // removed by the sweep itself, never by get()'s own on-read deletion.
+    await store.set('coingecko', 'token.price', 'hash-expired', { priceUsd: 1 });
+    const raw = new Database(dbPath);
+    raw
+      .prepare('UPDATE cache_entries SET expires_at = ? WHERE args_hash = ?')
+      .run(Date.now() - 1000, 'hash-expired');
+    raw.close();
+
+    // A 2nd write on the SAME store (sweepEveryNWrites: 2) crosses the sweep threshold.
+    await store.set('coingecko', 'token.price', 'hash-fresh', { priceUsd: 2 });
+    store.close();
+
+    const raw2 = new Database(dbPath, { readonly: true });
+    const rows = raw2.prepare('SELECT args_hash FROM cache_entries').all() as {
+      args_hash: string;
+    }[];
+    raw2.close();
+
+    expect(rows.map((r) => r.args_hash)).toEqual(['hash-fresh']);
+  });
 });
 
 describe('LruHotLayer (R-13: hot layer, TTL built into set())', () => {

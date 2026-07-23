@@ -46,6 +46,12 @@ interface JsonRpcResponse {
   error?: { code?: unknown; message?: unknown };
 }
 
+/** Strict hex-wei guard (adversarial cycle 1, fix E) — requires at least one hex digit after the
+ * `0x` prefix. The PREVIOUS check (`typeof === 'string' && startsWith('0x')`) accepted the bare
+ * string `"0x"` (no digits at all), which `BigInt("0x")` throws a raw, unhelpful `SyntaxError` on
+ * ("Cannot convert 0x to a BigInt") instead of this adapter's own clear, documented error. */
+const HEX_BALANCE_RE = /^0x[0-9a-fA-F]+$/;
+
 function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; address: string } {
   const chain = args['chain'];
   const address = args['address'];
@@ -116,8 +122,10 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
     normalize: (_cap: string, rawResult: unknown): Wallet => {
       const { chain, address, raw } = rawResult as RpcEvmFetchResult;
       const body = raw as JsonRpcResponse;
-      if (typeof body.result !== 'string' || !body.result.startsWith('0x')) {
-        throw new Error(`rpc-evm.normalize: missing/invalid "result" in ${JSON.stringify(raw)}`);
+      if (typeof body.result !== 'string' || !HEX_BALANCE_RE.test(body.result)) {
+        throw new Error(
+          `rpc-evm.normalize: invalid balance hex in "result": ${JSON.stringify(raw)}`,
+        );
       }
       // Exact integer as a decimal string via BigInt — never Number() (>2^53 for large balances).
       const amountRaw = BigInt(body.result).toString(10);

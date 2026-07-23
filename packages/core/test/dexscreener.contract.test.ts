@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createDexscreenerAdapter } from '../src/index.js';
+import type { Pool } from '../src/index.js';
 
 // Golden fixture-based normalization tests (R-6, D11) — no network: fixtures were recorded ONCE
 // via the manual fixture-recording dev script under packages/core/scripts/ (out of CI, R-22) and
@@ -115,5 +116,56 @@ describe('dexscreener adapter (contract, R-6)', () => {
 
     expect(calls).toEqual(['https://api.dexscreener.com/latest/dex/search?q=ETH']);
     expect(result).toEqual({ chain: 'ethereum', limit: 10, raw: fixture.raw });
+  });
+
+  describe('malformed pair handling (adversarial cycle 1, fix G)', () => {
+    it('drops a malformed pair and returns the well-formed subset (N-1), with one stderr summary line', () => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const raw = {
+        schemaVersion: '1.0.0',
+        pairs: [
+          {
+            chainId: 'ethereum',
+            dexId: 'uniswap',
+            pairAddress: '0xgood',
+            baseToken: { symbol: 'WETH' },
+            quoteToken: { symbol: 'USDC' },
+          },
+          {
+            chainId: 'ethereum',
+            dexId: 'uniswap',
+            // pairAddress missing — malformed.
+            baseToken: { symbol: 'WETH' },
+            quoteToken: { symbol: 'USDC' },
+          },
+        ],
+      };
+
+      const result = adapter.normalize('pairs.new', {
+        chain: 'ethereum',
+        limit: 10,
+        raw,
+      }) as Pool[];
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.pairAddress).toBe('0xgood');
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('skipped 1 malformed pair(s) of 2'),
+      );
+      stderrSpy.mockRestore();
+    });
+
+    it('throws when every candidate pair in the batch is malformed (never a silent empty result)', () => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const raw = {
+        schemaVersion: '1.0.0',
+        pairs: [{ chainId: 'ethereum', dexId: 'uniswap', baseToken: {}, quoteToken: {} }],
+      };
+
+      expect(() => adapter.normalize('pairs.new', { chain: 'ethereum', limit: 10, raw })).toThrow(
+        /all 1 candidate pair\(s\).*were malformed/,
+      );
+      stderrSpy.mockRestore();
+    });
   });
 });

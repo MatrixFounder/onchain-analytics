@@ -102,9 +102,19 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
       const { chain, address, raw } = rawResult as RpcSolanaFetchResult;
       const body = raw as JsonRpcGetBalanceResponse;
       const lamports = body.result?.value;
-      if (typeof lamports !== 'number') {
+      // Adversarial cycle 1, fix F: `lamports` must be a non-negative SAFE integer before it's
+      // ever handed to `String()` — a fractional value (e.g. `1.5`, never a valid lamport count),
+      // a negative value, or a value already past `Number.MAX_SAFE_INTEGER` (silently imprecise,
+      // per this module's own docstring on Solana's lossy JSON-number wire format) all get a
+      // loud, clear error here instead of silently propagating a wrong/misleading `amountRaw`.
+      if (
+        typeof lamports !== 'number' ||
+        !Number.isInteger(lamports) ||
+        lamports < 0 ||
+        lamports > Number.MAX_SAFE_INTEGER
+      ) {
         throw new Error(
-          `rpc-solana.normalize: missing/invalid "result.value" in ${JSON.stringify(raw)}`,
+          `rpc-solana.normalize: invalid lamports value in "result.value": ${JSON.stringify(raw)}`,
         );
       }
 

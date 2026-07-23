@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertAllowedHost, safeFetch, SsrfBlockedError } from '../src/net/safe-fetch.js';
+import {
+  assertAllowedHost,
+  safeFetch,
+  SafeFetchResponseTooLargeError,
+  SafeFetchTimeoutError,
+  SsrfBlockedError,
+} from '../src/net/safe-fetch.js';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), { status: 200, ...init });
@@ -126,5 +132,96 @@ describe('safeFetch [Phase 2, no real network — fetchImpl injected]', () => {
     ).rejects.toThrow(/redirects/i);
     // start + 3 followed hops = 4 calls; the would-be 4th redirect is never followed.
     expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  describe('timeout + size-cap + redirect hardening (adversarial cycle 1, fix B)', () => {
+    it('rejects with a typed SafeFetchTimeoutError when fetchImpl never resolves (B1)', async () => {
+      const fetchImpl = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+
+      await expect(
+        safeFetch('https://api.coingecko.com/slow', {}, ['api.coingecko.com'], fetchImpl, {
+          timeoutMs: 20,
+        }),
+      ).rejects.toBeInstanceOf(SafeFetchTimeoutError);
+    });
+
+    it('rejects with SafeFetchResponseTooLargeError when Content-Length exceeds the cap, before the body is ever read (B2)', async () => {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(null, {
+          status: 200,
+          headers: { 'content-length': String(20 * 1024 * 1024) },
+        }),
+      );
+
+      await expect(
+        safeFetch('https://api.coingecko.com/huge', {}, ['api.coingecko.com'], fetchImpl, {
+          maxResponseBytes: 10 * 1024 * 1024,
+        }),
+      ).rejects.toBeInstanceOf(SafeFetchResponseTooLargeError);
+    });
+
+    it('does not reject a response within the size cap', async () => {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-length': '2' },
+        }),
+      );
+
+      const response = await safeFetch(
+        'https://api.coingecko.com/small',
+        {},
+        ['api.coingecko.com'],
+        fetchImpl,
+        { maxResponseBytes: 10 * 1024 * 1024 },
+      );
+      expect(response.status).toBe(200);
+    });
+
+    it('rejects a redirect Location that resolves to a non-https target (B3)', async () => {
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(redirectResponse('http://api.coingecko.com/insecure'));
+
+      await expect(
+        safeFetch('https://api.coingecko.com/start', {}, ['api.coingecko.com'], fetchImpl),
+      ).rejects.toThrow(/https/i);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops Authorization/x-api-key-style headers when a redirect hop changes hostname, but keeps them on a same-host redirect (B3)', async () => {
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(redirectResponse('https://api.coingecko.com/same-host'))
+        .mockResolvedValueOnce(redirectResponse('https://other.example.com/final'))
+        .mockResolvedValueOnce(jsonResponse({ done: true }));
+
+      const response = await safeFetch(
+        'https://api.coingecko.com/start',
+        {
+          headers: {
+            Authorization: 'Bearer secret',
+            'x-cg-demo-api-key': 'demo-key',
+            'content-type': 'application/json',
+          },
+        },
+        ['api.coingecko.com', 'other.example.com'],
+        fetchImpl,
+      );
+
+      expect(response.status).toBe(200);
+      expect(fetchImpl).toHaveBeenCalledTimes(3);
+
+      // Same-host redirect (hop 2) — original headers untouched.
+      const sameHostHeaders = new Headers(fetchImpl.mock.calls[1]![1]?.headers);
+      expect(sameHostHeaders.get('authorization')).toBe('Bearer secret');
+      expect(sameHostHeaders.get('x-cg-demo-api-key')).toBe('demo-key');
+
+      // Cross-host redirect (hop 3) — sensitive headers stripped, others kept.
+      const crossHostHeaders = new Headers(fetchImpl.mock.calls[2]![1]?.headers);
+      expect(crossHostHeaders.has('authorization')).toBe(false);
+      expect(crossHostHeaders.has('x-cg-demo-api-key')).toBe(false);
+      expect(crossHostHeaders.get('content-type')).toBe('application/json');
+    });
   });
 });

@@ -90,4 +90,20 @@ describe('rpc-solana adapter (contract, R-16/R-17 backend, OQ-1)', () => {
       testAdapter.fetch('wallet.balances.native', { chain: 'solana', address: ADDRESS }),
     ).rejects.toThrow();
   });
+
+  describe('lamports validation (adversarial cycle 1, fix F)', () => {
+    it.each([
+      ['a fractional value', 1.5],
+      ['a negative value', -1],
+      ['a value past Number.MAX_SAFE_INTEGER', 1e21],
+    ])('normalize() rejects %s with a clean, documented error', (_label, badLamports) => {
+      expect(() =>
+        adapter.normalize('wallet.balances.native', {
+          chain: 'solana',
+          address: ADDRESS,
+          raw: { jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: badLamports } },
+        }),
+      ).toThrow(/invalid lamports value/);
+    });
+  });
 });

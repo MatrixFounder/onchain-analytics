@@ -14,7 +14,15 @@ export interface SqliteCacheStoreOptions {
   dbPath?: string;
   /** Adapter registrations to upsert into `providers` BEFORE any `cache_entries` write (bootstrap). */
   providers?: AdapterRegistration[];
+  /** How many `set()` calls between opportunistic expired-row sweeps (adversarial cycle 1, fix H).
+   * Defaults to `DEFAULT_SWEEP_EVERY_N_WRITES` (50); tests override this to a small number so the
+   * sweep path is reachable without looping 50 times. */
+  sweepEveryNWrites?: number;
 }
+
+/** Default sweep cadence (adversarial cycle 1, fix H) — see `sweepExpired()`'s own docstring for
+ * what this does and, just as importantly, does NOT do (no retention/size cap — that's M2). */
+const DEFAULT_SWEEP_EVERY_N_WRITES = 50;
 
 /**
  * `providers.kind` classification (DDL comment: "'free' | 'paid' — informational, reflects D4
@@ -41,8 +49,11 @@ interface CacheEntryRow {
  */
 export class SqliteCacheStore implements CacheStore {
   private readonly db: Database.Database;
+  private readonly sweepEveryNWrites: number;
+  private writeCount = 0;
 
   constructor(options: SqliteCacheStoreOptions = {}) {
+    this.sweepEveryNWrites = options.sweepEveryNWrites ?? DEFAULT_SWEEP_EVERY_N_WRITES;
     const dbPath = options.dbPath ?? cacheDbPath();
     if (dbPath !== ':memory:') {
       mkdirSync(dirname(dbPath), { recursive: true });
@@ -133,6 +144,27 @@ export class SqliteCacheStore implements CacheStore {
         createdAt: now,
         expiresAt,
       });
+
+    this.writeCount += 1;
+    if (this.writeCount % this.sweepEveryNWrites === 0) {
+      this.sweepExpired();
+    }
+  }
+
+  /**
+   * Opportunistic expired-row sweep (adversarial cycle 1, fix H) — deletes every `cache_entries`
+   * row whose `expires_at` is already in the past, via the existing `idx_cache_entries_expiry`
+   * index. Run every `sweepEveryNWrites`-th `set()` call, counter-based — no timers/background
+   * jobs (M1 stays single-process, no scheduler dependency for this).
+   *
+   * **NOT a retention/size cap** (documented M2 deferral, per this task's own scope): this only
+   * keeps rows that have EXPIRED from lingering indefinitely between reads (`get()` already
+   * deletes a stale row on read, but a `(provider, capability, argsHash)` key that's never read
+   * again — e.g. a one-off query whose args are never repeated — would otherwise sit in the table
+   * forever). A maximum row count / disk-size ceiling is a separate, not-yet-built concern.
+   */
+  private sweepExpired(): void {
+    this.db.prepare(`DELETE FROM cache_entries WHERE expires_at <= ?`).run(Date.now());
   }
 
   /** Closes the underlying connection — callers (tests, process shutdown) own the lifecycle. */

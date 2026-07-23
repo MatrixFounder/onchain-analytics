@@ -26,6 +26,25 @@ function defaultWait(ms: number): Promise<void> {
 }
 
 /**
+ * Thrown by `throttle()` when `config.refillPerSec <= 0` (adversarial cycle 1, fix C). A
+ * non-positive refill rate can never grant another token: the PREVIOUS code computed
+ * `waitMs = Number.POSITIVE_INFINITY` and awaited it — `setTimeout`'s own documented behavior
+ * clamps an out-of-range delay (anything `> 2147483647` or `< 1`) down to `1`, so that branch
+ * didn't actually hang forever, it silently resolved almost immediately, defeating the rate
+ * limit entirely without any signal that something was misconfigured. Neither "hang forever" nor
+ * "silently skip throttling" is acceptable — a non-positive `refillPerSec` is a misconfigured
+ * `providers.config.ts` entry, and this now fails loudly and immediately instead.
+ */
+export class RateLimitRejectedError extends Error {
+  constructor(public readonly providerId: string) {
+    super(
+      `throttle: refillPerSec must be > 0 for provider "${providerId}" (misconfigured rate limit)`,
+    );
+    this.name = 'RateLimitRejectedError';
+  }
+}
+
+/**
  * Builds a `throttle(providerId, config)` function with its own isolated per-`providerId` bucket
  * state (a factory, not a shared module singleton — mirrors the `CapabilityRegistry`/`CacheStore`
  * "factory, not singleton" principle, ARCHITECTURE.md §8). Tests call this directly with an
@@ -35,9 +54,29 @@ function defaultWait(ms: number): Promise<void> {
  *
  * Token-bucket algorithm: each `providerId` gets its own bucket, starting full (`capacity`
  * tokens). On every call, the bucket is refilled by `elapsedSeconds * refillPerSec` (capped at
- * `capacity`) based on time elapsed since its last check. If at least one token is available, one
- * is consumed and the call proceeds immediately; otherwise the call waits exactly as long as
- * needed for one token to become available (`deficit / refillPerSec` seconds) before proceeding.
+ * `capacity`) based on time elapsed since its last check, then one token is unconditionally
+ * consumed. If the resulting balance is still `>= 0`, the call proceeds immediately; otherwise it
+ * waits exactly as long as needed for that deficit to refill (`-tokens / refillPerSec` seconds).
+ *
+ * **Concurrency-safety (adversarial cycle 1, fix C — findings merged).** The refill + consume +
+ * decide-whether-to-wait step above is entirely SYNCHRONOUS — there is no `await` anywhere before
+ * it fully commits the bucket's new state. This is what makes N concurrent same-`providerId`
+ * callers (e.g. `await Promise.all([throttle(id, cfg), throttle(id, cfg), throttle(id, cfg)])`)
+ * space out into distinct, cascading wait durations instead of racing on stale state: JS's
+ * single-threaded execution model guarantees a batch of concurrent calls run their synchronous
+ * prefixes back-to-back, in order, with no interleaving — the Nth call's math always sees the
+ * (N-1)th call's fully-committed bucket, never a half-updated one.
+ *
+ * The PREVIOUS implementation broke exactly this guarantee: on the "must wait" path, it computed
+ * `waitMs` from the CURRENT `tokens` value but deferred the actual state commit
+ * (`bucket.tokens = 0; bucket.lastRefillMs = now()`) until AFTER `await wait(waitMs)` resolved.
+ * Two callers arriving back-to-back while the first was still waiting would both read the SAME
+ * pre-wait `tokens` value and compute the IDENTICAL `waitMs` — never spacing out. The fix: `tokens`
+ * is allowed to go NEGATIVE and is committed synchronously, immediately, on every call (never
+ * reset back to `0` after a real wait resolves) — each subsequent caller's synchronous math then
+ * immediately accounts for every still-outstanding reservation ahead of it, so wait durations
+ * correctly accumulate (e.g. 0ms, 500ms, 1000ms, ... for successive callers against a
+ * 1-capacity/2-per-second bucket) with no explicit queue/mutex object needed.
  */
 export function createThrottle(deps: ThrottleDeps = {}): Throttle {
   const now = deps.now ?? Date.now;
@@ -45,6 +84,10 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
   const buckets = new Map<string, BucketState>();
 
   return async function throttle(providerId: string, config: TokenBucketConfig): Promise<void> {
+    if (config.refillPerSec <= 0) {
+      throw new RateLimitRejectedError(providerId);
+    }
+
     const nowMs = now();
     let bucket = buckets.get(providerId);
 
@@ -57,17 +100,16 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       bucket.lastRefillMs = nowMs;
     }
 
-    if (bucket.tokens >= 1) {
-      bucket.tokens -= 1;
+    bucket.tokens -= 1;
+    if (bucket.tokens >= 0) {
       return;
     }
 
-    const deficit = 1 - bucket.tokens;
-    const waitMs =
-      config.refillPerSec > 0 ? (deficit / config.refillPerSec) * 1000 : Number.POSITIVE_INFINITY;
+    // Deliberately NOT reset to 0 here (see docstring above) — the negative backlog left in
+    // `bucket.tokens` is exactly what the NEXT call's synchronous refill computation reads, which
+    // is what makes concurrent callers space out instead of racing on stale state.
+    const waitMs = (-bucket.tokens / config.refillPerSec) * 1000;
     await wait(waitMs);
-    bucket.tokens = 0;
-    bucket.lastRefillMs = now();
   };
 }
 

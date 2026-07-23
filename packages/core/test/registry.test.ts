@@ -328,4 +328,52 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
 
     expect(resolution.source).toBe('dexscreener');
   });
+
+  describe('cache-fault resilience (adversarial cycle 1, findings A1/A2)', () => {
+    class ThrowingCacheStore implements CacheStore {
+      constructor(
+        private readonly failGet: boolean,
+        private readonly failSet: boolean,
+      ) {}
+
+      async get(): Promise<CacheGetResult | undefined> {
+        if (this.failGet) throw new Error('cache backend unreachable (get)');
+        return undefined;
+      }
+
+      async set(): Promise<void> {
+        if (this.failSet) throw new Error('cache backend unreachable (set)');
+      }
+    }
+
+    it('a cache.set() failure never converts a successful fetch into CapabilityUnavailableError — the result is still returned as a miss (A1)', async () => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const adapter = makeAdapter({ id: 'coingecko', normalizeImpl: () => ({ priceUsd: 42 }) });
+      const routes: CapabilityRoute[] = [{ capability: 'token.price', adapterIds: ['coingecko'] }];
+      const cache = new ThrowingCacheStore(false, true);
+      const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]), cache);
+
+      const resolution = await registry.resolve('token.price', CHAIN, { address: '0xabc' });
+
+      expect(resolution).toEqual({ result: { priceUsd: 42 }, source: 'coingecko', cache: 'miss' });
+      expect(adapter.fetch).toHaveBeenCalledTimes(1);
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('cache.set failed'));
+      stderrSpy.mockRestore();
+    });
+
+    it('a cache.get() failure is treated as a miss (logged, not fatal) and resolve() still fetches and returns (A2)', async () => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const adapter = makeAdapter({ id: 'coingecko', normalizeImpl: () => ({ priceUsd: 7 }) });
+      const routes: CapabilityRoute[] = [{ capability: 'token.price', adapterIds: ['coingecko'] }];
+      const cache = new ThrowingCacheStore(true, false);
+      const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]), cache);
+
+      const resolution = await registry.resolve('token.price', CHAIN, { address: '0xabc' });
+
+      expect(resolution).toEqual({ result: { priceUsd: 7 }, source: 'coingecko', cache: 'miss' });
+      expect(adapter.fetch).toHaveBeenCalledTimes(1);
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('cache.get failed'));
+      stderrSpy.mockRestore();
+    });
+  });
 });
