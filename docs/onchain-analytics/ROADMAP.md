@@ -1,6 +1,6 @@
 # ROADMAP — `onchain-intel` (движок) + `onchain-analytics` (скилл)
 
-- **Дата:** 2026-06-30 · **Обновлён:** 2026-07-22 (**M0 выполнен**; ранее 2026-07-20 — снапшоттер Dash Platform + privacy-метрики, пометки *(2026-07-20)*) · **Статус:** Active (M0 ✅ → M1)
+- **Дата:** 2026-06-30 · **Обновлён:** 2026-07-23 (**M1 выполнен**; ранее — **M0 выполнен** 2026-07-22; ранее 2026-07-20 — снапшоттер Dash Platform + privacy-метрики, пометки *(2026-07-20)*) · **Статус:** Active (M0 ✅ → M1)
 - **Связанные:** [REPORT.md](REPORT.md) · [ADR-001-tech-stack.md](ADR-001-tech-stack.md) · [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md) · [research-digest.md](research-digest.md)
 - **Стек (из ADR-001):** TypeScript / Node 22 · `@modelcontextprotocol/sdk` · SQLite · zod · pnpm-monorepo · Apache-2.0.
 
@@ -23,7 +23,7 @@
 | Фаза | Цель | ≈Усилия | Платные ключи | Главный выход |
 |---|---|---|---|---|
 | **M0** Discovery & каркас ✅ *(2026-07-22)* | решить и заскелетить | 1 нед | нет | репо + MCP «hello» + CI |
-| **M1** MVP read-слой (free) | ончейн-ответы без затрат | 1–2 нед | нет | 4 data-tools на free-провайдерах |
+| **M1** MVP read-слой (free) ✅ *(2026-07-23)* | ончейн-ответы без затрат | 1–2 нед | нет | 4 data-tools на free-провайдерах |
 | **M2** Alpha-слой (paid) | «куда идут умные деньги» | 1–2 нед | Nansen $49 | smart-money + метки + budget-guard |
 | **M3** Signal/Alert-движок | проактивные алерты | 2 нед | (как M2) | watchlists + правила + Telegram |
 | **M4** Скилл в Universal-skills | агент-агностичный фронт | 1 нед | нет | `onchain-analytics` + evals + плагин |
@@ -72,7 +72,23 @@
 
 ---
 
-## M1 — MVP read-слой, только free (≈1–2 нед)
+## M1 — MVP read-слой, только free (≈1–2 нед) — ✅ ВЫПОЛНЕН 2026-07-23
+
+> ***(2026-07-23) Итог:*** все exit-критерии закрыты. Все 4 tools ответили **живыми вызовами из
+> Claude Code** на ethereum+solana (USDC price, SOL balance, Uniswap TVL, Solana pairs); cache-hit
+> виден в `_meta.cache` (miss→hit доказан e2e на реальном TwoLevelStore) и stderr-метриках; $0
+> потрачено (все адаптеры keyless/free, ключи опциональны); golden-тесты зелёные — сюита 21 → **277
+> тестов**; CI зелёный на GitHub (вкл. clean-checkout гейт и dist-smoke). Пакет `@onchain-intel/core`:
+> канонические типы (D5), Registry (D4, hot-swap доказан: dash-platform⇄platform-explorer), 9
+> адаптеров (6 live; dash-platform stub — живой gRPC отложен; dune config-stub → M2; pg-history
+> опционально читает Supabase), двухуровневый кеш (D6, SQLite/`DATA_DIR`), SSRF-гейт, rate-limit.
+> Отклонения от исходного плана (все задокументированы): wallet_balances = keyless RPC
+> (publicnode/drpc/solana mainnet), а не Dune; поглощение снапшоттера отложено до M3 (решение
+> владельца 2026-07-22 — n8n пишет, движок читает). Адверсариальная ревизия: 3 цикла, 23 находки
+> исправлено (вкл. TTL цены get_token); неверифицированный хвост цикла 3 — в
+> [BACKLOG](../BACKLOG.md). Коммиты `0519674..8a602cc`; архивы
+> [task-003](../tasks/task-003-m1-read-layer.md)* / [plan-003](../plans/plan-003-m1-read-layer.md)*
+> (*ротируются при старте следующей задачи).
 
 **Цель:** агент отвечает на ончейн-вопросы **без платных ключей**.
 
@@ -191,9 +207,9 @@ graph LR
 
 ## Now / Next / Later
 
-- **Done:** снапшоттер Dash Platform (pre-M0, n8n+Supabase) ✅ · ADR-001 Accepted (2026-07-20) ✅ · **M0 каркас ✅ (2026-07-22)**.
-- **Now:** **M1** — free read-слой (канонические типы, Adapter/Capability Registry, free-адаптеры, кеш, 4 MCP-tools). ⚠️ Перед первой DB-задачей M1 — уточнить у владельца профиль хранилища: Supabase Postgres day-1 (deploy-profile) vs SQLite/`DATA_DIR` (D7).
-- **Next:** M2 (Nansen) → M3 (алерты, вкл. privacy-правила) → M4 (скилл-релиз).
+- **Done:** снапшоттер Dash Platform (pre-M0, n8n+Supabase) ✅ · ADR-001 Accepted (2026-07-20) ✅ · **M0 каркас ✅ (2026-07-22)** · **M1 read-слой ✅ (2026-07-23)** (DB-вопрос закрыт решением владельца: кеш = SQLite/`DATA_DIR`, история = n8n→Supabase, движок читает опционально).
+- **Now:** **M2** — Alpha-слой (Nansen Pro $49, smart-money flows, budget-guard D6) + триаж бэклога (dune live query, TTL/cache-полировка из адверсариального хвоста M1).
+- **Next:** M3 (алерты, вкл. privacy-правила; поглощение n8n-снапшоттера) → M4 (скилл-релиз).
 - **Later (по спросу):** M5 (исполнение за approval-gate), M6 (масштаб/стриминг/обсервабилити).
 
 ## Сквозные риски (контроль на каждой фазе)
