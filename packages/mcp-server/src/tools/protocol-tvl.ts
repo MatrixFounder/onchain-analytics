@@ -55,7 +55,17 @@ export type ProtocolTvlOutcome =
 /** Pure handler — `defillama.normalize()` already returns this exact shape 1:1 (task 003-4), so
  * this handler's only job beyond `resolveCapability` is the defensive zod re-parse (the tool layer
  * re-asserts its own advertised contract rather than trusting the adapter's plain-interface shape
- * blindly). */
+ * blindly).
+ *
+ * **`safeParse`, never `parse` (adversarial cycle 2, finding 1a):** this handler's own documented
+ * return type is the discriminated union `{ok:true,...} | {ok:false, reason}` — a `.parse()` call
+ * that THROWS on a provider returning contract-violating data breaks that very contract (the
+ * installed MCP SDK, 1.29, does catch the throw and still produces an `isError: true` response at
+ * the wire level, so nothing crashes end-to-end, but `protocolTvlHandler` itself — unit-testable
+ * without a transport — would incorrectly reject/throw instead of resolving to `{ok:false,
+ * reason}` like every other failure path here). `safeParse` failure returns a reason string built
+ * from the FIRST zod issue only (path + message) — never a raw, multi-issue zod-error dump, which
+ * could be arbitrarily long and unhelpfully technical for an MCP client to render. */
 export async function protocolTvlHandler(
   input: ProtocolTvlInput,
   ctx: ProtocolTvlContext,
@@ -65,7 +75,18 @@ export async function protocolTvlHandler(
     protocolSlug: input.protocolSlug,
   });
   if (!outcome.ok) return outcome;
-  return { ok: true, output: ProtocolTvlOutputSchema.parse(outcome.output), cache: outcome.cache };
+
+  const parsed = ProtocolTvlOutputSchema.safeParse(outcome.output);
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+    const path = firstIssue && firstIssue.path.length > 0 ? firstIssue.path.join('.') : '(root)';
+    const message = firstIssue?.message ?? 'invalid output shape';
+    return {
+      ok: false,
+      reason: `provider returned data violating the tool contract: ${path}: ${message}`,
+    };
+  }
+  return { ok: true, output: parsed.data, cache: outcome.cache };
 }
 
 /** Registers `onchain_protocol_tvl` — exactly this name (R-19). See `get-token.ts`'s

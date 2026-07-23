@@ -88,4 +88,33 @@ describe('protocolTvlHandler', () => {
     if (outcome.ok) throw new Error('expected ok:false');
     expect(outcome.reason).toContain('protocol.tvl');
   });
+
+  it('returns {ok:false, reason} (never throws) when the adapter returns data violating the output contract (adversarial cycle 2, finding 1a)', async () => {
+    function fakeAdapterWithNegativeTvl(): ProviderAdapter {
+      return {
+        id: 'defillama',
+        capabilities: () => [{ id: 'protocol.tvl', chains: ['ethereum', 'solana'] }],
+        costOf: () => ({ credits: 0 }),
+        fetch: async () => ({}),
+        normalize: () => ({ ...FAKE_TVL, tvlUsd: -1 }),
+        isAvailable: () => ({ ok: true }),
+      };
+    }
+    const registry = new CapabilityRegistry(
+      ROUTES,
+      new Map([['defillama', fakeAdapterWithNegativeTvl()]]),
+    );
+
+    const outcome = await protocolTvlHandler(
+      { chain: 'ethereum', protocolSlug: 'uniswap' },
+      { registry },
+    );
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) throw new Error('expected ok:false');
+    expect(outcome.reason).toContain('provider returned data violating the tool contract');
+    expect(outcome.reason).toContain('tvlUsd');
+    // Never a raw, multi-issue zod-error dump.
+    expect(outcome.reason).not.toContain('ZodError');
+  });
 });

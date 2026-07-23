@@ -52,6 +52,19 @@ export class SqliteCacheStore implements CacheStore {
   private readonly sweepEveryNWrites: number;
   private writeCount = 0;
 
+  // Adversarial cycle 2, fix 5 — each of these four statements is `prepare()`d exactly ONCE, here
+  // in the constructor, and reused (via `.get()`/`.run()`) on every subsequent call — `get()`/
+  // `set()` used to call `this.db.prepare(...)` fresh on every single invocation, re-parsing and
+  // re-planning the identical SQL text every time. `better-sqlite3`'s `Statement` objects are safe
+  // to reuse across calls with different bound parameters (that's their whole purpose). The
+  // one-time `providers` bootstrap upsert (below, `bootstrapProviders`) already only ever prepares
+  // its own statement once per instance (it's already called at most once, from the constructor),
+  // so it's left as a local `prepare()` there rather than a fifth long-lived field.
+  private readonly selectStmt: Database.Statement;
+  private readonly deleteStaleStmt: Database.Statement;
+  private readonly upsertStmt: Database.Statement;
+  private readonly sweepStmt: Database.Statement;
+
   constructor(options: SqliteCacheStoreOptions = {}) {
     this.sweepEveryNWrites = options.sweepEveryNWrites ?? DEFAULT_SWEEP_EVERY_N_WRITES;
     const dbPath = options.dbPath ?? cacheDbPath();
@@ -73,6 +86,23 @@ export class SqliteCacheStore implements CacheStore {
     if (options.providers) {
       this.bootstrapProviders(options.providers);
     }
+
+    this.selectStmt = this.db.prepare(
+      `SELECT value_json, created_at, expires_at FROM cache_entries
+       WHERE provider = ? AND capability = ? AND args_hash = ?`,
+    );
+    this.deleteStaleStmt = this.db.prepare(
+      `DELETE FROM cache_entries WHERE provider = ? AND capability = ? AND args_hash = ?`,
+    );
+    this.upsertStmt = this.db.prepare(
+      `INSERT INTO cache_entries (id, provider, capability, args_hash, value_json, created_at, expires_at)
+       VALUES (@id, @provider, @capability, @argsHash, @valueJson, @createdAt, @expiresAt)
+       ON CONFLICT (provider, capability, args_hash) DO UPDATE SET
+         value_json = excluded.value_json,
+         created_at = excluded.created_at,
+         expires_at = excluded.expires_at`,
+    );
+    this.sweepStmt = this.db.prepare(`DELETE FROM cache_entries WHERE expires_at <= ?`);
   }
 
   /**
@@ -99,12 +129,7 @@ export class SqliteCacheStore implements CacheStore {
     capability: string,
     argsHash: string,
   ): Promise<CacheGetResult | undefined> {
-    const row = this.db
-      .prepare(
-        `SELECT value_json, created_at, expires_at FROM cache_entries
-         WHERE provider = ? AND capability = ? AND args_hash = ?`,
-      )
-      .get(provider, capability, argsHash) as CacheEntryRow | undefined;
+    const row = this.selectStmt.get(provider, capability, argsHash) as CacheEntryRow | undefined;
 
     if (!row) return undefined;
 
@@ -112,11 +137,7 @@ export class SqliteCacheStore implements CacheStore {
     if (row.expires_at <= now) {
       // Stale — delete so a lingering expired row never shadows a subsequent write, and report a
       // miss (ARCHITECTURE.md §3.2 — expiry checked on read).
-      this.db
-        .prepare(
-          `DELETE FROM cache_entries WHERE provider = ? AND capability = ? AND args_hash = ?`,
-        )
-        .run(provider, capability, argsHash);
+      this.deleteStaleStmt.run(provider, capability, argsHash);
       return undefined;
     }
 
@@ -126,24 +147,15 @@ export class SqliteCacheStore implements CacheStore {
   async set(provider: string, capability: string, argsHash: string, value: unknown): Promise<void> {
     const now = Date.now();
     const expiresAt = now + ttlFor(capability) * 1000;
-    this.db
-      .prepare(
-        `INSERT INTO cache_entries (id, provider, capability, args_hash, value_json, created_at, expires_at)
-         VALUES (@id, @provider, @capability, @argsHash, @valueJson, @createdAt, @expiresAt)
-         ON CONFLICT (provider, capability, args_hash) DO UPDATE SET
-           value_json = excluded.value_json,
-           created_at = excluded.created_at,
-           expires_at = excluded.expires_at`,
-      )
-      .run({
-        id: ulid(),
-        provider,
-        capability,
-        argsHash,
-        valueJson: JSON.stringify(value),
-        createdAt: now,
-        expiresAt,
-      });
+    this.upsertStmt.run({
+      id: ulid(),
+      provider,
+      capability,
+      argsHash,
+      valueJson: JSON.stringify(value),
+      createdAt: now,
+      expiresAt,
+    });
 
     this.writeCount += 1;
     if (this.writeCount % this.sweepEveryNWrites === 0) {
@@ -164,7 +176,7 @@ export class SqliteCacheStore implements CacheStore {
    * forever). A maximum row count / disk-size ceiling is a separate, not-yet-built concern.
    */
   private sweepExpired(): void {
-    this.db.prepare(`DELETE FROM cache_entries WHERE expires_at <= ?`).run(Date.now());
+    this.sweepStmt.run(Date.now());
   }
 
   /** Closes the underlying connection — callers (tests, process shutdown) own the lifecycle. */

@@ -21,7 +21,10 @@ export interface CreateCacheStoreOptions {
  * `better-sqlite3` (persistent, `DATA_DIR`) — `get()` walks hot → cold → miss; `set()` writes both
  * levels. A cold (persistent) hit is promoted into the hot layer with its REMAINING ttl (not a
  * fresh full ttl), so the promoted entry doesn't outlive what the persistent layer itself would
- * still consider fresh.
+ * still consider fresh — and (adversarial cycle 2, fix 2) with its `createdAt` back-dated to the
+ * value's ORIGINAL write time (`Date.now() - coldHit.ageMs`), so a hot hit served from a promoted
+ * entry reports an `ageMs` anchored to when the value was actually fetched, never reset to ~0 at
+ * promotion time.
  *
  * Hit/miss stats + the mandatory stderr line (R-15, ARCHITECTURE.md §3.2) are recorded HERE, not by
  * an edit to `CapabilityRegistry.resolve()` (implementation choice — see `stats.ts`'s docstring for
@@ -50,7 +53,18 @@ export class TwoLevelStore implements CacheStore {
     const coldHit = await this.persistent.get(provider, capability, argsHash);
     if (coldHit) {
       const remainingMs = ttlFor(capability) * 1000 - coldHit.ageMs;
-      this.hot.set(provider, capability, argsHash, coldHit.value, remainingMs);
+      // Adversarial cycle 2, fix 2: back-date the promoted hot entry's own `createdAt` to the
+      // value's ORIGINAL persistent-layer write time (`Date.now() - coldHit.ageMs`), not the
+      // promotion moment — otherwise every subsequent hot hit's `ageMs` resets to ~0 and
+      // under-reports how old the underlying value actually is (`_meta.cache.ageMs`).
+      this.hot.set(
+        provider,
+        capability,
+        argsHash,
+        coldHit.value,
+        remainingMs,
+        Date.now() - coldHit.ageMs,
+      );
       recordCacheAccess(provider, capability, 'hit', coldHit.ageMs);
       return coldHit;
     }

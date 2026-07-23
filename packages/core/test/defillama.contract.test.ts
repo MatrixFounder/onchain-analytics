@@ -92,4 +92,24 @@ describe('defillama adapter (contract, R-7)', () => {
     expect(calls).toEqual(['https://api.llama.fi/protocol/uniswap']);
     expect(result).toEqual({ chain: 'ethereum', raw: fixture.raw });
   });
+
+  describe('tvl value validation (adversarial cycle 2, finding 1b)', () => {
+    it('throws a clear error when the chain-scoped series’ last point is negative', () => {
+      const fixture = loadFixture('uniswap');
+      const corrupted = structuredClone(fixture);
+      const series = corrupted.raw.chainTvls['Ethereum']!.tvl;
+      series[series.length - 1]!.totalLiquidityUSD = -1;
+
+      expect(() => adapter.normalize('protocol.tvl', corrupted)).toThrow(/invalid tvl value\(s\)/);
+    });
+
+    it('throws a clear error when the top-level series’ last point is negative', () => {
+      const fixture = loadFixture('uniswap');
+      const corrupted = structuredClone(fixture);
+      const series = corrupted.raw.tvl;
+      series[series.length - 1]!.totalLiquidityUSD = -1;
+
+      expect(() => adapter.normalize('protocol.tvl', corrupted)).toThrow(/invalid tvl value\(s\)/);
+    });
+  });
 });

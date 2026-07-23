@@ -14,14 +14,24 @@ import { resolveCapability, type CacheMeta } from './resolve-capability.js';
  * `WalletBalancesInputSchema` sample from ARCHITECTURE.md §5.1 (task 003-7 reviewer note, Major-2):
  * `chain` narrowed to just the two supported networks below, not the full `ChainSchema` — see
  * `get-token.ts`'s own docstring for why `'dash'` would be a misleading, always-failing value here.
+ * `address` is bounded with `.max(MAX_ADDRESS_LENGTH)` (adversarial cycle 2, finding 3) — see
+ * `get-token.ts`'s own docstring for the exact rationale, including why the same length is ALSO
+ * checked at the top of `superRefine` itself (zod still runs it even after `.max()` already
+ * flagged an issue — this guard is what actually guarantees the expensive
+ * `isValidAddress`/`bs58.decode` work is skipped for an over-length address).
  */
+const MAX_ADDRESS_LENGTH = 64;
+
 export const WalletBalancesInputSchema = z
   .object({
     chain: z.enum(['ethereum', 'solana']),
-    address: z.string().min(1),
+    address: z.string().min(1).max(MAX_ADDRESS_LENGTH),
   })
   .strict()
   .superRefine((val, ctx) => {
+    if (val.address.length > MAX_ADDRESS_LENGTH) {
+      return;
+    }
     if (!isValidAddress(val.chain, val.address)) {
       ctx.addIssue({
         code: 'custom',

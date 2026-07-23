@@ -70,6 +70,16 @@ describe('WalletBalancesInputSchema', () => {
       WalletBalancesInputSchema.parse({ chain: 'ethereum', address: ETH_ADDRESS, unexpected: 'x' }),
     ).toThrow();
   });
+
+  it('rejects a pathologically long address FAST (adversarial cycle 2, finding 3 — no bs58 quadratic work)', () => {
+    const hugeAddress = 'x'.repeat(100_000);
+    const start = performance.now();
+    const result = WalletBalancesInputSchema.safeParse({ chain: 'solana', address: hugeAddress });
+    const elapsedMs = performance.now() - start;
+
+    expect(result.success).toBe(false);
+    expect(elapsedMs).toBeLessThan(100);
+  });
 });
 
 describe('walletBalancesHandler', () => {

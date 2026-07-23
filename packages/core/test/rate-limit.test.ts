@@ -145,5 +145,23 @@ describe('throttle (token-bucket) [Phase 2, injectable clock — no real timers]
         throttle('broken-provider', { capacity: 1, refillPerSec: -1 }),
       ).rejects.toBeInstanceOf(RateLimitRejectedError);
     });
+
+    it('rejects with a typed RateLimitRejectedError (naming the provider + saturation) when the computed wait would exceed the 30s fairness cap (adversarial cycle 2, fix 7)', async () => {
+      const clock = fakeClock();
+      const throttle = createThrottle(clock);
+      // Far too slow a refill rate: 1 token per 1000 real seconds — any 2nd call within the same
+      // instant computes a multi-hundred-thousand-ms wait, well past the 30s cap.
+      const config = { capacity: 1, refillPerSec: 0.001 };
+
+      await throttle('saturated-provider', config); // consumes the only token immediately
+
+      await expect(throttle('saturated-provider', config)).rejects.toBeInstanceOf(
+        RateLimitRejectedError,
+      );
+      await expect(throttle('saturated-provider', config)).rejects.toThrow(/saturated-provider/);
+      await expect(throttle('saturated-provider', config)).rejects.toThrow(/saturat/i);
+      // Never actually waits — rejected fast instead of blocking for hundreds of thousands of ms.
+      expect(clock.wait).not.toHaveBeenCalled();
+    });
   });
 });

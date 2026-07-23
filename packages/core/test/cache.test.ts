@@ -292,6 +292,31 @@ describe('TwoLevelStore (R-13: composition — hot -> cold -> miss, set() writes
     expect(second?.value).toEqual({ priceUsd: 2 });
     expect(fake.calls.filter((c) => c.method === 'get')).toHaveLength(1); // still 1 -> hot this time
   });
+
+  it('promotes a cold hit with its createdAt anchored to the ORIGINAL write time, not the promotion moment (adversarial cycle 2, fix 2)', async () => {
+    const KNOWN_COLD_AGE_MS = 5_000;
+    class FixedAgeCacheStore implements CacheStore {
+      async get(): Promise<CacheGetResult | undefined> {
+        // Simulates a persistent-layer entry that was already 5s old at the moment it's read —
+        // e.g. written by a previous process, or simply not the very first read since it was set.
+        return { value: { priceUsd: 3 }, ageMs: KNOWN_COLD_AGE_MS };
+      }
+      async set(): Promise<void> {
+        // Not exercised by this test.
+      }
+    }
+    const store = new TwoLevelStore(new FixedAgeCacheStore());
+
+    const first = await store.get('coingecko', 'token.price', 'h'); // cold hit -> promotes into hot
+    expect(first?.ageMs).toBe(KNOWN_COLD_AGE_MS);
+
+    const second = await store.get('coingecko', 'token.price', 'h'); // served from hot now
+    expect(second).toBeDefined();
+    // Anchored to the value's ORIGINAL write time (5s ago) — never reset to ~0 at promotion. The
+    // previous (buggy) behavior would report an ageMs close to 0 here (time since promotion only),
+    // under-reporting how old the value actually is.
+    expect(second!.ageMs).toBeGreaterThanOrEqual(KNOWN_COLD_AGE_MS);
+  });
 });
 
 describe('createCacheStore factory', () => {

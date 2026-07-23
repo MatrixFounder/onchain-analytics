@@ -65,6 +65,18 @@ describe('GetTokenInputSchema', () => {
       GetTokenInputSchema.parse({ chain: 'ethereum', address: ETH_ADDRESS, unexpected: 'x' }),
     ).toThrow();
   });
+
+  it('rejects a pathologically long address FAST (adversarial cycle 2, finding 3 — no bs58 quadratic work)', () => {
+    const hugeAddress = 'x'.repeat(100_000);
+    const start = performance.now();
+    const result = GetTokenInputSchema.safeParse({ chain: 'solana', address: hugeAddress });
+    const elapsedMs = performance.now() - start;
+
+    expect(result.success).toBe(false);
+    // A bounded, cheap length-check rejection completes near-instantly — a naive bs58.decode() on
+    // a 100k-character string (if reached at all) would be dramatically slower (quadratic-ish).
+    expect(elapsedMs).toBeLessThan(100);
+  });
 });
 
 describe('getTokenHandler', () => {

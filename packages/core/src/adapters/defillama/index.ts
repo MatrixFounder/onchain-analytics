@@ -122,6 +122,21 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
       if (tvlUsd === undefined || totalTvlUsd === undefined || typeof body.name !== 'string') {
         throw new Error(`defillama.normalize: missing tvl series for chain ${chain}`);
       }
+      // Adversarial cycle 2, finding 1b: a bad vendor value (negative, NaN, +/-Infinity) must
+      // never be cached as a "successful" ProtocolTvlResult — `onchain_protocol_tvl`'s own output
+      // schema already rejects a negative tvlUsd/totalTvlUsd (`.nonnegative()`), but by then it
+      // would already have been written to the cache as this adapter's "normalized" result. Loudly
+      // reject it HERE instead, before it's ever cached.
+      if (
+        !Number.isFinite(tvlUsd) ||
+        tvlUsd < 0 ||
+        !Number.isFinite(totalTvlUsd) ||
+        totalTvlUsd < 0
+      ) {
+        throw new Error(
+          `defillama.normalize: invalid tvl value(s) for chain ${chain} (tvlUsd=${tvlUsd}, totalTvlUsd=${totalTvlUsd})`,
+        );
+      }
 
       return {
         protocol: body.name,

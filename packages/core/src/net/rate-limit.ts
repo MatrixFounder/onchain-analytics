@@ -25,21 +25,37 @@ function defaultWait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Adversarial cycle 2, fix 7 — the maximum `waitMs` `throttle()` will ever actually await before
+ * rejecting instead. See `RateLimitRejectedError`'s "saturation" branch below for the full
+ * rationale: a caller stuck behind a severely backed-up bucket should get a clear, fast, typed
+ * rejection rather than silently blocking a request handler for up to (or beyond) 30 seconds. */
+const MAX_WAIT_MS = 30_000;
+
 /**
- * Thrown by `throttle()` when `config.refillPerSec <= 0` (adversarial cycle 1, fix C). A
- * non-positive refill rate can never grant another token: the PREVIOUS code computed
- * `waitMs = Number.POSITIVE_INFINITY` and awaited it — `setTimeout`'s own documented behavior
- * clamps an out-of-range delay (anything `> 2147483647` or `< 1`) down to `1`, so that branch
- * didn't actually hang forever, it silently resolved almost immediately, defeating the rate
- * limit entirely without any signal that something was misconfigured. Neither "hang forever" nor
- * "silently skip throttling" is acceptable — a non-positive `refillPerSec` is a misconfigured
- * `providers.config.ts` entry, and this now fails loudly and immediately instead.
+ * Thrown by `throttle()` for either of two DISTINCT reasons — both are misconfiguration/overload
+ * conditions this module refuses to silently paper over:
+ *
+ * 1. **Misconfigured rate limit** (adversarial cycle 1, fix C): `config.refillPerSec <= 0`. A
+ *    non-positive refill rate can never grant another token — the PREVIOUS code computed
+ *    `waitMs = Number.POSITIVE_INFINITY` and awaited it, but `setTimeout`'s own documented
+ *    behavior clamps an out-of-range delay (anything `> 2147483647` or `< 1`) down to `1`, so that
+ *    branch didn't actually hang forever, it silently resolved almost immediately, defeating the
+ *    rate limit entirely without any signal that something was misconfigured.
+ * 2. **Saturated bucket** (adversarial cycle 2, fix 7): the computed `waitMs` for THIS call
+ *    exceeds `MAX_WAIT_MS` (30s) — e.g. a burst of concurrent callers has queued up a backlog
+ *    deep enough that this caller's own slot is more than 30s out. Blocking a request handler for
+ *    that long is worse than failing fast with a clear, typed, "this provider's rate limit is
+ *    saturated" signal the caller's own fallback logic (or the MCP tool's `{ok:false, reason}`
+ *    contract) can act on. The reserved token is refunded (`bucket.tokens += 1`) before this
+ *    throw, so a rejected call — which will never actually consume its slot — doesn't permanently
+ *    worsen the backlog for subsequent, legitimate callers.
  */
 export class RateLimitRejectedError extends Error {
-  constructor(public readonly providerId: string) {
-    super(
-      `throttle: refillPerSec must be > 0 for provider "${providerId}" (misconfigured rate limit)`,
-    );
+  constructor(
+    public readonly providerId: string,
+    reason: string,
+  ) {
+    super(`throttle: rejected for provider "${providerId}": ${reason}`);
     this.name = 'RateLimitRejectedError';
   }
 }
@@ -85,7 +101,10 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
 
   return async function throttle(providerId: string, config: TokenBucketConfig): Promise<void> {
     if (config.refillPerSec <= 0) {
-      throw new RateLimitRejectedError(providerId);
+      throw new RateLimitRejectedError(
+        providerId,
+        'refillPerSec must be > 0 (misconfigured rate limit)',
+      );
     }
 
     const nowMs = now();
@@ -109,6 +128,15 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
     // `bucket.tokens` is exactly what the NEXT call's synchronous refill computation reads, which
     // is what makes concurrent callers space out instead of racing on stale state.
     const waitMs = (-bucket.tokens / config.refillPerSec) * 1000;
+    if (waitMs > MAX_WAIT_MS) {
+      // Refund the reservation — this call will never actually wait/consume its slot, so it must
+      // not permanently worsen the backlog for whoever calls next (adversarial cycle 2, fix 7).
+      bucket.tokens += 1;
+      throw new RateLimitRejectedError(
+        providerId,
+        `computed wait ${Math.round(waitMs)}ms exceeds the ${MAX_WAIT_MS}ms fairness cap (saturated bucket)`,
+      );
+    }
     await wait(waitMs);
   };
 }

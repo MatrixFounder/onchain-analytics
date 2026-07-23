@@ -189,6 +189,15 @@ describe('safeFetch [Phase 2, no real network — fetchImpl injected]', () => {
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     });
 
+    it('rejects a non-https INITIAL url before any network attempt (adversarial cycle 2, fix 4 — mirrors the redirect-hop check)', async () => {
+      const fetchImpl = vi.fn<typeof fetch>();
+
+      await expect(
+        safeFetch('http://api.coingecko.com/start', {}, ['api.coingecko.com'], fetchImpl),
+      ).rejects.toThrow(/https/i);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
     it('drops Authorization/x-api-key-style headers when a redirect hop changes hostname, but keeps them on a same-host redirect (B3)', async () => {
       const fetchImpl = vi
         .fn<typeof fetch>()

@@ -168,6 +168,9 @@ function assertResponseSizeWithinCap(response: Response, url: string, maxBytes: 
  * - A redirect `Location` resolving to a DIFFERENT hostname than the current hop strips
  *   `Authorization`/`*-api-key`-style headers from the request before following it — a same-host
  *   redirect (e.g. a path-only 301) keeps the original headers untouched.
+ * - **(adversarial cycle 2, fix 4)** The INITIAL `url` itself is now ALSO rejected if it isn't
+ *   `https:` — cycle 1's non-https check only ever covered redirect targets, leaving the very
+ *   first hop uncovered; this closes that gap symmetrically.
  *
  * `fetchImpl` is injectable (default: the global `fetch`) so this is unit-testable without any
  * real network access — tests supply a fake that returns canned `Response`s per hop.
@@ -186,8 +189,19 @@ export async function safeFetch(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
 
+  // Adversarial cycle 2, fix 4 — the non-https rejection previously only applied to REDIRECT
+  // targets (fix B3, cycle 1); the INITIAL url got no such check at all. Mirrored here so a
+  // caller-supplied `http://` URL is rejected up front, before any network attempt, exactly like
+  // an insecure redirect hop already is.
+  const initialUrl = new URL(url);
+  if (initialUrl.protocol !== 'https:') {
+    throw new Error(
+      `safeFetch: refusing to fetch a non-https initial URL (${initialUrl.protocol}//${initialUrl.hostname})`,
+    );
+  }
+
   let currentUrl = url;
-  let currentHostname = new URL(url).hostname;
+  let currentHostname = initialUrl.hostname;
   let currentOpts: RequestInit = opts;
   let redirectsFollowed = 0;
 
