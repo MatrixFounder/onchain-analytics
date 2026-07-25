@@ -64,6 +64,13 @@ export { NotImplementedInM1Error } from './adapters/not-implemented-error.js';
 // M2 (TASK-005, R-29/R-30, task 005-1) — the tenth adapter, first PAID one. The only publicly
 // exported factory for it (no separate raw-client export, interfaces.md §5.2).
 export { createNansenAdapter, type NansenAdapterDeps } from './adapters/nansen/index.js';
+// Q-2: the self-imposed daily-ceiling contract. `DAILY_CAP_OFF` is the disable sentinel EnvSchema
+// validates against; `deriveDailyCap` is exported so the default is testable as a number.
+export {
+  DAILY_CAP_OFF,
+  deriveDailyCap,
+  type DailyCreditCapConfig,
+} from './adapters/nansen/budget-gate.js';
 
 export { createCacheStore } from './cache/two-level-store.js';
 export { getCacheStats } from './cache/stats.js';

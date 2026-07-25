@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { DAILY_CAP_OFF, deriveDailyCap } from '../src/adapters/nansen/budget-gate.js';
 import { ttlFor } from '../src/cache/ttl.js';
 import {
   normalizeSmartMoneyFlow,
@@ -286,6 +287,41 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       expect(risk.marketCapGroup).toHaveLength(256);
       // negative market cap fails `.nonnegative()` -> dropped, not thrown
       expect(risk.marketCapUsd).toBeUndefined();
+    });
+  });
+  describe('Q-2: derived daily credit cap + the .env disable switch', () => {
+    it('scales with the plan — the same code serves free and Pro (owner decision #1)', () => {
+      expect(deriveDailyCap(59)).toBe(30); // this account
+      expect(deriveDailyCap(100)).toBe(30); // fresh free plan
+      expect(deriveDailyCap(10_000)).toBe(2500); // Pro — a quarter of the allocation
+    });
+
+    it('never derives 0 — a floor of 30 keeps the engine usable on a near-empty account', () => {
+      // Without the floor the gate would refuse its OWN calls before the vendor would: the guard
+      // bricking the product it protects.
+      for (const balance of [0, 1, 5, 12, 59, 100]) {
+        expect(deriveDailyCap(balance)).toBeGreaterThanOrEqual(30);
+      }
+    });
+
+    it('crosses from floor to percentage at 124, NOT 120 (floor() truncation)', () => {
+      // The obvious mental arithmetic (0.25 × 120 = 30) gives the wrong boundary — a test written
+      // against 121 would assert the wrong regime.
+      expect(deriveDailyCap(123)).toBe(30); // floor still wins
+      expect(deriveDailyCap(124)).toBe(31); // percentage takes over
+    });
+
+    it('keeps the 100cr exhaustive tier unreachable until the balance is >= 400', () => {
+      // Falls out of the formula — no hand-maintained threshold to drift.
+      expect(deriveDailyCap(396)).toBeLessThan(100);
+      expect(deriveDailyCap(400)).toBe(100);
+    });
+
+    it('exposes a WORD as the disable sentinel, never 0', () => {
+      // `0` is one truncation/typo away from silently disabling a money guard, and semantically
+      // ought to mean "spend nothing". EnvSchema keeps rejecting it as invalid.
+      expect(DAILY_CAP_OFF).toBe('off');
+      expect(typeof DAILY_CAP_OFF).toBe('string');
     });
   });
 });

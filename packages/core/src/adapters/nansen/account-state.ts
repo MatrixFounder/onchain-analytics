@@ -16,6 +16,17 @@ export interface NansenAccountSnapshot {
   /** Which day-bucket this snapshot serves — `dayBucketMs(observedAtMs)`. A snapshot whose
    * `dayBucketMs` no longer matches "now"'s bucket is stale and forces a resync. */
   dayBucketMs: number;
+  /**
+   * The self-imposed daily ceiling in force for THIS bucket, already resolved from config
+   * (`undefined` = no self-imposed ceiling, i.e. the vendor remainder alone bounds spend).
+   *
+   * **Pinned, not recomputed** (Q-2): a mid-bucket resync (`markUnreconciled()` → `/account`)
+   * carries this value forward verbatim instead of re-deriving it from the now-smaller balance.
+   * Re-deriving would make a "daily" ceiling shrink *during* the day — at balance 200 the operator
+   * is told the ceiling is 50, then gets locked out after spending 40, because each resync recomputes
+   * a smaller cap. Pinning gives the number honest semantics: 50 means 50 until the bucket rolls over.
+   */
+  dailyCapForBucket: number | undefined;
 }
 
 /**

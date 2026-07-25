@@ -1,11 +1,13 @@
 ---
 id: Q-2
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-07-24
 category: quality
 severity: SEV-3
 slug: q-2-nansen-daily-credit-cap-has-no-default
+resolved_at: 2026-07-25
+resolved_by: TASK-005 / Q-2 implementation
 ---
 
 # Q-2 — `NANSEN_DAILY_CREDIT_CAP` is optional with no default, so a stock install has no self-imposed ceiling
@@ -26,7 +28,15 @@ default is a policy call (what number? per-plan? fail-closed on an unset cap?).
 
 ---
 
-## Recommendation (engineering proposal — the decision is still the owner's)
+> **RESOLVED 2026-07-25 — implemented as proposed below, with the owner's addition that the guard
+> must be switchable off from `.env`.** Shipped behaviour: `NANSEN_DAILY_CREDIT_CAP` now has three
+> states — **unset** derives `max(30, 25% of balance)` and pins it per day-bucket; a **positive
+> integer** is an explicit ceiling; the literal **`off`** disables the self-imposed ceiling entirely,
+> leaving only the vendor remainder (the pre-Q-2 behaviour). `0` stays invalid on purpose. The
+> effective ceiling is now announced on stderr once per bucket, closing caveat 3. Two findings from
+> implementing it are recorded at the end of this file — one of them a real defect the tests caught.
+
+## Recommendation (engineering proposal — implemented 2026-07-25)
 
 ```
 cap = max(30, floor(creditsRemainingAtObserve × 0.25))
@@ -166,3 +176,26 @@ one extra field on `NansenAccountSnapshot`, which is already bucket-scoped via `
   and the anchor-rebasing the `min()` sits on top of.
 - [Q-1](q-1-nansen-degrade-stderr-repeats-per-call.md) — the other accepted residual from the same
   review round.
+
+---
+
+## Found while implementing (2026-07-25)
+
+**1. A configured cap must not be routed through the snapshot — caught by an existing test.**
+The first implementation resolved *all three* states inside `refreshAccount()` and pinned the result.
+That silently broke an explicitly configured cap whenever a snapshot already existed (no resync →
+no resolution → the pinned `undefined` read as "off"). In production every snapshot comes from
+`refreshAccount`, so it was not reachable — but "a money guard that disappears when state is
+pre-seeded" is exactly the fragility this issue is about. Fixed by splitting the concerns
+(`capInForce()`): only the **derived** value needs pinning, because only it is a function of the
+drifting balance; an explicit number is static and applies directly, independent of snapshot state.
+
+**2. The disable switch earned its keep immediately.** `TC-UNIT-07` asserts the cold-start *anchor*
+(`usageAtObserve` must reflect already-persisted spend). With the derived default active, its
+pre-persisted usage of 40 exceeded the derived cap of 30, so the case began failing for a reason
+unrelated to what it tests. Setting `dailyCreditCap: DAILY_CAP_OFF` isolates it — and doubles as
+proof that the escape hatch works.
+
+**Still true, and deliberately not addressed here:** caveat 2 above — a daily ceiling does not stop
+a burst (~50 credits/second at the current throttle). The complementary velocity guard remains
+unimplemented and unclaimed.

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DAILY_CAP_OFF } from '@onchain-intel/core';
 
 /**
  * Wraps an optional zod schema so an empty string is treated identically to the key being unset
@@ -55,7 +56,14 @@ export const EnvSchema = z.object({
   DATA_DIR: emptyAsUndefined(z.string().optional()),
   // M2 (task 005-6, R-46) — see this schema's own docstring above for the 3-key rationale.
   NANSEN_API_KEY: emptyAsUndefined(z.string().optional()),
-  NANSEN_DAILY_CREDIT_CAP: emptyAsUndefined(z.coerce.number().int().positive().optional()),
+  // Three states (Q-2): UNSET → the engine derives a conservative default from the live balance
+  // (max(30, 25% of remaining), pinned per day-bucket); a POSITIVE INTEGER → that explicit ceiling;
+  // the literal `off` → no self-imposed ceiling at all, leaving only the vendor remainder.
+  // `off` is a word, not `0`, on purpose: `0` is one typo/truncation away from silently disabling a
+  // money guard, and semantically ought to mean "spend nothing". `0` therefore stays INVALID.
+  NANSEN_DAILY_CREDIT_CAP: emptyAsUndefined(
+    z.union([z.literal(DAILY_CAP_OFF), z.coerce.number().int().positive()]).optional(),
+  ),
   NANSEN_BUDGET_WARN_RATIO: emptyAsUndefined(z.coerce.number().min(0).max(1).optional()),
 });
 

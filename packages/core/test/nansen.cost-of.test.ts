@@ -78,6 +78,7 @@ describe('costOf() — capability x args -> exact credit price (R-37)', () => {
       usageAtObserve: 0,
       observedAtMs: Date.now(),
       dayBucketMs: 0,
+      dailyCapForBucket: undefined,
     });
     expect(costOf(accountState, 'smart-money.flows', {})).toBe(10);
     expect(costOf(accountState, 'token.risk', {})).toBe(6);

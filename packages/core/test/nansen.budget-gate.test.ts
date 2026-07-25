@@ -8,9 +8,11 @@ import { dayBucketMs } from '../src/cache/day-bucket.js';
 import { createThrottle } from '../src/net/rate-limit.js';
 import {
   createNansenAccountState,
+  type NansenAccountSnapshot,
   type NansenAccountState,
 } from '../src/adapters/nansen/account-state.js';
 import {
+  DAILY_CAP_OFF,
   createNansenBudgetGate,
   effectiveCeilingFor,
   NansenBudgetExceededError,
@@ -43,19 +45,17 @@ function reconciledSnapshot(overrides: {
   plan?: 'free' | 'pro';
   creditsRemainingAtObserve: number;
   usageAtObserve: number;
-}): {
-  plan: 'free' | 'pro';
-  creditsRemainingAtObserve: number;
-  usageAtObserve: number;
-  observedAtMs: number;
-  dayBucketMs: number;
-} {
+  dailyCapForBucket?: number | undefined;
+}): NansenAccountSnapshot {
   return {
     plan: overrides.plan ?? 'free',
     creditsRemainingAtObserve: overrides.creditsRemainingAtObserve,
     usageAtObserve: overrides.usageAtObserve,
     observedAtMs: NOW,
     dayBucketMs: BUCKET,
+    // Q-2: pre-existing cases predate the derived cap and assert the VENDOR ceiling, so they pin
+    // `undefined` (= no self-imposed ceiling) unless a case opts in explicitly.
+    dailyCapForBucket: overrides.dailyCapForBucket,
   };
 }
 
@@ -242,6 +242,11 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
   it('cold start (no prior in-process snapshot) reads the ALREADY-PERSISTED bucket usage, not 0', async () => {
     const { gate, accountState, budgetStore } = makeFixture({
       fetchImpl: async () => jsonResponse({ plan: 'free', credits_remaining: 60 }),
+      // Q-2: this case is about the ANCHOR (usageAtObserve must reflect persisted spend), not about
+      // the self-imposed ceiling. With the derived default active, usage 40 already exceeds the
+      // derived cap (max(30, 15) = 30) and everything would refuse for a reason unrelated to what
+      // is under test. `off` isolates it — and doubles as proof the disable switch works.
+      dailyCreditCap: DAILY_CAP_OFF,
     });
     expect(accountState.get()).toBeUndefined(); // genuinely cold — no .set() call at all
     await budgetStore.recordDelta(PROVIDER, BUCKET, 40); // persisted by a PREVIOUS process
@@ -291,7 +296,7 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
       reservedTotal: 10,
     });
     await expect(gate.ensureBudget('smart-money.flows', {})).rejects.toThrow(
-      /self-imposed cap: need 10, NANSEN_DAILY_CREDIT_CAP allows 20/,
+      /self-imposed cap \(configured\): need 10, allows 20/,
     );
   });
 
@@ -405,5 +410,53 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
     // itself always reads the CURRENT counter fresh, so the race is never lost, only kept OUT of
     // the anchor `usageAtObserve` rebases against.
     expect(await budgetStore.getUsage(PROVIDER, BUCKET)).toBe(21);
+  });
+  // --- Q-2: derived-by-default, pinned per bucket, disableable via .env ---
+  it('applies a DERIVED ceiling by default (NANSEN_DAILY_CREDIT_CAP unset) — the guard is on out of the box', async () => {
+    // balance 100 -> derived cap max(30, 25) = 30. The vendor would have allowed 100.
+    const { gate } = makeFixture({
+      fetchImpl: async () => jsonResponse({ plan: 'free', credits_remaining: 100 }),
+    });
+    await gate.ensureBudget('smart-money.flows', {}); // 10 -> usage 10
+    await gate.ensureBudget('smart-money.flows', {}); // 10 -> usage 20
+    await gate.ensureBudget('smart-money.flows', {}); // 10 -> usage 30 (exactly at the cap)
+    await expect(gate.ensureBudget('smart-money.flows', {})).rejects.toThrow(
+      /self-imposed cap \(derived\): need 10, allows 30/,
+    );
+  });
+
+  it('NANSEN_DAILY_CREDIT_CAP=off restores vendor-only bounding (the escape hatch)', async () => {
+    const { gate } = makeFixture({
+      dailyCreditCap: DAILY_CAP_OFF,
+      fetchImpl: async () => jsonResponse({ plan: 'free', credits_remaining: 100 }),
+    });
+    // Past the 30 the derived default would have imposed — only the vendor's 100 binds now.
+    for (let i = 0; i < 5; i += 1) await gate.ensureBudget('smart-money.flows', {});
+    await expect(gate.ensureBudget('smart-money.flows', {})).resolves.toMatchObject({
+      reservedTotal: 10,
+    });
+  });
+
+  it('PINS the derived cap for the bucket — a mid-bucket resync must not shrink it (Q-2)', async () => {
+    // Recomputing on every resync makes a "daily" ceiling shrink during the day: at balance 200 the
+    // operator is told 50, then gets locked out after 40. Here the balance falls 200 -> 150 between
+    // resyncs; the pinned cap must stay 50, so the 5th 10cr call still fits.
+    let remaining = 200;
+    const { gate, accountState } = makeFixture({
+      fetchImpl: async () => jsonResponse({ plan: 'free', credits_remaining: remaining }),
+    });
+    await gate.ensureBudget('smart-money.flows', {}); // cold-start resync pins cap = 50
+    expect(accountState.get()?.dailyCapForBucket).toBe(50);
+
+    remaining = 150; // vendor balance has dropped
+    accountState.markUnreconciled(); // force a mid-bucket resync on the next entry
+    await gate.ensureBudget('smart-money.flows', {});
+    expect(accountState.get()?.dailyCapForBucket).toBe(50); // NOT re-derived to 37
+
+    await gate.ensureBudget('smart-money.flows', {});
+    await gate.ensureBudget('smart-money.flows', {});
+    await expect(gate.ensureBudget('smart-money.flows', {})).resolves.toMatchObject({
+      reservedTotal: 10,
+    }); // 50th credit — reachable only because the cap stayed pinned at 50
   });
 });

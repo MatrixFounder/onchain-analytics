@@ -4,7 +4,7 @@ import { normalizeAddress } from '../../chain/address.js';
 import { deriveArgsHash } from '../../net/args-hash.js';
 import type { Throttle } from '../../net/rate-limit.js';
 import { createNansenAccountState } from './account-state.js';
-import { createNansenBudgetGate } from './budget-gate.js';
+import { createNansenBudgetGate, type DailyCreditCapConfig } from './budget-gate.js';
 import { costOf as costOfEndpoints } from './cost-of.js';
 import {
   postProfilerAddressLabels,
@@ -66,7 +66,7 @@ import { createSingleflight } from './singleflight.js';
 export interface NansenAdapterDeps {
   env?: NodeJS.ProcessEnv;
   budgetStore?: BudgetStore;
-  dailyCreditCap?: number;
+  dailyCreditCap?: DailyCreditCapConfig;
   budgetWarnRatio?: number;
   now?: () => number;
   fetchImpl?: typeof fetch;

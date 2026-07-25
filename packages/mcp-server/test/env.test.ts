@@ -279,4 +279,27 @@ describe('loadEnv', () => {
       expect(env.LOG_LEVEL).toBe('warn');
     });
   });
+  // --- Q-2: NANSEN_DAILY_CREDIT_CAP has three states ---
+  it('accepts the literal "off" to disable the self-imposed ceiling', () => {
+    expect(EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: 'off' }).NANSEN_DAILY_CREDIT_CAP).toBe('off');
+  });
+
+  it('accepts a positive integer as an explicit ceiling', () => {
+    expect(EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: '250' }).NANSEN_DAILY_CREDIT_CAP).toBe(250);
+  });
+
+  it('leaves it undefined when unset, so the engine derives its own default', () => {
+    expect(EnvSchema.parse({}).NANSEN_DAILY_CREDIT_CAP).toBeUndefined();
+  });
+
+  it('still REJECTS 0 — "off" is the disable switch, 0 would mean "spend nothing"', () => {
+    // A money guard must not be disableable by a truncation/typo that yields "0".
+    expect(() => EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: '0' })).toThrow();
+  });
+
+  it('rejects other words and negatives', () => {
+    for (const bad of ['none', 'unlimited', 'true', '-5', '1.5']) {
+      expect(() => EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: bad })).toThrow();
+    }
+  });
 });
