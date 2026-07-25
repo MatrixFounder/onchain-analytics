@@ -83,7 +83,8 @@
 > адаптеров (6 live; dash-platform stub — живой gRPC отложен; dune config-stub → M2; pg-history
 > опционально читает Supabase), двухуровневый кеш (D6, SQLite/`DATA_DIR`), SSRF-гейт, rate-limit.
 > Отклонения от исходного плана (все задокументированы): wallet_balances = keyless RPC
-> (publicnode/drpc/solana mainnet), а не Dune; поглощение снапшоттера отложено до M3 (решение
+> (publicnode/drpc/solana mainnet), а не Dune; поглощение снапшоттера отложено до M3 — **и в итоге
+> отменено 2026-07-25**, см. Now/Next (решение
 > владельца 2026-07-22 — n8n пишет, движок читает). Адверсариальная ревизия: 3 цикла, 23 находки
 > исправлено (вкл. TTL цены get_token); неверифицированный хвост цикла 3 — в
 > [BACKLOG](../BACKLOG.md). Коммиты `0519674..8a602cc`; архивы
@@ -96,7 +97,7 @@
 - Канонические zod-типы: `Token`, `Wallet`, `Balance`, `OHLCV`, `Pool` (D5).
 - Adapter + Capability Registry (D4) с декларативным `providers.config.ts`.
 - **Адаптеры (free):** CoinGecko (через офиц. MCP/REST), DexScreener (keyless), DeFiLlama (free), Dune Query API (free 2,500cr/мес).
-- *(2026-07-20)* **Адаптер `dash-platform` + `platform-explorer`** (оба free/keyless) — capability `privacy.shielded_pool` + Platform-метрики (identities/contracts/documents/credits); поглощает pre-M0 снапшоттер. Первое доказательство «горячей заменяемости» (принцип 4): DAPI primary ⇄ platform-explorer fallback, пока shielded-эндпоинты «not yet available on public nodes». Данные: [raw/providers-addendum-2026-07-20.json](raw/providers-addendum-2026-07-20.json). ZecHub-ингест остаётся отдельным скриптом до M3 (нужен только калибровке порогов); канонические типы M1 расширяются типом `Snapshot` (D5).
+- *(2026-07-20)* **Адаптер `dash-platform` + `platform-explorer`** (оба free/keyless) — capability `privacy.shielded_pool` + Platform-метрики (identities/contracts/documents/credits); **читает** данные pre-M0 снапшоттера (поглощение отменено 2026-07-25 — снапшоттер остаётся на n8n). Первое доказательство «горячей заменяемости» (принцип 4): DAPI primary ⇄ platform-explorer fallback, пока shielded-эндпоинты «not yet available on public nodes». Данные: [raw/providers-addendum-2026-07-20.json](raw/providers-addendum-2026-07-20.json). ZecHub-ингест остаётся отдельным скриптом до M3 (нужен только калибровке порогов); канонические типы M1 расширяются типом `Snapshot` (D5).
 - Двухуровневый кеш SQLite+LRU + TTL по типам (D6).
 - **MCP-tools:** `onchain_get_token`, `onchain_wallet_balances`, `onchain_new_pairs`, `onchain_protocol_tvl`.
 - Контрактные тесты адаптеров на записанных фикстурах (D11).
@@ -169,9 +170,13 @@
 - **Watchlists** (кошельки/токены/протоколы) в SQLite (D7); tools `onchain_watch_add/list/remove`.
 - **Правила** (стартовый набор): накопление smart-money по кошельку; скачок ликвидности/объёма новой пары; режим рынка по Glassnode SOPR/MVRV (если включён Glassnode); крупный отток с CEX.
 - *(2026-07-20)* **Privacy-правила** поверх снапшотов `privacy.shielded_pool`: рост пула за сутки > порога; shield/unshield ratio (держат приватно vs сразу выводят); доля пула в % от credits in circulation. Пороги — НЕ выдуманные константы, а калибровка по ZEC-кривой (ZecHub: ~8–8.8% нач. 2024 → пик ~31% апр 2026 → 26.06% as-of 2026-07-19) с mapping-таблицей в methodology будущего рана `coin-insights`.
-- **Планировщик** `croner` + durable job-log (D8); поллинг с уважением rate-limit и бюджета.
+- **Планировщик — n8n** (решение владельца 2026-07-25, ADR-001 D8-дополнение): расписание правил
+  живёт там же, где снапшоттер, потому что MCP-сервер существует только пока открыта сессия хоста.
+  Поллинг уважает rate-limit и бюджет движка. `croner` + durable job-log остаются референсом для
+  локального/embedded-профиля, не для этого.
 - **swap-decode** как паттерн из `handi-cat` (Raydium/Jupiter/Pump.fun) — **переписать самим** (репо без лицензии → не копировать код).
-- **Нотификации** Telegram (`grammY`, D9).
+- **Нотификации** Telegram — через n8n (credential «Onchain bot», уже работает в
+  `onchain-error-alert`); `grammY` (D9) — для локального профиля.
 
 **Exit-критерии:** добавленный в watchlist кошелёк генерирует Telegram-алерт по правилу на реальном событии; планировщик переживает рестарт; нет дублей алертов.
 **Зависит от:** M1 (data), желательно M2 (smart-money-правила). **Риск-гейт:** идемпотентность алертов; backpressure при rate-limit.
@@ -256,7 +261,7 @@ graph LR
 ## Now / Next / Later
 
 - **Done:** снапшоттер Dash Platform (pre-M0, n8n+Supabase) ✅ · ADR-001 Accepted (2026-07-20) ✅ · **M0 каркас ✅ (2026-07-22)** · **M1 read-слой ✅ (2026-07-23)** · **M2 alpha-слой ✅ (2026-07-24, 41cr)** (DB-вопрос закрыт решением владельца: кеш = SQLite/`DATA_DIR`, история = n8n→Supabase, движок читает опционально).
-- **Now:** **M3** — Signal/Alert-движок (watchlists, правила, croner, Telegram) + поглощение n8n-снапшоттера.
+- **Now:** **M3** — Signal/Alert-движок (watchlists, правила, расписание в n8n, Telegram). **Поглощение n8n-снапшоттера отменено** решением владельца 2026-07-25: система обязана быть автономной по анализу данных, а кроны и push-уведомления не могут жить в stdio-процессе — always-on контур остаётся n8n + Postgres (ADR-001 D8/D9, дополнения 2026-07-25).
 - **Next:** M4 (скилл-релиз `onchain-analytics` в Universal-skills).
 - **Later (по спросу):** M5 (исполнение за approval-gate), M6 (масштаб/стриминг/обсервабилити).
 

@@ -76,9 +76,18 @@ provider → providers(id)`). Ленивое (только когда задан
   history через собственные REST-эндпоинты первым в маршруте (R-10, keyless, всегда доступен);
   `pg-history` — второй по приоритету, доступен только при наличии DSN (детали маршрута — §3.2).
 
-**Компонент: Планировщик / Snapshotter-Signals — CURRENT (n8n, отдельная система) + FUTURE (M3, D8)**
+**Компонент: Планировщик / Snapshotter-Signals — n8n + Postgres, ПОСТОЯННО (не «до M3»)**
 
-- Без изменений относительно v1.1 — не предмет M1 (TASK.md §4: планировщик — M3).
+- Не предмет M1 (TASK.md §4: планировщик — M3).
+- **Обновлено 2026-07-25 (решение владельца, ADR-001 D8/D9-дополнения).** Ранее этот раздел и
+  диаграмма ниже утверждали «до M3» и «M3: планировщик мигрирует в движок» — это **противоречило**
+  дополнению D8 от 2026-07-20, которым n8n уже был ПРИНЯТ для профиля «выделенный сервер».
+  Формулировка «поглощение отложено до M3» (решение по БД от 2026-07-22) постепенно затвердела в
+  утверждение «будет поглощено», хотя отсрочка вопроса — не ответ на него.
+- **Как есть на самом деле:** требование автономности анализа данных означает, что кроны и
+  push-уведомления не могут жить в MCP-сервере — тот существует ровно пока открыта сессия хоста.
+  Поэтому always-on контур (снапшоттер СЕЙЧАС + расписание правил и алерты в M3) остаётся на
+  n8n + Postgres, а движок остаётся pull-стороной и читает историю через `pg-history` read-only.
 
 **Компонент: MCP-сервер (`@onchain-intel/mcp-server`) — NOW (M0 ping) + NOW (M1: 4 новых tools)**
 
@@ -118,11 +127,11 @@ flowchart LR
     NORM["normalize() → canonical zod<br/>NOW M1 (D5): Token/Wallet/Balance/Pool/OHLCV/Snapshot"]
     CACHE["Cache: lru-cache + SQLite DATA_DIR<br/>NOW M1 (D6); budget-guard FUTURE M2"]
     PGHIST["pg-history adapter (opt., R-12)<br/>NOW M1 — в Registry, не сбоку (F-2)"]
-    SCHED["Планировщик croner + job-log<br/>FUTURE M3 (D8)"]
+    SCHED["croner + job-log — ТОЛЬКО локальный/embedded профиль<br/>для выделенного сервера расписание в n8n (D8, 2026-07-25)"]
     MCP["MCP-сервер @onchain-intel/mcp-server<br/>onchain_ping (M0) +<br/>onchain_get_token/wallet_balances/new_pairs/protocol_tvl (M1)"]
   end
 
-  subgraph N8N["Snapshotter Dash/ZEC — CURRENT, отдельная система<br/>n8n + Supabase Postgres, dev VM (до M3)"]
+  subgraph N8N["Автономный контур — n8n + Supabase Postgres, dev VM<br/>снапшоттер СЕЙЧАС; расписание правил + алерты M3 (решение 2026-07-25)"]
     WF["onchain-snapshotter / onchain-verify / onchain-error-alert"]
     PG[("Supabase Postgres, schema onchain")]
   end
@@ -140,7 +149,8 @@ flowchart LR
   DUNE -. "зарегистрирован, live-fetch в M1 нет (minor)" .-> AD
   NORMCHAIN --> AD
   AD --> NORM --> CACHE --> MCP
-  SCHED -. "M3: планировщик мигрирует в движок" .-> AD
+  SCHED -. "локальный профиль" .-> AD
+  WF -. "M3: n8n вызывает способности движка (интерфейс — OQ-M3-1)" .-> AD
   CLIENT <-- "stdio, JSON-RPC (NOW)" --> MCP
 
   DAPI -. "независимый вызов n8n, не через движок" .-> WF

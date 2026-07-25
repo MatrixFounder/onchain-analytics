@@ -515,8 +515,10 @@ tokenAddress?: string.max(64), exhaustive?: boolean = false}` + `superRefine`: �
   (явное решение TASK.md §4); `dune.isAvailable()` остаётся безусловно `false`.
 - **Расширение на все ~24–32 Nansen-сети** — задокументированный backlog, требует отдельного пробника
   **на способность**.
-- **M3 целиком:** watchlists, `croner`, правила/алерты, Telegram; поглощение снапшоттера.
-  Бюджет-алерт M2 = одна stderr-строка, не новый notification-канал.
+- **M3 целиком:** watchlists, правила/алерты, расписание, Telegram. Бюджет-алерт M2 = одна
+  stderr-строка, не новый notification-канал. _(Пункт содержал «поглощение снапшоттера» — оно
+  отменено решением владельца 2026-07-25; на M2 это никак не влияло, но формулировка исправлена,
+  чтобы не тиражировать отменённый план.)_
 - **Streamable HTTP MCP-транспорт** — M6; M2 остаётся stdio-only.
 - **ERC-20/SPL enrichment `onchain_wallet_balances`** — M1-backlog, не относится к платному слою.
 - **R-47** (carry-over hardening) — Should, задача 005-9, приёмку не гейтит.

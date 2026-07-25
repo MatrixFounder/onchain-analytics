@@ -132,8 +132,9 @@ export const OhlcvSchema = z
   .strict();
 
 // Персистентная форма D5-дополнения (snapshotter-режим) — согласована с DB-SCHEMA-CONCEPT §2,
-// но M1 не пишет её никуда (n8n пишет отдельно); тип существует для будущего M3-поглощения (R-2).
-// Маппинг имён на persistence-границе (M3, не M1, minor): valueRaw↔value_raw, valueNum↔value_num
+// но движок её не пишет и не начнёт (n8n пишет; поглощение отменено решением владельца 2026-07-25,
+// ADR-001 D8-дополнение) — тип существует как каноническая форма ЧТЕНИЯ той же таблицы (R-2/R-12).
+// Маппинг имён на persistence-границе (нужен на читающей стороне в M3): valueRaw↔value_raw, valueNum↔value_num
 // — остальные поля совпадают буквально (см. §4.1 Entity Snapshot).
 export const SnapshotSchema = z
   .object({
