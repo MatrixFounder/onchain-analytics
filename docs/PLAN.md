@@ -1,15 +1,37 @@
 # PLAN — TASK-005 · M2: Alpha-слой, платный (`m2-alpha-paid`)
 
-| Поле             | Значение                                                                                                                                                                                                                                                                           |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Task**         | [TASK-005 `m2-alpha-paid`](TASK.md) — R-29…R-47                                                                                                                                                                                                                                    |
-| **Architecture** | [system-architecture.md](architectures/system-architecture.md) §3.2 (M2-блок), [data-model.md](architectures/data-model.md) §4, [interfaces.md](architectures/interfaces.md) §5 — THE design source                                                                                |
-| **ADR**          | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — D3–D7, D10–D12                                                                                                                                                                                                  |
-| **DB-схема**     | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — применена к `usage` в кеш-БД                                                                                                                                                                                   |
-| **Evidence**     | [raw/nansen-probe-2026-07-23.json](onchain-analytics/raw/nansen-probe-2026-07-23.json) (`credit_cost_table`, живой `/account`), [raw/nansen-openapi-2026-07-23.json](onchain-analytics/raw/nansen-openapi-2026-07-23.json) (75 путей) — **единственные** источники фактов о Nansen |
-| **Статус плана** | **ВЫПОЛНЕН 2026-07-25** — шаги 1–8 закрыты, шаг 9 (`R-47`, опциональный) отложен; факт выполнения и отклонения — в §7                                                                                                                                                              |
-| **Дата**         | 2026-07-23                                                                                                                                                                                                                                                                         |
-| **Стратегия**    | Stub-First (Phase 1 структура/стабы/red → Phase 2 логика/green), атомарная нарезка **9 задач** (8 обязательных + 1 опциональная)                                                                                                                                                   |
+| Поле             | Значение                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| **Task**         | [TASK-005 `m2-alpha-paid`](TASK.md) — R-29…R-47                                         |
+| **Architecture** | [system-architecture.md](architectures/system-architecture.md) §3.2 — THE design source |
+| **ADR**          | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — D3–D7, D10–D12       |
+| **DB-схема**     | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1                       |
+| **Evidence**     | probe + openapi (2026-07-23) — см. §0                                                   |
+| **Статус плана** | **ВЫПОЛНЕН 2026-07-25** — детали в §7                                                   |
+| **Дата**         | 2026-07-23                                                                              |
+| **Стратегия**    | Stub-First, **9 задач** (8 обязательных + 1 опциональная)                               |
+
+---
+
+### Источники и стратегия — развёрнуто
+
+**Design source** (план им следует, а не переизобретает):
+
+- [system-architecture.md](architectures/system-architecture.md) §3.2 — M2-блок: раскладка, формулы,
+  инварианты;
+- [data-model.md](architectures/data-model.md) §4 — DDL и канонические типы;
+- [interfaces.md](architectures/interfaces.md) §5 — контракты MCP-tools.
+
+**Evidence** — **единственные** допустимые источники фактов о Nansen:
+
+- [raw/nansen-probe-2026-07-23.json](onchain-analytics/raw/nansen-probe-2026-07-23.json) —
+  `credit_cost_table` + живой `/account`;
+- [raw/nansen-openapi-2026-07-23.json](onchain-analytics/raw/nansen-openapi-2026-07-23.json) —
+  75 REST-путей.
+
+**DB-схема:** DB-SCHEMA-CONCEPT §1 применена к таблице `usage` в кеш-БД.
+
+**Стратегия:** Stub-First — Phase 1 структура/стабы/red, затем Phase 2 логика/green.
 
 ---
 

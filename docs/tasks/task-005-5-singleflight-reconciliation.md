@@ -1,14 +1,21 @@
 # Task 005-5 — [R-38/R-39] singleflight + wiring гейта + post-call reconciliation внутри `fetch()`
 
-| Поле                    | Значение                                                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Родительская задача** | [TASK-005 `m2-alpha-paid`](../TASK.md)                                                                                                           |
-| **Тип**                 | Dev (Stub-First: Phase 1 слои + композиция стабов → Phase 2 коалессинг + суммирование + resync-путь)                                             |
-| **R-IDs**               | **R-38**, **R-39**                                                                                                                               |
-| **Зависимости**         | 005-3 (гейт, `bucket`, `accountState`), 005-4 (реальные под-вызовы и их заголовки)                                                               |
-| **Разблокирует**        | 005-6 (полностью budget-gated `fetch()` за tools)                                                                                                |
-| **Источники**           | [system-architecture.md](../architectures/system-architecture.md) §3.2 «Singleflight», «Post-call reconciliation + transport-failure/402 resync» |
-| **Живые кредиты**       | **0**                                                                                                                                            |
+| Поле                    | Значение                                                                                             |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Родительская задача** | [TASK-005 `m2-alpha-paid`](../TASK.md)                                                               |
+| **Тип**                 | Dev (Stub-First: Phase 1 слои + композиция стабов → Phase 2 коалессинг + суммирование + resync-путь) |
+| **R-IDs**               | **R-38**, **R-39**                                                                                   |
+| **Зависимости**         | 005-3 (гейт, `bucket`, `accountState`), 005-4 (реальные под-вызовы и их заголовки)                   |
+| **Разблокирует**        | 005-6 (полностью budget-gated `fetch()` за tools)                                                    |
+| **Источники**           | [system-architecture.md](../architectures/system-architecture.md) §3.2 — «Singleflight», resync      |
+| **Живые кредиты**       | **0**                                                                                                |
+
+## Источники
+
+[system-architecture.md](../architectures/system-architecture.md) §3.2, разделы:
+
+- «Singleflight»;
+- «Post-call reconciliation + transport-failure/402 resync».
 
 ## Цель
 

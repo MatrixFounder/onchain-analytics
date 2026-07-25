@@ -1,14 +1,23 @@
 # Task 005-3 — [R-36/R-37] cost-table codegen + `costOf()` + `NansenAccountState` + pre-call budget gate
 
-| Поле                    | Значение                                                                                                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Родительская задача** | [TASK-005 `m2-alpha-paid`](../TASK.md)                                                                                                                               |
-| **Тип**                 | Dev (Stub-First: Phase 1 codegen + сигнатуры → Phase 2 формула потолка + гейт + 3 обязательных теста)                                                                |
-| **R-IDs**               | **R-36**, **R-37**                                                                                                                                                   |
-| **Зависимости**         | 005-1 (скелет адаптера), 005-2 (`BudgetStore.checkAndReserve`, `dayBucketMs`)                                                                                        |
-| **Разблокирует**        | 005-5 (wiring гейта в `fetch()`), 005-6 (`NANSEN_DAILY_CREDIT_CAP`/`WARN_RATIO` как deps)                                                                            |
-| **Источники**           | [system-architecture.md](../architectures/system-architecture.md) §3.2 «Cost-table generation», «Account-state», «Формула потолка бакета», «Атомарный check+reserve» |
-| **Живые кредиты**       | **0** — `/account` в тестах отдаётся инжектированным `fetchImpl` из фикстуры                                                                                         |
+| Поле                    | Значение                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Родительская задача** | [TASK-005 `m2-alpha-paid`](../TASK.md)                                                                |
+| **Тип**                 | Dev (Stub-First: Phase 1 codegen + сигнатуры → Phase 2 формула потолка + гейт + 3 обязательных теста) |
+| **R-IDs**               | **R-36**, **R-37**                                                                                    |
+| **Зависимости**         | 005-1 (скелет адаптера), 005-2 (`BudgetStore.checkAndReserve`, `dayBucketMs`)                         |
+| **Разблокирует**        | 005-5 (wiring гейта в `fetch()`), 005-6 (`NANSEN_DAILY_CREDIT_CAP`/`WARN_RATIO` как deps)             |
+| **Источники**           | [system-architecture.md](../architectures/system-architecture.md) §3.2 — четыре раздела, см. ниже     |
+| **Живые кредиты**       | **0** — `/account` в тестах отдаётся инжектированным `fetchImpl` из фикстуры                          |
+
+## Источники
+
+[system-architecture.md](../architectures/system-architecture.md) §3.2, разделы:
+
+- «Cost-table generation»;
+- «Account-state»;
+- «Формула потолка бакета»;
+- «Атомарный check+reserve».
 
 ## Цель
 

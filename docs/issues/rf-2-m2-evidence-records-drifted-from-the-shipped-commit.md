@@ -14,12 +14,47 @@ slug: rf-2-m2-evidence-records-drifted-from-the-shipped-commit
 fact. Four of them now describe a state that is not what was committed, so the audit they exist to
 support cannot be performed against the shipped code.
 
-| # | Record | What it says | What is true |
-| --- | --- | --- | --- |
-| 1 | `task-005-7-live-verification-evidence.md` "Final SHA" | `4f3a923d…` | the file in `4c51126` hashes to `7bc03cd8…` — an unlogged edit landed between the last recorded override and the commit. Now annotated in place as a **provenance break**, not re-baselined silently. |
-| 2 | same file, offline (network-blocked) proof | core 27/310 + mcp-server 13/143 = **453/453**, claimed to be "the final, committed state" | the committed state was **505**; commit `15b8dfa` (Q-2) landed 12 files' worth of tests afterwards with no offline re-run. **CLOSED 2026-07-25** — re-run against the shipped tree: **515/515**, zero outgoing calls, with the block hardened to cover `node:http`/`node:https` as well as `fetch` and its propagation re-verified by a probe test first. |
-| 3 | R-44's acceptance row + `docs/TASK.md` §1 п.4 | live verification is capped at **≤30 credits, hard gate** | actual spend was **41cr**. Owner-authorized tranche by tranche and stated honestly in the evidence file and the ROADMAP — but the requirement text was never amended, so the RTM row read as met when it is not. **CLOSED 2026-07-25** — the R-44 acceptance row, `TC-VERIFY-01`, and TASK's status block now all carry the deviation explicitly. The ≤30 wording itself was deliberately NOT rewritten: amending a constraint retroactively to match what happened erases the fact that it was exceeded. |
-| 4 | `docs/PLAN.md` / `docs/TASK.md` | all 17 DoD checkboxes unchecked; TASK status still `Draft (готов к Architecture-фазе)` | `ROADMAP.md` declares M2 ✅ ВЫПОЛНЕН. Neither file was touched by any M2 commit. **CLOSED 2026-07-25** — 16 of 17 boxes checked (R-47 stays open: deliberately deferred), both status fields now read ВЫПОЛНЕН, and `PLAN.md` §7 records the actual gate results plus every deviation from the plan as written. |
+| #   | Record                        | Status                |
+| --- | ----------------------------- | --------------------- |
+| 1   | Golden-test SHA chain         | **open** — see 1 below |
+| 2   | Offline-run proof             | closed 2026-07-25     |
+| 3   | R-44's ≤30cr acceptance row   | closed 2026-07-25     |
+| 4   | DoD checkboxes + status fields | closed 2026-07-25     |
+
+**1 — Golden-test SHA chain.** `task-005-7-live-verification-evidence.md` logs a "Final SHA" of
+`4f3a923d…`. The file actually committed in `4c51126` hashes to `7bc03cd8…`, so at least one
+unlogged edit landed between the last recorded override and the commit. Annotated in place as a
+provenance break rather than silently re-baselined. **Cannot be repaired retroactively** — see the
+status section below.
+
+**2 — Offline-run proof.** The same file recorded core 27/310 + mcp-server 13/143 = **453/453** and
+called it "the final, committed state". The committed state was **505**: commit `15b8dfa` (Q-2)
+landed twelve files' worth of tests afterwards with no offline re-run.
+
+Closed by re-running against the shipped tree — **519/519, zero outgoing calls**, with two
+hardenings that the original run lacked:
+
+- the block now covers `node:http`/`node:https`, not only `fetch` (a direct `http.request` would
+  have slipped past a fetch-only stub);
+- its propagation into the vitest worker is probe-verified *before* the suite runs, so a green
+  result cannot come from an inert block.
+
+**3 — R-44's ≤30cr ceiling.** The requirement states a hard gate of ≤30 credits; actual spend was
+**41cr**. Each tranche was owner-authorized and the figure was stated honestly in the evidence file
+and the ROADMAP — but the requirement text itself was never amended, so the RTM row read as met.
+
+Closed by recording the deviation at all three places where the constraint is stated: the R-44
+acceptance row, `TC-VERIFY-01`, and TASK's status block. The ≤30 wording was **deliberately not
+rewritten** — amending a constraint retroactively to match what happened erases the fact that it
+was exceeded.
+
+**4 — DoD checkboxes and status fields.** All 17 boxes were unchecked and `docs/TASK.md` still read
+`Draft (готов к Architecture-фазе)` while `ROADMAP.md` declared M2 ✅ ВЫПОЛНЕН; neither file was
+touched by any M2 commit.
+
+Closed: 16 of 17 boxes checked (R-47 stays unchecked — deliberately deferred, ticking it would be
+false), both status fields updated, and `PLAN.md` §7 now records the actual gate results plus every
+deviation from the plan as written.
 
 **Why this is a workflow-docs issue and not a code defect.** None of it changes runtime behaviour;
 the RTM completeness audit independently confirmed that R-29…R-46 all have real implementing code

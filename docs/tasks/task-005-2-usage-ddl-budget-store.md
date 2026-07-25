@@ -1,14 +1,21 @@
 # Task 005-2 — [R-34/R-35] таблица `usage` + `BudgetStore` + `SqliteBudgetStore`
 
-| Поле                    | Значение                                                                                                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Родительская задача** | [TASK-005 `m2-alpha-paid`](../TASK.md)                                                                                                                                                           |
-| **Тип**                 | Dev (Stub-First: Phase 1 DDL + интерфейс + стаб-стор → Phase 2 SQLite-реализация)                                                                                                                |
-| **R-IDs**               | **R-34**, **R-35**                                                                                                                                                                               |
-| **Зависимости**         | 005-1 (`nansen` в `adapterRegistrations` — иначе первый `INSERT INTO usage` падает по FK)                                                                                                        |
-| **Разблокирует**        | 005-3 (гейт вызывает `checkAndReserve`), 005-6 (`_meta.budget` читает `getUsage`)                                                                                                                |
-| **Источники**           | [data-model.md](../architectures/data-model.md) §4.2 (DDL + upsert), [system-architecture.md](../architectures/system-architecture.md) §3.2 «M2-дополнение: `BudgetStore`», DB-SCHEMA-CONCEPT §1 |
-| **Живые кредиты**       | **0** — чистая работа с SQLite, сети нет                                                                                                                                                         |
+| Поле                    | Значение                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| **Родительская задача** | [TASK-005 `m2-alpha-paid`](../TASK.md)                                                    |
+| **Тип**                 | Dev (Stub-First: Phase 1 DDL + интерфейс + стаб-стор → Phase 2 SQLite-реализация)         |
+| **R-IDs**               | **R-34**, **R-35**                                                                        |
+| **Зависимости**         | 005-1 (`nansen` в `adapterRegistrations` — иначе первый `INSERT INTO usage` падает по FK) |
+| **Разблокирует**        | 005-3 (гейт вызывает `checkAndReserve`), 005-6 (`_meta.budget` читает `getUsage`)         |
+| **Источники**           | data-model §4.2 + system-architecture §3.2 + DB-SCHEMA §1 — см. ниже                      |
+| **Живые кредиты**       | **0** — чистая работа с SQLite, сети нет                                                  |
+
+## Источники
+
+- [data-model.md](../architectures/data-model.md) §4.2 — DDL + upsert.
+- [system-architecture.md](../architectures/system-architecture.md) §3.2 «M2-дополнение:
+  `BudgetStore`».
+- DB-SCHEMA-CONCEPT §1 — portable-конвенции.
 
 ## Цель
 
