@@ -24,7 +24,19 @@ export interface CacheGetResult {
  */
 export interface CacheStore {
   get(provider: string, capability: string, argsHash: string): Promise<CacheGetResult | undefined>;
-  set(provider: string, capability: string, argsHash: string, value: unknown): Promise<void>;
+  /**
+   * `ttlSecondsOverride` (L-1) exists for ONE caller: the Registry's negative-cache write, which
+   * must live far shorter than the capability's normal TTL. Omit it everywhere else — the store's
+   * own `ttlFor(capability)` is the rule, and an override at a positive-result call site would be
+   * a per-caller TTL policy, which is exactly what the central table prevents.
+   */
+  set(
+    provider: string,
+    capability: string,
+    argsHash: string,
+    value: unknown,
+    ttlSecondsOverride?: number,
+  ): Promise<void>;
 }
 
 /**

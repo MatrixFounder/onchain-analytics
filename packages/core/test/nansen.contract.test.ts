@@ -270,12 +270,26 @@ describe('nansen adapter (contract — golden normalization, R-31/R-32/R-33)', (
     // Real recorded values (task 005-7, live USDC — M-2 scalar override, see this file's own
     // header comment; SAME shape as the original spec-derived guess: indicatorType/score/signal/
     // signalPercentile/lastTriggerOn, two disjoint arrays).
+    //
+    // **Assertion widened 2026-07-25 (issue Q-4) — logged, not silent.** The eight metadata fields
+    // below come from `/tgm/token-information`, the sub-call this capability has always PAID 1cr
+    // for and never read. Every value here is read straight from the already-recorded fixture, so
+    // this costs zero further credits — it asserts data we had bought and were discarding.
     expect(result).toEqual({
       chain: 'ethereum',
       address: normalizedAddress,
       marketCapUsd: 72_947_689_222,
       marketCapGroup: 'largecap',
       isStablecoin: true,
+      // --- from /tgm/token-information (Q-4) ---
+      name: 'USD Coin',
+      symbol: 'USDC',
+      deploymentDate: '2018-08-03 19:28:24',
+      fdvUsd: 72_949_375_871,
+      circulatingSupply: 72_993_578_820.9766,
+      totalSupply: 72_995_577_672.29245,
+      liquidityUsd: 536_369_088.28717536,
+      totalHolders: 3_105_691,
       riskIndicators: [
         {
           indicatorType: 'btc-reflexivity',

@@ -2,6 +2,7 @@ import { PassthroughCacheStore } from './cache-store.js';
 import type { CacheGetResult, CacheStore } from './cache-store.js';
 import type { CapabilityRoute, ProviderAdapter } from './types.js';
 import { deriveArgsHash } from '../net/args-hash.js';
+import { NEGATIVE_TTL_SECONDS } from '../cache/ttl.js';
 import type { Chain } from '../types/chain.js';
 
 /** One failed/unavailable attempt recorded while walking a route's `adapterIds` (R-24). */
@@ -33,6 +34,39 @@ export class CapabilityUnavailableError extends Error {
     this.chain = details.chain;
     this.tried = details.tried;
   }
+}
+
+/**
+ * Marker for a NEGATIVE cache entry (issue L-1): a record that this exact `(provider, capability,
+ * argsHash)` produced a deterministic `normalize()` failure, so the next identical call can fail
+ * the same way **without paying for the vendor response again**.
+ *
+ * Why this exists at all: `resolve()` caches only after `normalize()` returns, so every throw
+ * there discarded an already-PAID response — nothing cached, the adapter recorded as failed, the
+ * agent's retry paying full price for a response that will be rejected identically. On Nansen that
+ * is 10cr per `smart-money.flows` attempt and 100cr for the exhaustive `entity.labels` tier, on a
+ * loop with no exit. The mechanism cost 35 real credits to discover (see `docs/issues/df-1-*.md`).
+ *
+ * Only `normalize()` failures are cached, never `fetch()` failures — see `resolve()` for why that
+ * line is where it is.
+ *
+ * `expiresAtMs` is carried IN the entry rather than left to the store. The two-level store promotes
+ * a cold hit into its hot layer using `ttlFor(capability)`, which for a negative entry is the wrong
+ * (much longer) number; checking the timestamp here makes the expiry correct regardless of what any
+ * layer decides to do with it.
+ */
+interface NegativeCacheEntry {
+  __onchainNegative: true;
+  reason: string;
+  expiresAtMs: number;
+}
+
+function isNegativeEntry(value: unknown): value is NegativeCacheEntry {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { __onchainNegative?: unknown }).__onchainNegative === true
+  );
 }
 
 /** `CapabilityRegistry.resolve()`'s return shape (ARCHITECTURE.md §2.1/§5.2/§9.1). */
@@ -146,12 +180,34 @@ export class CapabilityRegistry {
         );
         cached = undefined;
       }
-      if (cached) {
+      if (cached && isNegativeEntry(cached.value)) {
+        // A remembered deterministic failure (L-1). Record it exactly as if the adapter had just
+        // failed — the caller still gets a loud `CapabilityUnavailableError`, never a fabricated
+        // empty result — but ZERO network calls and ZERO credits were spent to say so. Marked in
+        // the reason text so an operator debugging a just-fixed request bug can tell a cached
+        // verdict from a fresh one instead of concluding the fix did not work.
+        if (Date.now() < cached.value.expiresAtMs) {
+          tried.push({ adapterId, reason: `${cached.value.reason} [cached negative]` });
+          continue;
+        }
+        // Expired negative: fall through and pay again, deliberately. The vendor may now have data.
+      } else if (cached) {
         return { result: cached.value, source: adapter.id, cache: 'hit', ageMs: cached.ageMs };
       }
 
+      let raw: unknown;
       try {
-        const raw = await adapter.fetch(capability, args);
+        raw = await adapter.fetch(capability, args);
+      } catch (error) {
+        // FETCH failures are NOT negative-cached (L-1). A transport error, a 429, a 5xx or a budget
+        // refusal is transient by nature: the same call a second later can legitimately succeed.
+        // Caching that verdict would turn a blip into a self-inflicted outage lasting the whole
+        // negative TTL — strictly worse than paying twice. Only the deterministic half is cached.
+        tried.push({ adapterId, reason: error instanceof Error ? error.message : String(error) });
+        continue;
+      }
+
+      try {
         const result = adapter.normalize(capability, raw);
         // Cache-write fault (finding A1): its OWN try/catch, deliberately NOT sharing the
         // fetch/normalize catch below — a cache.set() failure must never be recorded as a
@@ -168,7 +224,24 @@ export class CapabilityRegistry {
         }
         return { result, source: adapter.id, cache: 'miss' };
       } catch (error) {
-        tried.push({ adapterId, reason: error instanceof Error ? error.message : String(error) });
+        const reason = error instanceof Error ? error.message : String(error);
+        // NORMALIZE failed on a response we already have in hand (and, for a paid provider, already
+        // paid for). That verdict is DETERMINISTIC: the identical vendor body will be rejected the
+        // identical way, so replaying the call can only spend money to reach the same conclusion.
+        // Remember it briefly (L-1). Best-effort — the same reasoning as the positive-write catch
+        // above: failing to record a negative must never change what the caller is told.
+        try {
+          const expiresAtMs = Date.now() + NEGATIVE_TTL_SECONDS * 1000;
+          const entry: NegativeCacheEntry = { __onchainNegative: true, reason, expiresAtMs };
+          await this.cache.set(adapter.id, capability, argsHash, entry, NEGATIVE_TTL_SECONDS);
+        } catch (cacheError) {
+          process.stderr.write(
+            `cache.set (negative) failed provider=${adapter.id} capability=${capability}: ${
+              cacheError instanceof Error ? cacheError.message : String(cacheError)
+            } — the next identical call will pay again\n`,
+          );
+        }
+        tried.push({ adapterId, reason });
       }
     }
 

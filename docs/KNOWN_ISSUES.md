@@ -90,7 +90,7 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 
 ## logic
 
-- **L-1** [a paid Nansen call whose result `normalize()` rejects is never cached, so every retry pays again](issues/l-1-nansen-no-negative-caching-paid-call-discarded-on-empty-result.md) — severity `SEV-2`, status `open`, opened 2026-07-25
+- **L-1** [a paid Nansen call whose result `normalize()` rejects is never cached, so every retry pays again](issues/l-1-nansen-no-negative-caching-paid-call-discarded-on-empty-result.md) — severity `SEV-2`, status `fixed`, opened 2026-07-25
 
 ## security
 
@@ -101,4 +101,4 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 - **Q-1** [under a persistent reconcile degrade, the nansen stderr line repeats per call](issues/q-1-nansen-degrade-stderr-repeats-per-call.md) — severity `SEV-4`, status `by-design`, opened 2026-07-24
 - **Q-2** [`NANSEN_DAILY_CREDIT_CAP` is optional with no default, so a stock install has no self-imposed ceiling](issues/q-2-nansen-daily-credit-cap-has-no-default.md) — severity `SEV-3`, status `fixed`, opened 2026-07-24
 - **Q-3** [the 0-credit `entity.labels` query tier is structurally unrefusable by a credit-denominated gate](issues/q-3-nansen-zero-credit-entity-labels-tier-is-unrefusable-by-the-gate.md) — severity `SEV-3`, status `open`, opened 2026-07-25
-- **Q-4** [`token.risk` pays 1cr per call for `/tgm/token-information`, whose body is never read](issues/q-4-nansen-token-information-subcall-paid-but-never-consumed.md) — severity `SEV-3`, status `open`, opened 2026-07-25
+- **Q-4** [`token.risk` pays 1cr per call for `/tgm/token-information`, whose body is never read](issues/q-4-nansen-token-information-subcall-paid-but-never-consumed.md) — severity `SEV-3`, status `fixed`, opened 2026-07-25

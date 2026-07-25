@@ -391,6 +391,74 @@ describe('M2 hardening — adversarial review cycle 1', () => {
     });
   });
 
+  describe('Q-4: /tgm/token-information is consumed, and never fatal', () => {
+    // The sub-call was always PAID (1cr of token.risk's 6) and never read. It is now read — but it
+    // contributes only optional enrichment, so a malformed body must degrade to "fields absent"
+    // rather than throw away the already-paid 6cr response (the L-1 class).
+    const indicators = {
+      body: {
+        token_info: { market_cap_usd: 1000, market_cap_group: 'largecap', is_stablecoin: true },
+        risk_indicators: [{ indicator_type: 'btc-reflexivity', score: 'low' }],
+        reward_indicators: [],
+      },
+      creditsUsedHeader: '5',
+    };
+    const call = (tokenInformationBody: unknown) =>
+      normalizeTokenRiskScore(
+        {
+          chain: 'ethereum',
+          address: '0x0000000000000000000000000000000000000001',
+          indicators,
+          tokenInformation: { body: tokenInformationBody, creditsUsedHeader: '1' },
+        } as never,
+        () => 1,
+      );
+
+    it('surfaces the metadata the capability already pays for', () => {
+      const score = call({
+        data: {
+          name: 'USD Coin',
+          symbol: 'USDC',
+          token_details: {
+            token_deployment_date: '2018-08-03 19:28:24',
+            fdv_usd: 72_949_375_871,
+            circulating_supply: 72_993_578_820.9766,
+            total_supply: 72_995_577_672.29245,
+          },
+          spot_metrics: { liquidity_usd: 536_369_088.28, total_holders: 3_105_691 },
+        },
+      });
+      expect(score.name).toBe('USD Coin');
+      expect(score.deploymentDate).toBe('2018-08-03 19:28:24');
+      expect(score.liquidityUsd).toBe(536_369_088.28);
+      expect(score.totalHolders).toBe(3_105_691);
+    });
+
+    it('degrades to fields-absent on a null/garbage body instead of losing the paid response', () => {
+      for (const body of [null, {}, { data: null }, { data: { token_details: 'nope' } }]) {
+        const score = call(body);
+        expect(score.riskIndicators).toHaveLength(1); // the paid substance survives
+        expect(score.name).toBeUndefined();
+        expect(score.liquidityUsd).toBeUndefined();
+      }
+    });
+
+    it('drops out-of-domain numbers rather than throwing at schema parse', () => {
+      // `.nonnegative()` / `.int()` in the canonical schema — a negative sentinel or a fractional
+      // holder count would otherwise throw AFTER both sub-calls were paid.
+      const score = call({
+        data: {
+          token_details: { fdv_usd: -1, circulating_supply: Number.NaN },
+          spot_metrics: { liquidity_usd: -5, total_holders: 3_105_691.5 },
+        },
+      });
+      expect(score.fdvUsd).toBeUndefined();
+      expect(score.circulatingSupply).toBeUndefined();
+      expect(score.liquidityUsd).toBeUndefined();
+      expect(score.totalHolders).toBeUndefined();
+    });
+  });
+
   describe('Q-2: derived daily credit cap + the .env disable switch', () => {
     it('scales with the plan — the same code serves free and Pro (owner decision #1)', () => {
       expect(deriveDailyCap(59)).toBe(30); // this account

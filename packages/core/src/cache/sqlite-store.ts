@@ -181,9 +181,15 @@ export class SqliteCacheStore implements CacheStore {
     return { value: JSON.parse(row.value_json) as unknown, ageMs: now - row.created_at };
   }
 
-  async set(provider: string, capability: string, argsHash: string, value: unknown): Promise<void> {
+  async set(
+    provider: string,
+    capability: string,
+    argsHash: string,
+    value: unknown,
+    ttlSecondsOverride?: number,
+  ): Promise<void> {
     const now = Date.now();
-    const expiresAt = now + ttlFor(capability) * 1000;
+    const expiresAt = now + (ttlSecondsOverride ?? ttlFor(capability)) * 1000;
     this.upsertStmt.run({
       id: ulid(),
       provider,

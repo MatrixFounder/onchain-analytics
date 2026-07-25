@@ -44,6 +44,38 @@ export const TokenRiskScoreSchema = z
     marketCapUsd: z.number().nonnegative().optional(),
     marketCapGroup: z.string().max(256).optional(),
     isStablecoin: z.boolean().optional(),
+
+    // --------------------------------------------------------------------------------------------
+    // Metadata from `POST /tgm/token-information` (issue Q-4). R-43 always specified this endpoint
+    // as part of `token.risk` "(метаданные)", and the sub-call was always issued and PAID for — but
+    // its body was never read, so 1 of every 6 credits bought nothing. Dropping the call was the
+    // other option; the recorded fixture settled it: `/tgm/indicators`' own `token_info` carries
+    // exactly THREE fields (the three above), while this endpoint carries ~20, several of them
+    // first-order risk inputs. Consuming it is what makes the price honest.
+    //
+    // Selection is deliberate, not "map everything": these are the fields a RISK verdict actually
+    // rests on. Explicitly excluded — `logo`, `website`, `x`, `telegram`: vendor-authored URLs with
+    // no analytical value for risk, and a needless prompt-injection surface into the model's
+    // context (the same reasoning that bounds every other vendor string in this file).
+    // --------------------------------------------------------------------------------------------
+    /** Vendor-supplied deployment timestamp, e.g. `2018-08-03 19:28:24`. Token AGE is a first-order
+     * risk signal — a mint deployed yesterday is not the same risk as one from 2018.
+     * **Kept as the vendor's raw string, never parsed to epoch-ms:** the format carries no timezone,
+     * so converting it would mean guessing one, and this project does not guess vendor semantics
+     * (same treatment as `lastTriggerOn`). */
+    deploymentDate: z.string().max(256).optional(),
+    name: z.string().max(256).optional(),
+    symbol: z.string().max(256).optional(),
+    /** Fully-diluted valuation. Read together with `circulatingSupply`/`totalSupply` it exposes
+     * unlock/dilution risk that `marketCapUsd` alone hides. */
+    fdvUsd: z.number().nonnegative().optional(),
+    circulatingSupply: z.number().nonnegative().optional(),
+    totalSupply: z.number().nonnegative().optional(),
+    /** Spot liquidity. The single best proxy for exit risk — a large cap on thin liquidity is the
+     * classic shape this capability exists to flag. */
+    liquidityUsd: z.number().nonnegative().optional(),
+    /** Holder count — concentration proxy. `.int()`: a fractional holder count is malformed. */
+    totalHolders: z.number().int().nonnegative().optional(),
     // Bounded for the same reason as `SmartMoneyFlow.topHolders` (cycle-2 R-3): no pagination is
     // sent to `/tgm/indicators`, `safeFetch`'s size cap is Content-Length-based and concedes
     // chunked bodies are uncapped mid-stream, and this result is cached for 1800s — so an oversized

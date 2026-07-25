@@ -60,3 +60,20 @@ const DEFAULT_TTL_SECONDS = 300;
 export function ttlFor(capability: string): number {
   return TTL_SECONDS[capability] ?? DEFAULT_TTL_SECONDS;
 }
+
+/**
+ * TTL for a NEGATIVE cache entry — a deterministic `normalize()` failure recorded so the next
+ * identical call does not pay for the same rejected response again (issue L-1).
+ *
+ * Deliberately short, and deliberately NOT per-capability. The two forces pull opposite ways:
+ *
+ * - Longer is cheaper. `smart-money.flows` is 10cr per attempt and `entity.labels`' exhaustive tier
+ *   is 100cr — the whole free-plan balance — so every second of negative TTL is money saved on a
+ *   token the vendor genuinely has no row for.
+ * - Shorter is safer. A negative entry is a cached *error*, and DF-1 proved an empty vendor
+ *   response can also mean **our own request was malformed**. A long negative TTL would make a
+ *   developer's fix appear not to work until it expired — the cache lying about a bug we just
+ *   fixed. Sixty seconds is short enough that nobody debugs against a stale negative for long, and
+ *   long enough to collapse an agent's retry storm from "per attempt" to "once a minute".
+ */
+export const NEGATIVE_TTL_SECONDS = 60;

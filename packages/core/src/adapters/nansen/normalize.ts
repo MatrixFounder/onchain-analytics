@@ -122,13 +122,15 @@ export interface EntityLabelsFetchResult {
 }
 
 /**
- * `token.risk`'s hand-off shape. `tokenInformation` is fetched (always, alongside `indicators` —
- * R-43 "always both") but its body is NOT consumed by `normalizeTokenRiskScore` below:
- * data-model.md §4.1 traces every `TokenRiskScore` field to `TGMIndicatorsResponse`/
- * `TGMIndicatorTokenInfo`/`TGMIndicator` alone, never to `TGMTokenInformationResponse`. Kept here
- * (not discarded in `fetch()`) purely for structural completeness / a future `normalize()`
- * extension without a second live call — the same "call made, not (yet) consumed" pattern as
- * `entity.labels`' `entityName` above.
+ * `token.risk`'s hand-off shape. BOTH sub-responses are consumed (R-43 "always both").
+ *
+ * `tokenInformation` used to be fetched, paid for (1cr of the capability's 6) and then discarded —
+ * this docstring previously said so outright, calling it "a future extension without a second live
+ * call". Issue Q-4 closed that: the recorded fixtures show `/tgm/indicators`' own `token_info`
+ * carries exactly three fields (`market_cap_usd`, `market_cap_group`, `is_stablecoin`) while
+ * `/tgm/token-information` carries roughly twenty, including deployment date, FDV, supply figures,
+ * liquidity and holder count — all first-order risk inputs. So R-43's "(метаданные)" was right and
+ * the implementation was the part that was wrong; `normalizeTokenRiskScore` now reads both.
  */
 export interface TokenRiskFetchResult {
   chain: NansenChain;
@@ -514,6 +516,41 @@ interface TgmIndicatorTokenInfo {
   is_stablecoin?: unknown;
 }
 
+/**
+ * `POST /tgm/token-information` response (issue Q-4). Only the fields `TokenRiskScore` actually
+ * surfaces are declared — `logo`/`website`/`x`/`telegram` are deliberately not read (vendor-authored
+ * URLs, no risk signal, needless prompt-injection surface into the model's context).
+ */
+interface TgmTokenInformationBody {
+  data?: unknown;
+}
+interface TgmTokenInformationData {
+  name?: unknown;
+  symbol?: unknown;
+  token_details?: unknown;
+  spot_metrics?: unknown;
+}
+interface TgmTokenDetails {
+  token_deployment_date?: unknown;
+  fdv_usd?: unknown;
+  circulating_supply?: unknown;
+  total_supply?: unknown;
+}
+interface TgmSpotMetrics {
+  liquidity_usd?: unknown;
+  total_holders?: unknown;
+}
+
+/**
+ * Non-negative finite number, else `undefined` — the degrade-don't-throw rule (cycle-3 3.2) applied
+ * to `token-information`'s optional numeric fields. Every one of them is `.nonnegative()` in the
+ * canonical schema, so a negative sentinel or a `null` must DROP the field rather than throw at
+ * parse time and destroy an already-paid 6cr response.
+ */
+function nonNegativeFinite(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
 interface TgmIndicatorsResponseBody {
   token_info?: unknown;
   risk_indicators?: unknown;
@@ -550,10 +587,16 @@ function mapIndicator(row: unknown): TokenRiskScore['riskIndicators'][number] {
 }
 
 /**
- * `token.risk` normalization (R-33, TC-CONTRACT-04) — built entirely from
- * `TGMIndicatorsResponse` (`raw.indicators.body`); `raw.tokenInformation` is fetched (R-43, always
- * both) but intentionally unused here, see this file's own `TokenRiskFetchResult` docstring.
+ * `token.risk` normalization (R-33, TC-CONTRACT-04) — merges BOTH paid sub-responses:
+ * `TGMIndicatorsResponse` (indicators + the three `token_info` fields) and
+ * `TGMTokenInformationResponse` (the metadata R-43 promises — issue Q-4).
  * `riskIndicators`/`rewardIndicators` stay two SEPARATE arrays (never flattened, R-33).
+ *
+ * **The two sub-responses are not equal in weight.** A malformed `indicators` body is fatal — it is
+ * the substance of a risk score. A malformed `token-information` body is NOT: every field it
+ * contributes is optional enrichment, so it degrades to "those fields absent" rather than throwing
+ * away an already-paid 6cr response and sending the retry to pay again (the L-1 class this project
+ * has now been bitten by three times).
  *
  * @throws when either indicator array is missing/malformed, or an indicator entry lacks
  * `indicator_type` — a clear normalization error, never a process crash (TC-CONTRACT-05).
@@ -569,6 +612,24 @@ export function normalizeTokenRiskScore(
     );
   }
   const tokenInfo = (body.token_info ?? {}) as TgmIndicatorTokenInfo;
+
+  // `/tgm/token-information` (Q-4) — enrichment only, so every access is guarded and a malformed
+  // body simply contributes nothing. `isRecord` at each level: the vendor is free to send `null`.
+  const infoBody = raw.tokenInformation.body as TgmTokenInformationBody;
+  const info: TgmTokenInformationData = isRecord(infoBody?.data)
+    ? (infoBody.data as TgmTokenInformationData)
+    : {};
+  const details: TgmTokenDetails = isRecord(info.token_details)
+    ? (info.token_details as TgmTokenDetails)
+    : {};
+  const spot: TgmSpotMetrics = isRecord(info.spot_metrics)
+    ? (info.spot_metrics as TgmSpotMetrics)
+    : {};
+
+  const fdvUsd = nonNegativeFinite(details.fdv_usd);
+  const circulatingSupply = nonNegativeFinite(details.circulating_supply);
+  const totalSupply = nonNegativeFinite(details.total_supply);
+  const liquidityUsd = nonNegativeFinite(spot.liquidity_usd);
 
   const score: TokenRiskScore = {
     chain: raw.chain,
@@ -592,6 +653,22 @@ export function normalizeTokenRiskScore(
     ...(typeof tokenInfo.is_stablecoin === 'boolean'
       ? { isStablecoin: tokenInfo.is_stablecoin }
       : {}),
+
+    // --- `/tgm/token-information` metadata (Q-4) — all optional, all degrade-don't-throw ---
+    ...(typeof info.name === 'string' ? { name: truncateString(info.name) } : {}),
+    ...(typeof info.symbol === 'string' ? { symbol: truncateString(info.symbol) } : {}),
+    // Raw vendor string, never parsed to epoch-ms — the format carries no timezone (see the field's
+    // own docstring in `types/token-risk-score.ts`).
+    ...(typeof details.token_deployment_date === 'string'
+      ? { deploymentDate: truncateString(details.token_deployment_date) }
+      : {}),
+    ...(fdvUsd !== undefined ? { fdvUsd } : {}),
+    ...(circulatingSupply !== undefined ? { circulatingSupply } : {}),
+    ...(totalSupply !== undefined ? { totalSupply } : {}),
+    ...(liquidityUsd !== undefined ? { liquidityUsd } : {}),
+    // `.int()` in the schema — a fractional holder count is malformed, so reuse the existing
+    // integer guard rather than `nonNegativeFinite` (which would let 3105691.5 through to throw).
+    ...(isNonNegativeInt(spot.total_holders) ? { totalHolders: spot.total_holders } : {}),
   };
   return TokenRiskScoreSchema.parse(score);
 }

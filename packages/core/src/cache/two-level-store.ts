@@ -73,9 +73,23 @@ export class TwoLevelStore implements CacheStore {
     return undefined;
   }
 
-  async set(provider: string, capability: string, argsHash: string, value: unknown): Promise<void> {
-    await this.persistent.set(provider, capability, argsHash, value);
-    this.hot.set(provider, capability, argsHash, value, ttlFor(capability) * 1000);
+  async set(
+    provider: string,
+    capability: string,
+    argsHash: string,
+    value: unknown,
+    ttlSecondsOverride?: number,
+  ): Promise<void> {
+    await this.persistent.set(provider, capability, argsHash, value, ttlSecondsOverride);
+    // Both layers must agree on the override, or a negative entry would expire from the cold layer
+    // while the hot layer kept serving it for the capability's full (much longer) TTL.
+    this.hot.set(
+      provider,
+      capability,
+      argsHash,
+      value,
+      (ttlSecondsOverride ?? ttlFor(capability)) * 1000,
+    );
   }
 }
 

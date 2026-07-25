@@ -377,3 +377,152 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
     });
   });
 });
+
+/**
+ * Issue L-1 — negative caching of DETERMINISTIC failures.
+ *
+ * `resolve()` caches only after `normalize()` returns, so every throw there discarded an
+ * already-fetched (and, on a paid provider, already-PAID) response: nothing cached, the adapter
+ * recorded as failed, the caller's retry paying full price to be rejected identically. On Nansen
+ * that is 10cr per `smart-money.flows` attempt and 100cr for the exhaustive `entity.labels` tier.
+ */
+describe('CapabilityRegistry — negative caching (L-1)', () => {
+  /** A cache that genuinely round-trips, unlike `FakeCacheStore` which only records writes. */
+  class RoundTripCacheStore implements CacheStore {
+    private readonly store = new Map<string, { value: unknown; writtenAtMs: number }>();
+    public setCalls: Array<{ value: unknown; ttlSecondsOverride?: number }> = [];
+
+    private static key(p: string, c: string, h: string): string {
+      return `${p}::${c}::${h}`;
+    }
+
+    async get(p: string, c: string, h: string): Promise<CacheGetResult | undefined> {
+      const hit = this.store.get(RoundTripCacheStore.key(p, c, h));
+      return hit ? { value: hit.value, ageMs: Date.now() - hit.writtenAtMs } : undefined;
+    }
+
+    async set(
+      p: string,
+      c: string,
+      h: string,
+      value: unknown,
+      ttlSecondsOverride?: number,
+    ): Promise<void> {
+      this.setCalls.push({
+        value,
+        ...(ttlSecondsOverride === undefined ? {} : { ttlSecondsOverride }),
+      });
+      this.store.set(RoundTripCacheStore.key(p, c, h), { value, writtenAtMs: Date.now() });
+    }
+
+    /** Overwrites the stored entry in place — used to plant an ALREADY-EXPIRED negative. */
+    poke(p: string, c: string, h: string, value: unknown): void {
+      this.store.set(RoundTripCacheStore.key(p, c, h), { value, writtenAtMs: Date.now() });
+    }
+  }
+
+  const routes: CapabilityRoute[] = [{ capability: 'token.price', adapterIds: ['coingecko'] }];
+  const args = { address: '0xabc' };
+
+  it('remembers a normalize() failure so the SECOND identical call never fetches again', async () => {
+    const adapter = makeAdapter({
+      id: 'coingecko',
+      normalizeImpl: () => {
+        throw new Error('response has no matching row');
+      },
+    });
+    const cache = new RoundTripCacheStore();
+    const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]), cache);
+
+    await expect(registry.resolve('token.price', CHAIN, args)).rejects.toBeInstanceOf(
+      CapabilityUnavailableError,
+    );
+    expect(adapter.fetch).toHaveBeenCalledTimes(1);
+
+    // The retry: still a loud failure (never a fabricated empty result — that is the DF-1 lesson),
+    // but ZERO further fetches, i.e. zero further credits.
+    await expect(registry.resolve('token.price', CHAIN, args)).rejects.toThrow(/cached negative/);
+    expect(adapter.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes the negative under a SHORT ttl override, not the capability TTL', async () => {
+    const adapter = makeAdapter({
+      id: 'coingecko',
+      normalizeImpl: () => {
+        throw new Error('malformed');
+      },
+    });
+    const cache = new RoundTripCacheStore();
+    const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]), cache);
+
+    await expect(registry.resolve('token.price', CHAIN, args)).rejects.toThrow();
+
+    expect(cache.setCalls).toHaveLength(1);
+    expect(cache.setCalls[0]?.ttlSecondsOverride).toBe(60);
+    expect(cache.setCalls[0]?.value).toMatchObject({
+      __onchainNegative: true,
+      reason: 'malformed',
+    });
+  });
+
+  it('does NOT cache a fetch() failure — a transport blip must not become a self-inflicted outage', async () => {
+    const adapter = makeAdapter({
+      id: 'coingecko',
+      fetchImpl: async () => {
+        throw new Error('socket hang up');
+      },
+    });
+    const cache = new RoundTripCacheStore();
+    const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]), cache);
+
+    await expect(registry.resolve('token.price', CHAIN, args)).rejects.toThrow(/socket hang up/);
+    await expect(registry.resolve('token.price', CHAIN, args)).rejects.toThrow(/socket hang up/);
+
+    // Called twice — the second attempt genuinely retried instead of replaying a cached verdict.
+    expect(adapter.fetch).toHaveBeenCalledTimes(2);
+    expect(cache.setCalls).toHaveLength(0);
+  });
+
+  it('lets an EXPIRED negative fall through and pay again — the vendor may now have data', async () => {
+    let normalizeShouldThrow = true;
+    const adapter = makeAdapter({
+      id: 'coingecko',
+      normalizeImpl: () => {
+        if (normalizeShouldThrow) throw new Error('no matching row');
+        return { priceUsd: 7 };
+      },
+    });
+    const cache = new RoundTripCacheStore();
+    const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]), cache);
+
+    await expect(registry.resolve('token.price', CHAIN, args)).rejects.toThrow();
+
+    // Plant an already-expired negative rather than moving the wall clock. Expiry is an
+    // absolute-timestamp comparison on the entry itself, so rewriting the entry tests exactly the
+    // branch under test — and avoids `vi.setSystemTime`, which leaked a shifted clock into a
+    // sibling test FILE on first attempt (a 2s suite became a 9-minute one).
+    const argsHash = deriveArgsHash('token.price', args);
+    cache.poke('coingecko', 'token.price', argsHash, {
+      __onchainNegative: true,
+      reason: 'no matching row',
+      expiresAtMs: Date.now() - 1,
+    });
+    normalizeShouldThrow = false;
+
+    const resolution = await registry.resolve('token.price', CHAIN, args);
+    expect(resolution).toMatchObject({ result: { priceUsd: 7 }, cache: 'miss' });
+    expect(adapter.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('a positive result is still a normal cache hit — the marker must not swallow real values', async () => {
+    const adapter = makeAdapter({ id: 'coingecko', normalizeImpl: () => ({ priceUsd: 7 }) });
+    const cache = new RoundTripCacheStore();
+    const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]), cache);
+
+    await registry.resolve('token.price', CHAIN, args);
+    const second = await registry.resolve('token.price', CHAIN, args);
+
+    expect(second).toMatchObject({ result: { priceUsd: 7 }, cache: 'hit' });
+    expect(adapter.fetch).toHaveBeenCalledTimes(1);
+  });
+});
