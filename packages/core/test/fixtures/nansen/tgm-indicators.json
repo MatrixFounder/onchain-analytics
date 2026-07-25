@@ -1,0 +1,41 @@
+{
+  "token_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  "chain": "ethereum",
+  "token_info": {
+    "market_cap_usd": 72947689222,
+    "market_cap_group": "largecap",
+    "is_stablecoin": true
+  },
+  "risk_indicators": [
+    {
+      "indicator_type": "btc-reflexivity",
+      "score": "low",
+      "signal": 0.01,
+      "signal_percentile": 21.47147147147147,
+      "last_trigger_on": "2026-04-12"
+    },
+    {
+      "indicator_type": "token-supply-inflation",
+      "score": "low",
+      "signal": -0.03703940569184633,
+      "signal_percentile": 16.22641509433962,
+      "last_trigger_on": "2026-07-23"
+    }
+  ],
+  "reward_indicators": [
+    {
+      "indicator_type": "funding-rate",
+      "score": "bullish",
+      "signal": 1,
+      "signal_percentile": 5,
+      "last_trigger_on": "2026-07-23"
+    },
+    {
+      "indicator_type": "trading-range",
+      "score": "bullish",
+      "signal": 0,
+      "signal_percentile": 0,
+      "last_trigger_on": "2026-07-20"
+    }
+  ]
+}

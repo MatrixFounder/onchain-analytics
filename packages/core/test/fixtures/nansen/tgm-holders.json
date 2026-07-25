@@ -1,0 +1,130 @@
+{
+  "data": [
+    {
+      "address": "0x37305b1cd40574e4c5ce33f8e8306be057fd7341",
+      "address_label": "Token Billionaire",
+      "token_amount": 4534414876.262725,
+      "total_outflow": 240067120548.98297,
+      "total_inflow": 244601535425.2457,
+      "balance_change_24h": -34525497.422053,
+      "balance_change_7d": 445605549.450253,
+      "balance_change_30d": 605679948.790734,
+      "ownership_percentage": 0,
+      "value_usd": 4533081450.345171
+    },
+    {
+      "address": "0xe1940f578743367f38d3f25c2d2d32d6636929b6",
+      "address_label": "Token Billionaire",
+      "token_amount": 1699999999.039577,
+      "total_outflow": 1,
+      "total_inflow": 1700000000.039577,
+      "balance_change_24h": 0,
+      "balance_change_7d": 0,
+      "balance_change_30d": 0,
+      "ownership_percentage": 0,
+      "value_usd": 1699500083.5884285
+    },
+    {
+      "address": "0xffa69c0080582098af595156240214b742735a5e",
+      "address_label": "Token Billionaire",
+      "token_amount": 1582999999.8601,
+      "total_outflow": 0.129099,
+      "total_inflow": 1582999999.989199,
+      "balance_change_24h": 0,
+      "balance_change_7d": 0,
+      "balance_change_30d": 0,
+      "ownership_percentage": 0,
+      "value_usd": 1582534490.3544853
+    },
+    {
+      "address": "0xad354cfbaa4a8572dd6df021514a3931a8329ef5",
+      "address_label": "Token Billionaire",
+      "token_amount": 1400000000.5201,
+      "total_outflow": 1.5,
+      "total_inflow": 1400000002.0201,
+      "balance_change_24h": 0,
+      "balance_change_7d": 0,
+      "balance_change_30d": 0,
+      "ownership_percentage": 0,
+      "value_usd": 1399588305.4422982
+    },
+    {
+      "address": "0x40ec5b33f54e0e8a33a975908c5ba1c14e5bbbdf",
+      "address_label": "Token Contract",
+      "token_amount": 1090127867.73519,
+      "total_outflow": 19036913146.67093,
+      "total_inflow": 20127041014.40612,
+      "balance_change_24h": -4384124.180151,
+      "balance_change_7d": -95843747.247731,
+      "balance_change_30d": -65625670.555549,
+      "ownership_percentage": 0,
+      "value_usd": 1089807296.108651
+    },
+    {
+      "address": "0xee7ae85f2fe2239e27d9c1e23fffe168d63b4055",
+      "address_label": "Token Millionaire",
+      "token_amount": 818636707.62932,
+      "total_outflow": 219377051249.28226,
+      "total_inflow": 220195687956.9116,
+      "balance_change_24h": -161693018.711578,
+      "balance_change_7d": -243528198.142683,
+      "balance_change_30d": 283905146.501425,
+      "ownership_percentage": 0,
+      "value_usd": 818395972.8415245
+    },
+    {
+      "address": "0x01b8697695eab322a339c4bf75740db75dc9375e",
+      "address_label": "Token Millionaire",
+      "token_amount": 751054310.458306,
+      "total_outflow": 198945700,
+      "total_inflow": 950000010.458306,
+      "balance_change_24h": 0,
+      "balance_change_7d": 0,
+      "balance_change_30d": -18202498.978108,
+      "ownership_percentage": 0,
+      "value_usd": 750833449.4849755
+    },
+    {
+      "address": "0x38aaef3782910bdd9ea3566c839788af6ff9b200",
+      "address_label": "Token Millionaire",
+      "token_amount": 712218119.14602,
+      "total_outflow": 18471312572.702114,
+      "total_inflow": 19183530691.848137,
+      "balance_change_24h": 0,
+      "balance_change_7d": 0,
+      "balance_change_30d": -1400000000,
+      "ownership_percentage": 0,
+      "value_usd": 712008678.6504023
+    },
+    {
+      "address": "0x36db199f0a1cd131ad0b5cf4fe94286faab9fda5",
+      "address_label": "Token Millionaire",
+      "token_amount": 581835429.260919,
+      "total_outflow": 520185325.511279,
+      "total_inflow": 1102020754.772198,
+      "balance_change_24h": -68236.795694,
+      "balance_change_7d": -9232499.86543,
+      "balance_change_30d": 103254444.280533,
+      "ownership_percentage": 0,
+      "value_usd": 581664330.1307558
+    },
+    {
+      "address": "0x08f619716db7c6245401b543e59acac1d25cb483",
+      "address_label": "Token Millionaire",
+      "token_amount": 549284842.636638,
+      "total_outflow": 586963456.24,
+      "total_inflow": 1136248298.876638,
+      "balance_change_24h": 0,
+      "balance_change_7d": -44969014.74,
+      "balance_change_30d": -43030373.45,
+      "ownership_percentage": 0,
+      "value_usd": 549123315.5895375
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "per_page": 10,
+    "is_last_page": false
+  },
+  "warnings": null
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CapabilityRegistry, createPgHistoryAdapter } from '@onchain-intel/core';
 import type { ProviderAdapter, CapabilityRoute } from '@onchain-intel/core';
-import { loadEnv } from '../src/env.js';
+import { loadEnv, toProcessEnv } from '../src/env.js';
 
 /**
  * Integration test for task 003-6 (R-23/R-24) — the composition seam between `mcp-server`'s
@@ -21,6 +21,13 @@ import { loadEnv } from '../src/env.js';
  * exclusively through the package's public re-export surface (`@onchain-intel/core`'s own
  * `src/index.ts`), per that package's documented consumer convention (see its `.AGENTS.md`) —
  * never an internal path like `@onchain-intel/core/dist/pg/read-client.js`.
+ *
+ * **`toProcessEnv(env)` wrapping (task 005-6 collateral fix, R-46):** `createPgHistoryAdapter`'s
+ * own `Deps.env?: NodeJS.ProcessEnv` predates R-46's two `z.coerce.number()` keys on `Env`
+ * (`NANSEN_DAILY_CREDIT_CAP`/`NANSEN_BUDGET_WARN_RATIO`), which make the validated `Env` object no
+ * longer structurally assignable to a string-only `NodeJS.ProcessEnv` — see `env.ts`'s own
+ * `toProcessEnv()` docstring. A pure type-level projection; every value this file actually asserts
+ * on is untouched.
  */
 
 const HISTORY_ROUTE: CapabilityRoute = {
@@ -39,7 +46,7 @@ function registryWithPgHistoryOnly(env: NodeJS.ProcessEnv): CapabilityRegistry {
 describe('env -> adapter graceful degradation (task 003-6, R-23/R-24)', () => {
   it('loadEnv({}) (no ONCHAIN_PG_URL) makes pg-history report a structured, actionable reason', () => {
     const env = loadEnv({});
-    const adapter = createPgHistoryAdapter({ env });
+    const adapter = createPgHistoryAdapter({ env: toProcessEnv(env) });
     expect(adapter.isAvailable?.()).toEqual({ ok: false, reason: 'needs ONCHAIN_PG_URL' });
   });
 
@@ -47,13 +54,13 @@ describe('env -> adapter graceful degradation (task 003-6, R-23/R-24)', () => {
     const env = loadEnv({
       ONCHAIN_PG_URL: 'postgres://user:p%40ss@db.internal:5432/postgres',
     } as NodeJS.ProcessEnv);
-    const adapter = createPgHistoryAdapter({ env });
+    const adapter = createPgHistoryAdapter({ env: toProcessEnv(env) });
     expect(adapter.isAvailable?.()).toEqual({ ok: true });
   });
 
   it('resolve() for a history capability without ONCHAIN_PG_URL rejects with a structured reason — not a crash, not undefined', async () => {
     const env = loadEnv({});
-    const registry = registryWithPgHistoryOnly(env);
+    const registry = registryWithPgHistoryOnly(toProcessEnv(env));
 
     let rejection: unknown;
     let resolved: unknown;
@@ -78,7 +85,7 @@ describe('env -> adapter graceful degradation (task 003-6, R-23/R-24)', () => {
       DUNE_API_KEY: secretDuneKey,
       // ONCHAIN_PG_URL deliberately absent.
     } as NodeJS.ProcessEnv);
-    const registry = registryWithPgHistoryOnly(env);
+    const registry = registryWithPgHistoryOnly(toProcessEnv(env));
 
     let rejection: unknown;
     try {

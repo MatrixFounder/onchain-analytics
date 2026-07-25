@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "address": "0x1234567890123456789012345678901234567890",
+      "token_amount": 500.0,
+      "total_outflow": 10.0,
+      "total_inflow": 20.0,
+      "balance_change_24h": 1.0,
+      "balance_change_7d": 2.0,
+      "balance_change_30d": 3.0,
+      "ownership_percentage": 0.01,
+      "value_usd": 100.0
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "per_page": 10,
+    "is_last_page": true
+  },
+  "warnings": ["value_usd filter defaults to min 1.0 — some dust holders may be excluded"]
+}

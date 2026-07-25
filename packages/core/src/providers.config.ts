@@ -63,6 +63,12 @@ export const routes: CapabilityRoute[] = [
   // R-8 — Dune, Should, interface/config-stub in M1 (see §3.2's dune decision, F-2/minor):
   // registered, not consumed by any of the 4 M1 tools; live fetch/fixture is out of M1's scope.
   { capability: 'token.holders', chains: ['ethereum'], adapterIds: ['dune'] },
+  // M2 (TASK-005, R-29/R-30, task 005-1) — 3 new nansen routes, no fallback adapter: there is no
+  // free equivalent for any of these three capabilities. chains scope is literally the same
+  // subset as every M1 tool (OQ-3, ARCHITECTURE.md §3.2 "Десятый адаптер").
+  { capability: 'smart-money.flows', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
+  { capability: 'entity.labels', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
+  { capability: 'token.risk', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
 ];
 
 /**
@@ -131,5 +137,21 @@ export const adapterRegistrations: AdapterRegistration[] = [
     hosts: [],
     rateLimit: { capacity: 2, refillPerSec: 0.2 },
     requiresEnv: ['ONCHAIN_PG_URL'],
+  },
+  // 10th entry — M2 (TASK-005, R-29, task 005-1), first PAID adapter. Values copied literally
+  // from ARCHITECTURE.md §3.2 "Десятый адаптер": the same conservative start already used by 5 of
+  // the 9 M1 adapters — well below all four documented vendor thresholds.
+  {
+    id: 'nansen',
+    hosts: ['api.nansen.ai'],
+    // Raised from {capacity:5, refillPerSec:1} in adversarial cycle 1 (performance). The live probe
+    // documents FOUR vendor limits: 150/s, 3000/min, burst 15, 10 credit-fails/min. The old value
+    // was ~0.7% of the per-second allowance — "well below the thresholds" to the point of being
+    // self-harm, because EVERY M2 capability is composite: smart-money.flows/token.risk burn 2
+    // throttle tokens each, token-scoped entity.labels burns 3, plus 1 for a cold-start /account
+    // resync. A 10-token agent turn spent ~7.6s asleep in our own limiter, not the vendor's.
+    // 15/10 is still 15x under the per-second and 5x under the per-minute vendor limit.
+    rateLimit: { capacity: 15, refillPerSec: 10 },
+    requiresEnv: ['NANSEN_API_KEY'],
   },
 ];

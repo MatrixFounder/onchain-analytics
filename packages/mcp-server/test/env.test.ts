@@ -92,6 +92,53 @@ describe('EnvSchema', () => {
     expect(result.DUNE_API_KEY).toBeUndefined();
     expect(result.DATA_DIR).toBeUndefined();
   });
+
+  // Task 005-6 (R-46): 3 new M2 optional keys — NANSEN_API_KEY, NANSEN_DAILY_CREDIT_CAP,
+  // NANSEN_BUDGET_WARN_RATIO. interfaces.md §5.1.2/§5.2: empty env stays valid (same M0/M1
+  // invariant), each key is optional (TC-UNIT-12).
+  it('parse({}) still does not throw with the 3 new M2 keys declared (R-46)', () => {
+    expect(() => EnvSchema.parse({})).not.toThrow();
+  });
+
+  it('accepts NANSEN_API_KEY as a plain optional string', () => {
+    const result = EnvSchema.parse({ NANSEN_API_KEY: 'nansen-demo-key' });
+    expect(result.NANSEN_API_KEY).toBe('nansen-demo-key');
+  });
+
+  it('treats NANSEN_API_KEY: "" as unset (empty-string idiom)', () => {
+    const result = EnvSchema.parse({ NANSEN_API_KEY: '' });
+    expect(result.NANSEN_API_KEY).toBeUndefined();
+  });
+
+  it('coerces NANSEN_DAILY_CREDIT_CAP from its raw env string into a positive integer', () => {
+    const result = EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: '5000' });
+    expect(result.NANSEN_DAILY_CREDIT_CAP).toBe(5000);
+  });
+
+  it('treats NANSEN_DAILY_CREDIT_CAP: "" as unset — equivalent to not set at all (TC-UNIT-12)', () => {
+    const result = EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: '' });
+    expect(result.NANSEN_DAILY_CREDIT_CAP).toBeUndefined();
+  });
+
+  it('rejects a non-positive/non-integer NANSEN_DAILY_CREDIT_CAP', () => {
+    expect(() => EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: '0' })).toThrow();
+    expect(() => EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: '-5' })).toThrow();
+    expect(() => EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: 'not-a-number' })).toThrow();
+  });
+
+  it('coerces NANSEN_BUDGET_WARN_RATIO from its raw env string into a 0..1 ratio', () => {
+    const result = EnvSchema.parse({ NANSEN_BUDGET_WARN_RATIO: '0.9' });
+    expect(result.NANSEN_BUDGET_WARN_RATIO).toBe(0.9);
+  });
+
+  it('treats NANSEN_BUDGET_WARN_RATIO: "" as unset', () => {
+    const result = EnvSchema.parse({ NANSEN_BUDGET_WARN_RATIO: '' });
+    expect(result.NANSEN_BUDGET_WARN_RATIO).toBeUndefined();
+  });
+
+  it('rejects NANSEN_BUDGET_WARN_RATIO: "1.5" — out of the 0..1 range (TC-UNIT-12)', () => {
+    expect(() => EnvSchema.parse({ NANSEN_BUDGET_WARN_RATIO: '1.5' })).toThrow();
+  });
 });
 
 describe('loadEnv', () => {
@@ -109,6 +156,28 @@ describe('loadEnv', () => {
   it('accepts a valid LOG_LEVEL value via an explicit raw override', () => {
     const env = loadEnv({ LOG_LEVEL: 'warn' } as NodeJS.ProcessEnv);
     expect(env.LOG_LEVEL).toBe('warn');
+  });
+
+  // TC-UNIT-12 (R-46) — same "name the key, never the value" contract as the ONCHAIN_PG_URL test
+  // above, now for NANSEN_BUDGET_WARN_RATIO.
+  it('throws on NANSEN_BUDGET_WARN_RATIO: "1.5", naming only the KEY — never the value (D10)', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    let thrown: unknown;
+    try {
+      loadEnv({ NANSEN_BUDGET_WARN_RATIO: '1.5' } as unknown as NodeJS.ProcessEnv);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    expect(message).toContain('NANSEN_BUDGET_WARN_RATIO');
+    expect(message).not.toContain('1.5');
+
+    const stderrOutput = stderrSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(stderrOutput).toContain('NANSEN_BUDGET_WARN_RATIO');
+    expect(stderrOutput).not.toContain('1.5');
   });
 
   it('throws on an invalid LOG_LEVEL value, naming only the KEY — never the value (D10)', () => {

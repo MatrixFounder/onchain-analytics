@@ -1,11 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { CapabilityRegistry, routes } from '@onchain-intel/core';
+import { CapabilityRegistry, routes, type BudgetStore } from '@onchain-intel/core';
 import type { Env } from './env.js';
 import { registerPingTool } from './tools/ping.js';
 import { registerGetTokenTool } from './tools/get-token.js';
 import { registerWalletBalancesTool } from './tools/wallet-balances.js';
 import { registerNewPairsTool } from './tools/new-pairs.js';
 import { registerProtocolTvlTool } from './tools/protocol-tvl.js';
+import { registerSmartMoneyFlowsTool } from './tools/smart-money-flows.js';
+import { registerEntityLabelTool } from './tools/entity-label.js';
+import { registerTokenRiskTool } from './tools/token-risk.js';
 
 /**
  * Dependencies passed explicitly into the server factory (reviewer note 1: version is never
@@ -21,11 +24,20 @@ import { registerProtocolTvlTool } from './tools/protocol-tvl.js';
  * boundary (`test/e2e.stdio.test.ts` spawns `src/index.ts` via `tsx`, which has no way to receive
  * the calling test's `registry` object) — the new `test/e2e.inprocess.test.ts`
  * (`InMemoryTransport`) is what actually exercises this seam; the spawn suite stays ping-only.
+ *
+ * **`budgetStore` (M2, task 005-6, interfaces.md §5.2):** injectable the SAME way as `registry` —
+ * threaded into the 3 new M2 tools' contexts ONLY for read-only `_meta.budget` visibility
+ * (`budget-meta.ts`'s own `budgetMeta()`). This is a DIFFERENT `BudgetStore` reference than the one
+ * `index.ts` wires into `createNansenAdapter({budgetStore})` (that one performs the actual gate
+ * decision inside `nansen.fetch()`) — in production both point at the SAME `SqliteBudgetStore`
+ * instance (`index.ts` constructs it once and passes it to both call sites), but this factory
+ * itself doesn't assume that; it only ever reads from whatever `BudgetStore` it's given.
  */
 export interface CreateServerDeps {
   env: Env;
   version: string;
   registry?: CapabilityRegistry;
+  budgetStore?: BudgetStore;
 }
 
 /**
@@ -46,12 +58,19 @@ export interface CreateServerDeps {
 export function createServer(deps: CreateServerDeps): McpServer {
   const server = new McpServer({ name: 'onchain-intel-mcp-server', version: deps.version });
   const registry = deps.registry ?? new CapabilityRegistry(routes, new Map());
+  const budgetStore = deps.budgetStore;
 
   registerPingTool(server, { version: deps.version });
   registerGetTokenTool(server, { registry });
   registerWalletBalancesTool(server, { registry });
   registerNewPairsTool(server, { registry });
   registerProtocolTvlTool(server, { registry });
+  // M2 (task 005-6) — `budgetStore` threaded into each context ONLY for read-only `_meta.budget`
+  // visibility (this factory's own docstring above); an omitted `budgetStore` degrades the tool to
+  // "works, just without `_meta.budget`" (`budget-meta.ts`'s own contract), never an error.
+  registerSmartMoneyFlowsTool(server, { registry, budgetStore });
+  registerEntityLabelTool(server, { registry, budgetStore });
+  registerTokenRiskTool(server, { registry, budgetStore });
 
   return server;
 }

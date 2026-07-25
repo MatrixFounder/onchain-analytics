@@ -14,10 +14,22 @@ export function canonicalize(value: unknown): unknown {
     const record = value as Record<string, unknown>;
     return Object.keys(record)
       .sort()
-      .reduce<Record<string, unknown>>((acc, key) => {
-        acc[key] = canonicalize(record[key]);
-        return acc;
-      }, {});
+      .reduce<Record<string, unknown>>(
+        (acc, key) => {
+          acc[key] = canonicalize(record[key]);
+          return acc;
+        },
+        // `Object.create(null)`, NOT `{}` (adversarial cycle 1, security): `JSON.parse` yields
+        // `__proto__` as an OWN key, and `Object.keys` returns it — but on a normal object literal
+        // `acc['__proto__'] = v` invokes the PROTOTYPE SETTER instead of creating an own property,
+        // so the key silently vanishes from the canonical form. `{a:1}` and `{a:1,__proto__:{…}}`
+        // would then hash identically → two different logical requests sharing one cache entry and
+        // one singleflight slot. Not exploitable through today's tools (all three M2 input schemas
+        // are `.strict()`, so zod rejects `__proto__` at the boundary), but `deriveArgsHash` is a
+        // PUBLICLY EXPORTED helper and that protection lives three layers away in unrelated files.
+        // A null-prototype accumulator has no setter to hit.
+        Object.create(null) as Record<string, unknown>,
+      );
   }
   return value;
 }

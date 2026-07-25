@@ -33,6 +33,14 @@ function emptyAsUndefined<T extends z.ZodType>(schema: T): z.ZodPreprocess<T> {
  *
  * Every key here is wrapped in `emptyAsUndefined` so a blank value behaves as absent (see its own
  * docstring above).
+ *
+ * M2 (TASK-005, task 005-6, R-46) adds 3 more optional keys — same "`EnvSchema.parse({})` keeps
+ * succeeding" invariant, still no REQUIRED key: `NANSEN_API_KEY` (read by `@onchain-intel/core`'s
+ * `nansen` adapter — the first PAID one, budget-gated D6), `NANSEN_DAILY_CREDIT_CAP` (an optional
+ * self-imposed ceiling — `z.coerce.number()` since env vars always arrive as strings; can only
+ * NARROW the live vendor ceiling, never widen it, `budget-gate.ts`'s `effectiveCeilingFor()`),
+ * `NANSEN_BUDGET_WARN_RATIO` (the stderr warn-threshold fraction, default 0.8 inside
+ * `budget-gate.ts` itself when this key is unset — `.min(0).max(1)`, a ratio, not a credit count).
  */
 export const EnvSchema = z.object({
   LOG_LEVEL: emptyAsUndefined(z.enum(['debug', 'info', 'warn', 'error']).optional()),
@@ -45,9 +53,34 @@ export const EnvSchema = z.object({
   DUNE_API_KEY: emptyAsUndefined(z.string().optional()),
   ONCHAIN_PG_URL: emptyAsUndefined(z.string().url().optional()),
   DATA_DIR: emptyAsUndefined(z.string().optional()),
+  // M2 (task 005-6, R-46) — see this schema's own docstring above for the 3-key rationale.
+  NANSEN_API_KEY: emptyAsUndefined(z.string().optional()),
+  NANSEN_DAILY_CREDIT_CAP: emptyAsUndefined(z.coerce.number().int().positive().optional()),
+  NANSEN_BUDGET_WARN_RATIO: emptyAsUndefined(z.coerce.number().min(0).max(1).optional()),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
+
+/**
+ * Narrows the validated `Env` down to a plain, string-only `NodeJS.ProcessEnv`-shaped view (task
+ * 005-6, R-46 collateral fix): `@onchain-intel/core`'s adapters (`createCoingeckoAdapter`/
+ * `createPgHistoryAdapter`/`createNansenAdapter`) all declare `Deps.env?: NodeJS.ProcessEnv` — a
+ * contract that predates R-46's two `z.coerce.number()` keys (`NANSEN_DAILY_CREDIT_CAP`/
+ * `NANSEN_BUDGET_WARN_RATIO`), which are genuinely numbers at the type level (mandated by this
+ * task's own reviewer note — `z.coerce.number()`, not a string) and therefore make the WHOLE `Env`
+ * object structurally incompatible with a `{[key: string]: string | undefined}` index signature.
+ * Those two keys are never read via `env` by any adapter anyway — they reach `nansen` as SEPARATE,
+ * already-numeric `dailyCreditCap`/`budgetWarnRatio` params (`index.ts`'s own
+ * `createProductionNansenAdapter`) — so this is a pure type-level projection, dropping exactly the
+ * two fields no `NodeJS.ProcessEnv`-typed consumer ever needed from `env` in the first place; every
+ * remaining field's runtime VALUE is untouched.
+ */
+export function toProcessEnv(env: Env): NodeJS.ProcessEnv {
+  const { NANSEN_DAILY_CREDIT_CAP, NANSEN_BUDGET_WARN_RATIO, ...rest } = env;
+  void NANSEN_DAILY_CREDIT_CAP;
+  void NANSEN_BUDGET_WARN_RATIO;
+  return rest;
+}
 
 /** True if `error` is a Node `ENOENT` (file not found) error. */
 function isEnoent(error: unknown): boolean {

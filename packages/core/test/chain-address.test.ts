@@ -100,4 +100,17 @@ describe('normalizeAddress / isValidAddress — dash (not validated in M1, contr
   it('normalizeAddress always throws', () => {
     expect(() => normalizeAddress('dash', 'anything')).toThrow();
   });
+  // --- adversarial review cycle 1 (security F-3): base58 is O(n^2); bound before decoding ---
+  it('rejects an over-long solana address without attempting an O(n^2) base58 decode', () => {
+    // Reached with VENDOR-supplied strings via normalize.ts, where nothing else bounds the size.
+    // A ~1MB base58-alphabet string would otherwise hang this single-threaded server.
+    const huge = '1'.repeat(200_000);
+    const started = Date.now();
+    expect(isValidAddress('solana', huge)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(50);
+  });
+
+  it('still accepts a legitimate solana address (the guard is slack, not a tight fit)', () => {
+    expect(isValidAddress('solana', 'Vote111111111111111111111111111111111111111')).toBe(true);
+  });
 });

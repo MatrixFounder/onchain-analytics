@@ -17,6 +17,12 @@ export {
   type Ohlcv,
   SnapshotSchema,
   type Snapshot,
+  SmartMoneyFlowSchema,
+  type SmartMoneyFlow,
+  EntityLabelSchema,
+  type EntityLabel,
+  TokenRiskScoreSchema,
+  type TokenRiskScore,
 } from './types/index.js';
 
 export { normalizeAddress, isValidAddress } from './chain/address.js';
@@ -55,5 +61,15 @@ export { createDuneAdapter } from './adapters/dune/index.js';
 export { createPgHistoryAdapter, type PgHistoryAdapterDeps } from './adapters/pg-history/index.js';
 export { NotImplementedInM1Error } from './adapters/not-implemented-error.js';
 
+// M2 (TASK-005, R-29/R-30, task 005-1) — the tenth adapter, first PAID one. The only publicly
+// exported factory for it (no separate raw-client export, interfaces.md §5.2).
+export { createNansenAdapter, type NansenAdapterDeps } from './adapters/nansen/index.js';
+
 export { createCacheStore } from './cache/two-level-store.js';
 export { getCacheStats } from './cache/stats.js';
+
+// M2 (TASK-005, R-34/R-35, task 005-2) — the provider-agnostic credit-budget ledger, same
+// "factory, not singleton" injection convention as `createCacheStore` above. `BudgetStore` itself
+// (unlike `SqliteBudgetStore`) knows nothing about any specific provider.
+export { type BudgetStore, createBudgetStore } from './cache/budget-store.js';
+export { dayBucketMs } from './cache/day-bucket.js';

@@ -1,0 +1,16 @@
+{
+  "tokens": [
+    {
+      "name": "USD Coin",
+      "symbol": "USDC",
+      "chain": "ethereum",
+      "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "price": 0.9998743311082746,
+      "volume_24h": 391314253.810201,
+      "market_cap": 72986653822,
+      "rank": 625
+    }
+  ],
+  "entities": [],
+  "total_results": 1
+}

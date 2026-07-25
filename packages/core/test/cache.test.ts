@@ -69,14 +69,17 @@ describe('SqliteCacheStore (R-13/R-14)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('bootstraps all 9 adapterRegistrations into providers before any cache_entries write', () => {
+  it('bootstraps all 10 adapterRegistrations into providers before any cache_entries write', () => {
     const store = new SqliteCacheStore({ dbPath, providers: adapterRegistrations });
     const raw = new Database(dbPath, { readonly: true });
     const rows = raw.prepare('SELECT id FROM providers ORDER BY id').all() as { id: string }[];
     raw.close();
     store.close();
 
-    expect(rows).toHaveLength(9);
+    // M2 (TASK-005, task 005-1) grew the real adapterRegistrations count from 9 (M1) to 10 — this
+    // bootstraps-ALL-of-them behavior is unchanged, only the literal count tracks the config's
+    // real size (asserted dynamically right below too).
+    expect(rows).toHaveLength(10);
     expect(rows.map((r) => r.id).sort()).toEqual([...adapterRegistrations.map((a) => a.id)].sort());
   });
 

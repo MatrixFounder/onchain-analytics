@@ -25,11 +25,25 @@
  * enforced only because `SqliteCacheStore` issues the explicit pragma below on every connection
  * open (DB-SCHEMA-CONCEPT §1.6 — the engine does not enforce a reference column by default).
  *
- * Forward-compatibility note (R-14 acceptance): a future M2 `usage(provider, day, credits_used)`
- * credit-budget table would reference this SAME `providers` registry as its own foreign key — this
- * cache DDL is designed so that table can be added later with a plain `CREATE TABLE`, no migration
- * of `providers`/`cache_entries` required. That `usage` table itself is explicitly OUT of this
- * task's scope (guard R-27) — not created here.
+ * M2 (TASK-005, task 005-2, R-34/R-35) landed the `usage` table this forward-compat note reserved
+ * a place for: `usage(provider FK, day, credits_used, updated_at)`, referencing this SAME
+ * `providers` registry as its own foreign key — added below as a plain `CREATE TABLE IF NOT
+ * EXISTS`, no migration of `providers`/`cache_entries` required, exactly as this note originally
+ * promised. Unlike `cache_entries` above (an overwrite-upsert), `usage.credits_used` is an
+ * ADDITIVE counter: `SqliteBudgetStore`'s (`budget-store.ts`) write is `INSERT ... VALUES (…,
+ * MAX(0, @delta), …) ON CONFLICT (provider, day) DO UPDATE SET credits_used = MAX(0, credits_used
+ * + @delta), ...` — never a plain overwrite. Note the DO UPDATE branch binds **`@delta`, NOT
+ * `excluded.credits_used`** (cycle-2 review L-3 corrected this note, which still described the
+ * abandoned form): in SQLite `excluded.credits_used` IS the VALUES expression, so once VALUES is
+ * clamped, referencing `excluded` would make the update branch unable to SUBTRACT — silently
+ * breaking every reconciliation refund. Do not "restore consistency" by switching it back. It accumulates signed deltas (pre-call reservation, then post-call
+ * reconciliation — both `budget-store.ts`), clamped at 0 via `MAX(0, …)` so a defensive/edge-case
+ * negative delta can never drive the counter below its documented never-negative invariant. `day`
+ * is an epoch-ms UTC day-bucket start (`dayBucketMs()`, `cache/day-bucket.ts`) — DB-SCHEMA-CONCEPT
+ * §1.2's "no string local dates" canon applied literally here too, despite ADR-001 D6 calling the
+ * column "day". `credits_used` is a plain `INTEGER`, not the `value_raw TEXT` pattern
+ * `cache_entries`/`Snapshot` use elsewhere — a documented, small-in-range internal engine counter,
+ * not an arbitrary-precision canonical observation (R-34).
  */
 export const CACHE_DDL = `
 CREATE TABLE IF NOT EXISTS providers (
@@ -50,4 +64,17 @@ CREATE TABLE IF NOT EXISTS cache_entries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cache_entries_expiry ON cache_entries (expires_at);
+
+CREATE TABLE IF NOT EXISTS usage (
+  provider     TEXT NOT NULL REFERENCES providers(id),
+  day          INTEGER NOT NULL,           -- epoch-ms UTC bucket start: floor(ts/86400000)*86400000
+  credits_used INTEGER NOT NULL DEFAULT 0, -- ADDITIVE counter, never overwritten (see note above)
+  updated_at   INTEGER NOT NULL,           -- epoch-ms UTC of the last write — observability only
+  PRIMARY KEY (provider, day),
+  -- Enforced at the ENGINE level, not just by the MAX(0, …) in both upsert branches (adversarial
+  -- cycle 1): a negative credits_used would read as free headroom in checkAndReserve and silently
+  -- widen the budget. The never-negative rule was documented here but previously enforced by
+  -- nothing. Portable across SQLite and Postgres (DB-SCHEMA-CONCEPT §1) — a plain column CHECK.
+  CHECK (credits_used >= 0)
+);
 `;

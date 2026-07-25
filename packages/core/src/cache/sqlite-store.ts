@@ -41,7 +41,11 @@ const DEFAULT_SWEEP_EVERY_N_WRITES = 50;
  * provider among the nine; every other M1 adapter is keyless or works on a free tier. Purely
  * informational — no logic reads this column yet — defaults anything not listed here to `'free'`.
  */
-const PAID_PROVIDER_IDS = new Set<string>(['dune']);
+// M2 (TASK-005, task 005-1) added 'nansen' — the first M2 paid adapter, alongside M1's 'dune'.
+// Purely informational `providers.kind` classification (no logic reads this column) — omitting a
+// paid adapter here would silently diverge from this documented "paid providers listed here"
+// invariant, not fail loudly.
+const PAID_PROVIDER_IDS = new Set<string>(['dune', 'nansen']);
 
 interface CacheEntryRow {
   value_json: string;

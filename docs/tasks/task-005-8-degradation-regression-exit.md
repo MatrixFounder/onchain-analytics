@@ -1,16 +1,16 @@
 # Task 005-8 — [R-40] явная деградация + регрессия M1 + scope-guard + exit-критерии M2
 
-| Поле                    | Значение                                                                                                                                                                                                        |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Родительская задача** | [TASK-005 `m2-alpha-paid`](../TASK.md)                                                                                                                                                                          |
-| **Тип**                 | Verify (интеграционная приёмка; кода добавляется минимум — только тесты деградации)                                                                                                                             |
-| **R-IDs**               | **R-40** (+ перепроверка R-37/R-39/R-44 в полном прогоне)                                                                                                                                                       |
-| **Зависимости**         | 005-7 (транзитивно — всё)                                                                                                                                                                                       |
-| **Разблокирует**        | финальный гейт оркестратора (commit/push/CI)                                                                                                                                                                    |
-| **Источники**           | TASK.md §6 (acceptance + трассировка exit-критериев ROADMAP §M2), §4 (out of scope)                                                                                                                             |
-| **Живые кредиты**       | **0** — вся проверка offline                                                                                                                                                                                    |
-| **M1-baseline**         | _(заполняется в 005-1 Phase 1: фактическое число зелёных тестов до первой правки M2)_ → ожидаемо **287** (212 core + 75 mcp-server, измерено координатором); резко иное число — сигнал, не молча принятая цифра |
-| **BASE_SHA**            | _(заполняется в 005-1 Phase 1: `git rev-parse HEAD` до первой правки M2)_ → **`________`**                                                                                                                      |
+| Поле                    | Значение                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Родительская задача** | [TASK-005 `m2-alpha-paid`](../TASK.md)                                                                                                          |
+| **Тип**                 | Verify (интеграционная приёмка; кода добавляется минимум — только тесты деградации)                                                             |
+| **R-IDs**               | **R-40** (+ перепроверка R-37/R-39/R-44 в полном прогоне)                                                                                       |
+| **Зависимости**         | 005-7 (транзитивно — всё)                                                                                                                       |
+| **Разблокирует**        | финальный гейт оркестратора (commit/push/CI)                                                                                                    |
+| **Источники**           | TASK.md §6 (acceptance + трассировка exit-критериев ROADMAP §M2), §4 (out of scope)                                                             |
+| **Живые кредиты**       | **0** — вся проверка offline                                                                                                                    |
+| **M1-baseline**         | заполнено в 005-1 Phase 1: **287** зелёных тестов до первой правки M2 (212 `@onchain-intel/core` + 75 `@onchain-intel/mcp-server`, координатор) |
+| **BASE_SHA**            | заполнено в 005-1 Phase 1: `git rev-parse HEAD` до первой правки M2 → **`8499a212a7dce9cf47122a80c0524cd0060b0e8f`**                            |
 
 ## Цель
 
@@ -110,7 +110,15 @@ grep -rn "process\.env\.NANSEN_API_KEY" packages/*/test/ && echo "REVIEW: ambien
 # фикстур, PLAN §0.4) И working-tree (незакоммиченное). Подставить BASE_SHA из шапки. Все — пусто:
 M1_PATHS="packages/core/src/adapters/registry.ts packages/mcp-server/src/tools/resolve-capability.ts packages/mcp-server/src/tools/get-token.ts packages/mcp-server/src/tools/wallet-balances.ts packages/mcp-server/src/tools/new-pairs.ts packages/mcp-server/src/tools/protocol-tvl.ts packages/mcp-server/src/tools/ping.ts packages/core/src/adapters/coingecko packages/core/src/adapters/dexscreener packages/core/src/adapters/defillama packages/core/src/adapters/dune packages/core/src/adapters/rpc-evm packages/core/src/adapters/rpc-solana packages/core/src/adapters/dash-platform packages/core/src/adapters/platform-explorer packages/core/src/adapters/pg-history"
 git diff --stat "$BASE_SHA"..HEAD -- $M1_PATHS    # закоммиченные правки с начала M2
-git diff --stat -- $M1_PATHS                       # незакоммиченные правки в рабочем дереве
+git diff --stat -- $M1_PATHS                       # незакоммиченные правки в рабочем дереве (working tree vs INDEX)
+
+# ⚠️ Orchestrator correction (005-8 execution, RF-1-class fix — записано, не молча): ни один M2-коммит
+# не был сделан поверх BASE_SHA на момент прогона этой задачи (весь M2 живёт в рабочем дереве) — тогда
+# HEAD === BASE_SHA, и первая команда выше (`BASE_SHA..HEAD`) вырожденно пуста ЛЮБЫМ образом, а вторая
+# (`git diff` без ref) совпадает с проверкой ниже ТОЛЬКО пока индекс не тронут (`git add` ничего не
+# застейджил) — хрупкое совпадение, не гарантия. Единственная команда, которая сравнивает рабочее дерево
+# напрямую с BASE_SHA независимо от состояния индекса/коммитов, — один ref, без `..HEAD`:
+git diff --stat "$BASE_SHA" -- $M1_PATHS           # АВТОРИТЕТНАЯ проверка — рабочее дерево vs BASE_SHA напрямую
 
 # Scope-guard (все — «ok»):
 grep -rn "bitquery" packages/ --include=*.ts && echo "REVIEW: bitquery in scope?" || echo "no-bitquery-ok"

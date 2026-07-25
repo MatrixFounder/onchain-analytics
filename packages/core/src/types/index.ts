@@ -7,3 +7,7 @@ export { BalanceSchema, type Balance, WalletSchema, type Wallet } from './wallet
 export { PoolSchema, type Pool } from './pool.js';
 export { OhlcvSchema, type Ohlcv } from './ohlcv.js';
 export { SnapshotSchema, type Snapshot } from './snapshot.js';
+// M2 (TASK-005, R-31/R-32/R-33) — three canonical types for the nansen adapter's capabilities:
+export { SmartMoneyFlowSchema, type SmartMoneyFlow } from './smart-money-flow.js';
+export { EntityLabelSchema, type EntityLabel } from './entity-label.js';
+export { TokenRiskScoreSchema, type TokenRiskScore } from './token-risk-score.js';

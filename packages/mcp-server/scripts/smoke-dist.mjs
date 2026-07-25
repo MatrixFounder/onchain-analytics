@@ -12,21 +12,24 @@
 // no package.json `dependencies` entry to maintain here).
 //
 // Sequence: initialize -> notifications/initialized -> tools/list -> tools/call onchain_ping.
-// Asserts (a) tools/list returns exactly 5 tools (onchain_ping + the 4 new M1 tools added task
-// 003-7, checked by name); (b) the call's structuredContent.version matches package.json's
-// version (read here, never hardcoded); (c) every line the child writes to stdout parses as JSON
+// Asserts (a) tools/list returns exactly 8 tools (onchain_ping + the 4 M1 tools from task 003-7 +
+// the 3 M2 (Nansen-backed, paid) tools from task 005-6, checked by name — task 005-8's own
+// exit-criteria trace, "8 tools видны в tools/list"); (b) the call's structuredContent.version
+// matches package.json's version (read here, never hardcoded); (c) every line the child writes to
+// stdout parses as JSON
 // (a non-JSON line would mean something other than MCP protocol touched stdout, ARCHITECTURE
 // §7.3 — the same invariant the stdio E2E suite checks for the tsx-run server, now checked for
 // the built one too). Exits 0 on success, 1 with a clear stderr message otherwise. Bounded by an
 // overall timeout that SIGKILLs a hung child rather than hanging CI.
 //
 // Deliberately stays PING-ONLY for the actual `tools/call` (architect decision, task 003-7,
-// ARCHITECTURE.md §3.2): this script runs `dist/index.js` — the REAL entrypoint, wired to the
-// REAL, network-capable `CapabilityRegistry` (`index.ts`'s `buildRegistry()`), not a fixture one.
-// Calling any of the 4 new tools here would mean live network calls from a CI-run smoke test —
-// exactly the dependency R-21 forbids. `test/e2e.inprocess.test.ts` (on `tsx`, not `dist/`)
-// already covers all 4 tools' behavior against fixtures; duplicating that in this build-specific
-// smoke test isn't needed.
+// ARCHITECTURE.md §3.2 — carried forward unchanged by task 005-8, M2): this script runs
+// `dist/index.js` — the REAL entrypoint, wired to the REAL, network-capable `CapabilityRegistry`
+// (`index.ts`'s `buildRegistry()`), not a fixture one. Calling any of the 4 M1 tools, or any of the
+// 3 M2 (paid) tools, here would mean live network calls (and, for the 3 M2 tools, live credit
+// spend) from a CI-run smoke test — exactly the dependency R-21 forbids, doubly so for a paid call.
+// `test/e2e.inprocess.test.ts` (on `tsx`, not `dist/`) already covers all 7 non-ping tools'
+// behavior against fixtures; duplicating that in this build-specific smoke test isn't needed.
 
 import { spawn } from 'node:child_process';
 import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -188,10 +191,13 @@ async function run() {
   const listResult = await sendRequest('tools/list', {});
   const tools = listResult && listResult.tools;
   const expectedNames = [
+    'onchain_entity_label',
     'onchain_get_token',
     'onchain_new_pairs',
     'onchain_ping',
     'onchain_protocol_tvl',
+    'onchain_smart_money_flows',
+    'onchain_token_risk',
     'onchain_wallet_balances',
   ];
   const actualNames = Array.isArray(tools)
@@ -202,11 +208,11 @@ async function run() {
     : [];
   if (
     !Array.isArray(tools) ||
-    tools.length !== 5 ||
+    tools.length !== 8 ||
     JSON.stringify(actualNames) !== JSON.stringify(expectedNames)
   ) {
     throw new Error(
-      `tools/list did not return exactly the 5 expected tools ${JSON.stringify(expectedNames)}: got ${JSON.stringify(tools)}`,
+      `tools/list did not return exactly the 8 expected tools ${JSON.stringify(expectedNames)}: got ${JSON.stringify(tools)}`,
     );
   }
 

@@ -72,4 +72,22 @@ describe('deriveArgsHash [Phase 2 — canonical key-order]', () => {
     const second = deriveArgsHash('token.price', args);
     expect(first).toBe(second);
   });
+  // --- adversarial review cycle 1 (security F-7): __proto__ must not collapse the canonical form ---
+  it('does not let a __proto__ key silently vanish from the canonical form (cache-key collision)', () => {
+    // `JSON.parse` yields `__proto__` as an OWN key and `Object.keys` returns it, but assigning it
+    // onto a plain `{}` accumulator hits the PROTOTYPE SETTER instead of creating an own property —
+    // so the key disappeared and two different logical requests hashed identically, sharing one
+    // cache entry and one singleflight slot. The reduce now seeds `Object.create(null)`.
+    const plain = JSON.parse('{"a":1}') as Record<string, unknown>;
+    const polluted = JSON.parse('{"a":1,"__proto__":{"x":2}}') as Record<string, unknown>;
+    expect(deriveArgsHash('token.price', plain)).not.toBe(deriveArgsHash('token.price', polluted));
+  });
+
+  it('does not pollute Object.prototype while canonicalizing', () => {
+    deriveArgsHash(
+      'token.price',
+      JSON.parse('{"__proto__":{"polluted":true}}') as Record<string, unknown>,
+    );
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
 });

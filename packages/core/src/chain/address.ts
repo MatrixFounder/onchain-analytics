@@ -45,7 +45,20 @@ function normalizeEthereumAddress(raw: string): string {
   return `0x${toEip55Checksum(body.toLowerCase())}`;
 }
 
+/**
+ * Hard upper bound applied BEFORE any base58 decode (adversarial cycle 1, security). base58
+ * decoding is O(n²) in the input length, and this function is reached with **vendor-supplied**
+ * strings via `normalize.ts` — where, unlike the inbound MCP tool path (which length-guards before
+ * `isValidAddress`), nothing bounds the size. `safeFetch`'s size cap is `Content-Length`-based and
+ * its own docstring concedes chunked responses are uncapped mid-stream, so a single response row
+ * carrying a ~1 MB base58-alphabet string would burn ~10^12 inner operations on this
+ * single-threaded stdio server — a full hang, after the credits for that call were already spent.
+ * A real Solana address is 32 bytes ≈ 44 base58 chars; 128 is generous slack, not a tight fit.
+ */
+const MAX_DECODABLE_ADDRESS_LENGTH = 128;
+
 function isValidSolanaAddress(raw: string): boolean {
+  if (raw.length > MAX_DECODABLE_ADDRESS_LENGTH) return false;
   try {
     return bs58.decode(raw).length === SOLANA_ADDRESS_BYTE_LENGTH;
   } catch {

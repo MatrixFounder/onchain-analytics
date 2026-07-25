@@ -1,0 +1,29 @@
+{
+  "data": {
+    "name": "USD Coin",
+    "symbol": "USDC",
+    "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    "logo": "https://coin-images.coingecko.com/coins/images/6319/small/USDC.png?1769615602",
+    "token_details": {
+      "token_deployment_date": "2018-08-03 19:28:24",
+      "website": "https://www.circle.com/en/usdc",
+      "x": "",
+      "telegram": "",
+      "market_cap_usd": 72988075260.33665,
+      "fdv_usd": 72949375871,
+      "circulating_supply": 72993578820.9766,
+      "total_supply": 72995577672.29245
+    },
+    "spot_metrics": {
+      "volume_total_usd": 381402184.56802845,
+      "buy_volume_usd": 194650011.58531788,
+      "sell_volume_usd": 186752172.98271054,
+      "total_buys": 23831,
+      "total_sells": 22422,
+      "unique_buyers": 4964,
+      "unique_sellers": 4462,
+      "liquidity_usd": 536369088.28717536,
+      "total_holders": 3105691
+    }
+  }
+}

@@ -1,0 +1,322 @@
+import { throttle as productionThrottle } from '../../net/rate-limit.js';
+import type { Throttle } from '../../net/rate-limit.js';
+import { safeFetch } from '../../net/safe-fetch.js';
+import { adapterRegistrations } from '../../providers.config.js';
+import { stringifyTruncated } from '../stringify-truncated.js';
+
+const REGISTRATION = adapterRegistrations.find((r) => r.id === 'nansen');
+if (!REGISTRATION) {
+  throw new Error('nansen: no matching entry in adapterRegistrations (providers.config.ts)');
+}
+const HOSTS = REGISTRATION.hosts;
+const RATE_LIMIT = REGISTRATION.rateLimit;
+const BASE_URL = `https://${HOSTS[0]}`;
+
+/** Only the two chains any M2 tool ever passes through to these request builders (ARCHITECTURE.md
+ * §3.2 "Десятый адаптер", OQ-3) — a self-contained literal union, not the wider canonical `Chain`
+ * (which also carries `'dash'`, never valid here), mirroring `defillama/index.ts`'s own
+ * `SupportedChain` precedent. */
+export type NansenChain = 'ethereum' | 'solana';
+
+/**
+ * Thrown on `429 Too Many Requests` (task-005-4, R-29 UC-7). YAGNI-scoped: an explicit, immediate
+ * error — NEVER a silent retry inside this adapter (system-architecture.md §3.2 "429 Too Many
+ * Requests" — retry would interact with the budget reservation already made before this HTTP call,
+ * out of scope by design). `retryAfter` is the raw `retry-after` response header value, folded
+ * into the message text so a caller reading just `error.message` still sees it.
+ */
+export class NansenRateLimitedError extends Error {
+  constructor(public readonly retryAfter: string | null) {
+    super(`nansen: HTTP 429 Too Many Requests, retry after ${retryAfter ?? '(unknown)'}`);
+    this.name = 'NansenRateLimitedError';
+  }
+}
+
+/**
+ * Thrown on `402 Payment Required` (task-005-4, UC-6) — system-architecture.md §3.2 treats this as
+ * an AUTHORITATIVE "no vendor budget right now" signal, the same family as a transport
+ * failure/timeout on a reserved-but-unconfirmed call. This task only needs a typed, distinguishable
+ * error for it; turning it into `accountState.markUnreconciled()` is task 005-5's own wiring
+ * (`fetch()`'s docstring below and this directory's `.AGENTS.md` both name that boundary).
+ */
+export class NansenPaymentRequiredError extends Error {
+  constructor(public readonly endpoint: string) {
+    super(`nansen: HTTP 402 Payment Required for ${endpoint}`);
+    this.name = 'NansenPaymentRequiredError';
+  }
+}
+
+/**
+ * Optional per-call dependencies every endpoint function below shares (task 005-4). `apiKey` is
+ * always the caller's (`adapters/nansen/index.ts`'s `fetch()`) own env read, done INSIDE that
+ * method body, never at module load — this module never touches `process.env` itself
+ * (ARCHITECTURE.md §7.2/§3.2, R-45). `throttle` mirrors `budget-gate.ts`'s own
+ * `NansenBudgetGateDeps.throttle` precedent: defaults to the package's real production singleton,
+ * but this module's own test files construct a FRESH `createThrottle()` per test so many
+ * independent scenarios in one file never share a real, process-lifetime token bucket (which would
+ * otherwise incur genuine multi-second real-timer waits purely as an artifact of test ordering,
+ * `net/rate-limit.ts`'s capacity 5 / refillPerSec 1 for this provider).
+ */
+export interface NansenEndpointDeps {
+  apiKey: string;
+  fetchImpl: typeof fetch;
+  throttle?: Throttle;
+}
+
+/**
+ * One endpoint call's result, handed UP to the caller unopened (task-005-4 task-file wording,
+ * verbatim): `body` is the untouched, `response.json()`-parsed vendor payload (anti-corruption —
+ * NOTHING here inspects vendor field names, that's `normalize.ts`'s job exclusively);
+ * `creditsUsedHeader` is the raw `X-Nansen-Credits-Used` response header value (or `null` if
+ * absent) — **parsed/summed by post-call reconciliation, task 005-5's own scope, never by the
+ * endpoint function itself** (system-architecture.md §3.2 "Post-call reconciliation").
+ */
+export interface NansenEndpointResult {
+  body: unknown;
+  creditsUsedHeader: string | null;
+}
+
+/**
+ * The single low-level HTTP step every one of the seven exported endpoint functions below funnels
+ * through (task 005-4, R-29): `throttle('nansen', RATE_LIMIT)` → `safeFetch(url, opts, HOSTS,
+ * fetchImpl)` (`HOSTS` sourced from THIS adapter's own `adapterRegistrations` entry, never a
+ * literal in this file — SSRF allowlist stays declarative, ARCHITECTURE.md §7.2) → status
+ * handling → `response.json()`.
+ *
+ * **`429`/`402` are recognized HERE, uniformly, for every endpoint** (never duplicated per call
+ * site) — `429` throws `NansenRateLimitedError` immediately, no retry; `402` throws
+ * `NansenPaymentRequiredError`. Any other non-`ok` status throws a plain `Error` naming the HTTP
+ * status and endpoint, with the response body bounded via `stringifyTruncated()` (same
+ * unbounded-error-message guard already established by `rpc-evm`'s own HTTP step).
+ */
+async function callEndpoint(
+  method: 'GET' | 'POST',
+  urlPath: string,
+  requestBody: unknown,
+  deps: NansenEndpointDeps,
+): Promise<NansenEndpointResult> {
+  const throttleFn = deps.throttle ?? productionThrottle;
+  await throttleFn('nansen', RATE_LIMIT);
+
+  const url = `${BASE_URL}${urlPath}`;
+  // Literal `apiKey` header — NOT the generic Web credentials-header + token-prefix scheme some
+  // other Nansen surfaces use (that one belongs to Nansen's separate MCP endpoint, out of scope
+  // here; see this directory's own .AGENTS.md for why this distinction matters and the live-probed
+  // source: auth.scheme:'apiKey', in:'header', name:'apiKey', nansen-probe-2026-07-23.json). This
+  // whole directory is grepped for that wrong scheme's two literal words in every task's
+  // acceptance — deliberately not spelled out here either, same convention as `budget-gate.ts`.
+  const opts: RequestInit =
+    method === 'POST'
+      ? {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', apiKey: deps.apiKey },
+          body: JSON.stringify(requestBody),
+        }
+      : { method: 'GET', headers: { apiKey: deps.apiKey } };
+
+  const response = await safeFetch(url, opts, HOSTS, deps.fetchImpl);
+
+  if (response.status === 429) {
+    throw new NansenRateLimitedError(response.headers.get('retry-after'));
+  }
+  if (response.status === 402) {
+    throw new NansenPaymentRequiredError(urlPath);
+  }
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => '');
+    // REDACT the key out of the vendor's body before it enters an Error message (adversarial
+    // cycle 1, security F-2). This message is forwarded verbatim by the tool layer as `isError`
+    // text → into the model's context → into transcripts and MCP client logs. Echoing request
+    // headers back in a 4xx debug body is common gateway/WAF behavior, and `nansen.secrets.test.ts`
+    // explicitly disclaims covering it ("asserts on OUR OWN code never embedding the key, not on
+    // defending against a vendor response that pathologically echoes back request headers").
+    // This adapter is the only layer that holds the key, so it is the only layer that CAN redact —
+    // nothing downstream knows what to look for.
+    // Order matters: REDACT FIRST, THEN truncate (cycle-2 review R-2 — the first version of this
+    // line did it backwards). `stringifyTruncated` slices to 500 chars, so redacting afterwards
+    // leaves an unredacted key PREFIX whenever the echoed key straddles the boundary — and an
+    // attacker who can influence the echoed body's length picks where that boundary falls, so two
+    // responses with different padding leak two fragments that concatenate to the whole key.
+    // Splitting the RAW text also fixes the second half of R-2: `JSON.stringify` escapes `"`, `\`
+    // and control/non-ASCII characters, so a key containing any of them would never have matched
+    // `deps.apiKey` after stringification and would not have been redacted at all.
+    const safeBody = stringifyTruncated(bodyText.split(deps.apiKey).join('***'));
+    throw new Error(`nansen: HTTP ${response.status} for ${urlPath}: ${safeBody}`);
+  }
+
+  const body: unknown = await response.json();
+  const creditsUsedHeader = response.headers.get('x-nansen-credits-used');
+  return { body, creditsUsedHeader };
+}
+
+/**
+ * `POST /api/v1/smart-money/netflow` (`SmartMoneyNetflowRequest`, `x-credit-cost` 5cr both plans) —
+ * filtered to exactly one token via `filters.token_address` (the request's own documented "token
+ * address or symbol filter", `nansen-openapi-2026-07-23.json`'s `SmartMoneyNetflowFilters`). Body
+ * intentionally minimal — only the properties this capability actually needs, `additionalProperties:
+ * false` on the vendor schema means nothing beyond `chains`/`filters` is accepted anyway.
+ *
+ * **`include_stablecoins`/`include_native_tokens` MUST be sent explicitly as `true`** (live-run
+ * finding, task 005-7): both default to **`false`** server-side
+ * (`SmartMoneyNetflowFilters.include_stablecoins.default === false`, same for native tokens). This
+ * capability is *token-scoped* — the caller named one specific `tokenAddress` — so silently
+ * dropping that token because it happens to be a stablecoin or a wrapped-native asset is never the
+ * intent, it just returns a well-formed empty `data: []` that looks like "smart money isn't
+ * trading this token". That empty result cost 20 live credits to diagnose (USDC and WETH, both
+ * excluded by these defaults) before the cause was traced to the request body rather than to
+ * vendor coverage. The vendor's own `token_address` example is USDC, which is unreachable unless
+ * `include_stablecoins` is true. These flags are category filters for the *screener* use of this
+ * endpoint; for a token-scoped query they must not narrow the result.
+ */
+export function postSmartMoneyNetflow(
+  params: { chain: NansenChain; tokenAddress: string },
+  deps: NansenEndpointDeps,
+): Promise<NansenEndpointResult> {
+  return callEndpoint(
+    'POST',
+    '/api/v1/smart-money/netflow',
+    {
+      chains: [params.chain],
+      filters: {
+        // **LOWERCASE, not the EIP-55 checksummed form** (live-confirmed 2026-07-24, DF-1 root
+        // cause #2): this endpoint's `token_address` filter matches CASE-SENSITIVELY against a
+        // lowercase-stored column, unlike the sibling `/tgm/*` endpoints, which accept the
+        // checksummed form happily. `normalizeAddress()` canonicalizes to EIP-55, so passing it
+        // through verbatim silently yields a well-formed empty `data: []` — indistinguishable
+        // from "smart money isn't trading this token". Proven live: the identical request with
+        // the checksummed address returns 0 rows, with the lowercase address returns the real
+        // USDC row (net_flow_24h_usd ≈ -325_939, trader_count 142). Every `token_address`
+        // example in the vendor spec is lowercase. The canonical EIP-55 form is still what we
+        // store/return and what feeds the cache key — only this vendor filter gets lowercased.
+        token_address: params.tokenAddress.toLowerCase(),
+        include_stablecoins: true,
+        include_native_tokens: true,
+      },
+    },
+    deps,
+  );
+}
+
+/**
+ * `POST /api/v1/tgm/holders` (`TGMHoldersRequest`, 5cr both plans; 150cr flat surcharge when
+ * `premiumLabels` is set — mirrors `cost-of.ts`'s own `NANSEN_PREMIUM_LABELS_COST` handling,
+ * **not exercised by this task's routing** — `entity.labels`' `exhaustive: true` tier uses
+ * `postProfilerAddressLabels` instead, per system-architecture.md §3.2's capability table).
+ * `chain`+`token_address` are the only two required properties.
+ */
+export function postTgmHolders(
+  params: { chain: NansenChain; tokenAddress: string; premiumLabels?: boolean },
+  deps: NansenEndpointDeps,
+): Promise<NansenEndpointResult> {
+  return callEndpoint(
+    'POST',
+    '/api/v1/tgm/holders',
+    {
+      chain: params.chain,
+      token_address: params.tokenAddress,
+      // Forwarded so PRICE AND REQUEST AGREE (cycle-2 review L-2). `cost-of.ts` charges the flat
+      // 150cr `NANSEN_PREMIUM_LABELS_COST` whenever `premium_labels === true`; previously this
+      // transport never sent the flag, so the gate could reserve 150 for a call the vendor would
+      // have billed at 5 — refusing, on a 100cr free plan, a call that would have succeeded.
+      // Only emitted when explicitly requested, so the default body is byte-identical to before
+      // and no production path can reach the paid tier: no tool input schema exposes this flag and
+      // all three are `.strict()`.
+      ...(params.premiumLabels === true ? { premium_labels: true } : {}),
+    },
+    deps,
+  );
+}
+
+/**
+ * `POST /api/v1/tgm/indicators` (`TGMIndicatorsRequest`, 5cr both plans) — `chain`+`token_address`
+ * are its only two (required) properties.
+ */
+export function postTgmIndicators(
+  params: { chain: NansenChain; tokenAddress: string },
+  deps: NansenEndpointDeps,
+): Promise<NansenEndpointResult> {
+  return callEndpoint(
+    'POST',
+    '/api/v1/tgm/indicators',
+    { chain: params.chain, token_address: params.tokenAddress },
+    deps,
+  );
+}
+
+/**
+ * `POST /api/v1/tgm/token-information` (`TGMTokenInformationRequest`, 1cr both plans) —
+ * `timeframe` is REQUIRED by the vendor schema (`TGMFlowIntelligenceTimeframe` enum:
+ * `5m|1h|6h|12h|1d|7d`); `'1d'` (the schema's own documented example value) is the only sensible
+ * fixed choice here — `token.risk`'s canonical output (data-model.md §4.1) doesn't expose a
+ * timeframe knob, so there is no caller-supplied value to thread through.
+ */
+export function postTgmTokenInformation(
+  params: { chain: NansenChain; tokenAddress: string },
+  deps: NansenEndpointDeps,
+): Promise<NansenEndpointResult> {
+  return callEndpoint(
+    'POST',
+    '/api/v1/tgm/token-information',
+    { chain: params.chain, token_address: params.tokenAddress, timeframe: '1d' },
+    deps,
+  );
+}
+
+/**
+ * `POST /api/v1/search/general` (`GeneralSearchRequest`, 0cr both plans) — `chain` is passed as
+ * the request's own optional "narrow down token results" filter (`searchQuery` alone is required
+ * by the vendor schema). Narrowing by chain keeps `TokenSearchResult.chain` values consistent with
+ * the caller's own narrow `NansenChain`, so `normalize.ts` never has to reconcile an arbitrary
+ * vendor chain string against the strict canonical `ChainSchema` enum.
+ */
+export function postSearchGeneral(
+  params: { chain: NansenChain; searchQuery: string },
+  deps: NansenEndpointDeps,
+): Promise<NansenEndpointResult> {
+  return callEndpoint(
+    'POST',
+    '/api/v1/search/general',
+    { search_query: params.searchQuery, chain: params.chain },
+    deps,
+  );
+}
+
+/**
+ * `POST /api/v1/search/entity-name` (`EntityNameSearchRequest`, 0cr both plans) — always called
+ * alongside `postSearchGeneral` on the non-exhaustive `entity.labels` path (`cost-of.ts`'s own
+ * `endpointsFor()`, system-architecture.md §3.2's capability table: "search/general [+
+ * entity-name]"). Its response (`EntityNameSearchItem[]`, bare `entity_name` strings only) is NOT
+ * consumed by `normalize.ts` — data-model.md §4.1 traces `EntityLabel`'s fields only to
+ * `GeneralSearchResponse`/`TGMHolder.address_label` — this call exists purely for HTTP-call/cost
+ * parity with `cost-of.ts`'s already-real pricing (`adapters/nansen/index.ts`'s docstring notes
+ * this explicitly).
+ */
+export function postSearchEntityName(
+  params: { searchQuery: string },
+  deps: NansenEndpointDeps,
+): Promise<NansenEndpointResult> {
+  return callEndpoint(
+    'POST',
+    '/api/v1/search/entity-name',
+    { search_query: params.searchQuery },
+    deps,
+  );
+}
+
+/**
+ * `POST /api/v1/profiler/address/labels` (`ProfilerAddressLabelsRequest`, 100cr both plans) — the
+ * `entity.labels` `exhaustive: true` escalation, called ALONE on that path (never alongside
+ * `postSearchGeneral`/`postTgmHolders` — system-architecture.md §3.2's capability table: "только
+ * /profiler/address/labels"). `chain`+`address` are its only two required properties.
+ */
+export function postProfilerAddressLabels(
+  params: { chain: NansenChain; address: string },
+  deps: NansenEndpointDeps,
+): Promise<NansenEndpointResult> {
+  return callEndpoint(
+    'POST',
+    '/api/v1/profiler/address/labels',
+    { address: params.address, chain: params.chain },
+    deps,
+  );
+}

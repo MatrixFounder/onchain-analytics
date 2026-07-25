@@ -26,6 +26,26 @@ const TTL_SECONDS: Readonly<Record<string, number>> = {
   // the existing hourly snapshotter cadence") applies identically to their history counterparts.
   'privacy.shielded_pool.history': 3600,
   'platform.metrics.history': 3600,
+
+  // ---------------------------------------------------------------------------------------------
+  // M2 (TASK-005) — the first PAID capabilities. Explicit rows are mandatory here, not optional
+  // polish: adversarial review cycle 1 found (independently, by both the performance and the
+  // security critic) that these three were falling through to `DEFAULT_TTL_SECONDS` below — a
+  // constant whose own docstring says it "should not be hit", chosen as an M1 *free*-tier safety
+  // net. Letting the spend rate of the project's first paid provider be decided by that fallback
+  // is an accident, not a decision. Each row below is a deliberate cost-vs-freshness call.
+  // ---------------------------------------------------------------------------------------------
+  // Genuinely volatile: `netflow1hUsd` is a 1-hour rolling window, so a short TTL is correct here.
+  // (300s coincides with the old fallback — but now by decision, not by omission.) 10cr/miss.
+  'smart-money.flows': 300,
+  // Nansen Score risk/reward indicators are daily-ish quantitative scores, not tick data; caching
+  // for 30 minutes costs no meaningful freshness. 6cr/miss.
+  'token.risk': 1800,
+  // Entity/profiler labels change on a timescale of DAYS (ENS, CEX, fund attributions). This is
+  // also the most expensive call in the system — the `exhaustive: true` escalation is 100cr, the
+  // entire free-plan balance. At the old 300s fallback, an agent revisiting one address four times
+  // across a 25-minute investigation paid 400cr instead of 100cr. 1 hour is still conservative.
+  'entity.labels': 3600,
 };
 
 /**

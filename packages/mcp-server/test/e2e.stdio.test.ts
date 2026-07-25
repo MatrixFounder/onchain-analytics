@@ -72,7 +72,14 @@ describe('onchain_ping — stdio E2E', () => {
       stderr: 'pipe',
       // Real `process.env` (not the SDK's curated safe-subset default) so tsx/module resolution
       // behaves exactly like a normal dev run — plus the `DATA_DIR` override above.
-      env: { ...process.env, DATA_DIR: dataDir },
+      //
+      // `NANSEN_API_KEY: ''` is NOT redundant (code review 005-6, MINOR): without it the child
+      // inherits the developer's ambient key AND its own `loadEnv()` calls `process.loadEnvFile()`,
+      // which reads the repo `.env` — exactly where a real key lives per D10, and exactly what
+      // task 005-7 puts there. Empty string is normalized to `undefined` by `emptyAsUndefined`,
+      // so the child is provably key-less regardless of shell or `.env` state. This makes the
+      // "no ambient key in any test" rule (PLAN §0.1 / M-1) structural rather than incidental.
+      env: { ...process.env, DATA_DIR: dataDir, NANSEN_API_KEY: '' },
     });
     const c = new Client({ name: 'onchain-intel-e2e-test-client', version: '0.0.0-test' });
     // Capture the reference BEFORE awaiting connect(): if `c.connect()` rejects (e.g. the
@@ -87,17 +94,19 @@ describe('onchain_ping — stdio E2E', () => {
   }
 
   it(
-    // Extended task 003-7 (R-20/F-1): tools/list grows to 5 (ping + the 4 new M1 tools), but this
-    // spawn suite still calls ONLY onchain_ping through the wire — the 4 new tools' fixture-backed
-    // registry injection is in-process-only and unreachable across this spawned child process
-    // boundary (ARCHITECTURE.md §3.2 F-1); calling them here would mean a REAL, network-capable
-    // registry answering under spawn, which is exactly the live-network dependency R-21 forbids.
-    // `test/e2e.inprocess.test.ts` (InMemoryTransport) is what actually exercises the 4 new tools.
-    'tools/list contains exactly 5 tools: onchain_ping + the 4 new M1 tools (by name)',
+    // Extended task 003-7 (R-20/F-1), then task 005-6 (R-41/R-42/R-43): tools/list grows to 8
+    // (ping + the 4 M1 tools + the 3 M2 tools), but this spawn suite still calls ONLY onchain_ping
+    // through the wire — every one of the 7 non-ping tools' fixture-backed registry injection is
+    // in-process-only and unreachable across this spawned child process boundary (ARCHITECTURE.md
+    // §3.2 F-1); calling them here would mean a REAL, network-capable registry answering under
+    // spawn, which is exactly the live-network dependency R-21 forbids (no NANSEN_API_KEY is set
+    // for this spawned child either — task 005-6's own "no ambient key in any test" rule).
+    // `test/e2e.inprocess.test.ts` (InMemoryTransport) is what actually exercises all 7 tools.
+    'tools/list contains exactly 8 tools: onchain_ping + the 4 M1 tools + the 3 M2 tools (by name)',
     async () => {
       const c = await connect();
       const { tools } = await c.listTools(undefined, { timeout: CALL_TIMEOUT_MS });
-      expect(tools).toHaveLength(5);
+      expect(tools).toHaveLength(8);
       const names = tools.map((tool) => tool.name).sort();
       expect(names).toStrictEqual(
         [
@@ -106,6 +115,9 @@ describe('onchain_ping — stdio E2E', () => {
           'onchain_ping',
           'onchain_protocol_tvl',
           'onchain_wallet_balances',
+          'onchain_smart_money_flows',
+          'onchain_entity_label',
+          'onchain_token_risk',
         ].sort(),
       );
     },
