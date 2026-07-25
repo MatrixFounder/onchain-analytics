@@ -459,4 +459,73 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
       reservedTotal: 10,
     }); // 50th credit — reachable only because the cap stayed pinned at 50
   });
+
+  // --- vdd-multi cycle 4, logic L-2: the pin alone was never enough ---
+  it('derives the cap from the bucket-START anchor, so a mid-day restart cannot lock the day out', async () => {
+    // Session 1 saw balance 1000 at 00:00 and was told the ceiling is 250; it spent 200. The MCP
+    // server then exited — every Claude Code session boundary does — and the pin lives in memory
+    // only. Session 2 cold-starts against a POST-spend balance of 800. Deriving from that raw
+    // remainder gives max(30, 200) = 200, and `used(200) + 10 > 200` refused EVERY paid call for
+    // the rest of the UTC day. Anchored on `usageAtObserve + remaining` = 1000, it derives 250
+    // again — the same rebasing `effectiveCeilingFor()` already applies to the vendor ceiling.
+    const { gate, accountState, budgetStore } = makeFixture({
+      fetchImpl: async () => jsonResponse({ plan: 'free', credits_remaining: 800 }),
+    });
+    await budgetStore.recordDelta(PROVIDER, BUCKET, 200); // persisted by the PREVIOUS process
+
+    await expect(gate.ensureBudget('smart-money.flows', {})).resolves.toMatchObject({
+      reservedTotal: 10,
+    });
+    expect(accountState.get()?.dailyCapForBucket).toBe(250);
+  });
+
+  it('derives the SAME cap at any point in the bucket — repeated restarts cannot compound it downward', async () => {
+    // The pre-fix formula walked the cap down on every restart (250 -> 200 -> 150), so the real
+    // daily allowance degraded from 25% of the balance toward 20% and could trip anywhere between.
+    for (const [spent, remaining] of [
+      [0, 1000],
+      [200, 800],
+      [400, 600],
+    ] as const) {
+      const { gate, accountState, budgetStore } = makeFixture({
+        fetchImpl: async () => jsonResponse({ plan: 'free', credits_remaining: remaining }),
+      });
+      await budgetStore.recordDelta(PROVIDER, BUCKET, spent);
+      // At spent=400 the reservation is CORRECTLY refused (400 is past the 250 ceiling) — the
+      // resync still ran first, which is what pins the snapshot this asserts on.
+      await gate.ensureBudget('smart-money.flows', {}).catch(() => undefined);
+      expect(accountState.get()?.dailyCapForBucket).toBe(250);
+    }
+  });
+
+  // --- vdd-multi cycle 4, security S-1: the one field that defines the ceiling ---
+  it('refuses a non-finite credits_remaining instead of pinning an unbounded ceiling for the day', async () => {
+    // `1e999` is valid JSON and `JSON.parse` yields Infinity — no throw. A bare `typeof === number`
+    // check admitted it, the value got PINNED for the bucket, `effectiveCeilingFor()` became
+    // Infinity, and `used + cost > Infinity` approved every reservation for the rest of the day;
+    // a later healthy resync could not repair it, because the pin carries forward.
+    const { gate, accountState, budgetStore } = makeFixture({
+      fetchImpl: async () =>
+        new Response('{"plan":"free","credits_remaining":1e999}', { status: 200 }),
+    });
+    const reserveSpy = vi.spyOn(budgetStore, 'checkAndReserve');
+
+    await expect(gate.ensureBudget('smart-money.flows', {})).rejects.toThrow(
+      /credits_remaining is missing or not a non-negative safe integer/,
+    );
+    expect(reserveSpy).not.toHaveBeenCalled(); // fail-closed: no reservation, no snapshot
+    expect(accountState.get()).toBeUndefined();
+  });
+
+  it('refuses a credits_remaining beyond the safe-integer range or below zero', async () => {
+    for (const body of [
+      '{"plan":"free","credits_remaining":1e21}',
+      '{"plan":"free","credits_remaining":-5}',
+    ]) {
+      const { gate } = makeFixture({ fetchImpl: async () => new Response(body, { status: 200 }) });
+      await expect(gate.ensureBudget('smart-money.flows', {})).rejects.toThrow(
+        /credits_remaining is missing or not a non-negative safe integer/,
+      );
+    }
+  });
 });

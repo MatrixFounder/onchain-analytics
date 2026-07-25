@@ -198,6 +198,25 @@ packages/mcp-server test:       Tests  143 passed (143)
 453/453 green, zero outgoing network calls. Identical counts to an ordinary (non-network-blocked)
 `pnpm test` run.
 
+> ⚠️ **That run is NOT the shipped tree** (recorded 2026-07-25, `/vdd-multi` cycle 4, completeness
+> G-11). It predates commit `15b8dfa` (Q-2), which added ~52 tests. The claim above that it was run
+> "against the final, corrected, committed state" was true when written and stopped being true one
+> commit later.
+
+**Re-run 2026-07-25, against the tree that actually ships** (post-Q-2, post-cycle-4 fixes). Same
+mechanism, hardened: the block now also stubs the raw `node:http`/`node:https` clients, not only
+`fetch` — a direct `http.request` would otherwise slip past a fetch-only stub. Propagation into the
+vitest worker re-verified first with a throwaway probe test that asserts `fetch(...)` rejects with
+`NETWORK BLOCKED` (it did), so a green suite cannot be a false negative from an inert block.
+
+```
+packages/core       Test Files  28 passed (28)   Tests  369 passed (369)
+packages/mcp-server Test Files  14 passed (14)   Tests  150 passed (150)
+```
+
+**519/519 green, zero outgoing network calls**, identical to the ordinary run. `TC-VERIFY-06`/
+`TC-VERIFY-08` are now demonstrated for the shipped commit rather than an ancestor of it.
+
 ## 6. Golden-test (`nansen.contract.test.ts`) — M-2 overrides logged (final)
 
 - **Baseline SHA** (005-4, pre-005-7, spec-derived fixtures):
@@ -207,9 +226,23 @@ packages/mcp-server test:       Tests  143 passed (143)
   `5668ad7c64c8812e748b996cbb735fb5c68b024f50bd28c003c928f32b10682b`
 - **SHA after the first correction pass** (session 2, TC-UNIT-07 gained the two flags):
   `d8400f91e0178a03c124ffe657d6fedc724dda40e1a17879acd5590dff1473c5`
-- **Final SHA** (session 3, TC-CONTRACT-01 restored to a populated-result assertion, TC-UNIT-07
-  gained the lowercase `token_address` assertion, header comment finalized):
+- **SHA logged at the end of session 3** (TC-CONTRACT-01 restored to a populated-result assertion,
+  TC-UNIT-07 gained the lowercase `token_address` assertion, header comment finalized):
   `4f3a923dac4ed14bd04adb67cd48985aaecae825ef82e6e53e9a6e8cba14bf6e`
+- ⚠️ **PROVENANCE BREAK, recorded 2026-07-25 (`/vdd-multi` cycle 4, completeness G-2).** That SHA is
+  **not** the file that was committed. The file in commit `4c51126` hashes to
+  `7bc03cd8bd03f9e7f7a27851ec309b615927d0a9bae1f3fb87ef08e418457a3d` — so at least one unlogged edit
+  landed between the last recorded override and the commit. The whole point of this SHA chain is to
+  make a silent test-tuning detectable; for that window it cannot, and no amount of later hashing
+  recovers what changed. Stated plainly rather than quietly re-baselined. The assertions themselves
+  were independently re-derived from the vendor spec during cycle 4's completeness audit and match
+  what this document describes, which is corroboration, not proof.
+- **SHA after `/vdd-multi` cycle 4** (added the Solana no-case-fold request-shape assertion, L-1;
+  hashed after `prettier --write`, which is what lands in the commit):
+  `e24d077a0940c5ec5a11002a800d96a078afaab9fd209b09081e1a016d45b36e`
+  Re-hash with `shasum -a 256 packages/core/test/nansen.contract.test.ts` and compare **against the
+  committed blob** (`git show <sha>:<path> | shasum -a 256`), not the working tree — the mismatch
+  above is exactly the failure that comparing only the working tree hides.
 
 Assertion changes, all logged in the test file's own header comment:
 

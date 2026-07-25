@@ -330,11 +330,18 @@ async function performSubCalls(
  * `deps.budgetStore` is supplied) → the sub-calls (`performSubCalls()` above, task 005-4's own
  * routing, unchanged) → `reconcile.ts`'s post-call reconciliation (exactly once per logical
  * `fetch()`, R-38). None of `singleflight`/the gate/`reconcile` are exported — they are private
- * implementation seams of THIS factory's own `fetch()` closure. **Structural non-bypassability
- * (OQ-2, code review round 2):** the ONLY way to reach `performSubCalls()` without a budget
- * reservation is `deps.budgetStore` omitted AND `deps.fetchImpl` explicitly injected (the
- * isolated-HTTP-contract-test escape hatch) — omitting `budgetStore` alone, with the real global
- * `fetch` left in place, throws instead of silently making an unaccounted paid call.
+ * implementation seams of THIS factory's own `fetch()` closure. **Non-bypassability (OQ-2, code
+ * review round 2) — stated precisely (vdd-multi cycle 4, completeness G-3):** the ONLY way to reach
+ * `performSubCalls()` without a budget reservation is `deps.budgetStore` omitted AND
+ * `deps.__ungatedForTestsOnly === true` explicitly set (the isolated-HTTP-contract-test escape
+ * hatch) — omitting `budgetStore` alone throws instead of silently making an unaccounted paid call.
+ *
+ * This docstring previously said the escape hatch also required an injected `deps.fetchImpl`. It
+ * does NOT: `fetchImpl` falls back to the real global `fetch` a few lines below, so the boolean
+ * alone opens a real-transport, zero-accounting path. That is a deliberate test-only affordance and
+ * production never sets it (`mcp-server/src/index.ts` always supplies a `budgetStore`), but the
+ * guarantee is "one explicit opt-in flag", not "two independent conditions" — and a money guard's
+ * documentation must not claim a stronger bound than the code enforces.
  *
  * `accountState` (task 005-3) is constructed ONCE here, per adapter instance — never a module
  * singleton — and shared between `costOf()` below and the budget gate (`createNansenBudgetGate`
@@ -383,8 +390,10 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
     // (R-38). `gate`/`budgetStore` were resolved ONCE above, at factory-construction time — see
     // `NansenAdapterDeps`'s own docstring for why an OMITTED `budgetStore` falls back to the raw,
     // ungated path instead of a silently-defaulted real disk-backed store — and why that fallback
-    // itself fail-closes (throws) unless `fetchImpl` was ALSO explicitly injected (OQ-2
-    // non-bypassability, code review round 2: never a real paid call with zero accounting).
+    // itself fail-closes (throws) unless `__ungatedForTestsOnly: true` was explicitly set (OQ-2
+    // non-bypassability, code review round 2: never a real paid call with zero accounting). NOTE
+    // this comment previously said "unless `fetchImpl` was ALSO explicitly injected" — false: the
+    // flag alone suffices, `fetchImpl` falls back to the real global `fetch` below.
     //
     // `apiKey` is read HERE, inside the method body, on every call — never at module load, never
     // cached across calls, never logged, never folded into a cache key (R-45). A missing key is a
@@ -457,13 +466,53 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
           reservation = await gate.ensureBudget(cap, args);
           const { result } = await performSubCalls(cap, args, endpointDeps, subResponses);
           reconcileAttempted = true;
-          await reconcile({
-            subResponses,
-            reservedTotal: reservation.reservedTotal,
-            bucket: reservation.bucket,
-            budgetStore,
-            accountState,
-          });
+          try {
+            await reconcile({
+              subResponses,
+              reservedTotal: reservation.reservedTotal,
+              bucket: reservation.bucket,
+              budgetStore,
+              accountState,
+            });
+          } catch (reconcileError) {
+            // BEST-EFFORT, and the failure is absorbed HERE rather than in the catch below
+            // (vdd-multi cycle 4, logic L-3 + L-4). Two defects shared this one `await`:
+            //
+            // (L-4) The call is already PAID and `result` is already valid. Letting a bookkeeping
+            // write propagate meant `registry.ts` recorded the adapter as failed, nothing was
+            // cached, the tool returned `CapabilityUnavailableError`, and the agent's retry paid
+            // the full 10/6/100cr again — the exact post-payment-throw class `normalize.ts` was
+            // hardened against three separate times, left open on the last step. `SQLITE_BUSY`
+            // past the 5s busy timeout is realistic: `budget-store.ts` explicitly designs for
+            // several stdio sessions sharing one `cache.sqlite3`. The neighbouring contracts
+            // already work this way — the gate's warn block never fails a committed write over an
+            // observability side effect, and `registry.ts` treats a cache fault as non-fatal.
+            //
+            // (L-3) `markUnreconciled()` lived only in the `!reconcileAttempted` branch below, so
+            // in exactly the case its own comment was written for — "reconcile ran and threw" — the
+            // documented safety net never fired. It fires here instead.
+            //
+            // Ledger state after this path is conservative: the full reservation stays charged
+            // (never a phantom refund), and the forced resync rebases on the vendor's authoritative
+            // remainder on the next gate entry, which is what self-corrects the difference.
+            // `markUnreconciled()` FIRST, then the log — the ledger correction must not depend on
+            // stderr being writable.
+            accountState.markUnreconciled();
+            try {
+              // The write is itself wrapped (cycle-4 verification pass): stderr can throw EPIPE once
+              // the stdio client has closed — the very case `budget-gate.ts`'s warn block already
+              // guards against with this same shape. Unwrapped, that throw escaped this catch into
+              // the outer one, where `reconcileAttempted === true` skips the retry and rethrows,
+              // discarding the paid result again — i.e. it re-opened the exact hole this handler
+              // exists to close.
+              process.stderr.write(
+                `nansen reconcile: ledger write failed AFTER a paid call — reservation stays charged, ` +
+                  `next gate entry resyncs /account: ${reconcileError instanceof Error ? reconcileError.message : String(reconcileError)}\n`,
+              );
+            } catch {
+              // Diagnostics are best-effort; never fail a paid, valid result over a log line.
+            }
+          }
           return result;
         } catch (error) {
           if (reservation && !reconcileAttempted) {

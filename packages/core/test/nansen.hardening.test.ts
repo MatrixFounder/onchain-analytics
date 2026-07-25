@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DAILY_CAP_OFF, deriveDailyCap } from '../src/adapters/nansen/budget-gate.js';
 import { ttlFor } from '../src/cache/ttl.js';
 import {
+  normalizeEntityLabels,
   normalizeSmartMoneyFlow,
   normalizeTokenRiskScore,
 } from '../src/adapters/nansen/normalize.js';
@@ -289,6 +290,107 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       expect(risk.marketCapUsd).toBeUndefined();
     });
   });
+  describe('cycle-4 L-5: a null ELEMENT must not destroy an already-paid response', () => {
+    // Every row guard in normalize.ts is shaped `typeof row.field !== 'string'` — which is itself a
+    // throw when `row` is null, because reading a property off null raises a raw TypeError BEFORE
+    // the typeof can help. `null` is legal JSON and a routine serialisation artifact. Cycles 1-3
+    // closed this class for oversized strings, wrong types and fractional numbers; it stayed open
+    // one level up, at the element itself.
+    const WANTED = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+    const netflowRow = {
+      token_address: WANTED.toLowerCase(),
+      token_symbol: 'USDC',
+      net_flow_1h_usd: 0,
+      net_flow_24h_usd: -325939,
+      net_flow_7d_usd: 0,
+      net_flow_30d_usd: 0,
+    };
+
+    it('skips a null netflow row and still finds the real one', () => {
+      const flow = normalizeSmartMoneyFlow(
+        {
+          chain: 'ethereum',
+          tokenAddress: WANTED,
+          netflow: { body: { data: [null, netflowRow] }, creditsUsedHeader: '5' },
+          holders: { body: { data: [] }, creditsUsedHeader: '5' },
+        } as never,
+        () => 1,
+      );
+      expect(flow.tokenSymbol).toBe('USDC');
+    });
+
+    it('drops a null holder row instead of losing the whole paid response', () => {
+      const flow = normalizeSmartMoneyFlow(
+        {
+          chain: 'ethereum',
+          tokenAddress: WANTED,
+          netflow: { body: { data: [netflowRow] }, creditsUsedHeader: '5' },
+          holders: {
+            body: {
+              data: [null, { address: '0x0000000000000000000000000000000000000001' }],
+            },
+            creditsUsedHeader: '5',
+          },
+        } as never,
+        () => 1,
+      );
+      expect(flow.topHolders).toHaveLength(1);
+    });
+
+    it('raises a typed normalization error, not a TypeError, on a null token.risk indicator', () => {
+      expect(() =>
+        normalizeTokenRiskScore(
+          {
+            chain: 'ethereum',
+            tokenAddress: WANTED,
+            indicators: {
+              body: { risk_indicators: [null], reward_indicators: [] },
+              creditsUsedHeader: '5',
+            },
+            tokenInformation: { body: {}, creditsUsedHeader: '1' },
+          } as never,
+          () => 1,
+        ),
+      ).toThrow(/indicator entry is not an object/);
+    });
+
+    // The first cycle-4 sweep guarded `mapSearchGeneral`'s tokens[] loop and MISSED its entities[]
+    // sibling twenty lines below. Three independent verifiers flagged the same omission, which is
+    // why this case exists: a guard applied to one of two adjacent loops is not a closed defect.
+    it('drops a null ENTITY row in search/general — the sibling loop the first sweep missed', () => {
+      const entries = normalizeEntityLabels(
+        {
+          chain: 'ethereum',
+          search: {
+            body: {
+              tokens: [],
+              entities: [null, { name: 'Wintermute', tags: ['market maker'] }],
+            },
+            creditsUsedHeader: '0',
+          },
+        } as never,
+        () => 1,
+      );
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.name).toBe('Wintermute');
+    });
+
+    it('survives a null row on the 100cr exhaustive entity.labels path', () => {
+      const entries = normalizeEntityLabels(
+        {
+          chain: 'ethereum',
+          tokenAddress: WANTED,
+          profilerLabels: {
+            body: { data: [null, { label: 'Binance: Hot Wallet' }] },
+            creditsUsedHeader: '100',
+          },
+        } as never,
+        () => 1,
+      );
+      expect(entries[0]?.labels).toEqual(['Binance: Hot Wallet']);
+    });
+  });
+
   describe('Q-2: derived daily credit cap + the .env disable switch', () => {
     it('scales with the plan — the same code serves free and Pro (owner decision #1)', () => {
       expect(deriveDailyCap(59)).toBe(30); // this account

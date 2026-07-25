@@ -44,8 +44,24 @@ const DERIVED_CAP_FRACTION = 0.25;
 const DERIVED_CAP_FLOOR = 30;
 
 /**
- * The default self-imposed daily ceiling, derived from the balance observed at the bucket's first
- * `/account` resync (Q-2). Exported for direct unit testing of the number itself.
+ * The default self-imposed daily ceiling (Q-2). Exported for direct unit testing of the number itself.
+ *
+ * **The argument is the bucket-START balance — `usageAtObserve + creditsRemainingAtObserve`, the
+ * SAME anchor rebasing `effectiveCeilingFor()` performs — never the raw live remainder.** That is
+ * load-bearing, not stylistic (vdd-multi cycle 4, logic L-2). The derived cap is compared by
+ * `checkAndReserve()` against `used`, a CUMULATIVE bucket counter; deriving it from a POST-spend
+ * balance mixes two reference frames and re-subtracts the day's own spend from its own allowance:
+ *
+ *   balance 1000 at 00:00 → cap 250. Spend 200. The MCP server restarts (every Claude Code session
+ *   boundary does), so the in-memory pin is gone and the cap is derived afresh. From the raw
+ *   remainder: `max(30, floor(800 × 0.25)) = 200`, and `used(200) + 10 > 200` refuses EVERY paid
+ *   call for the rest of the UTC day — while the operator was told the ceiling was 250 and 50
+ *   credits of both the cap and the balance are still there. Repeated restarts compound it.
+ *
+ * From the anchor, `200 + 800 = 1000 → 250` on every cold start, resync, and concurrent session
+ * alike: the same self-correcting property the vendor ceiling already has, and the only thing that
+ * makes `NansenAccountSnapshot.dailyCapForBucket`'s "50 means 50 until the bucket rolls over"
+ * promise true across a process restart rather than only within one.
  *
  * Regimes (note the crossover is **124, not 120** — `floor()` truncation keeps the result at 30
  * through balance 123, so a test written against 121 would assert the wrong regime):
@@ -57,8 +73,8 @@ const DERIVED_CAP_FLOOR = 30;
  * stays unreachable until the balance is ≥ 400 — the dearest call in the system should not be
  * reachable on a nearly-empty account.
  */
-export function deriveDailyCap(creditsRemaining: number): number {
-  return Math.max(DERIVED_CAP_FLOOR, Math.floor(creditsRemaining * DERIVED_CAP_FRACTION));
+export function deriveDailyCap(bucketStartBalance: number): number {
+  return Math.max(DERIVED_CAP_FLOOR, Math.floor(bucketStartBalance * DERIVED_CAP_FRACTION));
 }
 
 /**
@@ -74,15 +90,19 @@ export type DailyCreditCapConfig = number | typeof DAILY_CAP_OFF | undefined;
  * Resolves the configured value into the cap to pin for a bucket (Q-2):
  * - `'off'` → `undefined` — no self-imposed ceiling; the vendor remainder alone bounds spend
  * - a number → that explicit operator-chosen ceiling
- * - unset → `deriveDailyCap(balance)`
+ * - unset → `deriveDailyCap(bucketStartBalance)`
+ *
+ * `bucketStartBalance` MUST be the anchor (`usageAtObserve + creditsRemainingAtObserve`), not the
+ * live remainder — see `deriveDailyCap`'s docstring for the day-long lockout that the raw remainder
+ * produces on a mid-day process restart.
  */
 function resolveDailyCap(
   configured: DailyCreditCapConfig,
-  creditsRemaining: number,
+  bucketStartBalance: number,
 ): number | undefined {
   if (configured === DAILY_CAP_OFF) return undefined;
   if (typeof configured === 'number') return configured;
-  return deriveDailyCap(creditsRemaining);
+  return deriveDailyCap(bucketStartBalance);
 }
 
 /**
@@ -234,14 +254,25 @@ function needsResync(
  * 4. Computes `effectiveCeilingFor()` from the live snapshot + the optional self-imposed cap, and
  *    atomically reserves the price via `BudgetStore.checkAndReserve` (005-2) — a `{ok:false}`
  *    result throws with a reason naming WHICH of the two limits was binding.
- * 5. On success, emits the warn-threshold stderr line at most once per bucket (`accountState`'s
- *    own `hasWarned()`/`markWarned()` flag, reset by the next `set()`/resync).
+ * 5. On success, emits the warn-threshold stderr line at most once per SNAPSHOT — not per bucket
+ *    (vdd-multi cycle 4, logic L-11). `accountState.set()` clears the warn flag on every successful
+ *    resync, and mid-bucket resyncs are routine (402 / transport failure / a reconcile degrade all
+ *    call `markUnreconciled()`), so a bucket with N resyncs can legitimately emit N warn lines. The
+ *    bound is "never twice for the same observation", which is what keeps a steady-state session
+ *    quiet; it is NOT the strict once-a-day the earlier wording promised. Same family as Q-1 —
+ *    stderr volume under a persistent degrade — and deliberately left as-is for the same reason:
+ *    rate-limiting the resync itself would break UC-6's authoritative drift correction. The
+ *    mechanism is `accountState`'s own `hasWarned()`/`markWarned()` flag, reset by the next
+ *    `set()`/resync.
  *
- * This function is the ONLY thing this module exposes for actually spending budget — `NOT` yet
- * wired into `adapters/nansen/index.ts`'s `fetch()` in this task (that wiring lands in task
- * 005-5); `packages/core/src/index.ts` does not re-export this module at all (§3.2 "Budget gate —
- * ...не отдельный wrapper-объект" — the gate is an internal implementation seam of the adapter's
- * own `fetch()`, never a second, bypassable call site).
+ * This function is the ONLY thing this module exposes for actually spending budget, and it HAS been
+ * wired into `adapters/nansen/index.ts`'s `fetch()` since task 005-5 (this docstring said "not yet
+ * wired ... lands in 005-5" long after that landed — vdd-multi cycle 4, completeness G-7).
+ * `packages/core/src/index.ts` re-exports only the pure, inert pieces of this module —
+ * `DAILY_CAP_OFF`, `deriveDailyCap`, `DailyCreditCapConfig` — for the mcp-server's env layer and
+ * for direct unit testing of the number itself. `createNansenBudgetGate` is deliberately NOT among
+ * them (§3.2 "Budget gate — ...не отдельный wrapper-объект": the gate is an internal implementation
+ * seam of the adapter's own `fetch()`, never a second, bypassable call site).
  */
 export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
   ensureBudget(cap: string, args: Record<string, unknown>): Promise<NansenBudgetReservation>;
@@ -286,8 +317,23 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
       throw new Error(`nansen budget gate: /account resync failed with HTTP ${response.status}`);
     }
     const body = (await response.json()) as AccountResponseBody;
-    if (typeof body.credits_remaining !== 'number') {
-      throw new Error('nansen budget gate: /account response missing credits_remaining');
+    // DOMAIN validation, not just `typeof` (vdd-multi cycle 4, security S-1). This single field
+    // defines the entire ceiling, so it gets at least the discipline `reconcile.ts` already applies
+    // to the far less consequential credits-used header. A bare `typeof === 'number'` admits
+    // `Infinity` (`JSON.parse('{"credits_remaining":1e999}')` yields it — valid JSON, no throw) and
+    // absurd finite magnitudes; either one makes `effectiveCeilingFor()` unbounded AND gets PINNED
+    // for the rest of the bucket, so every reservation is approved for the remainder of the day and
+    // a later healthy resync cannot repair it. Failing the resync instead keeps the previous
+    // snapshot and the `unreconciled` flag, i.e. fail-closed.
+    if (
+      typeof body.credits_remaining !== 'number' ||
+      !Number.isInteger(body.credits_remaining) ||
+      !Number.isSafeInteger(body.credits_remaining) ||
+      body.credits_remaining < 0
+    ) {
+      throw new Error(
+        'nansen budget gate: /account credits_remaining is missing or not a non-negative safe integer',
+      );
     }
     // Unknown/future plan values fold to 'free' — the same conservative, safe-direction default
     // costOf() uses before the first resync (system-architecture.md §3.2 "Account-state").
@@ -295,14 +341,21 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
 
     // PIN the daily cap per bucket (Q-2). A mid-bucket resync (unreconciled → `/account`) carries
     // the previous snapshot's value forward verbatim; only a NEW bucket (or a cold start) derives a
-    // fresh one. Re-deriving on every resync would make the "daily" ceiling shrink during the day —
-    // at balance 200 the operator is told 50, then locked out after 40 — because each resync sees a
-    // smaller balance. `previous` is the snapshot for THIS bucket, if one exists.
+    // fresh one.
+    //
+    // The derivation input is the bucket-START balance — the SAME `usageAtObserve + remaining`
+    // anchor `effectiveCeilingFor()` rebases onto — never the raw live remainder (vdd-multi cycle 4,
+    // logic L-2; see `deriveDailyCap`). The pin alone was never sufficient: it lives in memory only,
+    // so a mid-day MCP-server restart re-derived from a post-spend balance and could lock the whole
+    // paid layer out for the rest of the UTC day. With the anchor, every cold start, resync and
+    // concurrent session derives the SAME number, and the pin is what keeps it stable if the vendor's
+    // own accounting drifts from ours mid-bucket. `previous` is the snapshot for THIS bucket, if one
+    // exists.
     const previous = deps.accountState.get();
     const dailyCapForBucket =
       previous !== undefined && previous.dayBucketMs === bucket
         ? previous.dailyCapForBucket
-        : resolveDailyCap(deps.dailyCreditCap, body.credits_remaining);
+        : resolveDailyCap(deps.dailyCreditCap, usageAtObserve + body.credits_remaining);
 
     const snapshot: NansenAccountSnapshot = {
       plan,

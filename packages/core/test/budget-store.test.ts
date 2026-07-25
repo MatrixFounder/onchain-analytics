@@ -128,6 +128,37 @@ describe('SqliteBudgetStore (task 005-2, R-34/R-35)', () => {
   it('getUsage returns 0 for a (provider, bucket) with no writes yet', async () => {
     expect(await store.getUsage('nansen', BUCKET)).toBe(0);
   });
+
+  // cycle-4 verification pass, security F-6: `used + cost > ceiling` is FALSE — i.e. approved —
+  // whenever the comparison cannot decide. A money guard must refuse in that case, not spend.
+  describe('checkAndReserve fails CLOSED on an undecidable comparison', () => {
+    it('refuses an unpriced (Infinity) cost even against an unbounded ceiling', async () => {
+      // `costOf()` returns +Infinity for a capability it cannot price — deliberately fail-closed.
+      // Against a +Infinity ceiling the bare `>` would have been `Infinity > Infinity === false`,
+      // i.e. an unpriced paid call APPROVED. That is the one pair that slipped through.
+      const result = await store.checkAndReserve(
+        'nansen',
+        BUCKET,
+        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY,
+      );
+      expect(result.ok).toBe(false);
+      expect(await store.getUsage('nansen', BUCKET)).toBe(0);
+    });
+
+    it('refuses a NaN ceiling rather than treating it as unbounded', async () => {
+      const result = await store.checkAndReserve('nansen', BUCKET, 10, Number.NaN);
+      expect(result.ok).toBe(false);
+      expect(await store.getUsage('nansen', BUCKET)).toBe(0);
+    });
+
+    it('still honours +Infinity as the explicit "no self-imposed ceiling" sentinel', async () => {
+      // The narrow guard must not break the unbounded contract the reconcile suite relies on.
+      const result = await store.checkAndReserve('nansen', BUCKET, 10, Number.POSITIVE_INFINITY);
+      expect(result.ok).toBe(true);
+      expect(await store.getUsage('nansen', BUCKET)).toBe(10);
+    });
+  });
 });
 
 describe('createBudgetStore factory (task 005-2 — same factory-not-singleton principle as createCacheStore)', () => {

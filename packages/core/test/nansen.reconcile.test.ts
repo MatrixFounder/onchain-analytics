@@ -313,6 +313,55 @@ describe('fetch() composition — transport-failure/402 resync path (task 005-5,
     expect(await budgetStore.getUsage('nansen', BUCKET)).toBe(15);
   });
 
+  // vdd-multi cycle 4, logic L-3 + L-4 — the success-path `await reconcile(...)`.
+  it('cycle-4 L-3/L-4: a ledger-write failure AFTER a paid call keeps the result and still forces a resync', async () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (url) => {
+      const pathname = new URL(String(url)).pathname;
+      calls.push(pathname);
+      if (pathname === '/api/v1/account') {
+        return jsonResponse({ plan: 'free', credits_remaining: 100000 });
+      }
+      if (pathname === '/api/v1/smart-money/netflow' || pathname === '/api/v1/tgm/holders') {
+        return jsonResponse({ data: [] }, 200, { 'x-nansen-credits-used': '5' });
+      }
+      throw new Error(`unrouted test call to ${pathname}`);
+    };
+    const budgetStore = createBudgetStore({ dbPath: ':memory:' });
+    // `SQLITE_BUSY` past the 5s busy timeout is the realistic shape — budget-store.ts explicitly
+    // designs for several stdio sessions sharing one cache.sqlite3.
+    vi.spyOn(budgetStore, 'recordDelta').mockRejectedValue(
+      new Error('SQLITE_BUSY: database is locked'),
+    );
+    const adapter = createNansenAdapter({
+      env: { NANSEN_API_KEY: 'test-key-not-real' },
+      fetchImpl,
+      now: () => NOW,
+      throttle: createThrottle(fakeClock()),
+      budgetStore,
+    });
+    const args = { chain: 'ethereum', tokenAddress: UNI_ADDRESS };
+
+    // (L-4) The credits are already spent and the result is valid. Letting the bookkeeping write
+    // propagate made registry.ts record the adapter as failed, cache nothing, and the agent's retry
+    // pay the full cost again — the post-payment-throw class normalize.ts was hardened against
+    // three times, left open on the last step.
+    await expect(adapter.fetch('smart-money.flows', args)).resolves.toBeDefined();
+
+    // The reservation stays charged — never a phantom refund.
+    expect(await budgetStore.getUsage('nansen', BUCKET)).toBe(10);
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('ledger write failed'));
+
+    // (L-3) `markUnreconciled()` used to live only in the "reconcile never ran" branch, so in
+    // exactly the case its own comment described it never fired. The forced resync is what
+    // self-corrects the ledger against the vendor's authoritative remainder.
+    const before = calls.filter((p) => p === '/api/v1/account').length;
+    await adapter.fetch('smart-money.flows', args);
+    expect(calls.filter((p) => p === '/api/v1/account').length).toBe(before + 1);
+    stderrSpy.mockRestore();
+  });
+
   // TC-UNIT-06 — same M-2(b) supersession as TC-UNIT-05 above, for the 402 path specifically.
   it('TC-UNIT-06 (402, M-2(b) fixed): partial reconcile refunds the unspent leg — every subsequent gate entry keeps forcing its own fresh resync', async () => {
     const calls: string[] = [];

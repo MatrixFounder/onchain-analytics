@@ -443,6 +443,47 @@ describe('nansen adapter (contract — HTTP contract, R-29)', () => {
     expect(calls[1]!.body).toEqual({ chain: 'ethereum', token_address: normalizedAddress });
   });
 
+  // vdd-multi cycle 4, logic L-1 — the DF-1 fix was live-verified on EVM only and applied to every
+  // chain. Solana addresses are base58, which is CASE-SENSITIVE as an encoding (`chain/address.ts`'s
+  // `normalizeSolanaAddress()` returns its input unchanged for exactly that reason), so the blanket
+  // fold corrupted the mint rather than re-casing it — recreating the DF-1 tarpit (empty `data: []`
+  // -> post-payment normalize throw -> nothing cached -> 10cr per retry) on the one advertised chain
+  // nobody probed live.
+  it('does NOT case-fold a Solana token address — base58 is case-sensitive (cycle-4 L-1)', async () => {
+    const calls: RecordedCall[] = [];
+    const fetchImpl = makeRoutedFetchImpl(
+      {
+        '/api/v1/smart-money/netflow': { body: netflowFixture },
+        '/api/v1/tgm/holders': { body: holdersFixture },
+      },
+      calls,
+    );
+    const adapter = smartMoneyFlowsAdapter(fetchImpl);
+    // Wrapped SOL. The mixed case IS the address; lowercasing it yields a different (invalid) key.
+    const SOL_MINT = 'So11111111111111111111111111111111111111112';
+
+    // The fixtures echo an ETHEREUM address, so normalize() finds no matching row and rejects —
+    // irrelevant here: this asserts the REQUEST shape, which is what the fix got wrong.
+    await adapter
+      .fetch('smart-money.flows', { chain: 'solana', tokenAddress: SOL_MINT })
+      .catch(() => undefined);
+
+    expect(calls[0]!.body).toEqual({
+      chains: ['solana'],
+      filters: {
+        token_address: SOL_MINT, // verbatim — NOT `.toLowerCase()`
+        include_stablecoins: true,
+        include_native_tokens: true,
+      },
+    });
+    // Guard the regression precisely: the EVM fold must still be in force on its own chain.
+    expect(calls[0]!.body).not.toEqual(
+      expect.objectContaining({
+        filters: expect.objectContaining({ token_address: SOL_MINT.toLowerCase() }),
+      }),
+    );
+  });
+
   it('TC-UNIT-08 (SSRF): a redirect to a host outside the api.nansen.ai allowlist is rejected before following it', async () => {
     let callCount = 0;
     const fetchImpl: typeof fetch = async () => {

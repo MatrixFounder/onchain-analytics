@@ -187,6 +187,37 @@ export class SqliteBudgetStore implements BudgetStore {
       const row = this.selectUsageStmt.get(provider, dayBucketMs) as UsageRow | undefined;
       const used = row?.credits_used ?? 0;
 
+      // FAIL CLOSED when the comparison below cannot decide (cycle-4 verification pass, security
+      // F-6). `used + cost > ceiling` evaluates to `false` — i.e. APPROVED — whenever an operand is
+      // `NaN`, and also for the `Infinity > Infinity` pair. That is the wrong direction for a money
+      // guard: a `>` test must not authorise spend when it has no answer.
+      //
+      // Per operand, deliberately NOT a blanket `Number.isFinite` on all three:
+      // - `used` must be a finite number. It comes from SQLite, which is dynamically typed, so a
+      //   TEXT value written into `usage.credits_used` by anything else sharing this file survives
+      //   the `CHECK (credits_used >= 0)` DDL and would turn `used + cost` into string concatenation.
+      //   `cache.sqlite3` is designed as shared per-machine across sessions, so a foreign writer is
+      //   a supported topology, not an exotic one.
+      // - `cost` must be finite. `costOf()` returns `+Infinity` for an unpriced capability
+      //   (fail-closed by design); against a `+Infinity` ceiling that would otherwise slip through
+      //   as `Infinity > Infinity === false`.
+      // - `ceiling` may legitimately be `+Infinity` — the explicit "no self-imposed ceiling"
+      //   sentinel — so only `NaN` is rejected here. A finite check would break that contract.
+      if (typeof used !== 'number' || !Number.isFinite(used)) {
+        return {
+          ok: false,
+          reason: `budget check failed closed for provider=${provider}: ledger value is not a finite number (used ${String(used)})`,
+        };
+      }
+      if (!Number.isFinite(cost) || Number.isNaN(ceiling)) {
+        return {
+          ok: false,
+          reason:
+            `budget check failed closed for provider=${provider}: undecidable comparison ` +
+            `(need ${cost}, used ${used}, ceiling ${ceiling})`,
+        };
+      }
+
       if (used + cost > ceiling) {
         return {
           ok: false,

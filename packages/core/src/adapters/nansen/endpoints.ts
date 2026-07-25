@@ -150,6 +150,35 @@ async function callEndpoint(
 }
 
 /**
+ * How this ONE vendor filter wants a token address cased, per chain.
+ *
+ * Deliberately an exhaustive `switch` with a `never` guard, not a ternary (cycle-4 verification
+ * pass). A `chain === 'solana' ? verbatim : lowercase` ternary is a deny-list: the day `NansenChain`
+ * gains a third member — the vendor's own `SmartMoneyChain` enum lists ~18, several of them
+ * case-sensitive (tron, sui, ton, bitcoin) — that chain silently falls into the EVM fold and
+ * re-creates the DF-1/L-1 corruption with no test failing. This form makes the same addition a
+ * COMPILE error, which is exactly what `chain/address.ts`'s own per-chain switch already does.
+ */
+function netflowTokenAddressFilter(chain: NansenChain, tokenAddress: string): string {
+  switch (chain) {
+    // Lowercase, NOT the EIP-55 checksummed form: this endpoint matches case-sensitively against a
+    // lowercase-stored column (DF-1 root cause #2, live-proven 2026-07-24).
+    case 'ethereum':
+      return tokenAddress.toLowerCase();
+    // Verbatim: base58 is case-sensitive as an ENCODING, so folding corrupts the mint rather than
+    // re-casing it (L-1).
+    case 'solana':
+      return tokenAddress;
+    default: {
+      const unhandled: never = chain;
+      throw new Error(
+        `nansen.postSmartMoneyNetflow: no token_address casing rule for chain ${String(unhandled)}`,
+      );
+    }
+  }
+}
+
+/**
  * `POST /api/v1/smart-money/netflow` (`SmartMoneyNetflowRequest`, `x-credit-cost` 5cr both plans) —
  * filtered to exactly one token via `filters.token_address` (the request's own documented "token
  * address or symbol filter", `nansen-openapi-2026-07-23.json`'s `SmartMoneyNetflowFilters`). Body
@@ -178,17 +207,26 @@ export function postSmartMoneyNetflow(
     {
       chains: [params.chain],
       filters: {
-        // **LOWERCASE, not the EIP-55 checksummed form** (live-confirmed 2026-07-24, DF-1 root
-        // cause #2): this endpoint's `token_address` filter matches CASE-SENSITIVELY against a
-        // lowercase-stored column, unlike the sibling `/tgm/*` endpoints, which accept the
-        // checksummed form happily. `normalizeAddress()` canonicalizes to EIP-55, so passing it
-        // through verbatim silently yields a well-formed empty `data: []` — indistinguishable
+        // **EVM ONLY: lowercase, not the EIP-55 checksummed form** (live-confirmed 2026-07-24,
+        // DF-1 root cause #2): this endpoint's `token_address` filter matches CASE-SENSITIVELY
+        // against a lowercase-stored column, unlike the sibling `/tgm/*` endpoints, which accept
+        // the checksummed form happily. `normalizeAddress()` canonicalizes to EIP-55, so passing
+        // it through verbatim silently yields a well-formed empty `data: []` — indistinguishable
         // from "smart money isn't trading this token". Proven live: the identical request with
         // the checksummed address returns 0 rows, with the lowercase address returns the real
         // USDC row (net_flow_24h_usd ≈ -325_939, trader_count 142). Every `token_address`
         // example in the vendor spec is lowercase. The canonical EIP-55 form is still what we
         // store/return and what feeds the cache key — only this vendor filter gets lowercased.
-        token_address: params.tokenAddress.toLowerCase(),
+        //
+        // **The case fold MUST NOT apply to Solana** (vdd-multi cycle 4, logic L-1). Base58 is
+        // case-sensitive as an ENCODING — `chain/address.ts`'s `normalizeSolanaAddress()` returns
+        // the input unchanged for exactly that reason — so lowercasing a Solana mint corrupts the
+        // address itself rather than merely re-casing it. `solana` is an advertised chain for
+        // `smart-money.flows` (adapter `capabilities()`, the tool's `chain` enum), and the DF-1
+        // live verification covered EVM only, so the blanket fold would have re-created the DF-1
+        // tarpit on the one chain nobody probed: empty `data: []` → post-payment normalize throw →
+        // nothing cached → 10cr per retry, forever.
+        token_address: netflowTokenAddressFilter(params.chain, params.tokenAddress),
         include_stablecoins: true,
         include_native_tokens: true,
       },

@@ -49,6 +49,29 @@ function isNonNegativeInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
+/**
+ * Is this vendor array element safe to property-access? (vdd-multi cycle 4, logic L-5.)
+ *
+ * Every row guard in this file is shaped `typeof row.field !== 'string'` — which is itself a throw
+ * when `row` is `null`, because reading a property off `null` raises a raw TypeError BEFORE the
+ * `typeof` can help. `null` is legal JSON and a routine serialisation artifact, so a single null
+ * element in an otherwise-good response destroyed the whole ALREADY-PAID result: nothing cached,
+ * the retry pays again. That is the same post-payment-throw class the truncation work above closed
+ * for oversized strings, left open one level up at the element itself.
+ *
+ * **It downgrades the failure to dropping the one bad row on the four DROP-LOOP paths only** —
+ * `mapTopHolders`, `mapSearchGeneral`'s tokens[] and entities[], `mapHolderLabels` — plus the
+ * profiler map. On `mapIndicator` it converts a raw TypeError into this module's typed error and
+ * nothing more: `token.risk` still loses the paid 6cr response, because that path ALREADY throws by
+ * design on a missing `indicator_type` (TC-CONTRACT-05), and turning it into a drop is a change to
+ * a documented contract rather than a bug fix. That residual is tracked as the wider
+ * negative-caching issue, `docs/issues/l-1-nansen-no-negative-caching-*.md` — stated here so this
+ * docstring does not claim a bound it does not deliver on every call site.
+ */
+function isRecord(row: unknown): row is Record<string, unknown> {
+  return typeof row === 'object' && row !== null;
+}
+
 /** Element-wise filter + per-item truncation + cardinality cap for a vendor string array. */
 function truncateStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -174,7 +197,7 @@ function mapTopHolders(holdersBody: unknown, chain: NansenChain): SmartMoneyFlow
     // non-address string — so one malformed vendor row ("0x0", an ENS-style label) destroyed an
     // already-PAID response, nothing was cached, and the retry paid again: a deterministic,
     // repeatable credit drain (adversarial cycle 1, logic F3).
-    if (typeof row.address !== 'string' || !isValidAddress(chain, row.address)) {
+    if (!isRecord(row) || typeof row.address !== 'string' || !isValidAddress(chain, row.address)) {
       dropped += 1;
       continue;
     }
@@ -229,15 +252,24 @@ export function normalizeSmartMoneyFlow(
   // handed to the model. This endpoint has already surprised us once (the DF-1 case-sensitivity
   // story in endpoints.ts), which is exactly why the row is now verified rather than assumed.
   const rows = netflowBody.data as SmartMoneyNetflowRow[];
-  const wanted = raw.tokenAddress.toLowerCase();
+  // Case-fold BOTH sides only where case is not part of the address (cycle-4 verification pass).
+  // On EVM the vendor echoes lowercase while our canonical form is EIP-55, so folding is required.
+  // On Solana base58 is case-SENSITIVE, so folding here would accept a row for a *different* mint
+  // that differs only in case and then stamp OUR address onto its figures — schema-valid,
+  // non-empty, cached 300s: a silently wrong paid financial signal, which is the precise failure
+  // this whole row-matching block exists to prevent. Mirror of the `endpoints.ts` L-1 fix.
+  const fold = (value: string): string => (raw.chain === 'solana' ? value : value.toLowerCase());
+  const wanted = fold(raw.tokenAddress);
   const matched = rows.find(
-    (r) => typeof r.token_address === 'string' && r.token_address.toLowerCase() === wanted,
+    (r) => isRecord(r) && typeof r.token_address === 'string' && fold(r.token_address) === wanted,
   );
   // Fall back to the sole row only when the vendor omits `token_address` entirely AND there is
   // exactly one candidate — an unambiguous response we can still trust.
   const row =
     matched ??
-    (rows.length === 1 && typeof rows[0]?.token_address !== 'string' ? rows[0] : undefined);
+    (rows.length === 1 && isRecord(rows[0]) && typeof rows[0]?.token_address !== 'string'
+      ? rows[0]
+      : undefined);
   if (row === undefined) {
     throw new Error(
       'nansen.normalize(smart-money.flows): smart-money/netflow response has no matching row',
@@ -329,6 +361,7 @@ function mapSearchGeneral(
       // and returned a well-formed empty `data: []` that cost 20 live credits to diagnose
       // (see the DF-1 history in endpoints.ts's postSmartMoneyNetflow docstring).
       if (
+        !isRecord(row) ||
         String(row.chain).toLowerCase() !== chain ||
         typeof row.address !== 'string' ||
         !isValidAddress(chain, row.address)
@@ -350,6 +383,11 @@ function mapSearchGeneral(
 
   if (Array.isArray(body.entities)) {
     for (const row of (body.entities as EntitySearchResultRow[]).slice(0, MAX_VENDOR_ROWS)) {
+      // `isRecord` (cycle-4 verification pass): the first cycle-4 sweep guarded the `tokens[]` loop
+      // twenty lines above and MISSED this sibling — three independent verifiers flagged the same
+      // omission. A `null` here raised a raw TypeError on `row.tags`, destroying an already-paid
+      // 5cr token-scoped `entity.labels` response. Skip the row, matching every other mapper.
+      if (!isRecord(row)) continue;
       entries.push({
         // Filter + TRUNCATE (cycle-1 F3 + cycle-2 M-1): a bare cast let `tags: [1,2]` through to
         // fail the whole parse; unbounded length/count then made the parse throw AFTER payment.
@@ -381,7 +419,8 @@ function mapHolderLabels(
   const entries: EntityLabel[] = [];
   for (const row of (body.data as TgmHolderRow[]).slice(0, MAX_VENDOR_ROWS)) {
     // Non-throwing guard — same reasoning as mapTopHolders (adversarial cycle 1, logic F3).
-    if (typeof row.address !== 'string' || !isValidAddress(chain, row.address)) continue;
+    if (!isRecord(row) || typeof row.address !== 'string' || !isValidAddress(chain, row.address))
+      continue;
     entries.push({
       chain,
       address: normalizeAddress(chain, row.address),
@@ -424,8 +463,15 @@ export function normalizeEntityLabels(
     // Truncate + cap (cycle-2 M-1): this is the 100cr exhaustive tier — a heavily-labeled address
     // (CEX hot wallet, fund) with 65+ profiler labels would blow `.max(64)` at parse time, i.e.
     // AFTER spending the entire free-plan balance, and the retry would pay it again.
+    //
+    // `.slice()` BEFORE `.map()`, and `isRecord` per element (vdd-multi cycle 4, perf M-7 + logic
+    // L-5). Cycle 2 applied the slice-before-map rule to `token.risk` and missed this path — the
+    // dearest call in the system — so the whole vendor array was materialised before anything
+    // capped it, and a single `null` element threw a TypeError on the same 100cr response.
     const labels = truncateStringArray(
-      (body.data as ProfilerAddressLabelRow[]).map((r) => r.label),
+      (body.data as ProfilerAddressLabelRow[])
+        .slice(0, MAX_VENDOR_ROWS)
+        .map((r) => (isRecord(r) ? r.label : undefined)),
     );
     const address = raw.tokenAddress as string; // always present on the exhaustive path (fetch()'s own precondition)
     const entry: EntityLabel = {
@@ -475,6 +521,14 @@ interface TgmIndicatorsResponseBody {
 }
 
 function mapIndicator(row: unknown): TokenRiskScore['riskIndicators'][number] {
+  // `isRecord` first (vdd-multi cycle 4, logic L-5): a `null` element would otherwise raise a raw
+  // TypeError on the property read instead of this module's clear, typed normalization error.
+  // DELIBERATELY still fatal, unlike the drop-loops — this path already throws by design when
+  // `indicator_type` is missing (TC-CONTRACT-05), so the paid response is lost either way. That is
+  // the negative-caching gap (docs/issues/l-1-*), not something a per-element guard can fix.
+  if (!isRecord(row)) {
+    throw new Error('nansen.normalize(token.risk): indicator entry is not an object');
+  }
   const indicator = row as TgmIndicatorRow;
   if (typeof indicator.indicator_type !== 'string') {
     throw new Error('nansen.normalize(token.risk): indicator missing "indicator_type"');

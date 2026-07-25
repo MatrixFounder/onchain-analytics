@@ -198,4 +198,52 @@ proof that the escape hatch works.
 
 **Still true, and deliberately not addressed here:** caveat 2 above — a daily ceiling does not stop
 a burst (~50 credits/second at the current throttle). The complementary velocity guard remains
-unimplemented and unclaimed.
+unimplemented and unclaimed. It now has its own ledger entry:
+[SEC-1](sec-1-nansen-daily-cap-does-not-bound-a-burst-no-velocity-guard.md).
+
+---
+
+## Found by `/vdd-multi` cycle 4 (2026-07-25) — the pin was never sufficient
+
+**The "Implementation note" above solved the right problem with the wrong instrument, and the fix
+shipped with a day-long lockout in it.** Pinning stopped the cap from drifting *within a process*.
+But the pin lives in `NansenAccountState`, which is plain in-memory closure state, and the MCP server
+is restarted at every Claude Code session boundary. Across a restart the cap was re-derived — from
+the raw, POST-spend `credits_remaining` — while `checkAndReserve` compares it against `used`, a
+CUMULATIVE bucket counter. Two reference frames, and the day's own spend got subtracted from the
+day's own allowance:
+
+| Step (balance 1000 at 00:00, cap unset) | usage | balance | cap derived | outcome |
+| --- | --- | --- | --- | --- |
+| session 1 cold start | 0 | 1000 | **250** | operator is told the ceiling is 250 |
+| spends 200 through the morning | 200 | 800 | 250 (pinned) | fine |
+| **server restarts at 14:00** | 200 | 800 | **200** | `used(200) + 10 > 200` → **every paid call refused for the rest of the UTC day** |
+
+Fail-closed, so never an over-spend — but a silent, self-inflicted total outage of all three paid
+tools, with 50 credits of both the cap and the balance still available, and a refusal message that
+points at a cap the operator was never quoted. Repeated restarts compound it (each derives from a
+smaller balance), so the real daily allowance degrades from 25% of the balance toward 20% and can
+trip anywhere in between.
+
+**Fixed by giving the derived cap the same anchor the vendor ceiling already had.**
+`deriveDailyCap()` now takes `usageAtObserve + creditsRemainingAtObserve` — the exact rebasing
+`effectiveCeilingFor()` performs, and for the exact same reason. Every cold start, mid-bucket resync
+and concurrent session then derives the same number, and the pin becomes what it was always
+described as: stability if the vendor's own accounting drifts from ours mid-bucket. This also makes
+`NansenAccountSnapshot.dailyCapForBucket`'s promise — *"50 means 50 until the bucket rolls over"* —
+true across a restart rather than only within one process.
+
+Two regression tests pin it (both verified to FAIL without the fix): a cold start with 200 credits of
+persisted usage must still allow a call, and the derived value must be identical at 0 / 200 / 400
+credits spent.
+
+**Also fixed in the same pass, on the input that defines this whole formula:**
+`/account.credits_remaining` was accepted on `typeof === 'number'` alone. `1e999` is valid JSON and
+`JSON.parse` yields `Infinity` — which made the derived cap `Infinity`, got PINNED for the bucket,
+and approved every reservation for the rest of the day with no later resync able to repair it. It now
+requires a non-negative safe integer, the same discipline `reconcile.ts` already applied to the far
+less consequential credits-used header. The asymmetry was the tell.
+
+**Honest note on how this was found.** Not by the implementation's own tests — those passed. It took
+an independent critic reading the formula against `checkAndReserve`'s counter. The Q-2 write-up above
+reasoned carefully about drift *within* a day and never asked what happens when the process ends.
