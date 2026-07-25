@@ -141,6 +141,15 @@ pnpm --filter @onchain-intel/mcp-server exec vitest run test/env.test.ts   # par
 8. **TC-E2E-08 (R-42, пустой результат):** адрес без меток → **успех** с пустым массивом, не ошибка.
 9. **TC-E2E-09 (R-43):** `onchain_token_risk` → `TokenRiskScore` с раздельными группами;
    `_meta.budget.creditsUsedToday === 6`.
+
+   > ⚠️ **Расхождение id ↔ тест (vdd-multi цикл 4, G-10).** Конвенция репозитория — нести id в
+   > имени теста, чтобы `grep TC-…` находил доказательство. Три пункта её нарушают, хотя сами
+   > свойства покрыты: **TC-UNIT-03** покрыт input-схемными кейсами в
+   > `tools/smart-money-flows.test.ts` без id в имени; **TC-UNIT-10** существует только как
+   > комментарий, а не исполняемая проверка (свойство косвенно закрыто route-резолюцией в
+   > `nansen.adapter.test.ts`); **TC-E2E-13** реализован в `e2e.stdio.test.ts`, но без id.
+   > Записано, а не замаскировано: id, который ничего не находит, хуже отсутствующего.
+
 10. **TC-UNIT-10 (R-43, не Dune):** grep-гейт — ни один из трёх tool-файлов не импортирует
     `dune`-адаптер; `dune.isAvailable()` по-прежнему безусловно `false`.
 11. **TC-E2E-11 (isError-путь):** без `NANSEN_API_KEY` все три tool'а → `isError:true`, причина

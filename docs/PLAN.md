@@ -7,7 +7,7 @@
 | **ADR**          | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — D3–D7, D10–D12                                                                                                                                                                                                  |
 | **DB-схема**     | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — применена к `usage` в кеш-БД                                                                                                                                                                                   |
 | **Evidence**     | [raw/nansen-probe-2026-07-23.json](onchain-analytics/raw/nansen-probe-2026-07-23.json) (`credit_cost_table`, живой `/account`), [raw/nansen-openapi-2026-07-23.json](onchain-analytics/raw/nansen-openapi-2026-07-23.json) (75 путей) — **единственные** источники фактов о Nansen |
-| **Статус плана** | Draft (готов к Development-фазе)                                                                                                                                                                                                                                                   |
+| **Статус плана** | **ВЫПОЛНЕН 2026-07-25** — шаги 1–8 закрыты, шаг 9 (`R-47`, опциональный) отложен; факт выполнения и отклонения — в §7                                                                                                                                                              |
 | **Дата**         | 2026-07-23                                                                                                                                                                                                                                                                         |
 | **Стратегия**    | Stub-First (Phase 1 структура/стабы/red → Phase 2 логика/green), атомарная нарезка **9 задач** (8 обязательных + 1 опциональная)                                                                                                                                                   |
 
@@ -213,23 +213,26 @@ Stub-First: **Phase 1** — baseline-прогон сьюта, три пусты�
 **Phase 2** — полные zod-схемы по [data-model.md](architectures/data-model.md) §4.1 + `capabilities()`/
 `isAvailable()` + unit-тесты (валидные/невалидные примеры, отсутствие ключа → структурированный reason).
 
-- [ ] **[R-30]** Capability-декларации + маршрутизация: `providers.config.ts` получает 10-ю запись
+- [x] **[R-30]** Capability-декларации + маршрутизация: `providers.config.ts` получает 10-ю запись
       `adapterRegistrations` (`id:'nansen'`, `hosts:['api.nansen.ai']`,
-      `rateLimit:{capacity:5,refillPerSec:1}`, `requiresEnv:['NANSEN_API_KEY']`) и 3 маршрута
+      ~~`rateLimit:{capacity:5,refillPerSec:1}`~~ → **отгружено `{capacity:15, refillPerSec:10}`**
+      (поднято адверсариальным циклом 1: старое значение — ~0.7% посекундного допуска вендора, а
+      каждая M2-способность композитна, так что 10-шаговый ход агента проводил ~7.6с сна в НАШЕМ
+      же лимитере), `requiresEnv:['NANSEN_API_KEY']`) и 3 маршрута
       (`smart-money.flows`/`entity.labels`/`token.risk`, `chains:['ethereum','solana']`,
       `adapterIds:['nansen']` — без fallback-адаптера); реестр стартует без падения; `registry.ts`
       **не редактируется**.
-- [ ] **[R-31]** Канонический тип `SmartMoneyFlow` (`src/types/smart-money-flow.ts`): `chain`,
+- [x] **[R-31]** Канонический тип `SmartMoneyFlow` (`src/types/smart-money-flow.ts`): `chain`,
       `tokenAddress` (через `normalizeAddress`), `tokenSymbol`, `netflow{1h,24h,7d,30d}Usd`,
       `traderCount?`/`tokenAgeDays?`/`tokenSectors?[]`, `topHolders[]`
       (`{address,addressLabel?,tokenAmount?,valueUsd?,ownershipPercentage?}`), `source`, `fetchedAt`;
       Nansen-DTO (включая обёртку `{data,pagination}`) наружу не протекает; unit-тест на валидацию.
-- [ ] **[R-32]** Канонический тип `EntityLabel` (`src/types/entity-label.ts`): `chain?`/`address?`
+- [x] **[R-32]** Канонический тип `EntityLabel` (`src/types/entity-label.ts`): `chain?`/`address?`
       (оба **опциональны** — `EntitySearchResult` кросс-чейновый, единственный M2-тип с таким
       послаблением), `name?`, `tags[]` (default `[]`), `labels[]` (default `[]`),
       `premiumRequested: boolean`, `source`, `fetchedAt`; **пустой `labels[]` — валидный результат**,
       не ошибка; unit-тест на обе формы.
-- [ ] **[R-33]** Канонический тип `TokenRiskScore` (`src/types/token-risk-score.ts`): `chain`,
+- [x] **[R-33]** Канонический тип `TokenRiskScore` (`src/types/token-risk-score.ts`): `chain`,
       `address`, `marketCapUsd?`/`marketCapGroup?`/`isStablecoin?`, **раздельные**
       `riskIndicators[]`/`rewardIndicators[]` (`{indicatorType,score?,signal?,signalPercentile?,lastTriggerOn?}`),
       `source`, `fetchedAt`; `signal`/`signalPercentile` — `number`, не строки; unit-тест.
@@ -243,14 +246,14 @@ Stub-First: **Phase 1** — `usage`-DDL дописан в `CACHE_DDL`, `budget-s
 self-bootstrap `providers`, `db.transaction(fn).immediate()`), аддитивный upsert с `MAX(0,…)`,
 `createBudgetStore` фабрика, тесты green.
 
-- [ ] **[R-34]** Таблица `usage(provider TEXT FK → providers(id), day INTEGER, credits_used INTEGER,
+- [x] **[R-34]** Таблица `usage(provider TEXT FK → providers(id), day INTEGER, credits_used INTEGER,
 updated_at INTEGER, PRIMARY KEY(provider,day))` дописана в тот же `CACHE_DDL` (без миграции
       `providers`/`cache_entries`): только `TEXT`/`INTEGER`/`REAL`; `day` — epoch-ms UTC bucket
       (`floor(ts/86400000)*86400000`), **не строковая дата**; `credits_used` — `INTEGER`; запись —
       **аддитивный** upsert `ON CONFLICT (provider,day) DO UPDATE SET credits_used =
 MAX(0, credits_used + excluded.credits_used)` (не overwrite, как у `cache_entries`); обе фазы
       (pre-call резервация и post-call подписанная дельта) идут **одним и тем же** SQL.
-- [ ] **[R-35]** `BudgetStore`-репозиторий (`src/cache/budget-store.ts`) — три метода
+- [x] **[R-35]** `BudgetStore`-репозиторий (`src/cache/budget-store.ts`) — три метода
       `checkAndReserve(provider, dayBucketMs, cost, ceiling)` / `recordDelta(provider, dayBucketMs,
 signedDelta)` / `getUsage(provider, dayBucketMs)`, engine-swap-safe, инжектируемый тем же способом,
       что `CacheStore`; `SqliteBudgetStore` открывает **собственное** соединение
@@ -269,7 +272,7 @@ Stub-First: **Phase 1** — `scripts/generate-nansen-cost-table.mjs` + сген�
 неизвестный ключ → `Infinity`), `refreshAccount()` (`GET /account` + чтение `usage` **одним
 логическим шагом**), `effectiveCeiling`, `ensureBudget()`, оба отказ-теста + atomicity-тест.
 
-- [ ] **[R-36]** Дневной потолок выводится **только** из живых данных: `GET /api/v1/account` (0cr) +
+- [x] **[R-36]** Дневной потолок выводится **только** из живых данных: `GET /api/v1/account` (0cr) +
       заголовки последнего ответа, никогда из cost-таблицы и никогда из захардкоженного плана;
       `NansenAccountSnapshot{plan, creditsRemainingAtObserve, usageAtObserve, observedAtMs, dayBucketMs}`;
       дефолт до первого резолва — консервативный `plan:'free'`; resync **только** на (1) cold start /
@@ -277,7 +280,7 @@ Stub-First: **Phase 1** — `scripts/generate-nansen-cost-table.mjs` + сген�
       `fetch()` бросает **до** `checkAndReserve` (fail-closed, не fail-open со stale-потолком);
       тест: фикстура `plan:'pro', credits_remaining:100000` пропускает ранее отказанный 150cr-вызов
       **без единой правки кода** (UC-9).
-- [ ] **[R-37]** Pre-call budget gate — отказ **до** сети, атомарно: `costOf()` читает точную цену из
+- [x] **[R-37]** Pre-call budget gate — отказ **до** сети, атомарно: `costOf()` читает точную цену из
       сгенерированной из закоммиченной спеки таблицы (не тратит кредиты, чтобы узнать цену),
       неизвестный `(method,path)` → **`Infinity`, никогда `0`** (`Number.isFinite`-проверка **до**
       обращения к `BudgetStore`/сети); **`effectiveCeiling = min(usageAtObserve +
@@ -326,7 +329,7 @@ Stub-First: **Phase 1** — `singleflight.ts` + `reconcile.ts` сигнатур�
 `fetch()` (стабы), тесты red; **Phase 2** — коалессинг, суммирование заголовков, `markUnreconciled`/
 `clearUnreconciled`, частичный отказ композитных способностей, тесты green.
 
-- [ ] **[R-38]** Post-call reconciliation — **ровно один раз** на логический `fetch()`, ПОСЛЕ того как
+- [x] **[R-38]** Post-call reconciliation — **ровно один раз** на логический `fetch()`, ПОСЛЕ того как
       **все** под-вызовы завершились: `actualTotal = Σ(X-Nansen-Credits-Used)` по всем под-ответам,
       `delta = actualTotal − reservedTotal`, один вызов `recordDelta('nansen', bucket, delta)` тем же
       аддитивным upsert (**не** замещающая запись); `bucket` — тот самый `dayBucketMs`, что был
@@ -336,7 +339,7 @@ Stub-First: **Phase 1** — `singleflight.ts` + `reconcile.ts` сигнатур�
       резервация остаётся как консервативный факт (никогда не обнуляется молча) + `markUnreconciled()`
       → следующий вход в gate обязательно резолвит `/account`; `clearUnreconciled()` снимается
       **только** успешным resync'ом, не успешным платным вызовом; retry не резервирует повторно.
-- [ ] **[R-39]** Singleflight-коалессинг — **самый внешний** слой `fetch()`, **ДО** check-and-reserve:
+- [x] **[R-39]** Singleflight-коалессинг — **самый внешний** слой `fetch()`, **ДО** check-and-reserve:
       `Map<string, Promise<unknown>>`, ключ = `deriveArgsHash(capability, args)` (существующий
       экспорт `net/args-hash.js`, не новый примитив), запись стирается в `finally`; вызов, пришедший
       после разрешения первого, стартует заново (это новый запрос — ему нужна своя проверка бюджета);
@@ -352,23 +355,23 @@ Stub-First: **Phase 1** — три `src/tools/*.ts` (zod in/out + хендлер
 хендлеры через `resolveCapability` + `_meta.budget` + `isError`-путь, e2e green, spawn-e2e →
 `tools/list === 8`.
 
-- [ ] **[R-41]** MCP-tool `onchain_smart_money_flows` — zod in `{chain: z.enum(['ethereum','solana']),
+- [x] **[R-41]** MCP-tool `onchain_smart_money_flows` — zod in `{chain: z.enum(['ethereum','solana']),
 tokenAddress: string.max(64)}` `.strict()` + тот же `superRefine`/`isValidAddress`-идиом, что
       M1-tools; out — `SmartMoneyFlow`; capability `smart-money.flows` (costOf = **10cr**:
       `/smart-money/netflow` 5 + `/tgm/holders` 5, всегда оба); `_meta.budget` присутствует на miss;
       contract/E2E на фикстуре зелёный, `isError`-путь (нет ключа / отказ бюджета) покрыт отдельно.
-- [ ] **[R-42]** MCP-tool `onchain_entity_label` — zod in `{chain, query?: string.max(200),
+- [x] **[R-42]** MCP-tool `onchain_entity_label` — zod in `{chain, query?: string.max(200),
 tokenAddress?: string.max(64), exhaustive?: boolean = false}` + `superRefine`: требуется **хотя бы
       одно** из `query`/`tokenAddress`, а `exhaustive:true` обязывает `tokenAddress`; трёхуровневая
       цена: **0cr** (`/search/general` [+ `/search/entity-name`]) / **5cr** (`+ /tgm/holders`) /
       **100cr** (`exhaustive:true` — **только** `/profiler/address/labels`, не дублирует дешёвый
       путь); нулевой результат (адрес без меток) — валидный ответ, не ошибка; на `free`-плане
       100cr-путь **реально отказывает** (второй реальный отказ-кейс R-37).
-- [ ] **[R-43]** MCP-tool `onchain_token_risk` — zod in/out (`TokenRiskScore`); источник —
+- [x] **[R-43]** MCP-tool `onchain_token_risk` — zod in/out (`TokenRiskScore`); источник —
       `/tgm/indicators` (5cr) + `/tgm/token-information` (1cr), **НЕ Dune** (явное решение TASK.md §4;
       `dune.isAvailable()` остаётся безусловно `false`, адаптер не оживляется); ответ несёт risk- и
       reward-группы **раздельно**; contract-тест на фикстуре.
-- [ ] **[R-46]** Синхронизация env/доков: `EnvSchema` (`mcp-server/src/env.ts`) получает
+- [x] **[R-46]** Синхронизация env/доков: `EnvSchema` (`mcp-server/src/env.ts`) получает
       `NANSEN_API_KEY` + `NANSEN_DAILY_CREDIT_CAP` + `NANSEN_BUDGET_WARN_RATIO` (все опциональные,
       `emptyAsUndefined`-паттерн; `EnvSchema.parse({})` по-прежнему не бросает); `.env.example` —
       `NANSEN_API_KEY` переезжает из «M2+ зарезервировано» в «код читает сейчас» с комментарием про
@@ -380,7 +383,7 @@ tokenAddress?: string.max(64), exhaustive?: boolean = false}` + `superRefine`: �
 
 Файл: [task-005-7-fixtures-live-verification.md](tasks/task-005-7-fixtures-live-verification.md)
 
-- [ ] **[R-44]** Контрактные тесты на записанных **один раз** фикстурах + бюджет-дисциплина сборки:
+- [x] **[R-44]** Контрактные тесты на записанных **один раз** фикстурах + бюджет-дисциплина сборки:
       `packages/core/scripts/record-fixture.mjs` расширен на `nansen` (обязан сериализовать **JSON-тело
       POST-запроса**, не только query-string; проходит через ту же фабрику `createNansenAdapter`, не
       через хендроллед-пробник), **вне CI**; шесть живых вызовов по плану §0.1 (`/account` 0 +
@@ -400,7 +403,7 @@ tokenAddress?: string.max(64), exhaustive?: boolean = false}` + `superRefine`: �
 
 Файл: [task-005-8-degradation-regression-exit.md](tasks/task-005-8-degradation-regression-exit.md)
 
-- [ ] **[R-40]** Явная деградация + отсутствие регрессии M1: (тест 1) пустой `.env` → все три
+- [x] **[R-40]** Явная деградация + отсутствие регрессии M1: (тест 1) пустой `.env` → все три
       M2-tool'а возвращают `isError: true` с понятной причиной (без утечки значения ключа), а
       `onchain_ping` + 4 M1-tool'а в **той же** сессии отвечают нормально; (тест 2, M-1b) бюджет
       **исчерпан** (не только отсутствует ключ) → тот же результат; полный M1-сьют остаётся зелёным
@@ -524,3 +527,41 @@ stdio MCP-сервер → **8 tools** видны → (a) без `NANSEN_API_KEY
 **отсутствует** (кеш-хит бюджет не тратит).
 
 Финальный гейт (только по команде оркестратора): commit + push → GitHub Actions зелёный (Node 22).
+
+---
+
+## 7. Факт выполнения (2026-07-25)
+
+План закрыт. Шаги 1–8 (`R-29…R-46`) выполнены и отмечены в §2; **шаг 9 (`R-47`) не брался** — он с
+самого начала помечен опциональным и приёмку не гейтит, перенесён в [BACKLOG](BACKLOG.md).
+
+**Гейты §6 — фактический прогон на отгруженном дереве** (коммит `403441c`):
+
+| Гейт                                                                | Результат                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------- |
+| `pnpm lint` · `pnpm format:check` · `pnpm typecheck` · `pnpm build` | зелёные                                         |
+| `pnpm test`                                                         | **519/519** (369 core + 150 mcp-server)         |
+| Offline-гейт (R-44): `pnpm test` при заблокированной сети           | **519/519, 0 исходящих вызовов**                |
+| `smoke:dist`                                                        | PASS (`onchain_ping` через `dist/index.js`)     |
+| Швы M1                                                              | не тронуты (побайтовая сверка против `8499a21`) |
+
+Блокировка сети для offline-гейта усилена в цикле 4: глушится не только `fetch`, но и
+`node:http`/`node:https` (прямой `http.request` обошёл бы fetch-заглушку), а её действенность
+подтверждается зондом ДО прогона — иначе зелёный сьют не доказывает ничего.
+
+**Отклонения от плана, принятые с записью** (детали — в §6 TASK.md, помечены ⚠️):
+
+- **R-44** — жёсткий потолок живого расхода ≤30cr (§0.1, «ГЛАВНОЕ ограничение этого плана»)
+  **нарушен: 41cr**. Оценка ≈16cr не выдержала, потому что первые три живые попытки
+  `/smart-money/netflow` вернули пустой результат из-за двух наших дефектов запроса
+  ([DF-1](issues/df-1-nansen-smart-money-netflow-empty-for-base-pair-tokens.md)); диагностика и
+  перезапись стоили ещё 25cr. Каждый транш авторизован владельцем отдельно.
+- **R-30** — `rateLimit` отгружен как `{capacity:15, refillPerSec:10}` вместо запланированного
+  `{capacity:5, refillPerSec:1}` (адверсариальный цикл 1: старое значение было самовредительством).
+- **R-43** — `/tgm/token-information` вызывается и оплачивается, но не читается
+  ([Q-4](issues/q-4-nansen-token-information-subcall-paid-but-never-consumed.md)).
+
+**После плана**: четвёртый адверсариальный прогон (`/vdd-multi`, коммит `403441c`) нашёл и закрыл
+8 дефектов бюджет-гарда — включая два в коде, написанном по этому плану, и три в правках первого
+захода. Пять оставшихся вопросов заведены в [KNOWN_ISSUES](KNOWN_ISSUES.md) как `L-1`, `SEC-1`,
+`Q-3`, `Q-4`, `RF-2` — ни один не выдаётся за сделанный.

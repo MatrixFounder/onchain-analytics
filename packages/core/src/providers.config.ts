@@ -79,9 +79,12 @@ export const routes: CapabilityRoute[] = [
  * without touching call-site code; `requiresEnv` is informational only (the adapter's own
  * `isAvailable()` is the actual availability decision).
  *
- * Exactly 9 entries (ARCHITECTURE.md §3.2/§5.3) — no real adapter implementation exists for any
- * of them yet (tasks 003-4/003-5 build the actual adapters); this task only declares the config
- * surface + values.
+ * **10 entries** (ARCHITECTURE.md §3.2/§5.3), every one now backed by a real adapter. This comment
+ * used to read "exactly 9 entries — no real adapter implementation exists for any of them yet",
+ * which described the M1 config-only state and stopped being true across tasks 003-4/003-5
+ * (M1 adapters) and 005-1 (`nansen`, the 10th and the first PAID one). Corrected vdd-multi cycle 4.
+ * `dune` is the one entry whose adapter is deliberately still an interface stub — its
+ * `isAvailable()` is unconditionally `{ok:false}` until a query is authored.
  */
 export const adapterRegistrations: AdapterRegistration[] = [
   {
@@ -151,6 +154,15 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // throttle tokens each, token-scoped entity.labels burns 3, plus 1 for a cold-start /account
     // resync. A 10-token agent turn spent ~7.6s asleep in our own limiter, not the vendor's.
     // 15/10 is still 15x under the per-second and 5x under the per-minute vendor limit.
+    //
+    // **Recorded deviation from R-29 (vdd-multi cycle 4, G-6):** R-29 asks the config to sit under
+    // ALL FOUR documented thresholds, naming burst 15 as the strictest. `capacity: 15` is EQUAL to
+    // that burst limit, not under it — so on a cold bucket a 15-token burst is exactly at the
+    // vendor's ceiling rather than inside it. Deliberate: `capacity` is the burst allowance and
+    // `refillPerSec: 10` is what bounds sustained rate, so the steady state stays well clear; the
+    // alternative (capacity 14) buys nothing measurable and costs one call of headroom on the
+    // composite capabilities this value exists to unblock. Named here rather than left implicit,
+    // because "under all four" is what the requirement says and this is not that.
     rateLimit: { capacity: 15, refillPerSec: 10 },
     requiresEnv: ['NANSEN_API_KEY'],
   },
