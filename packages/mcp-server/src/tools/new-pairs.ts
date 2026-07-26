@@ -1,12 +1,21 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { PoolSchema, type CapabilityRegistry } from '@onchain-intel/core';
+import {
+  canonicalizeChain,
+  ChainInputSchema,
+  PoolSchema,
+  type CapabilityRegistry,
+} from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
 
-/** The two supported networks (task 003-7 reviewer note, Major-2 — see `get-token.ts`'s
- * docstring for why the full `ChainSchema` isn't used here) — declared once and reused for both
- * the input and output `chain` fields below, so this file states the narrowing exactly once. */
-const SUPPORTED_CHAIN = z.enum(['ethereum', 'solana']);
+/**
+ * TASK-006 (task 006-6, R-50): `chain` is an OPEN string resolved against the chain registry,
+ * replacing the `z.enum(['ethereum','solana'])` literal that this file (and six others) carried.
+ * The closed enum for all 458 chains measured ~8.7k tokens of schema across the chain-taking
+ * tools — paid on EVERY request to the model. Correctness moved into the runtime resolve, which
+ * fails with a "did you mean" list and zero network calls (owner decision 2026-07-26).
+ */
+const SUPPORTED_CHAIN = ChainInputSchema;
 
 /**
  * Input contract for `onchain_new_pairs` (ARCHITECTURE.md §5.1, R-18): `limit` is optional, a
@@ -77,10 +86,15 @@ export async function newPairsHandler(
   input: NewPairsInput,
   ctx: NewPairsContext,
 ): Promise<NewPairsOutcome> {
+  // TASK-006 (task 006-6, R-50/R-59): resolve the alias to its canonical slug HERE, before the
+  // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
+  // would hash to two different cache entries for one logical request, which on a paid route is
+  // two charges (data-model.md §4.2.2).
+  const chain = canonicalizeChain(input.chain);
   const limit = input.limit ?? DEFAULT_LIMIT;
-  const args: Record<string, unknown> = { chain: input.chain, limit };
+  const args: Record<string, unknown> = { chain, limit };
 
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, input.chain, args);
+  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, args);
   if (!outcome.ok) return outcome;
 
   // Adversarial cycle 1, fix I: `outcome.output` (the adapter's `Pool[]`) is validated exactly
@@ -88,7 +102,7 @@ export async function newPairsHandler(
   // `z.array(PoolSchema)`) — this used to ALSO run a standalone `z.array(PoolSchema).parse(...)`
   // first, a redundant double-validation of the same data against the same schema.
   const output = NewPairsOutputSchema.parse({
-    chain: input.chain,
+    chain,
     pairs: outcome.output,
     source: outcome.cache.provider,
     fetchedAt: Date.now(),

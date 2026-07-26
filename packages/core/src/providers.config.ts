@@ -5,6 +5,14 @@ import type { AdapterRegistration, CapabilityRoute } from './adapters/types.js';
  * literally from there). Order within `adapterIds` is priority + fallback chain (R-11) — changing
  * priority is a config edit here, never a code change at the call site.
  *
+ * **TASK-006 (task 006-5): the per-route `chains` literals are gone.** Which chains a route serves
+ * is now derived from `adapter.chainSupport()` (the coverage matrix, §4.2.3) instead of being
+ * restated here — one fact, one place. `CapabilityRegistry.resolve()` collects the adapters of
+ * every route matching the capability and skips those whose predicate says no, which is exactly
+ * what the literal used to do for `wallet.balances.native` (`rpc-evm` vs `rpc-solana`). The field
+ * remains part of `CapabilityRoute` and is still honoured if set — nothing forces a caller with
+ * its own route table to migrate.
+ *
  * No real adapter registers any of these ids yet (tasks 003-4/003-5 build the actual adapters);
  * `CapabilityRegistry.resolve()` looks adapters up in a caller-supplied `Map<id, ProviderAdapter>`
  * (never this file directly), so an id referenced here with no matching Map entry is treated the
@@ -13,38 +21,36 @@ import type { AdapterRegistration, CapabilityRoute } from './adapters/types.js';
  * `Map` entry for every id these routes reference.
  */
 export const routes: CapabilityRoute[] = [
-  { capability: 'token.price', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
-  { capability: 'token.metadata', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
-  { capability: 'pairs.new', chains: ['ethereum', 'solana'], adapterIds: ['dexscreener'] },
+  { capability: 'token.price', adapterIds: ['coingecko'] },
+  { capability: 'token.metadata', adapterIds: ['coingecko'] },
+  { capability: 'pairs.new', adapterIds: ['dexscreener'] },
   // R-6 Must requires both pairs.new and pool.info — pool.info has no tool consumer yet in M1
   // (cheap to declare now; major fix from architecture review cycle 1):
-  { capability: 'pool.info', chains: ['ethereum', 'solana'], adapterIds: ['dexscreener'] },
-  { capability: 'protocol.tvl', chains: ['ethereum', 'solana'], adapterIds: ['defillama'] },
-  { capability: 'wallet.balances.native', chains: ['ethereum'], adapterIds: ['rpc-evm'] },
-  { capability: 'wallet.balances.native', chains: ['solana'], adapterIds: ['rpc-solana'] },
+  { capability: 'pool.info', adapterIds: ['dexscreener'] },
+  { capability: 'protocol.tvl', adapterIds: ['defillama'] },
+  // TASK-006 (task 006-7, R-53): TVL of a CHAIN, not a protocol — a different endpoint
+  // (`/v2/chains`) and a different output contract, hence a separate capability.
+  { capability: 'chain.tvl', adapterIds: ['defillama'] },
+  { capability: 'wallet.balances.native', adapterIds: ['rpc-evm'] },
+  { capability: 'wallet.balances.native', adapterIds: ['rpc-solana'] },
   {
     capability: 'privacy.shielded_pool',
-    chains: ['dash'],
     adapterIds: ['dash-platform', 'platform-explorer'],
   },
   {
     capability: 'platform.identities',
-    chains: ['dash'],
     adapterIds: ['dash-platform', 'platform-explorer'],
   },
   {
     capability: 'platform.contracts',
-    chains: ['dash'],
     adapterIds: ['dash-platform', 'platform-explorer'],
   },
   {
     capability: 'platform.documents',
-    chains: ['dash'],
     adapterIds: ['dash-platform', 'platform-explorer'],
   },
   {
     capability: 'platform.credits',
-    chains: ['dash'],
     adapterIds: ['dash-platform', 'platform-explorer'],
   },
   // R-10 (platform-explorer's own history, always live/keyless) + R-12 (opt. PG-backed history) —
@@ -52,23 +58,21 @@ export const routes: CapabilityRoute[] = [
   // second (an additional/alternative history view, only when ONCHAIN_PG_URL is configured):
   {
     capability: 'privacy.shielded_pool.history',
-    chains: ['dash'],
     adapterIds: ['platform-explorer', 'pg-history'],
   },
   {
     capability: 'platform.metrics.history',
-    chains: ['dash'],
     adapterIds: ['platform-explorer', 'pg-history'],
   },
   // R-8 — Dune, Should, interface/config-stub in M1 (see §3.2's dune decision, F-2/minor):
   // registered, not consumed by any of the 4 M1 tools; live fetch/fixture is out of M1's scope.
-  { capability: 'token.holders', chains: ['ethereum'], adapterIds: ['dune'] },
+  { capability: 'token.holders', adapterIds: ['dune'] },
   // M2 (TASK-005, R-29/R-30, task 005-1) — 3 new nansen routes, no fallback adapter: there is no
   // free equivalent for any of these three capabilities. chains scope is literally the same
   // subset as every M1 tool (OQ-3, ARCHITECTURE.md §3.2 "Десятый адаптер").
-  { capability: 'smart-money.flows', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
-  { capability: 'entity.labels', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
-  { capability: 'token.risk', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
+  { capability: 'smart-money.flows', adapterIds: ['nansen'] },
+  { capability: 'entity.labels', adapterIds: ['nansen'] },
+  { capability: 'token.risk', adapterIds: ['nansen'] },
 ];
 
 /**

@@ -1,4 +1,6 @@
 import { normalizeAddress } from '../../chain/address.js';
+import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
+import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle } from '../../net/rate-limit.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
@@ -21,6 +23,8 @@ const ENDPOINT = `https://${HOSTS[0]}`;
 export interface RpcSolanaAdapterDeps {
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Chain registry supplying family + curated RPC hosts (TASK-006 R-54/R-56). */
+  chains?: ChainRegistry;
 }
 
 interface RpcSolanaFetchResult {
@@ -34,12 +38,19 @@ interface JsonRpcGetBalanceResponse {
   error?: { code?: unknown; message?: unknown };
 }
 
-function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; address: string } {
-  const chain = args['chain'];
+function extractFetchArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): { chain: ChainInfo; address: string } {
+  const rawChain = args['chain'];
   const address = args['address'];
-  if (chain !== 'solana' || typeof address !== 'string') {
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  // TASK-006 (task 006-5): the same condition `chainSupport()` reports — family plus a CURATED
+  // RPC host. `rpcHosts: null` is not "misconfigured", it is "we never approved a host for this
+  // chain" (security.md §7.2.1), and the coverage gate should have refused long before here.
+  if (!chain || chain.family !== 'svm' || chain.rpcHosts === null || typeof address !== 'string') {
     throw new Error(
-      `rpc-solana.fetch: invalid args ${JSON.stringify(args)} (expected {chain: 'solana', address: string})`,
+      `rpc-solana.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a svm chain with a curated RPC host>, address: string})`,
     );
   }
   return { chain, address };
@@ -71,13 +82,20 @@ function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; addres
 export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): ProviderAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
+  const chains = deps.chains ?? loadChainRegistry();
 
   return {
     id: 'rpc-solana',
+    // TASK-006 (R-54): mirrors `rpc-evm` — the SVM family plus a curated RPC host. data-model.md
+    // §4.2.3 words this as `caip2 === <solana mainnet>`; expressed as family + `rpcHosts` instead,
+    // it stays consistent with its EVM twin and avoids hardcoding a chain id back into an adapter,
+    // which is the coupling this task removes. Equivalent while Solana is the only SVM chain with
+    // a curated host, and correct by construction if another ever appears.
+    chainSupport: (chain: ChainInfo): boolean => chain.family === 'svm' && chain.rpcHosts !== null,
     capabilities: () => [{ id: 'wallet.balances.native', chains: ['solana'] }],
     costOf: () => ({ credits: 0 }),
     fetch: async (_cap: string, args: Record<string, unknown>): Promise<RpcSolanaFetchResult> => {
-      const { chain, address } = extractFetchArgs(args);
+      const { chain, address } = extractFetchArgs(args, chains);
       const normalizedAddress = normalizeAddress(chain, address);
       const body = JSON.stringify({
         jsonrpc: '2.0',
@@ -102,7 +120,7 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
           `rpc-solana: JSON-RPC error from ${ENDPOINT}: ${stringifyTruncated(raw.error)}`,
         );
       }
-      return { chain, address: normalizedAddress, raw };
+      return { chain: chain.slug, address: normalizedAddress, raw };
     },
     normalize: (_cap: string, rawResult: unknown): Wallet => {
       const { chain, address, raw } = rawResult as RpcSolanaFetchResult;

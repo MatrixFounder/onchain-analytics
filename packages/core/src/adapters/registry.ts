@@ -3,7 +3,10 @@ import type { CacheGetResult, CacheStore } from './cache-store.js';
 import type { CapabilityRoute, ProviderAdapter } from './types.js';
 import { deriveArgsHash } from '../net/args-hash.js';
 import { NEGATIVE_TTL_SECONDS } from '../cache/ttl.js';
-import type { Chain } from '../types/chain.js';
+import { createCoverage, type Coverage } from '../chain/coverage.js';
+import { loadChainRegistry } from '../chain/registry.js';
+import type { ChainRegistry } from '../chain/registry-core.js';
+import { CapabilityNotCoveredOnChainError } from '../chain/errors.js';
 
 /** One failed/unavailable attempt recorded while walking a route's `adapterIds` (R-24). */
 export interface CapabilityAttempt {
@@ -19,10 +22,12 @@ export interface CapabilityAttempt {
  */
 export class CapabilityUnavailableError extends Error {
   readonly capability: string;
-  readonly chain: Chain;
+  /** Widened from the closed `Chain` enum to `string` in TASK-006 (task 006-4): the engine's chain
+   * vocabulary now lives in the registry, not in a type literal. */
+  readonly chain: string;
   readonly tried: CapabilityAttempt[];
 
-  constructor(details: { capability: string; chain: Chain; tried: CapabilityAttempt[] }) {
+  constructor(details: { capability: string; chain: string; tried: CapabilityAttempt[] }) {
     const triedText = details.tried.length
       ? details.tried.map((t) => `${t.adapterId} (${t.reason})`).join(', ')
       : 'no route registered for this capability/chain';
@@ -91,11 +96,42 @@ export interface CapabilityResolution {
  * (§8) without a refactor.
  */
 export class CapabilityRegistry {
+  /** Built lazily and memoized per instance (never a module singleton, §8): the shipped registry
+   * is ~458 rows, and constructing one per `CapabilityRegistry` in a test suite would be pure
+   * waste when most tests never reach the coverage gate. */
+  private coverageCache: Coverage | null = null;
+  private chainsCache: ChainRegistry | null = null;
+
   constructor(
     private readonly routes: CapabilityRoute[],
     private readonly adapters: Map<string, ProviderAdapter>,
     private readonly cache: CacheStore = new PassthroughCacheStore(),
+    /** Chain registry used by the coverage gate (TASK-006 R-51). Defaults to the shipped snapshot
+     * so production wiring cannot forget it; injectable so tests can use a synthetic registry. */
+    private readonly chains: ChainRegistry | null = null,
   ) {}
+
+  /**
+   * The coverage matrix derived from THIS registry's routes and adapters (TASK-006 R-51/R-52).
+   *
+   * Public because `onchain_list_chains` answers "where is this capability available" and must do
+   * so from the same two sources the gate uses — a tool building its own matrix could disagree
+   * with the engine that will actually serve the call.
+   */
+  getCoverage(): Coverage {
+    this.coverageCache ??= createCoverage({
+      routes: this.routes,
+      adapters: this.adapters,
+      chains: this.getChainRegistry(),
+    });
+    return this.coverageCache;
+  }
+
+  /** The chain registry this instance resolves against (injected, or the shipped snapshot). */
+  getChainRegistry(): ChainRegistry {
+    this.chainsCache ??= this.chains ?? loadChainRegistry();
+    return this.chainsCache;
+  }
 
   /**
    * Routes `(capability, chain)` to an ordered adapter list and returns only the `normalize()`d
@@ -137,27 +173,66 @@ export class CapabilityRegistry {
    */
   async resolve(
     capability: string,
-    chain: Chain,
+    chain: string,
     args: Record<string, unknown>,
   ): Promise<CapabilityResolution> {
-    const route = this.routes.find(
+    const tried: CapabilityAttempt[] = [];
+    const chainInfo = this.getChainRegistry().tryResolve(chain);
+
+    // TASK-006 (task 006-5): ALL routes for the capability contribute their adapters, in
+    // declaration order. Before this, a single `find()` picked the first route and `chains` on the
+    // route was what separated e.g. `wallet.balances.native` → `rpc-evm` from the same capability
+    // → `rpc-solana`. With the chain dimension moved into `chainSupport()`, that separation now
+    // happens per ADAPTER: an adapter that cannot serve the chain is skipped here, so removing the
+    // route-level `chains` literal changes nothing about which adapter answers.
+    //
+    // A route that still carries `chains` keeps being narrowed by it — the two mechanisms agree,
+    // and the literal is simply redundant where a predicate exists.
+    const matching = this.routes.filter(
       (candidate) =>
         candidate.capability === capability &&
-        (!candidate.chains || candidate.chains.includes(chain)),
+        (!candidate.chains || (candidate.chains as readonly string[]).includes(chain)),
     );
 
-    const tried: CapabilityAttempt[] = [];
-
-    if (!route) {
+    if (matching.length === 0) {
       throw new CapabilityUnavailableError({ capability, chain, tried });
+    }
+
+    const adapterIds = [...new Set(matching.flatMap((candidate) => candidate.adapterIds))];
+
+    // GATE 2 — coverage (TASK-006 R-51d). Positioned deliberately: after the route is known, but
+    // BEFORE the cache read, before `isAvailable()`, before the budget gate and before any HTTP.
+    //
+    // Widening the chain set from 2 to 458 multiplies the ways a caller can miss coverage. If a
+    // miss cost a credit reservation, the widening would itself become a way to spend money — so
+    // this check has to sit above the paid path, not merely somewhere before the network call.
+    //
+    // A chain string that does not resolve leaves the gate inert: canonicalizing tool input is
+    // task 006-6's job at the boundary, and this method must not start rejecting chains that the
+    // pre-TASK-006 contract accepted.
+    if (chainInfo && !this.getCoverage().isCovered(capability, chainInfo)) {
+      const coverage = this.getCoverage();
+      throw new CapabilityNotCoveredOnChainError({
+        capability,
+        chain: chainInfo.slug,
+        availableChains: coverage.chainsFor(capability).map((c) => c.slug),
+        availableCapabilities: coverage.capabilitiesFor(chainInfo),
+      });
     }
 
     const argsHash = deriveArgsHash(capability, args);
 
-    for (const adapterId of route.adapterIds) {
+    for (const adapterId of adapterIds) {
       const adapter = this.adapters.get(adapterId);
       if (!adapter) {
         tried.push({ adapterId, reason: 'no adapter registered for this id' });
+        continue;
+      }
+
+      // Chain-scoped skip (TASK-006): this is what the route-level `chains` literal used to do.
+      // Not recorded in `tried` — "this adapter does not serve this chain" is not an attempt that
+      // failed, and listing it would make a coverage fact look like an outage.
+      if (chainInfo && adapter.chainSupport && !adapter.chainSupport(chainInfo, capability)) {
         continue;
       }
 

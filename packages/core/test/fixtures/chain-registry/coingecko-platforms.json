@@ -1,0 +1,30 @@
+[
+  {
+    "id": "ethereum",
+    "chain_identifier": 1,
+    "name": "Ethereum",
+    "shortname": "",
+    "native_coin_id": "ethereum"
+  },
+  {
+    "id": "solana",
+    "chain_identifier": null,
+    "name": "Solana",
+    "shortname": "",
+    "native_coin_id": "solana"
+  },
+  {
+    "id": "berachain",
+    "chain_identifier": 80094,
+    "name": "Berachain",
+    "shortname": "",
+    "native_coin_id": "berachain-bera"
+  },
+  {
+    "id": "nameless-fuzzy-chain",
+    "chain_identifier": null,
+    "name": "Nameless Fuzzy Chain",
+    "shortname": "",
+    "native_coin_id": "nfc-token"
+  }
+]

@@ -39,10 +39,23 @@ describe('ProtocolTvlInputSchema', () => {
     ).not.toThrow();
   });
 
-  it('rejects a chain outside ethereum/solana (e.g. dash)', () => {
+  // CHANGED EXPECTATION (task 006-6, R-50). The schema used to reject anything outside a
+  // two-value enum. It now accepts any chain the REGISTRY knows and rejects only what the registry
+  // does not — because refusing at the schema is the wrong layer for "this capability is not
+  // served there": that answer belongs to the coverage matrix, which can say WHERE it IS served
+  // (§4.2.3). A schema-level refusal could only say "no".
+  it('accepts any registry chain and rejects an unknown one (R-50c)', () => {
     expect(() =>
-      ProtocolTvlInputSchema.parse({ chain: 'dash', protocolSlug: 'uniswap' }),
-    ).toThrow();
+      ProtocolTvlInputSchema.parse({ chain: 'ethereum', protocolSlug: 'uniswap' }),
+    ).not.toThrow();
+    const unknown = ProtocolTvlInputSchema.safeParse({
+      chain: 'not-a-real-chain',
+      protocolSlug: 'uniswap',
+    });
+    expect(unknown.success).toBe(false);
+    if (!unknown.success) {
+      expect(unknown.error.issues.some((i) => i.message.includes('unknown chain'))).toBe(true);
+    }
   });
 
   it('rejects an empty protocolSlug', () => {

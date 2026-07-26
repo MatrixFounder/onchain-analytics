@@ -1,0 +1,19 @@
+[
+  {
+    "gecko_id": "ethereum",
+    "tvl": 60000000000.0,
+    "tokenSymbol": "ETH",
+    "name": "Ethereum",
+    "chainId": 1
+  },
+  {
+    "gecko_id": "sharedcoin",
+    "tvl": 100.0,
+    "tokenSymbol": "SHR",
+    "name": "Shared One",
+    "chainId": null
+  },
+  { "gecko_id": null, "tvl": 50.0, "tokenSymbol": "MM", "name": "Mismatch Chain", "chainId": 5551 },
+  { "gecko_id": "alphacoin", "tvl": 30.0, "tokenSymbol": "ALP", "name": "Alpha", "chainId": 100 },
+  { "gecko_id": "betacoin", "tvl": 20.0, "tokenSymbol": "BET", "name": "Beta", "chainId": 200 }
+]

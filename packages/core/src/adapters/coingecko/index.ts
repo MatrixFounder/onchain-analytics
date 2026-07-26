@@ -1,9 +1,10 @@
 import { normalizeAddress } from '../../chain/address.js';
+import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
+import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle } from '../../net/rate-limit.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { TokenSchema, type Token } from '../../types/token.js';
-import type { Chain } from '../../types/chain.js';
 import type { ProviderAdapter } from '../types.js';
 
 const REGISTRATION = adapterRegistrations.find((r) => r.id === 'coingecko');
@@ -26,6 +27,9 @@ export interface CoingeckoAdapterDeps {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Chain registry supplying the asset-platform id (TASK-006 R-54). Defaults to the shipped
+   * snapshot; injectable for tests. */
+  chains?: ChainRegistry;
 }
 
 /** This adapter's own private hand-off shape from its HTTP step to `normalize()` (never seen by
@@ -36,7 +40,7 @@ export interface CoingeckoAdapterDeps {
  * `asset_platform_id: "ethereum"`, since Ethereum is USDC's primary platform) — so the target
  * chain cannot be recovered reliably from the response body alone. */
 interface CoingeckoFetchResult {
-  chain: Chain;
+  chain: ChainInfo;
   raw: unknown;
 }
 
@@ -53,12 +57,16 @@ interface CoingeckoContractResponse {
   };
 }
 
-function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; address: string } {
-  const chain = args['chain'];
+function extractFetchArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): { chain: ChainInfo; address: string } {
+  const rawChain = args['chain'];
   const address = args['address'];
-  if ((chain !== 'ethereum' && chain !== 'solana') || typeof address !== 'string') {
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  if (!chain || chain.vendors['coingecko'] == null || typeof address !== 'string') {
     throw new Error(
-      `coingecko.fetch: invalid args ${JSON.stringify(args)} (expected {chain: 'ethereum'|'solana', address: string})`,
+      `coingecko.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a chain CoinGecko covers>, address: string})`,
     );
   }
   return { chain, address };
@@ -66,8 +74,9 @@ function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; addres
 
 /**
  * CoinGecko adapter (ARCHITECTURE.md §3.2/§5.3, R-5): `token.price` + `token.metadata` via
- * `GET /coins/{platform}/contract/{address}` (platform id === our `Chain` value literally for
- * both `ethereum` and `solana` — confirmed by a live probe, not assumed, 2026-07-22). Both
+ * `GET /coins/{platform}/contract/{address}` (the platform id comes from `chain.vendors.coingecko`
+ * since TASK-006 — it happens to equal our slug for `ethereum`/`solana`, which is what the original
+ * live probe confirmed, but not for e.g. `arbitrum` → `arbitrum-one`). Both
  * capabilities are backed by the exact same endpoint (CoinGecko's contract lookup returns price
  * and metadata together), so `normalize()` doesn't branch on `cap` — both ids produce the same
  * canonical `Token`.
@@ -76,21 +85,29 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
   const env = deps.env ?? process.env;
+  const chains = deps.chains ?? loadChainRegistry();
 
   return {
     id: 'coingecko',
-    capabilities: () => [
-      { id: 'token.price', chains: ['ethereum', 'solana'] },
-      { id: 'token.metadata', chains: ['ethereum', 'solana'] },
-    ],
+    // TASK-006 (R-54): the asset-platform id IS the coverage answer — CoinGecko cannot serve a
+    // chain it has no platform for. Reading the registry column keeps the two in step by
+    // construction. NOTE: the generator (task 006-2) only fills this column via an exact join key;
+    // an ambiguous `native_coin_id` leaves it null rather than guessing, so a false "supported"
+    // cannot originate here.
+    chainSupport: (chain: ChainInfo): boolean => chain.vendors['coingecko'] != null,
+    capabilities: () => [{ id: 'token.price' }, { id: 'token.metadata' }],
     // Keyless/demo tier is free — 0 credits regardless of args.
     costOf: () => ({ credits: 0 }),
     fetch: async (_cap: string, args: Record<string, unknown>): Promise<CoingeckoFetchResult> => {
-      const { chain, address } = extractFetchArgs(args);
+      const { chain, address } = extractFetchArgs(args, chains);
       // Defensive re-normalization (task 003-4 reviewer note): the caller is expected to have
       // already normalized the address before it ever reaches here, but this adapter's own
       // cache-key-adjacent HTTP step re-normalizes anyway rather than trusting caller discipline.
       const normalizedAddress = normalizeAddress(chain, address);
+      // The vendor's asset-platform id, from the registry — not our slug. They coincide for
+      // `ethereum`/`solana` (live-probed 2026-07-22) but diverge elsewhere: `arbitrum` is
+      // `arbitrum-one` at CoinGecko, `bsc` is `binance-smart-chain`.
+      const platformId = chain.vendors['coingecko'] ?? chain.slug;
 
       // CoinGecko has TWO disjoint auth contours (live-probed 2026-07-23: the pro host ignores
       // `x-cg-demo-api-key` entirely — still "API Key Missing" — and only recognizes
@@ -104,7 +121,7 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
       const proApiKey = env['COINGECKO_PRO_API_KEY'];
       const demoApiKey = env['COINGECKO_API_KEY'];
       const host = proApiKey ? 'pro-api.coingecko.com' : 'api.coingecko.com';
-      const url = `https://${host}/api/v3/coins/${chain}/contract/${normalizedAddress}`;
+      const url = `https://${host}/api/v3/coins/${platformId}/contract/${normalizedAddress}`;
       const headers: Record<string, string> = proApiKey
         ? { 'x-cg-pro-api-key': proApiKey }
         : demoApiKey
@@ -122,13 +139,14 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
     normalize: (_cap: string, rawResult: unknown): Token => {
       const { chain, raw } = rawResult as CoingeckoFetchResult;
       const body = raw as CoingeckoContractResponse;
-      const detail = body.detail_platforms?.[chain];
+      const platformId = chain.vendors['coingecko'] ?? chain.slug;
+      const detail = body.detail_platforms?.[platformId];
       if (!detail || typeof detail.contract_address !== 'string') {
-        throw new Error(`coingecko.normalize: missing detail_platforms.${chain} in response`);
+        throw new Error(`coingecko.normalize: missing detail_platforms.${platformId} in response`);
       }
 
       const token: Token = {
-        chain,
+        chain: chain.slug,
         address: normalizeAddress(chain, detail.contract_address),
         symbol: typeof body.symbol === 'string' ? body.symbol.toUpperCase() : '',
         name: typeof body.name === 'string' ? body.name : '',

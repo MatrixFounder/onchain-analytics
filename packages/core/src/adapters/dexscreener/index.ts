@@ -1,13 +1,10 @@
 import { throttle } from '../../net/rate-limit.js';
+import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
+import { loadChainRegistry } from '../../chain/registry.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { PoolSchema, type Pool } from '../../types/pool.js';
 import type { ProviderAdapter } from '../types.js';
-
-/** Only these two `Chain` values are supported by this adapter (§3.2 routes) — kept as its own
- * narrower union so `NATIVE_QUERY`'s lookup stays exhaustive/index-safe without a `'dash'` entry
- * that would never be reachable in practice. */
-type SupportedChain = 'ethereum' | 'solana';
 
 const REGISTRATION = adapterRegistrations.find((r) => r.id === 'dexscreener');
 if (!REGISTRATION) {
@@ -27,7 +24,10 @@ const DEFAULT_LIMIT = 10;
  * asset symbol reliably surfaces that chain's pairs (§11 open question, resolved by live probe
  * 2026-07-22 — not guessed). Documented implementation choice (developer-guidelines §1.6).
  */
-const NATIVE_QUERY: Record<SupportedChain, string> = { ethereum: 'ETH', solana: 'SOL' };
+// TASK-006 (R-57a): the native symbol comes from `chain.nativeSymbol` in the registry, replacing
+// the two-entry `NATIVE_QUERY = {ethereum:'ETH', solana:'SOL'}` map. A chain whose symbol the
+// registry does not know is honestly uncovered (see `chainSupport`) rather than searched for with
+// a guessed query string.
 
 /**
  * Optional constructor dependencies for the DexScreener adapter (injectable, same DI convention
@@ -36,6 +36,8 @@ const NATIVE_QUERY: Record<SupportedChain, string> = { ethereum: 'ETH', solana: 
 export interface DexscreenerAdapterDeps {
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Chain registry supplying `nativeSymbol` + the observed DexScreener chainId (TASK-006 R-54). */
+  chains?: ChainRegistry;
 }
 
 /** This adapter's own private hand-off shape from its HTTP step to `normalize()` — `raw` is the
@@ -45,7 +47,7 @@ export interface DexscreenerAdapterDeps {
  * the "narrowing only inside normalize()" anti-corruption-layer contract, task 003-4 reviewer
  * note). */
 interface DexscreenerFetchResult {
-  chain: SupportedChain;
+  chain: ChainInfo;
   limit: number;
   raw: unknown;
 }
@@ -65,11 +67,15 @@ interface DexscreenerSearchResponse {
   pairs?: DexscreenerPair[];
 }
 
-function extractFetchArgs(args: Record<string, unknown>): { chain: SupportedChain; limit: number } {
-  const chain = args['chain'];
-  if (chain !== 'ethereum' && chain !== 'solana') {
+function extractFetchArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): { chain: ChainInfo; limit: number } {
+  const rawChain = args['chain'];
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  if (!chain || chain.vendors['dexscreener'] == null || chain.nativeSymbol == null) {
     throw new Error(
-      `dexscreener.fetch: invalid args ${JSON.stringify(args)} (expected {chain: 'ethereum'|'solana', limit?: number})`,
+      `dexscreener.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a chain observed on DexScreener>, limit?: number})`,
     );
   }
   const rawLimit = args['limit'];
@@ -85,17 +91,21 @@ function extractFetchArgs(args: Record<string, unknown>): { chain: SupportedChai
 export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): ProviderAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
+  const chains = deps.chains ?? loadChainRegistry();
 
   return {
     id: 'dexscreener',
-    capabilities: () => [
-      { id: 'pairs.new', chains: ['ethereum', 'solana'] },
-      { id: 'pool.info', chains: ['ethereum', 'solana'] },
-    ],
+    // TASK-006 (R-54/R-57): DexScreener publishes no chain catalog, so `vendors.dexscreener` is an
+    // OBSERVED value (task 006-2) — non-null means we have actually seen that chainId in a
+    // response. `nativeSymbol` is required too because the keyless search endpoint is queried by
+    // native symbol; without one there is no query to make.
+    chainSupport: (chain: ChainInfo): boolean =>
+      chain.vendors['dexscreener'] != null && chain.nativeSymbol != null,
+    capabilities: () => [{ id: 'pairs.new' }, { id: 'pool.info' }],
     costOf: () => ({ credits: 0 }),
     fetch: async (_cap: string, args: Record<string, unknown>): Promise<DexscreenerFetchResult> => {
-      const { chain, limit } = extractFetchArgs(args);
-      const query = NATIVE_QUERY[chain];
+      const { chain, limit } = extractFetchArgs(args, chains);
+      const query = chain.nativeSymbol ?? chain.slug;
       const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
 
       await throttle('dexscreener', RATE_LIMIT);
@@ -110,7 +120,7 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
       const { chain, limit, raw } = rawResult as DexscreenerFetchResult;
       const body = raw as DexscreenerSearchResponse;
       const candidates = (body.pairs ?? [])
-        .filter((pair) => pair.chainId === chain)
+        .filter((pair) => pair.chainId === (chain.vendors['dexscreener'] ?? chain.slug))
         .slice(0, limit);
 
       // Adversarial cycle 1, fix G — explicit degradation instead of an all-or-nothing throw:
@@ -139,8 +149,8 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
         }
 
         const pool: Pool = {
-          id: `${chain}:${pairAddress}`,
-          chain,
+          id: `${chain.slug}:${pairAddress}`,
+          chain: chain.slug,
           dexId,
           baseTokenSymbol: baseSymbol,
           quoteTokenSymbol: quoteSymbol,

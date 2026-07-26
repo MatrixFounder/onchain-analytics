@@ -91,14 +91,62 @@ describe('normalizeAddress / isValidAddress — solana (base58, case-sensitive)'
   });
 });
 
-describe('normalizeAddress / isValidAddress — dash (not validated in M1, contract)', () => {
-  it('isValidAddress always returns false', () => {
-    expect(isValidAddress('dash', 'anything')).toBe(false);
+describe('normalizeAddress / isValidAddress — families without a validator (TASK-006 R-55c)', () => {
+  // CHANGED EXPECTATION (task 006-3). Before TASK-006 `dash` was hardcoded to reject: isValidAddress
+  // returned false and normalizeAddress threw unconditionally. It is now `family: 'other'`, and a
+  // family with no validator ACCEPTS without canonicalizing. Refusing would mean "unsupported until
+  // someone writes a parser" — the chain-equals-code coupling this task removes. Safe in practice:
+  // no MCP tool accepted `dash` (their enum was ethereum|solana) and dash-platform emits Snapshot,
+  // not Wallet/Balance, so nothing on the live paths changes behaviour.
+  it('accepts a non-empty address as-is instead of refusing service', () => {
+    expect(isValidAddress('dash', 'anything')).toBe(true);
+    expect(normalizeAddress('dash', 'anything')).toBe('anything');
+  });
+
+  it('still rejects an empty address', () => {
     expect(isValidAddress('dash', '')).toBe(false);
   });
 
-  it('normalizeAddress always throws', () => {
-    expect(() => normalizeAddress('dash', 'anything')).toThrow();
+  it('bounds the length of an unvalidated address before it can reach a cache key', () => {
+    expect(isValidAddress('dash', 'x'.repeat(129))).toBe(false);
+    expect(isValidAddress('dash', 'x'.repeat(128))).toBe(true);
+  });
+
+  it('does not canonicalize, so case is preserved verbatim', () => {
+    expect(normalizeAddress({ family: 'move' }, 'AbCdEf')).toBe('AbCdEf');
+    expect(normalizeAddress({ family: 'cosmos' }, 'cosmos1AbC')).toBe('cosmos1AbC');
+    expect(isValidAddress({ family: 'utxo' }, 'bc1qxyz')).toBe(true);
+  });
+});
+
+describe('normalizeAddress / isValidAddress — dispatch is by FAMILY, not chain name (R-55a/b)', () => {
+  const VITALIK_LOWER = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045';
+
+  it('applies EIP-55 to every EVM chain, not only to Ethereum', () => {
+    const viaLegacyName = normalizeAddress('ethereum', VITALIK_LOWER);
+    const viaBerachain = normalizeAddress({ family: 'evm' }, VITALIK_LOWER);
+    expect(viaBerachain).toBe(viaLegacyName);
+    expect(viaBerachain).not.toBe(VITALIK_LOWER); // checksum casing actually applied
+  });
+
+  it('validates an EVM address identically whichever EVM chain it belongs to', () => {
+    expect(isValidAddress({ family: 'evm' }, VITALIK_LOWER)).toBe(true);
+    expect(isValidAddress({ family: 'evm' }, 'not-an-address')).toBe(false);
+  });
+
+  it('keeps svm case-sensitive (base58), unlike evm', () => {
+    const SPL = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+    // The property that matters is that `svm` does NOT canonicalize case: lowercasing a base58
+    // string yields a DIFFERENT address (often still a decodable one — base58's alphabet contains
+    // both cases), which is precisely why lowercasing would corrupt it. Contrast with `evm`,
+    // where both cases collapse to the identical checksum form.
+    expect(normalizeAddress({ family: 'svm' }, SPL)).toBe(SPL);
+    expect(normalizeAddress({ family: 'svm' }, SPL.toLowerCase())).not.toBe(SPL);
+
+    const EVM_LOWER = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045';
+    expect(normalizeAddress({ family: 'evm' }, EVM_LOWER)).toBe(
+      normalizeAddress({ family: 'evm' }, EVM_LOWER.toUpperCase().replace('0X', '0x')),
+    );
   });
   // --- adversarial review cycle 1 (security F-3): base58 is O(n^2); bound before decoding ---
   it('rejects an over-long solana address without attempting an O(n^2) base58 decode', () => {

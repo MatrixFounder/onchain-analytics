@@ -1,14 +1,14 @@
 # ARCHITECTURE — `onchain-intel`
 
-| Поле                 | Значение                                                                                                                                                                                                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Статус документа** | Living document — обновляется **на месте**, никогда не архивируется по задачам                                                                                                                                                                                        |
-| **Текущая задача**   | M2 ([TASK-005 `m2-alpha-paid`](TASK.md)) — Architecture-фаза; предыдущая M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)/[task-004](tasks/task-004-m1-docs-sync.md)), M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md))                                  |
-| **ADR**              | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20 (Sergey), решения D1–D12                                                                                                                                         |
-| **Схема данных**     | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable-конвенции, применены здесь к кеш-БД (M1) и `usage`-таблице (M2)                                                                                                                          |
-| **Roadmap**          | [ROADMAP.md](onchain-analytics/ROADMAP.md) — фазы M0–M6                                                                                                                                                                                                               |
-| **Обновлено**        | 2026-07-23, **v3.0** (Architecture-фаза TASK-005: 10-й адаптер `nansen`, budget-guard, 3 новых tool — код ещё не написан) — тест-сьют пока **287** (M1, без изменений); полный чейнджлог версий: [architectures/version-history.md](architectures/version-history.md) |
-| **Формат**           | **Index-Mode** (skill `architecture-format-core`, 2026-07-23): тела разделов 2–7 и 10–11 — в [docs/architectures/](architectures/); здесь — оглавление, однострочные резюме и малые разделы целиком                                                                   |
+| Поле                 | Значение                                                                                                                                                                                                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Статус документа** | Living document — обновляется **на месте**, никогда не архивируется по задачам                                                                                                                                                                                                                            |
+| **Текущая задача**   | [TASK-006 `universal-chain-registry`](TASK.md) — ✅ **ВЫПОЛНЕН 2026-07-26**; предыдущие: M2 ✅ ([task-005](tasks/task-005-m2-alpha-paid.md)), M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)/[task-004](tasks/task-004-m1-docs-sync.md)), M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md)) |
+| **ADR**              | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20 (Sergey), решения D1–D12                                                                                                                                                                             |
+| **Схема данных**     | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable-конвенции, применены здесь к кеш-БД (M1) и `usage`-таблице (M2)                                                                                                                                                              |
+| **Roadmap**          | [ROADMAP.md](onchain-analytics/ROADMAP.md) — фазы M0–M6                                                                                                                                                                                                                                                   |
+| **Обновлено**        | 2026-07-26, **v4.1** (TASK-006 реализован: реестр 458 сетей, матрица покрытия, 2 новых tool, `chain` как открытая строка) — тест-сьют **687**; полный чейнджлог версий: [architectures/version-history.md](architectures/version-history.md)                                                              |
+| **Формат**           | **Index-Mode** (skill `architecture-format-core`, 2026-07-23): тела разделов 2–7 и **9**–11 — в [docs/architectures/](architectures/); здесь — оглавление, однострочные резюме и малые разделы целиком. §9 вынесен 2026-07-26 (TASK-006), чтобы индекс вернулся к целевым ~200 строкам                    |
 
 ---
 
@@ -29,7 +29,7 @@
 | 6   | [Технологический стек](architectures/technology-stack.md)                         | отдельный файл |
 | 7   | [Безопасность](architectures/security.md)                                         | отдельный файл |
 | 8   | [Масштабируемость и производительность](#8-масштабируемость-и-производительность) | ниже, целиком  |
-| 9   | [Надёжность и отказоустойчивость](#9-надёжность-и-отказоустойчивость)             | ниже, целиком  |
+| 9   | [Надёжность и отказоустойчивость](architectures/reliability.md)                   | отдельный файл |
 | 10  | [Деплой](architectures/deployment.md)                                             | отдельный файл |
 | 11  | [Открытые вопросы](architectures/open-questions.md)                               | отдельный файл |
 | —   | [Приложение: M0-детали](#приложение-m0-детали-сохранённые-без-пересмотра)         | ниже, целиком  |
@@ -76,7 +76,8 @@ exit-критериев ROADMAP §M1 — TASK.md §6.
    > (SQLite+LRU). ADR не редактируется этой задачей — расхождение профилей документируется здесь.
 3. Весь блок M1 — один пайплайн-прогон; атомарную нарезку делает Planner.
 
-**M2 (текущая задача — [TASK-005 `m2-alpha-paid`](TASK.md), R-29…R-47):** первый платный срез —
+**M2 ([TASK-005 `m2-alpha-paid`](tasks/task-005-m2-alpha-paid.md), R-29…R-47) — ✅ выполнен
+2026-07-25, коммит `4c51126`:** первый платный срез —
 десятый адаптер `nansen` (первый и единственный платный в реестре), три новые способности
 (`smart-money.flows`/`entity.labels`/`token.risk`, без free-fallback), три новых MCP-tool, три
 новых canonical zod-типа и credit-budget guard (`usage`-таблица + `BudgetStore`, D6). Кикофф-
@@ -90,11 +91,29 @@ system-architecture.md §3.2 (конец раздела). Ни `registry.ts`, н
 M1 tool/адаптер не редактируется. Детали — §3 (система/budget-gate), §4 (`usage` DDL + 3 типа), §5
 (3 tool контракта), §7 (секретная дисциплина ключа), §11 (OQ-1…OQ-5).
 
+**TASK-006 (текущая задача — [`universal-chain-registry`](TASK.md), R-48…R-60):** движок перестаёт
+знать список сетей _кодом_. Сеть становится строкой справочника: канонический id — CAIP-2
+(`eip155:80094`), вендорские id — колонки маппинга. Литерал `ethereum|solana`, продублированный в
+пяти слоях (канонический тип, 18 маршрутов, приватные мапы 5 адаптеров, 7 схем инструментов,
+валидация адресов), заменяется одним реестром; покрытие пары (capability, chain) становится
+**производной** от `routes × adapter.chainSupport()`, а не вторым справочником. Два решения
+владельца 2026-07-26, обязательные для дизайна: (1) `chain` в схемах инструментов — **открытая
+строка + `onchain_list_chains`**, не `z.enum` (закрытый енум из 461 сети стоил бы ≈8.7k токенов
+схемы в каждом запросе к модели — измерено); (2) непокрытые пары обслуживаются **матрицей покрытия
+и мягкой деградацией**, а не ложным обещанием универсальности. Ключевой факт разведки, определивший
+дизайн: общего словаря сетей между вендорами **не существует** (461 ≠ 461; пересечение по явному
+ключу — 235, по именам — 255), поэтому канонический id обязан быть нашим. Провайдеров не
+добавляется; M1/M2 сохраняют поведение (`ethereum`/`solana` — бессрочные алиасы). Детали — §2
+(Chain Registry), §3 (модули + порядок гейтов), §4 (`ChainInfo`/`CoverageProbe` как артефакты
+сборки), §5 (2 новых tool), §7.2.1 (SSRF при мультичейн RPC), §11 (OQ-1…OQ-6).
+
 ## 2. Функциональная архитектура
 
 Функциональные компоненты M1 — chain/address-нормализация, Provider Adapters + Capability
 Registry (9 адаптеров), канонизация в zod-типы (D5), двухуровневый кеш (D6), SSRF-гейт +
 rate-limiter, `pg-history`, MCP-сервер (5 tools) — с mermaid-диаграммой и Use Cases UC-1…UC-5.
+**TASK-006:** новый компонент **Chain Registry** (сеть = данные, а не код) + нормализация адресов
+по `family` вместо имени сети.
 → [architectures/functional-architecture.md](architectures/functional-architecture.md)
 
 ## 3. Системная архитектура
@@ -107,6 +126,10 @@ rate-limiter, `pg-history`, MCP-сервер (5 tools) — с mermaid-диагр
 адаптер `nansen` (первый платный) — costOf()-cost-table generation, chain-scope (OQ-3), budget-gate
 placement внутри `fetch()` (OQ-2), account-state/ceiling-формула (OQ-1/OQ-5), атомарный
 check+reserve, singleflight, post-call reconciliation + 402/429/transport-failure resync.
+**TASK-006:** модули `chain/registry.ts` (+ данные отдельным JSON), `chain/coverage.ts`,
+dev-скрипт `scripts/sync-chain-registry.ts`; `ChainSchema`/`ChainInputSchema` вместо enum'а;
+`ProviderAdapter.chainSupport()` как предикат; удаление приватных вендорских мап из 5 адаптеров;
+порядок гейтов, ставящий проверку покрытия **выше** резервирования кредитов.
 → [architectures/system-architecture.md](architectures/system-architecture.md)
 
 ## 4. Data Model (Conceptual)
@@ -114,6 +137,9 @@ check+reserve, singleflight, post-call reconciliation + 402/429/transport-failur
 Канонические сущности (`Token`/`Wallet`/`Balance`/`Pool`/`OHLCV`/`Snapshot` + camelCase↔snake_case
 примечание) + **M2:** `SmartMoneyFlow`/`EntityLabel`/`TokenRiskScore` (D5-расширение), логическая
 модель кеш-БД (`providers` ← `cache_entries`, ← `usage` — DDL, аддитивный upsert), ER-диаграмма.
+**TASK-006:** `ChainInfo` + `CoverageProbe` — **артефакты сборки, не таблицы БД** (обоснование:
+оффлайн-гейт, детерминизм CI, ревьюируемость security-поверхности); DDL не меняется, единственное
+миграционное событие — разовая холодная инвалидация кеша из-за смены содержимого `args_hash`.
 → [architectures/data-model.md](architectures/data-model.md)
 
 ## 5. Интерфейсы
@@ -121,7 +147,10 @@ check+reserve, singleflight, post-call reconciliation + 402/429/transport-failur
 Контракты 5 MCP-tools (input/output, `.max()`-границы, `_meta.cache`, `token.price`-TTL решение) +
 **M2:** 3 новых платных tool (`onchain_smart_money_flows`/`onchain_entity_label`/
 `onchain_token_risk`, `_meta.budget`), публичный API `packages/core`, таблица интеграций
-провайдеров (10 строк) — источник SSRF-allowlist. → [architectures/interfaces.md](architectures/interfaces.md)
+провайдеров (10 строк) — источник SSRF-allowlist. **TASK-006:** 2 новых бесплатных tool
+(`onchain_list_chains`, `onchain_chain_tvl`) + сквозная замена литерала `z.enum(['ethereum',
+'solana'])` на `ChainInputSchema` в 7 существующих (≈8.7k токенов схемы сэкономлено на запрос).
+→ [architectures/interfaces.md](architectures/interfaces.md)
 
 ## 6. Технологический стек
 
@@ -136,7 +165,10 @@ npm-зависимостей** (REST+JSON поверх уже имеющихся
 Секреты (D10), кеш-ключ без env-значений (`canonicalize` + sha256), stdout-дисциплина, SSRF-гейт,
 rate-limit, PG SELECT-only + рекомендация server-side роли, supply chain / лицензии. **M2:**
 `NANSEN_API_KEY` — уже покрыт существующим `SENSITIVE_HEADER_RE` (без правок regex, R-45),
-budget-guard как второй, независимый от rate-limit защитный слой.
+budget-guard как второй, независимый от rate-limit защитный слой. **TASK-006 §7.2.1 —
+единственный нетривиальный риск задачи:** `rpcHosts` для мультичейн RPC остаются **курируемой**
+колонкой реестра; запрещён любой путь, в котором данные из сети влияют на SSRF-allowlist; сеть
+без `rpcHosts` честно непокрыта, а не падает в рантайме.
 → [architectures/security.md](architectures/security.md)
 
 ## 8. Масштабируемость и производительность
@@ -151,44 +183,12 @@ rate-limiter/registry) — абстракции (`CacheStore`, `ProviderAdapter`
 
 ## 9. Надёжность и отказоустойчивость
 
-### 9.1. Обработка ошибок
-
-- **Hot-swap fallback (R-11):** ошибка `fetch()`/`normalize()` **или** `isAvailable() === false`
-  текущего адаптера в маршруте → Registry переходит к следующему `adapterId` в
-  `route.adapterIds`, не падает целиком — доказано `registry.fallback.test.ts` на **реальной**
-  M1-конфигурации (`dash-platform.isAvailable()` детерминированно `false` → `platform-explorer`
-  отвечает; F-3, не симулированная недоступность).
-- **Явная недоступность (R-24):** отсутствующий ключ/DSN → `isAvailable()` возвращает
-  структурированную причину **до** попытки сети — не молчаливый `undefined`, не краш. Если **все**
-  адаптеры маршрута недоступны/упали — `CapabilityUnavailableError` со списком `(adapterId,
-reason)`, tool возвращает `isError: true` с понятным текстом (без значений секретов).
-- Ошибка валидации input (zod, включая `superRefine`-адрес-проверку) — по-прежнему MCP tool-error,
-  не падение процесса (унаследовано от M0).
-- Retry/circuit-breaker поверх отдельного provider-вызова — **не вводится в M1** (YAGNI; hot-swap
-  fallback + rate-limit достаточны на этом объёме).
-- **M2 (TASK-005): `nansen`'s платные отказы — та же нить, не новый механизм.** Budget-gate отказ,
-  `402 Payment Required` (UC-6) и `429 Too Many Requests` (UC-7, решение — без retry внутри
-  адаптера, явная ошибка с `retry-after`) — все три суть `throw` из `nansen.fetch()`, ловятся
-  **уже существующим** try/catch `CapabilityRegistry.resolve()` и всплывают как обычный R-24/R-40
-  `isError: true` (нет fallback-адаптера для платных маршрутов — единственный источник исчерпан).
-  Retry/circuit-breaker framework по-прежнему **не вводится** (YAGNI, буквальное ограничение
-  TASK-005). Приближение к бюджетному потолку — одна stderr-строка (тот же канал, что M1
-  cache-метрики, §9.3 ниже), не новый notification-канал — закрывает риск-гейт ROADMAP §M2
-  «бюджет-алерт». Детали — [architectures/system-architecture.md §3.2](architectures/system-architecture.md).
-
-### 9.2. Backup
-
-Без изменений — `DATA_DIR` (кеш) не требует backup-стратегии (кеш восстанавливается пересчётом);
-n8n/Supabase backup — вне скоупа движка (уже покрыт DB-SCHEMA-CONCEPT §8.6, отдельная система).
-
-### 9.3. Мониторинг и алертинг
-
-M1: stderr-строки (cache hit/miss, недоступность способности — reasons) + `_meta.cache` в ответах
-tools (§3.2/§7.3) — без нового фреймворка (YAGNI на этом размере, как и в M0). **M2:** та же пара
-каналов, расширенная budget-наблюдаемостью — stderr-предупреждение при приближении к потолку (§9.1
-выше) + `_meta.budget` в ответах 3 новых tools (interfaces.md §5.1.2) — не новый канал, та же
-архитектура видимости, что M1 уже установила для кеша. **FUTURE (M6):** pino + OpenTelemetry,
-дашборд per-provider costs (ROADMAP) — не пересматривается здесь.
+Hot-swap fallback по маршруту (R-11) и явная недоступность (R-24) вместо молчаливого `undefined`;
+retry/circuit-breaker намеренно не вводятся (YAGNI); M2 — платные отказы (budget/402/429) идут той
+же нитью, что R-24, без нового механизма; наблюдаемость — stderr + `_meta.cache`/`_meta.budget`.
+**TASK-006:** непокрытая пара (capability, chain) — отдельный тип ошибки, не сливаемый с
+`CapabilityUnavailableError`; повреждённый реестр падает громко на старте, а не деградирует в
+пустой. → [architectures/reliability.md](architectures/reliability.md)
 
 ## 10. Деплой
 
@@ -201,7 +201,9 @@ tools (§3.2/§7.3) — без нового фреймворка (YAGNI на э�
 Неблокирующие открытые пункты (DAPI gRPC — backlog; второй keyless Solana RPC; Dune query id;
 лицензия `dashpay/platform`), RESOLVED-отметки задач 003-4/5/6 и зафиксированные M2-дефолты
 адверсариальных циклов. **M2 (TASK-005) OQ-1…OQ-5 — все RESOLVED** в этой архитектуре (потолок-
-формула, gate-размещение, chain-scope, эскалация-дефолт, self-imposed cap).
+формула, gate-размещение, chain-scope, эскалация-дефолт, self-imposed cap). **TASK-006 OQ-1…OQ-5**
+— четыре RESOLVED дефолтом, **OQ-3 (холодная инвалидация кеша) требует подтверждения владельца**
+(не блокирует Planning); порождён **OQ-6** — периодичность синхронизации реестра (процессный).
 → [architectures/open-questions.md](architectures/open-questions.md)
 
 ## Приложение: M0-детали, сохранённые без пересмотра

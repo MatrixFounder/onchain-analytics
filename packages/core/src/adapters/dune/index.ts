@@ -1,4 +1,5 @@
 import type { ProviderAdapter } from '../types.js';
+import type { ChainInfo } from '../../chain/registry-core.js';
 import { NotImplementedInM1Error } from '../not-implemented-error.js';
 
 /**
@@ -16,6 +17,9 @@ import { NotImplementedInM1Error } from '../not-implemented-error.js';
 export function createDuneAdapter(): ProviderAdapter {
   return {
     id: 'dune',
+    // TASK-006: unchanged scope — `dune` is still the interface/config stub whose `isAvailable()`
+    // is unconditionally false (§3.2), so its coverage answer is academic either way.
+    chainSupport: (chain: ChainInfo): boolean => chain.slug === 'ethereum',
     capabilities: () => [{ id: 'token.holders', chains: ['ethereum'] }],
     costOf: () => ({ credits: 0 }),
     // Unreachable through CapabilityRegistry in M1 (isAvailable() below always skips this

@@ -2,7 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "types": ["node"]
+    "types": ["node"],
+    // TASK-006 (006-1): the chain registry ships its data as a committed .json (src/chain/
+    // registry.data.json) so that the ~461-row generated snapshot diffs separately from logic.
+    // Enabled HERE and not in tsconfig.base.json deliberately — mcp-server has no JSON import and
+    // widening the base config would be an unrelated change (developer-guidelines §1 scope control).
+    // With NodeNext the import must carry `with { type: 'json' }`; tsc copies the file into dist.
+    "resolveJsonModule": true
   },
   // No explicit "rootDir" here (mirrors packages/mcp-server/tsconfig.json, see its .AGENTS.md):
   // an explicit "rootDir" that doesn't cover every included file raises TS6059 even under

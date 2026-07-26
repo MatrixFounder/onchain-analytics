@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createCoingeckoAdapter } from '../src/index.js';
+import { createCoingeckoAdapter, loadChainRegistry } from '../src/index.js';
 
 // Golden fixture-based normalization tests (R-5, D11) — no network: fixtures were recorded ONCE
 // via the manual fixture-recording dev script under packages/core/scripts/ (out of CI, R-22) and
@@ -23,6 +23,18 @@ interface CoingeckoFixture {
   };
 }
 
+const CHAINS = loadChainRegistry();
+
+/** The fixture stores the chain as a SLUG; the adapter's private fetch result carries a resolved
+ * `ChainInfo` since TASK-006 (task 006-5). Resolving here keeps fixtures as recorded evidence and
+ * leaves every expected OUTPUT untouched. */
+function resolved(fixture: CoingeckoFixture): {
+  chain: ReturnType<typeof CHAINS.resolve>;
+  raw: CoingeckoFixture['raw'];
+} {
+  return { chain: CHAINS.resolve(fixture.chain), raw: fixture.raw };
+}
+
 function loadFixture(name: string): CoingeckoFixture {
   const raw = readFileSync(path.join(testDir, 'fixtures', 'coingecko', `${name}.json`), 'utf8');
   return JSON.parse(raw) as CoingeckoFixture;
@@ -35,7 +47,7 @@ describe('coingecko adapter (contract, R-5)', () => {
     const fixture = loadFixture('ethereum');
     const detail = fixture.raw.detail_platforms['ethereum']!;
 
-    const result = adapter.normalize('token.price', fixture);
+    const result = adapter.normalize('token.price', resolved(fixture));
 
     expect(result).toEqual({
       chain: 'ethereum',
@@ -55,7 +67,7 @@ describe('coingecko adapter (contract, R-5)', () => {
     const fixture = loadFixture('solana');
     const detail = fixture.raw.detail_platforms['solana']!;
 
-    const result = adapter.normalize('token.metadata', fixture);
+    const result = adapter.normalize('token.metadata', resolved(fixture));
 
     expect(result).toEqual({
       chain: 'solana',
@@ -71,12 +83,25 @@ describe('coingecko adapter (contract, R-5)', () => {
     });
   });
 
-  it('capabilities() declares token.price and token.metadata for ethereum+solana', () => {
+  // CHANGED EXPECTATION (task 006-5, R-54): no `chains` literal — the chain dimension belongs to
+  // the coverage matrix (§4.2.3); a second list here could only drift from it.
+  it('capabilities() declares token.price and token.metadata without a chain list', () => {
     const caps = adapter.capabilities();
     expect(caps.map((c) => c.id).sort()).toEqual(['token.metadata', 'token.price']);
     for (const cap of caps) {
-      expect(cap.chains).toEqual(['ethereum', 'solana']);
+      expect(cap.chains).toBeUndefined();
     }
+  });
+
+  it('chainSupport() follows the registry rather than a private literal (R-54)', () => {
+    expect(adapter.chainSupport?.(CHAINS.resolve('ethereum'), 'token.price')).toBe(true);
+    expect(adapter.chainSupport?.(CHAINS.resolve('solana'), 'token.price')).toBe(true);
+    // Reachable only after TASK-006 — CoinGecko has an asset platform for it:
+    expect(adapter.chainSupport?.(CHAINS.resolve('berachain'), 'token.price')).toBe(true);
+    // The generator leaves `vendors.coingecko` null when the join was ambiguous, so a chain with
+    // no platform id is honestly uncovered rather than optimistically claimed.
+    const uncovered = CHAINS.list().find((c) => c.vendors['coingecko'] == null);
+    if (uncovered) expect(adapter.chainSupport?.(uncovered, 'token.price')).toBe(false);
   });
 
   it('costOf() is free (0 credits) and isAvailable() is always ok (keyless/demo tier)', () => {
@@ -108,7 +133,7 @@ describe('coingecko adapter (contract, R-5)', () => {
     // Keyless: no auth header of either contour leaks into the request.
     expect(calls[0]!.headers).not.toHaveProperty('x-cg-demo-api-key');
     expect(calls[0]!.headers).not.toHaveProperty('x-cg-pro-api-key');
-    expect(result).toEqual({ chain: 'ethereum', raw: fixture.raw });
+    expect(result).toEqual({ chain: CHAINS.resolve('ethereum'), raw: fixture.raw });
   });
 
   // Two disjoint CoinGecko auth contours (live-probed 2026-07-23, see the adapter's fetch()

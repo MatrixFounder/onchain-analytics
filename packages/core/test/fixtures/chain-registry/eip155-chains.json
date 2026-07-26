@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Ethereum Mainnet",
+    "chainId": 1,
+    "shortName": "eth",
+    "networkId": 1,
+    "nativeCurrency": { "name": "Ether", "symbol": "ETH", "decimals": 18 },
+    "rpc": [
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth.drpc.org",
+      "http://insecure.example"
+    ]
+  },
+  {
+    "name": "Berachain",
+    "chainId": 80094,
+    "shortName": "bera",
+    "networkId": 80094,
+    "nativeCurrency": { "name": "BERA", "symbol": "BERA", "decimals": 18 },
+    "rpc": ["https://rpc.berachain.com"]
+  }
+]

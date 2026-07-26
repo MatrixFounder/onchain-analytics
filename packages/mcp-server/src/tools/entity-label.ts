@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
+  canonicalizeChain,
+  ChainInputSchema,
   EntityLabelSchema,
   isValidAddress,
   normalizeAddress,
@@ -12,7 +14,14 @@ import { resolveCapability, type CacheMeta } from './resolve-capability.js';
 
 /** The two supported networks (same narrowing as every other M1/M2 tool — see `get-token.ts`'s
  * docstring). Declared once, reused for both the input and output `chain` fields below. */
-const SUPPORTED_CHAIN = z.enum(['ethereum', 'solana']);
+/**
+ * TASK-006 (task 006-6, R-50): `chain` is an OPEN string resolved against the chain registry,
+ * replacing the `z.enum(['ethereum','solana'])` literal that this file (and six others) carried.
+ * The closed enum for all 458 chains measured ~8.7k tokens of schema across the chain-taking
+ * tools — paid on EVERY request to the model. Correctness moved into the runtime resolve, which
+ * fails with a "did you mean" list and zero network calls (owner decision 2026-07-26).
+ */
+const SUPPORTED_CHAIN = ChainInputSchema;
 
 /** No real `query` (name/symbol/address search text) is anywhere near this long (interfaces.md
  * §5.1.2's own literal bound). */
@@ -121,19 +130,24 @@ export async function entityLabelHandler(
   input: EntityLabelInput,
   ctx: EntityLabelContext,
 ): Promise<EntityLabelOutcome> {
-  const args: Record<string, unknown> = { chain: input.chain, exhaustive: input.exhaustive };
+  // TASK-006 (task 006-6, R-50/R-59): resolve the alias to its canonical slug HERE, before the
+  // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
+  // would hash to two different cache entries for one logical request, which on a paid route is
+  // two charges (data-model.md §4.2.2).
+  const chain = canonicalizeChain(input.chain);
+  const args: Record<string, unknown> = { chain, exhaustive: input.exhaustive };
   if (input.query !== undefined) {
     args['query'] = input.query;
   }
   if (input.tokenAddress !== undefined) {
-    args['tokenAddress'] = normalizeAddress(input.chain, input.tokenAddress);
+    args['tokenAddress'] = normalizeAddress(chain, input.tokenAddress);
   }
 
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, input.chain, args);
+  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, args);
   if (!outcome.ok) return outcome;
 
   const parsed = EntityLabelOutputSchema.safeParse({
-    chain: input.chain,
+    chain,
     entities: outcome.output,
     source: outcome.cache.provider,
     fetchedAt: Date.now(),

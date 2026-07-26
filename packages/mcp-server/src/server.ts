@@ -9,6 +9,10 @@ import { registerProtocolTvlTool } from './tools/protocol-tvl.js';
 import { registerSmartMoneyFlowsTool } from './tools/smart-money-flows.js';
 import { registerEntityLabelTool } from './tools/entity-label.js';
 import { registerTokenRiskTool } from './tools/token-risk.js';
+// TASK-006 (task 006-7): discovery + chain-level TVL. Both keyless; `onchain_list_chains` makes
+// no network call at all.
+import { registerListChainsTool } from './tools/list-chains.js';
+import { registerChainTvlTool } from './tools/chain-tvl.js';
 
 /**
  * Dependencies passed explicitly into the server factory (reviewer note 1: version is never
@@ -65,6 +69,8 @@ export function createServer(deps: CreateServerDeps): McpServer {
   registerWalletBalancesTool(server, { registry });
   registerNewPairsTool(server, { registry });
   registerProtocolTvlTool(server, { registry });
+  registerListChainsTool(server, { registry });
+  registerChainTvlTool(server, { registry });
   // M2 (task 005-6) — `budgetStore` threaded into each context ONLY for read-only `_meta.budget`
   // visibility (this factory's own docstring above); an omitted `budgetStore` degrades the tool to
   // "works, just without `_meta.budget`" (`budget-meta.ts`'s own contract), never an error.

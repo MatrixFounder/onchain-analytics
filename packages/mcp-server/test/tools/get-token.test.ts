@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { describe, expect, it, vi } from 'vitest';
 import { CapabilityRegistry } from '@onchain-intel/core';
 import type { CapabilityRoute, ProviderAdapter } from '@onchain-intel/core';
 import { GetTokenInputSchema, getTokenHandler } from '../../src/tools/get-token.js';
@@ -50,8 +51,23 @@ describe('GetTokenInputSchema', () => {
     ).not.toThrow();
   });
 
-  it('rejects a chain outside ethereum/solana (e.g. dash) — narrowed enum, not the full ChainSchema', () => {
-    expect(() => GetTokenInputSchema.parse({ chain: 'dash', address: ETH_ADDRESS })).toThrow();
+  // CHANGED EXPECTATION (task 006-6, R-50). The schema used to reject anything outside a
+  // two-value enum. It now accepts any chain the REGISTRY knows and rejects only what the registry
+  // does not — because refusing at the schema is the wrong layer for "this capability is not
+  // served there": that answer belongs to the coverage matrix, which can say WHERE it IS served
+  // (§4.2.3). A schema-level refusal could only say "no".
+  it('accepts any registry chain and rejects an unknown one (R-50c)', () => {
+    expect(() =>
+      GetTokenInputSchema.parse({ chain: 'ethereum', address: ETH_ADDRESS }),
+    ).not.toThrow();
+    const unknown = GetTokenInputSchema.safeParse({
+      chain: 'not-a-real-chain',
+      address: ETH_ADDRESS,
+    });
+    expect(unknown.success).toBe(false);
+    if (!unknown.success) {
+      expect(unknown.error.issues.some((i) => i.message.includes('unknown chain'))).toBe(true);
+    }
   });
 
   it('rejects an invalid address for the given chain (superRefine)', () => {
@@ -111,5 +127,49 @@ describe('getTokenHandler', () => {
     if (outcome.ok) throw new Error('expected ok:false');
     expect(outcome.reason).toContain('token.price');
     expect(outcome.reason).not.toContain(ETH_ADDRESS);
+  });
+});
+
+/**
+ * Task 006-6 — the properties the `chain` migration exists for (R-50/R-59). Kept here rather than
+ * duplicated across all seven tools: the schema is shared, so proving it once is enough.
+ */
+describe('chain input contract (TASK-006 R-50/R-59)', () => {
+  it('accepts every spelling of the same chain', () => {
+    for (const spelling of ['ethereum', 'eth', 'eip155:1', 'Ethereum']) {
+      expect(
+        GetTokenInputSchema.safeParse({ chain: spelling, address: ETH_ADDRESS }).success,
+        spelling,
+      ).toBe(true);
+    }
+  });
+
+  it('accepts a chain that did not exist before TASK-006', () => {
+    expect(
+      GetTokenInputSchema.safeParse({ chain: 'berachain', address: ETH_ADDRESS }).success,
+    ).toBe(true);
+  });
+
+  it('rejects an unknown chain without any network call', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      throw new Error('network call during chain validation');
+    });
+    try {
+      expect(GetTokenInputSchema.safeParse({ chain: 'beara', address: ETH_ADDRESS }).success).toBe(
+        false,
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('keeps the JSON Schema tiny — it must not grow with the number of chains (R-50d)', () => {
+    // The whole point of the open string: a closed enum of 458 chains measured ~1249 tokens PER
+    // TOOL, paid on every request to the model. A regression here would be invisible in behaviour
+    // and expensive in tokens, so it is asserted as a size budget.
+    const json = JSON.stringify(z.toJSONSchema(GetTokenInputSchema));
+    expect(json).not.toContain('berachain');
+    expect(json.length).toBeLessThan(2_000);
   });
 });

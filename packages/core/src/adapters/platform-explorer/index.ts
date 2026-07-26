@@ -1,4 +1,5 @@
 import { throttle } from '../../net/rate-limit.js';
+import type { ChainInfo } from '../../chain/registry-core.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { SnapshotSchema, type Snapshot } from '../../types/snapshot.js';
@@ -166,6 +167,10 @@ export function createPlatformExplorerAdapter(
 
   return {
     id: 'platform-explorer',
+    // TASK-006 (R-54): Dash only. Unlike the vendor-backed adapters there is no registry column
+    // to consult — this adapter speaks Dash Platform's own protocol and nothing else — so the
+    // slug comparison IS the fact, not a duplicated list.
+    chainSupport: (chain: ChainInfo): boolean => chain.slug === 'dash',
     capabilities: () => [
       { id: 'privacy.shielded_pool', chains: ['dash'] },
       { id: 'platform.identities', chains: ['dash'] },

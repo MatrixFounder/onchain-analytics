@@ -1,0 +1,160 @@
+{
+  "probed_at": "2026-07-26",
+  "task": "TASK-006 / 006-9 (R-58)",
+  "purpose": "Chain coverage of the paid Nansen provider, per capability. Derived from the COMMITTED OpenAPI spec at zero credits; a single live call confirms the spec has not drifted.",
+  "method": {
+    "primary": "codegen from docs/onchain-analytics/raw/nansen-openapi-2026-07-23.json (scripts/gen-nansen-coverage.ts) — 0 credits",
+    "rule": "A COMPOSITE capability is covered by the INTERSECTION of its sub-calls, never the union. smart-money.flows issues /smart-money/netflow (17 chains) AND /tgm/holders (25); the union would add chains where the first sub-call succeeds, the second is refused, and the credits for the first are already spent (the DF-1 failure class).",
+    "recorded_deviation": "R-58a asks for 'a run with the key'. The spec already carries the fact per endpoint, so a full live sweep of 25 chains would spend credits to reach the same conclusion. Spec + one spot-check meets the requirement's intent more strictly than its letter."
+  },
+  "coverage_by_capability": {
+    "smart-money.flows": {
+      "vendor_tokens": [
+        "arbitrum",
+        "avalanche",
+        "base",
+        "bnb",
+        "ethereum",
+        "hyperevm",
+        "iotaevm",
+        "linea",
+        "mantle",
+        "monad",
+        "optimism",
+        "plasma",
+        "polygon",
+        "robinhood",
+        "sei",
+        "solana",
+        "sonic"
+      ],
+      "count": 17,
+      "schemas": "SmartMoneyChain ∩ TGMHoldersChain (17 ∩ 25)"
+    },
+    "token.risk": {
+      "vendor_tokens": [
+        "arbitrum",
+        "avalanche",
+        "base",
+        "bnb",
+        "ethereum",
+        "hyperevm",
+        "hyperliquid",
+        "injective",
+        "iotaevm",
+        "linea",
+        "mantle",
+        "mantra",
+        "monad",
+        "near",
+        "optimism",
+        "plasma",
+        "polygon",
+        "robinhood",
+        "sei",
+        "solana",
+        "sonic",
+        "starknet",
+        "sui",
+        "ton",
+        "tron"
+      ],
+      "count": 25,
+      "schemas": "TGMChain"
+    },
+    "entity.labels": {
+      "vendor_tokens": [
+        "arbitrum",
+        "avalanche",
+        "base",
+        "bitcoin",
+        "bnb",
+        "ethereum",
+        "hyperevm",
+        "injective",
+        "iotaevm",
+        "linea",
+        "mantle",
+        "mantra",
+        "monad",
+        "near",
+        "optimism",
+        "plasma",
+        "polygon",
+        "robinhood",
+        "sei",
+        "solana",
+        "sonic",
+        "starknet",
+        "sui",
+        "ton",
+        "tron"
+      ],
+      "count": 25,
+      "schemas": "TGMHoldersChain"
+    },
+    "entity.labels(exhaustive tier)": {
+      "vendor_tokens": [
+        "arbitrum",
+        "avalanche",
+        "base",
+        "bnb",
+        "ethereum",
+        "hyperevm",
+        "hyperliquid",
+        "iotaevm",
+        "linea",
+        "mantle",
+        "monad",
+        "optimism",
+        "plasma",
+        "polygon",
+        "robinhood",
+        "sei",
+        "solana",
+        "sonic",
+        "tron"
+      ],
+      "schemas": "ProfilerLabelsChain"
+    }
+  },
+  "half_succeeding_chains": {
+    "note": "Covered for token.risk but NOT for smart-money.flows — exactly what a union would have wrongly claimed.",
+    "our_slugs": [
+      "injective",
+      "mantra",
+      "near",
+      "starknet",
+      "sui",
+      "ton",
+      "tron"
+    ],
+    "count_in_our_slugs": 7,
+    "count_in_vendor_tokens": 8,
+    "why_the_two_numbers_differ": "'hyperevm' and 'hyperliquid' are two VENDOR tokens for one chain of ours (hyperliquid-l1), and that chain IS covered for smart-money.flows via 'hyperevm'. Counting in vendor tokens overstates our exposure by one."
+  },
+  "live_spot_check": {
+    "status": "confirmed",
+    "endpoint": "POST /api/v1/tgm/indicators",
+    "chain": "base",
+    "why_this_chain": "outside the M2 pair (ethereum/solana) — the point is to prove the spec's widening is real, not to re-verify what already worked",
+    "token_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "result": "HTTP 200 with populated token_info + risk/reward indicators",
+    "credits_before": 59,
+    "credits_after": 54,
+    "creditsSpent": 5,
+    "budget": "<= 6 credits (PLAN §0.2)"
+  },
+  "vendor_token_mapping": {
+    "note": "registry.data.json vendors.nansen holds the VENDOR's token, not our slug.",
+    "examples": {
+      "bsc": "bnb",
+      "op-mainnet": "optimism",
+      "iota-evm": "iotaevm",
+      "robinhood-chain": "robinhood",
+      "hyperliquid-l1": "hyperevm"
+    },
+    "chains_mapped": 25
+  },
+  "degraded_path": "With no NANSEN_API_KEY the spot-check is skipped, coverage still comes from the spec, and the state is 'spec-only' — unverified, NEVER 'unsupported' (R-58d): a false narrowing is as wrong as a false widening."
+}

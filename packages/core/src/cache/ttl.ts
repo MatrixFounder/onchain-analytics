@@ -9,6 +9,10 @@ const TTL_SECONDS: Readonly<Record<string, number>> = {
   'wallet.balances.native': 60,
   'pairs.new': 30,
   'protocol.tvl': 300,
+  // TASK-006 (task 006-7, R-53d): `/v2/chains` is an aggregate DeFiLlama recomputes on its own
+  // cadence — a chain's total TVL does not move meaningfully faster than a protocol's, so it gets
+  // the same 300s bucket as `protocol.tvl` rather than a separately invented number.
+  'chain.tvl': 300,
   'privacy.shielded_pool': 3600,
   'platform.identities': 3600,
   'platform.contracts': 3600,

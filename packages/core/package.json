@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync:chains": "tsx scripts/sync-chain-registry.ts"
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",

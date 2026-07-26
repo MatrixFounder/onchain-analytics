@@ -1,4 +1,5 @@
 import { createReadClient } from '../../pg/read-client.js';
+import type { ChainInfo } from '../../chain/registry-core.js';
 import type { PgPoolCtor, ReadClient } from '../../pg/read-client.js';
 import { SnapshotSchema, type Snapshot } from '../../types/snapshot.js';
 import type { ProviderAdapter } from '../types.js';
@@ -75,6 +76,10 @@ export function createPgHistoryAdapter(deps: PgHistoryAdapterDeps = {}): Provide
 
   return {
     id: 'pg-history',
+    // TASK-006 (R-54): Dash only. Unlike the vendor-backed adapters there is no registry column
+    // to consult — this adapter speaks Dash Platform's own protocol and nothing else — so the
+    // slug comparison IS the fact, not a duplicated list.
+    chainSupport: (chain: ChainInfo): boolean => chain.slug === 'dash',
     capabilities: () => [
       { id: 'privacy.shielded_pool.history', chains: ['dash'] },
       { id: 'platform.metrics.history', chains: ['dash'] },

@@ -32,3 +32,5 @@ docs/KNOWN_ISSUES.md
 docs/issues/
 docs/BACKLOG.md
 docs/feedback/
+# generated chain registry — scripts/sync-chain-registry.ts owns its byte format (R-49c determinism)
+packages/core/src/chain/registry.data.json

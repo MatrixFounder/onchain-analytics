@@ -10,14 +10,29 @@ import {
 } from '../src/index.js';
 
 describe('ChainSchema', () => {
-  it('accepts ethereum, solana, and dash', () => {
+  it('accepts the legacy chain slugs unchanged (R-59)', () => {
     expect(ChainSchema.parse('ethereum')).toBe('ethereum');
     expect(ChainSchema.parse('solana')).toBe('solana');
     expect(ChainSchema.parse('dash')).toBe('dash');
   });
 
-  it('rejects an unknown chain', () => {
-    expect(() => ChainSchema.parse('bitcoin')).toThrow();
+  // CHANGED EXPECTATION (task 006-5, R-48/R-50): `ChainSchema` was `z.enum([...])`, so it rejected
+  // every chain outside three literals — the very coupling TASK-006 removes. It now accepts any
+  // canonical slug, because the vocabulary lives in the registry, not in the type.
+  it('accepts a chain that did not exist in the pre-TASK-006 enum', () => {
+    expect(ChainSchema.parse('berachain')).toBe('berachain');
+    expect(ChainSchema.parse('bitcoin')).toBe('bitcoin');
+  });
+
+  it('still rejects a non-string and an empty string', () => {
+    expect(() => ChainSchema.parse('')).toThrow();
+    expect(() => ChainSchema.parse(42)).toThrow();
+  });
+
+  // Registry-membership validation is `ChainInputSchema`'s job at the tool boundary (task 006-6);
+  // keeping it out of the domain schema avoids two competing validators mid-migration.
+  it('does NOT yet enforce registry membership (that is the input schema, task 006-6)', () => {
+    expect(ChainSchema.parse('not-a-real-chain')).toBe('not-a-real-chain');
   });
 });
 

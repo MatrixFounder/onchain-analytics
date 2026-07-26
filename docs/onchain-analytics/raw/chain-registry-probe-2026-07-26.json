@@ -1,0 +1,92 @@
+{
+  "probed_at": "2026-07-26",
+  "purpose": "TASK-006 universal-chain-registry — источники истины для реестра сетей. Все числа получены живым запросом, не оценены.",
+  "sources": {
+    "defillama_chains": {
+      "url": "https://api.llama.fi/v2/chains",
+      "keyless": true,
+      "count": 461,
+      "fields": [
+        "chainId",
+        "cmcId",
+        "gecko_id",
+        "name",
+        "tokenSymbol",
+        "tvl"
+      ],
+      "note": "chain-level TVL. Ключ join к CoinGecko — поле gecko_id."
+    },
+    "coingecko_asset_platforms": {
+      "url": "https://api.coingecko.com/api/v3/asset_platforms",
+      "keyless": true,
+      "count": 461,
+      "fields": [
+        "chain_identifier",
+        "id",
+        "image",
+        "name",
+        "native_coin_id",
+        "shortname"
+      ],
+      "with_chain_identifier": 270,
+      "without_chain_identifier": 191,
+      "note": "chain_identifier == EIP-155 chainId; присутствует только у EVM-платформ."
+    },
+    "chainid_network": {
+      "url": "https://chainid.network/chains_mini.json",
+      "keyless": true,
+      "count": 2660,
+      "fields": [
+        "chainId",
+        "faucets",
+        "infoURL",
+        "name",
+        "nativeCurrency",
+        "networkId",
+        "rpc",
+        "shortName"
+      ],
+      "note": "канонический EIP-155 реестр; несёт rpc[] и nativeCurrency — закрывает RPC-хосты и нативный символ."
+    }
+  },
+  "join_quality": {
+    "defillama_gecko_id__to__coingecko_native_coin_id": 235,
+    "name_match_normalized": 255,
+    "coingecko_evm_platforms_found_in_eip155": 257,
+    "verdict": "gecko_id -> native_coin_id — явный вендорский cross-reference (235), надёжнее нормализованного матча имён (255, но фаззи). Использовать явный ключ, имена — только как fallback с ручным ревью диффа."
+  },
+  "tvl_concentration": {
+    "top_10_pct_of_total": 91.76,
+    "top_20_pct_of_total": 96.63,
+    "top_50_pct_of_total": 99.07,
+    "top_100_pct_of_total": 99.81,
+    "top_200_pct_of_total": 99.99,
+    "top_461_pct_of_total": 100.0
+  },
+  "chains_above": {
+    "tvl_gt_1m": 147,
+    "tvl_gt_10m": 76
+  },
+  "schema_cost": {
+    "enum_461_chars": 4926,
+    "note": "~1249 токенов на инструмент x 7 инструментов = ~8.7k токенов схемы в каждом запросе к модели. Обоснование решения владельца 'открытая строка + onchain_list_chains'."
+  },
+  "spot_checks": {
+    "berachain": {
+      "defillama": {
+        "name": "Berachain",
+        "gecko_id": "berachain-bera",
+        "chainId": 80094,
+        "tvl_usd_at_probe": 50579539.42
+      },
+      "coingecko_platform_id": "berachain",
+      "dexscreener_chainId": "berachain",
+      "evm_rpc": {
+        "url": "https://rpc.berachain.com",
+        "eth_chainId": "0x138de",
+        "decimal": 80094
+      },
+      "note": "проверено живыми запросами 2026-07-26; 7 пар Kodiak в /latest/dex/search?q=BERA"
+    }
+  }
+}

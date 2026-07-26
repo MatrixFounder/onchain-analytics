@@ -53,10 +53,23 @@ describe('WalletBalancesInputSchema', () => {
     ).not.toThrow();
   });
 
-  it('rejects a chain outside ethereum/solana (e.g. dash)', () => {
+  // CHANGED EXPECTATION (task 006-6, R-50). The schema used to reject anything outside a
+  // two-value enum. It now accepts any chain the REGISTRY knows and rejects only what the registry
+  // does not — because refusing at the schema is the wrong layer for "this capability is not
+  // served there": that answer belongs to the coverage matrix, which can say WHERE it IS served
+  // (§4.2.3). A schema-level refusal could only say "no".
+  it('accepts any registry chain and rejects an unknown one (R-50c)', () => {
     expect(() =>
-      WalletBalancesInputSchema.parse({ chain: 'dash', address: ETH_ADDRESS }),
-    ).toThrow();
+      WalletBalancesInputSchema.parse({ chain: 'ethereum', address: ETH_ADDRESS }),
+    ).not.toThrow();
+    const unknown = WalletBalancesInputSchema.safeParse({
+      chain: 'not-a-real-chain',
+      address: ETH_ADDRESS,
+    });
+    expect(unknown.success).toBe(false);
+    if (!unknown.success) {
+      expect(unknown.error.issues.some((i) => i.message.includes('unknown chain'))).toBe(true);
+    }
   });
 
   it('rejects an invalid address for the given chain (superRefine)', () => {

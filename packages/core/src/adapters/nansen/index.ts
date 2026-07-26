@@ -1,4 +1,6 @@
 import type { ProviderAdapter } from '../types.js';
+import type { ChainInfo } from '../../chain/registry-core.js';
+import { NANSEN_CHAIN_COVERAGE } from './chain-coverage.js';
 import type { BudgetStore } from '../../cache/budget-store.js';
 import { normalizeAddress } from '../../chain/address.js';
 import { deriveArgsHash } from '../../net/args-hash.js';
@@ -371,6 +373,19 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
 
   return {
     id: 'nansen',
+    // TASK-006 (task 006-9, R-58): coverage comes from the COMMITTED OpenAPI spec, PER CAPABILITY,
+    // and a composite capability is covered only by the INTERSECTION of its sub-calls —
+    // `smart-money.flows` issues both `/smart-money/netflow` (17 chains) and `/tgm/holders` (25),
+    // so its coverage is 17. The union would add 8 chains where the first sub-call succeeds, the
+    // second is refused by the vendor, and the credits for the first are already gone (DF-1).
+    //
+    // `vendors.nansen` is the vendor's OWN chain token (`bnb`, not `bsc`; `optimism`, not
+    // `op-mainnet`); a chain the registry cannot map is simply not covered.
+    chainSupport: (chain: ChainInfo, capability: string): boolean => {
+      const token = chain.vendors['nansen'];
+      if (token == null) return false;
+      return (NANSEN_CHAIN_COVERAGE[capability] ?? []).includes(token);
+    },
     capabilities: () => [
       { id: 'smart-money.flows', chains: ['ethereum', 'solana'] },
       { id: 'entity.labels', chains: ['ethereum', 'solana'] },

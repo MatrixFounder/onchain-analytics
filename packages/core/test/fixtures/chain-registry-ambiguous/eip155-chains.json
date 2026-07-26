@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Ethereum Mainnet",
+    "chainId": 1,
+    "nativeCurrency": { "symbol": "ETH" },
+    "rpc": ["https://ethereum-rpc.publicnode.com"]
+  }
+]

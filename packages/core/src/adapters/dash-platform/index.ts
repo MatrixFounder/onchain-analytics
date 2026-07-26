@@ -1,4 +1,5 @@
 import { SnapshotSchema, type Snapshot } from '../../types/snapshot.js';
+import type { ChainInfo } from '../../chain/registry-core.js';
 import type { ProviderAdapter } from '../types.js';
 import { NotImplementedInM1Error } from '../not-implemented-error.js';
 import { DASH_METRIC, DASH_PLATFORM_ASSET } from '../dash-metrics.js';
@@ -72,6 +73,10 @@ export function createDashPlatformAdapter(deps: DashPlatformAdapterDeps = {}): P
 
   return {
     id: 'dash-platform',
+    // TASK-006 (R-54): Dash only. Unlike the vendor-backed adapters there is no registry column
+    // to consult — this adapter speaks Dash Platform's own protocol and nothing else — so the
+    // slug comparison IS the fact, not a duplicated list.
+    chainSupport: (chain: ChainInfo): boolean => chain.slug === 'dash',
     capabilities: () => [
       { id: 'privacy.shielded_pool', chains: ['dash'] },
       { id: 'platform.identities', chains: ['dash'] },

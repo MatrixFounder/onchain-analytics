@@ -1,0 +1,34 @@
+[
+  {
+    "gecko_id": "ethereum",
+    "tvl": 60000000000.0,
+    "tokenSymbol": "ETH",
+    "cmcId": "1027",
+    "name": "Ethereum",
+    "chainId": 1
+  },
+  {
+    "gecko_id": "solana",
+    "tvl": 9000000000.0,
+    "tokenSymbol": "SOL",
+    "cmcId": "5426",
+    "name": "Solana",
+    "chainId": null
+  },
+  {
+    "gecko_id": "berachain-bera",
+    "tvl": 50579539.42,
+    "tokenSymbol": "BERA",
+    "cmcId": "24647",
+    "name": "Berachain",
+    "chainId": 80094
+  },
+  {
+    "gecko_id": null,
+    "tvl": 1234.5,
+    "tokenSymbol": null,
+    "cmcId": null,
+    "name": "Nameless Fuzzy Chain",
+    "chainId": null
+  }
+]

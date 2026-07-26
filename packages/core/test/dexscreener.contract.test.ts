@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { createDexscreenerAdapter } from '../src/index.js';
+import { createDexscreenerAdapter, loadChainRegistry } from '../src/index.js';
 import type { Pool } from '../src/index.js';
 
 // Golden fixture-based normalization tests (R-6, D11) — no network: fixtures were recorded ONCE
@@ -52,6 +52,19 @@ function expectedPool(chain: string, pair: DexscreenerFixturePair) {
   };
 }
 
+const CHAINS = loadChainRegistry();
+
+/** The fixture stores the chain as a SLUG; the adapter's private fetch result carries a
+ * resolved `ChainInfo` since TASK-006 (task 006-5). Expected OUTPUTS below are unchanged. */
+function resolved<T extends { chain: string }>(
+  f: T,
+): { chain: ReturnType<typeof CHAINS.resolve> } & Omit<T, 'chain'> {
+  const { chain, ...rest } = f;
+  return { chain: CHAINS.resolve(chain), ...rest } as {
+    chain: ReturnType<typeof CHAINS.resolve>;
+  } & Omit<T, 'chain'>;
+}
+
 describe('dexscreener adapter (contract, R-6)', () => {
   const adapter = createDexscreenerAdapter({ now: () => FIXED_NOW });
 
@@ -68,7 +81,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
       .slice(0, fixture.limit)
       .map((pair) => expectedPool('ethereum', pair));
 
-    const result = adapter.normalize('pairs.new', fixture);
+    const result = adapter.normalize('pairs.new', resolved(fixture));
 
     expect(expected.length).toBeGreaterThan(0);
     expect(result).toEqual(expected);
@@ -81,17 +94,19 @@ describe('dexscreener adapter (contract, R-6)', () => {
       .slice(0, fixture.limit)
       .map((pair) => expectedPool('solana', pair));
 
-    const result = adapter.normalize('pool.info', fixture);
+    const result = adapter.normalize('pool.info', resolved(fixture));
 
     expect(expected.length).toBeGreaterThan(0);
     expect(result).toEqual(expected);
   });
 
-  it('capabilities() declares pairs.new and pool.info for ethereum+solana', () => {
+  // CHANGED EXPECTATION (task 006-5, R-54): the `chains` literal is gone — coverage is the
+  // matrix's job (§4.2.3).
+  it('capabilities() declares pairs.new and pool.info without a chain list', () => {
     const caps = adapter.capabilities();
     expect(caps.map((c) => c.id).sort()).toEqual(['pairs.new', 'pool.info']);
     for (const cap of caps) {
-      expect(cap.chains).toEqual(['ethereum', 'solana']);
+      expect(cap.chains).toBeUndefined();
     }
   });
 
@@ -115,7 +130,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
     const result = await testAdapter.fetch('pairs.new', { chain: 'ethereum' });
 
     expect(calls).toEqual(['https://api.dexscreener.com/latest/dex/search?q=ETH']);
-    expect(result).toEqual({ chain: 'ethereum', limit: 10, raw: fixture.raw });
+    expect(result).toEqual({ chain: CHAINS.resolve('ethereum'), limit: 10, raw: fixture.raw });
   });
 
   describe('malformed pair handling (adversarial cycle 1, fix G)', () => {
@@ -142,7 +157,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
       };
 
       const result = adapter.normalize('pairs.new', {
-        chain: 'ethereum',
+        chain: CHAINS.resolve('ethereum'),
         limit: 10,
         raw,
       }) as Pool[];
@@ -162,9 +177,9 @@ describe('dexscreener adapter (contract, R-6)', () => {
         pairs: [{ chainId: 'ethereum', dexId: 'uniswap', baseToken: {}, quoteToken: {} }],
       };
 
-      expect(() => adapter.normalize('pairs.new', { chain: 'ethereum', limit: 10, raw })).toThrow(
-        /all 1 candidate pair\(s\).*were malformed/,
-      );
+      expect(() =>
+        adapter.normalize('pairs.new', { chain: CHAINS.resolve('ethereum'), limit: 10, raw }),
+      ).toThrow(/all 1 candidate pair\(s\).*were malformed/);
       stderrSpy.mockRestore();
     });
   });

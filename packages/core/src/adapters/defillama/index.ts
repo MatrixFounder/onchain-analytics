@@ -1,7 +1,8 @@
 import { throttle } from '../../net/rate-limit.js';
+import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
+import { loadChainRegistry } from '../../chain/registry.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
-import type { Chain } from '../../types/chain.js';
 import type { ProviderAdapter } from '../types.js';
 
 const REGISTRATION = adapterRegistrations.find((r) => r.id === 'defillama');
@@ -11,18 +12,11 @@ if (!REGISTRATION) {
 const HOSTS = REGISTRATION.hosts;
 const RATE_LIMIT = REGISTRATION.rateLimit;
 
-/** Only these two `Chain` values are supported by this adapter (§3.2 routes) — kept as its own
- * narrower union so `CHAIN_TVL_KEY`'s lookup stays exhaustive/index-safe without a `'dash'` entry
- * that would never be reachable in practice. */
-type SupportedChain = 'ethereum' | 'solana';
-
-/** DeFiLlama's `chainTvls` keys are display names ("Ethereum"/"Solana"), not our lowercase
- * `Chain` values — confirmed by a live probe of `/protocol/uniswap` and `/protocol/raydium`
- * (2026-07-22), not assumed. */
-const CHAIN_TVL_KEY: Record<SupportedChain, string> = {
-  ethereum: 'Ethereum',
-  solana: 'Solana',
-};
+/** DeFiLlama's `chainTvls` keys are display names ("Ethereum"/"Solana"), not our lowercase slugs —
+ * confirmed by a live probe of `/protocol/uniswap` and `/protocol/raydium` (2026-07-22), not
+ * assumed. TASK-006 (task 006-5) replaced the two-entry `CHAIN_TVL_KEY` map with
+ * `chain.vendors.defillama`, which carries the same display name for all 458 registry chains
+ * instead of two. */
 
 /**
  * Not one of the six canonical zod types (`types/*`) — a plain object shape, copied literally
@@ -30,9 +24,25 @@ const CHAIN_TVL_KEY: Record<SupportedChain, string> = {
  * for it isn't in this task's scope (architecture doesn't define one; adding one would be an
  * unrequested architectural addition, developer-guidelines §1.6).
  */
+/**
+ * `chain.tvl` result (TASK-006 task 006-7, R-53). A SEPARATE contract from `ProtocolTvlResult`,
+ * not a variant of it: a chain has no notion of `totalTvlUsd` (there is nothing to total across),
+ * and the source endpoint differs (`/v2/chains` vs `/protocol/{slug}`). Folding them into one
+ * shape would need a parameter that changes the meaning of every other field.
+ */
+export interface ChainTvlResult {
+  chain: string;
+  name: string;
+  tvlUsd: number;
+  source: string;
+  fetchedAt: number;
+}
+
 export interface ProtocolTvlResult {
   protocol: string;
-  chain: Chain;
+  /** The chain's canonical SLUG. Widened from the closed `Chain` enum in TASK-006 (task 006-5) —
+   * the vocabulary lives in the registry now, not in a type literal. */
+  chain: string;
   tvlUsd: number;
   totalTvlUsd: number;
   source: string;
@@ -46,6 +56,9 @@ export interface ProtocolTvlResult {
 export interface DefillamaAdapterDeps {
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Chain registry this adapter reads vendor naming from (TASK-006 R-54). Defaults to the shipped
+   * snapshot; injectable so tests can drive a synthetic registry. */
+  chains?: ChainRegistry;
 }
 
 /** This adapter's own private hand-off shape from its HTTP step to `normalize()` — `raw` is the
@@ -53,7 +66,7 @@ export interface DefillamaAdapterDeps {
  * alongside it because the response has no field identifying "which chain the caller asked
  * for" — only `normalize()` does the `chainTvls[chain]` slice (ARCHITECTURE.md §3.2). */
 interface DefillamaFetchResult {
-  chain: SupportedChain;
+  chain: ChainInfo;
   raw: unknown;
 }
 
@@ -68,15 +81,57 @@ interface DefillamaProtocolResponse {
   tvl?: DefillamaTvlPoint[];
 }
 
-function extractFetchArgs(args: Record<string, unknown>): {
-  chain: SupportedChain;
-  protocolSlug: string;
-} {
-  const chain = args['chain'];
-  const protocolSlug = args['protocolSlug'];
-  if ((chain !== 'ethereum' && chain !== 'solana') || typeof protocolSlug !== 'string') {
+const CHAINS_URL = 'https://api.llama.fi/v2/chains';
+
+/** One row of DeFiLlama's `/v2/chains` list — only the fields this adapter reads. */
+interface DefillamaChainRow {
+  name?: unknown;
+  tvl?: unknown;
+}
+
+function extractChainArg(args: Record<string, unknown>, chains: ChainRegistry): ChainInfo {
+  const rawChain = args['chain'];
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  if (!chain || chain.vendors['defillama'] == null) {
     throw new Error(
-      `defillama.fetch: invalid args ${JSON.stringify(args)} (expected {chain: 'ethereum'|'solana', protocolSlug: string})`,
+      `defillama.fetch(chain.tvl): invalid args ${JSON.stringify(args)} (expected {chain: <a chain DeFiLlama covers>})`,
+    );
+  }
+  return chain;
+}
+
+function normalizeChainTvl(chain: ChainInfo, raw: unknown, fetchedAt: number): ChainTvlResult {
+  const vendorName = chain.vendors['defillama'] ?? chain.name;
+  const rows = Array.isArray(raw) ? (raw as DefillamaChainRow[]) : [];
+  const row = rows.find((candidate) => candidate.name === vendorName);
+  if (!row) {
+    throw new Error(`defillama.normalize(chain.tvl): '${vendorName}' absent from /v2/chains`);
+  }
+  const tvlUsd = row.tvl;
+  // Same guard as `protocol.tvl` (adversarial cycle 2, finding 1b): a bad vendor value must be
+  // rejected HERE, before it can be written to the cache as a "successful" result — otherwise the
+  // output schema rejects it later, after it is already memoized.
+  if (typeof tvlUsd !== 'number' || !Number.isFinite(tvlUsd) || tvlUsd < 0) {
+    throw new Error(
+      `defillama.normalize(chain.tvl): invalid tvl for '${vendorName}' (tvlUsd=${String(tvlUsd)})`,
+    );
+  }
+  return { chain: chain.slug, name: chain.name, tvlUsd, source: 'defillama', fetchedAt };
+}
+
+function extractFetchArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): { chain: ChainInfo; protocolSlug: string } {
+  const rawChain = args['chain'];
+  const protocolSlug = args['protocolSlug'];
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  // `vendors.defillama === null` means this vendor has no such chain at all — a fact of the
+  // registry, not of this call. It is the same condition `chainSupport()` reports, so reaching
+  // here with it set can only mean the coverage gate was bypassed.
+  if (!chain || chain.vendors['defillama'] == null || typeof protocolSlug !== 'string') {
+    throw new Error(
+      `defillama.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a chain DeFiLlama covers>, protocolSlug: string})`,
     );
   }
   return { chain, protocolSlug };
@@ -95,13 +150,25 @@ function lastTotalLiquidityUsd(series: DefillamaTvlPoint[] | undefined): number 
 export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): ProviderAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
+  const chains = deps.chains ?? loadChainRegistry();
 
   return {
     id: 'defillama',
-    capabilities: () => [{ id: 'protocol.tvl', chains: ['ethereum', 'solana'] }],
+    // TASK-006 (R-54): "does DeFiLlama know this chain" is a fact the registry already records —
+    // reading it here means the answer cannot drift from the data, unlike a second hand-kept list.
+    chainSupport: (chain: ChainInfo): boolean => chain.vendors['defillama'] != null,
+    // No `chains` narrowing: the chain dimension is the coverage matrix's job now (§4.2.3).
+    capabilities: () => [{ id: 'protocol.tvl' }, { id: 'chain.tvl' }],
     costOf: () => ({ credits: 0 }),
-    fetch: async (_cap: string, args: Record<string, unknown>): Promise<DefillamaFetchResult> => {
-      const { chain, protocolSlug } = extractFetchArgs(args);
+    fetch: async (cap: string, args: Record<string, unknown>): Promise<DefillamaFetchResult> => {
+      if (cap === 'chain.tvl') {
+        const chain = extractChainArg(args, chains);
+        await throttle('defillama', RATE_LIMIT);
+        const response = await safeFetch(CHAINS_URL, {}, HOSTS, fetchImpl);
+        if (!response.ok) throw new Error(`defillama: HTTP ${response.status} for ${CHAINS_URL}`);
+        return { chain, raw: (await response.json()) as unknown };
+      }
+      const { chain, protocolSlug } = extractFetchArgs(args, chains);
       const url = `https://api.llama.fi/protocol/${encodeURIComponent(protocolSlug)}`;
 
       await throttle('defillama', RATE_LIMIT);
@@ -112,15 +179,16 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
       const raw: unknown = await response.json();
       return { chain, raw };
     },
-    normalize: (_cap: string, rawResult: unknown): ProtocolTvlResult => {
+    normalize: (cap: string, rawResult: unknown): ProtocolTvlResult | ChainTvlResult => {
       const { chain, raw } = rawResult as DefillamaFetchResult;
+      if (cap === 'chain.tvl') return normalizeChainTvl(chain, raw, now());
       const body = raw as DefillamaProtocolResponse;
 
-      const chainKey = CHAIN_TVL_KEY[chain];
+      const chainKey = chain.vendors['defillama'] ?? chain.name;
       const tvlUsd = lastTotalLiquidityUsd(body.chainTvls?.[chainKey]?.tvl);
       const totalTvlUsd = lastTotalLiquidityUsd(body.tvl);
       if (tvlUsd === undefined || totalTvlUsd === undefined || typeof body.name !== 'string') {
-        throw new Error(`defillama.normalize: missing tvl series for chain ${chain}`);
+        throw new Error(`defillama.normalize: missing tvl series for chain ${chain.slug}`);
       }
       // Adversarial cycle 2, finding 1b: a bad vendor value (negative, NaN, +/-Infinity) must
       // never be cached as a "successful" ProtocolTvlResult — `onchain_protocol_tvl`'s own output
@@ -134,13 +202,13 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
         totalTvlUsd < 0
       ) {
         throw new Error(
-          `defillama.normalize: invalid tvl value(s) for chain ${chain} (tvlUsd=${tvlUsd}, totalTvlUsd=${totalTvlUsd})`,
+          `defillama.normalize: invalid tvl value(s) for chain ${chain.slug} (tvlUsd=${tvlUsd}, totalTvlUsd=${totalTvlUsd})`,
         );
       }
 
       return {
         protocol: body.name,
-        chain,
+        chain: chain.slug,
         tvlUsd,
         totalTvlUsd,
         source: 'defillama',

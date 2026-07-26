@@ -2,9 +2,15 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. Внешние API — 5 MCP-tools (M1) + 3 MCP-tools (M2)
+### 5.1. Внешние API — 5 MCP-tools (M1) + 3 MCP-tools (M2) + 2 MCP-tools (TASK-006)
 
 `onchain_ping` (M0, не меняется, R-20) — см. v1.1 §5.1 (сохранено ниже в §5.1.1).
+
+> **TASK-006 (R-50) — сквозное изменение контракта всех 7 chain-принимающих инструментов.**
+> Литерал `chain: z.enum(['ethereum','solana'])`, повторённый в 7 файлах, заменяется на
+> `ChainInputSchema` (§3.2): открытая строка + рантайм-резолв по реестру. Ниже по тексту
+> сохранены исторические формулировки «сужен до 2 сетей» — они описывают **состояние M1/M2**;
+> актуальная граница — реестр + матрица покрытия (§4.2.3), см. §5.1.3.
 
 **Новые 4 (M1), input/output — уровень контракта, не буквальный код:**
 
@@ -124,6 +130,76 @@ dayBucketMs(Date.now()))` **отдельным** SQLite SELECT'ом ПОСЛЕ `
 результат — не часть gate-решения (которое уже случилось внутри `nansen.fetch()`, §3.2), чисто
 для отображения. `BudgetStore` инжектируется в контекст этих 3 tool-хендлеров тем же способом,
 что `registry` (task 003-7 паттерн, `GetTokenContext`-подобный интерфейс).
+
+#### 5.1.3 Новые 2 (TASK-006) — бесплатные, реестр-backed
+
+```jsonc
+// onchain_list_chains — discovery, НОЛЬ сетевых вызовов (R-52b)
+// {
+//   query?: string (.max(64)),      // подстрока по slug / name / aliases
+//   family?: "evm"|"svm"|"move"|"cosmos"|"utxo"|"other",
+//   capability?: string (.max(64)), // вернуть только сети, где эта capability реально покрыта
+//   minTvlUsd?: number,             // фильтр по tvlUsdAtRegistrySync — заведомо устаревшему
+//   limit?: number (default 50, .max(200)),
+// }
+// → {
+//     chains: Array<{ slug, caip2, name, family, nativeSymbol,
+//                     capabilities: string[],           // покрытые на ЭТОЙ сети
+//                     tvlUsdAtRegistrySync: number|null, // НЕ ответ на вопрос «какой TVL»
+//                     deprecated: boolean }>,
+//     total: number,        // сколько подошло под фильтр ДО применения limit
+//     registrySyncedAt: number, // epoch-ms UTC — когда реестр синхронизировали
+//   }
+// onchain_chain_tvl — TVL СЕТИ (не протокола), DeFiLlama-backed, keyless
+// { chain: ChainInput }
+// → { chain, name, tvlUsd, source: "defillama", fetchedAt }
+// Capability: chain.tvl
+```
+
+**Почему `onchain_chain_tvl` — отдельный инструмент, а не параметр `onchain_protocol_tvl`
+(R-53b).** Сеть и протокол — разные сущности с разными источниками (`/v2/chains` против
+`/protocol/{slug}`) и разными выходными контрактами: у протокола есть `totalTvlUsd` поверх всех
+сетей, у сети такого понятия нет. Склейка их в один инструмент дала бы параметр, меняющий смысл
+всех остальных полей, — это худшая форма перегрузки контракта. Форма результата следует прецеденту
+`ProtocolTvlResult`: `tvlUsd: number` + отказ на non-finite/отрицательном значении **до** записи в
+кеш (R-53c) — та же защита, что `defillama.normalize()` уже реализует.
+
+**Почему `total` и дефолтный `limit` обязательны (R-52c).** Без них `onchain_list_chains({})`
+вывалил бы в контекст модели 461 строку — то есть инструмент, созданный чтобы **сэкономить**
+8.7k токенов схемы, тратил бы больше при первом же вызове. `total` сохраняет честность: агент
+видит, что список урезан, и может сузить фильтр вместо того, чтобы решить, что сетей всего 50.
+
+**Контракт параметра `chain` (R-50, все 9 chain-принимающих инструментов):**
+
+```ts
+// БЫЛО (в 7 файлах): chain: z.enum(['ethereum', 'solana'])
+// СТАЛО (единый импорт, ноль литералов сетей в mcp-server):
+chain: ChainInputSchema, // §3.2 — принимает slug | alias | caip2, отдаёт canonical caip2
+```
+
+- **Стоимость схемы:** ~5 токенов на параметр вместо ~1249. При 461 сети закрытый енум стоил бы
+  **≈8.7k токенов в каждом запросе к модели** (измерено, TASK §0) — это и есть причина решения
+  владельца §1.3.1, а не эстетика.
+- **Ошибка неизвестной сети (R-50c)** — tool-error, ноль сетевых вызовов, ноль кредитов:
+
+  ```
+  unknown chain 'beara'. Did you mean: berachain?
+  Call onchain_list_chains to browse 461 chains.
+  ```
+
+- **Ошибка непокрытой пары (R-51c)** — отдельный тип, не сливается с «провайдер недоступен»:
+
+  ```
+  capability 'smart-money.flows' is not available on chain 'berachain'.
+    Provider 'nansen' covers: ethereum, solana, base, …
+    Available on berachain instead: chain.tvl, token.price, token.metadata, pairs.new
+  ```
+
+  Оба списка вычисляются из матрицы покрытия (§4.2.3), поэтому не могут разойтись с поведением.
+
+**Обратная совместимость (R-59).** `"ethereum"` и `"solana"` остаются валидными **бессрочно** —
+как алиасы, а не как переходный режим. Форма ответов не меняется. Единственное наблюдаемое
+следствие — разовая холодная инвалидация кеша (§4.2.2), объявленная в changelog.
 
 ### 5.2. Внутренние интерфейсы
 

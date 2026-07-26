@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createDefillamaAdapter } from '../src/index.js';
+import { createDefillamaAdapter, loadChainRegistry } from '../src/index.js';
 
 // Golden fixture-based normalization tests (R-7, D11) — no network: fixtures were recorded ONCE
 // via the manual fixture-recording dev script under packages/core/scripts/ (out of CI, R-22) and
@@ -22,9 +22,20 @@ interface DefillamaFixture {
   };
 }
 
-function loadFixture(name: string): DefillamaFixture {
+const CHAINS = loadChainRegistry();
+
+/**
+ * The fixture stores the chain as a SLUG; `normalize()` consumes the adapter's private fetch
+ * result, whose `chain` became a resolved `ChainInfo` in TASK-006 (task 006-5). Resolving here
+ * keeps the fixtures as recorded vendor evidence and leaves every expected OUTPUT below untouched.
+ */
+function loadFixture(name: string): {
+  chain: ReturnType<typeof CHAINS.resolve>;
+  raw: DefillamaFixture['raw'];
+} {
   const raw = readFileSync(path.join(testDir, 'fixtures', 'defillama', `${name}.json`), 'utf8');
-  return JSON.parse(raw) as DefillamaFixture;
+  const fixture = JSON.parse(raw) as DefillamaFixture;
+  return { chain: CHAINS.resolve(fixture.chain), raw: fixture.raw };
 }
 
 describe('defillama adapter (contract, R-7)', () => {
@@ -64,10 +75,85 @@ describe('defillama adapter (contract, R-7)', () => {
     });
   });
 
-  it('capabilities() declares protocol.tvl for ethereum+solana', () => {
+  // CHANGED EXPECTATION (task 006-5, R-54): `capabilities()` no longer carries a `chains` literal.
+  // The chain dimension is the coverage matrix's job (§4.2.3) — a second list here could only
+  // drift from it. What the adapter answers about chains now goes through `chainSupport()`.
+  it('capabilities() declares protocol.tvl and chain.tvl without a hardcoded chain list', () => {
     const caps = adapter.capabilities();
-    expect(caps.map((c) => c.id)).toEqual(['protocol.tvl']);
-    expect(caps[0]!.chains).toEqual(['ethereum', 'solana']);
+    expect(caps.map((c) => c.id)).toEqual(['protocol.tvl', 'chain.tvl']);
+    for (const cap of caps) expect(cap.chains).toBeUndefined();
+  });
+
+  // TASK-006 task 006-7 (R-53): chain TVL is a SEPARATE capability — different endpoint, different
+  // contract. A chain has no `totalTvlUsd`, so folding it into `protocol.tvl` would need a
+  // parameter that changes the meaning of the other fields.
+  describe('chain.tvl (task 006-7)', () => {
+    const CHAINS_FIXTURE = [
+      { gecko_id: 'ethereum', tvl: 6.0e10, tokenSymbol: 'ETH', name: 'Ethereum', chainId: 1 },
+      {
+        gecko_id: 'berachain-bera',
+        tvl: 50_579_539.42,
+        tokenSymbol: 'BERA',
+        name: 'Berachain',
+        chainId: 80094,
+      },
+    ];
+
+    it('normalizes the /v2/chains row for the requested chain', () => {
+      const result = adapter.normalize('chain.tvl', {
+        chain: CHAINS.resolve('berachain'),
+        raw: CHAINS_FIXTURE,
+      });
+      expect(result).toEqual({
+        chain: 'berachain',
+        name: CHAINS.resolve('berachain').name,
+        tvlUsd: 50_579_539.42,
+        source: 'defillama',
+        fetchedAt: FIXED_NOW,
+      });
+    });
+
+    it('fails loudly when the chain is absent from the vendor list', () => {
+      expect(() =>
+        adapter.normalize('chain.tvl', { chain: CHAINS.resolve('ethereum'), raw: [] }),
+      ).toThrow(/absent from \/v2\/chains/);
+    });
+
+    it.each([[-1], [Number.NaN], [Number.POSITIVE_INFINITY], ['nope']])(
+      'rejects a bad tvl value (%s) BEFORE it can be cached',
+      (bad) => {
+        expect(() =>
+          adapter.normalize('chain.tvl', {
+            chain: CHAINS.resolve('ethereum'),
+            raw: [{ name: 'Ethereum', tvl: bad }],
+          }),
+        ).toThrow(/invalid tvl/);
+      },
+    );
+
+    it('fetch() hits /v2/chains, not the protocol endpoint', async () => {
+      const calls: string[] = [];
+      const testAdapter = createDefillamaAdapter({
+        now: () => FIXED_NOW,
+        fetchImpl: async (url) => {
+          calls.push(String(url));
+          return new Response(JSON.stringify(CHAINS_FIXTURE), { status: 200 });
+        },
+      });
+      const result = await testAdapter.fetch('chain.tvl', { chain: 'berachain' });
+      expect(calls).toEqual(['https://api.llama.fi/v2/chains']);
+      expect(result).toEqual({ chain: CHAINS.resolve('berachain'), raw: CHAINS_FIXTURE });
+    });
+  });
+
+  it('chainSupport() follows the registry rather than a private map (R-54)', () => {
+    expect(adapter.chainSupport?.(CHAINS.resolve('ethereum'), 'protocol.tvl')).toBe(true);
+    expect(adapter.chainSupport?.(CHAINS.resolve('solana'), 'protocol.tvl')).toBe(true);
+    // A chain DeFiLlama does cover, that the pre-TASK-006 map could never have served:
+    expect(adapter.chainSupport?.(CHAINS.resolve('berachain'), 'protocol.tvl')).toBe(true);
+    // A chain the registry knows but DeFiLlama does not name:
+    const uncovered = CHAINS.list().find((c) => c.vendors['defillama'] == null);
+    if (uncovered) expect(adapter.chainSupport?.(uncovered, 'protocol.tvl')).toBe(false);
   });
 
   it('costOf() is free (0 credits) and isAvailable() is always ok (keyless)', () => {
@@ -90,7 +176,7 @@ describe('defillama adapter (contract, R-7)', () => {
     });
 
     expect(calls).toEqual(['https://api.llama.fi/protocol/uniswap']);
-    expect(result).toEqual({ chain: 'ethereum', raw: fixture.raw });
+    expect(result).toEqual({ chain: CHAINS.resolve('ethereum'), raw: fixture.raw });
   });
 
   describe('tvl value validation (adversarial cycle 2, finding 1b)', () => {

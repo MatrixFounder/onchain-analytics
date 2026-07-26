@@ -1,4 +1,6 @@
 import { normalizeAddress } from '../../chain/address.js';
+import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
+import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle } from '../../net/rate-limit.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
@@ -26,11 +28,23 @@ const RATE_LIMIT = REGISTRATION.rateLimit;
  * adapter. */
 const ENDPOINTS = HOSTS.map((host) => `https://${host}`);
 
+/** `https://host/...` → `host`. The registry stores full URLs (a human approves a URL, not a bare
+ * hostname); `safeFetch`'s allowlist is hostname-based. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
 /** Optional constructor dependencies (injectable — same DI convention as the 003-4 adapters:
  * `fetchImpl`/`now`). Keyless — no `env` dependency needed. */
 export interface RpcEvmAdapterDeps {
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Chain registry supplying family + curated RPC hosts (TASK-006 R-54/R-56). */
+  chains?: ChainRegistry;
 }
 
 /** This adapter's own private hand-off shape from its HTTP step to `normalize()` — `address` is
@@ -53,12 +67,19 @@ interface JsonRpcResponse {
  * ("Cannot convert 0x to a BigInt") instead of this adapter's own clear, documented error. */
 const HEX_BALANCE_RE = /^0x[0-9a-fA-F]+$/;
 
-function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; address: string } {
-  const chain = args['chain'];
+function extractFetchArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): { chain: ChainInfo; address: string } {
+  const rawChain = args['chain'];
   const address = args['address'];
-  if (chain !== 'ethereum' || typeof address !== 'string') {
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  // TASK-006 (task 006-5): the same condition `chainSupport()` reports — family plus a CURATED
+  // RPC host. `rpcHosts: null` is not "misconfigured", it is "we never approved a host for this
+  // chain" (security.md §7.2.1), and the coverage gate should have refused long before here.
+  if (!chain || chain.family !== 'evm' || chain.rpcHosts === null || typeof address !== 'string') {
     throw new Error(
-      `rpc-evm.fetch: invalid args ${JSON.stringify(args)} (expected {chain: 'ethereum', address: string})`,
+      `rpc-evm.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a evm chain with a curated RPC host>, address: string})`,
     );
   }
   return { chain, address };
@@ -78,13 +99,19 @@ function extractFetchArgs(args: Record<string, unknown>): { chain: Chain; addres
 export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
+  const chains = deps.chains ?? loadChainRegistry();
 
   return {
     id: 'rpc-evm',
+    // TASK-006 (R-54/R-56b): any EVM chain, but ONLY if the registry carries a curated RPC host
+    // for it. `rpcHosts: null` therefore means honestly uncovered — the coverage gate refuses
+    // before any network attempt, instead of letting a request time out against a host we never
+    // approved (security.md §7.2.1). Curation itself is task 006-8.
+    chainSupport: (chain: ChainInfo): boolean => chain.family === 'evm' && chain.rpcHosts !== null,
     capabilities: () => [{ id: 'wallet.balances.native', chains: ['ethereum'] }],
     costOf: () => ({ credits: 0 }),
     fetch: async (_cap: string, args: Record<string, unknown>): Promise<RpcEvmFetchResult> => {
-      const { chain, address } = extractFetchArgs(args);
+      const { chain, address } = extractFetchArgs(args, chains);
       // Defensive re-normalization (003-4 reviewer note, applied here too): the caller is expected
       // to have already normalized the address, but the adapter's own HTTP step doesn't trust that.
       const normalizedAddress = normalizeAddress(chain, address);
@@ -97,13 +124,25 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
 
       await throttle('rpc-evm', RATE_LIMIT);
 
+      // TASK-006 (task 006-8, R-56): endpoints and the SSRF allowlist BOTH come from this chain's
+      // curated `rpcHosts` row — per chain, never merged. The allowlist handed to `safeFetch` is
+      // exactly the hosts a human approved for THIS chain, so one chain's endpoint can never be
+      // used to reach another's (security.md §7.2.1).
+      //
+      // `rpcHosts === null` cannot be reached here: `chainSupport()` reports it and the coverage
+      // gate refuses long before. The fallback to the registration hosts exists only so this
+      // adapter still behaves if constructed outside the registry-backed path.
+      const chainHosts = chain.rpcHosts !== null ? [...chain.rpcHosts] : [];
+      const allowlist = chainHosts.length > 0 ? chainHosts.map(hostOf) : HOSTS;
+      const endpoints = chainHosts.length > 0 ? chainHosts : ENDPOINTS;
+
       let lastError: unknown;
-      for (const endpoint of ENDPOINTS) {
+      for (const endpoint of endpoints) {
         try {
           const response = await safeFetch(
             endpoint,
             { method: 'POST', headers: { 'content-type': 'application/json' }, body },
-            HOSTS,
+            allowlist,
             fetchImpl,
           );
           if (!response.ok) {
@@ -115,7 +154,7 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
               `rpc-evm: JSON-RPC error from ${endpoint}: ${stringifyTruncated(raw.error)}`,
             );
           }
-          return { chain, address: normalizedAddress, raw };
+          return { chain: chain.slug, address: normalizedAddress, raw };
         } catch (error) {
           // Try the next endpoint in the primary->fallback chain before giving up entirely.
           lastError = error;
@@ -123,7 +162,7 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
       }
       throw lastError instanceof Error
         ? lastError
-        : new Error(`rpc-evm: all endpoints failed (${ENDPOINTS.join(', ')})`);
+        : new Error(`rpc-evm: all endpoints failed (${endpoints.join(', ')})`);
     },
     normalize: (_cap: string, rawResult: unknown): Wallet => {
       const { chain, address, raw } = rawResult as RpcEvmFetchResult;

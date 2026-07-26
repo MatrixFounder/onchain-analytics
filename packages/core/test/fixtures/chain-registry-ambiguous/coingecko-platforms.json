@@ -1,0 +1,29 @@
+[
+  { "id": "wrong-l2", "chain_identifier": 999, "name": "Wrong L2", "native_coin_id": "ethereum" },
+  { "id": "ethereum", "chain_identifier": 1, "name": "Ethereum", "native_coin_id": "ethereum" },
+  {
+    "id": "shared-a",
+    "chain_identifier": null,
+    "name": "Shared A",
+    "native_coin_id": "sharedcoin"
+  },
+  {
+    "id": "shared-b",
+    "chain_identifier": null,
+    "name": "Shared B",
+    "native_coin_id": "sharedcoin"
+  },
+  {
+    "id": "mismatch-chain",
+    "chain_identifier": 4061,
+    "name": "Mismatch Chain",
+    "native_coin_id": null
+  },
+  {
+    "id": "beta",
+    "chain_identifier": 100,
+    "name": "Alpha Platform",
+    "native_coin_id": "alphacoin"
+  },
+  { "id": "beta-real", "chain_identifier": 200, "name": "Beta", "native_coin_id": "betacoin" }
+]

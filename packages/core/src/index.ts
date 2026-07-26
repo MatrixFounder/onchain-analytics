@@ -27,6 +27,32 @@ export {
 
 export { normalizeAddress, isValidAddress } from './chain/address.js';
 
+// Chain registry (TASK-006, task 006-1, R-48/R-60) — the single source of truth about chains.
+// A factory, never a module singleton (same convention as CapabilityRegistry/SqliteCacheStore,
+// ARCHITECTURE.md §8), so consumers construct and inject their own instance.
+export {
+  loadChainRegistry,
+  type ChainInfo,
+  type ChainFamily,
+  type ChainRegistry,
+  type ChainRegistryDeps,
+  type ChainListFilter,
+} from './chain/registry.js';
+export {
+  UnknownChainError,
+  ChainRegistryLoadError,
+  CapabilityNotCoveredOnChainError,
+} from './chain/errors.js';
+export { createCoverage, type Coverage, type CoverageDeps } from './chain/coverage.js';
+// TASK-006 (task 006-6, R-50): `chain` as accepted at the MCP tool boundary — an open string
+// resolved against the registry, replacing the 7 duplicated `z.enum(['ethereum','solana'])`
+// literals. See its docstring for why this is a SECOND schema rather than a widened `ChainSchema`.
+export {
+  ChainInputSchema,
+  createChainInputSchema,
+  canonicalizeChain,
+} from './chain/input-schema.js';
+
 export { CapabilityRegistry } from './adapters/registry.js';
 export type { CapabilityDescriptor, ProviderAdapter, CapabilityRoute } from './adapters/types.js';
 

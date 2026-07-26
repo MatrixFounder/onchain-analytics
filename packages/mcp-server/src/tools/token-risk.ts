@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
+  canonicalizeChain,
+  ChainInputSchema,
   isValidAddress,
   normalizeAddress,
   TokenRiskScoreSchema,
@@ -16,11 +18,20 @@ import { resolveCapability, type CacheMeta } from './resolve-capability.js';
  * `.max(MAX_ADDRESS_LENGTH)`-bounded, length-guarded `superRefine`/`isValidAddress` idiom as
  * `get-token.ts`/`smart-money-flows.ts` — reused verbatim, not reinvented.
  */
+/**
+ * TASK-006 (task 006-6, R-50): `chain` is an OPEN string resolved against the chain registry,
+ * replacing the `z.enum(['ethereum','solana'])` literal that this file (and six others) carried.
+ * The closed enum for all 458 chains measured ~8.7k tokens of schema across the chain-taking
+ * tools — paid on EVERY request to the model. Correctness moved into the runtime resolve, which
+ * fails with a "did you mean" list and zero network calls (owner decision 2026-07-26).
+ */
+const SUPPORTED_CHAIN = ChainInputSchema;
+
 const MAX_ADDRESS_LENGTH = 64;
 
 export const TokenRiskInputSchema = z
   .object({
-    chain: z.enum(['ethereum', 'solana']),
+    chain: SUPPORTED_CHAIN,
     tokenAddress: z.string().min(1).max(MAX_ADDRESS_LENGTH),
   })
   .strict()
@@ -72,9 +83,14 @@ export async function tokenRiskHandler(
   input: TokenRiskInput,
   ctx: TokenRiskContext,
 ): Promise<TokenRiskOutcome> {
-  const tokenAddress = normalizeAddress(input.chain, input.tokenAddress);
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, input.chain, {
-    chain: input.chain,
+  // TASK-006 (task 006-6, R-50/R-59): resolve the alias to its canonical slug HERE, before the
+  // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
+  // would hash to two different cache entries for one logical request, which on a paid route is
+  // two charges (data-model.md §4.2.2).
+  const chain = canonicalizeChain(input.chain);
+  const tokenAddress = normalizeAddress(chain, input.tokenAddress);
+  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
+    chain,
     tokenAddress,
   });
   if (!outcome.ok) return outcome;

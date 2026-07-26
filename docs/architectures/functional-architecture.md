@@ -4,16 +4,35 @@
 
 ### 2.1. Функциональные компоненты
 
-**Компонент: Chain/Address Normalization — NOW (M1, часть D5)**
+**Компонент: Chain Registry — NOW (TASK-006, R-48/R-49)**
+
+- **Назначение:** единственный источник фактов о сетях. Превращает сеть из **кода** (литерал в
+  пяти слоях) в **данные** (строка справочника) — тот же принцип, который DB-SCHEMA-CONCEPT §1
+  уже требует для активов и метрик.
+- **Функции:** `resolve(input) → ChainInfo` (slug/алиас/caip2 → canonical caip2, чистая функция
+  без сети, «did you mean» на промахе); `list(filter)` — питает `onchain_list_chains`;
+  `covered(capability, chain)` — матрица покрытия как **производная** от `routes` ×
+  `adapter.chainSupport()`, не второй справочник.
+- **Related Use Cases** (нумерация UC локальна для каждой TASK — здесь и ниже это **TASK-006**,
+  не M1/M2): TASK-006 UC-1 (резолв неизвестной ранее сети), UC-2 (discovery), UC-3 (мягкая
+  деградация), UC-4 (синхронизация оператором), UC-5 (оффлайн-гейт), UC-6 (алиасы → совместимость).
+- **Зависимости:** не зависит ни от чего внутри движка (чистые данные + чистые функции). От него
+  зависят: `Chain/Address Normalization`, `Provider Adapters`, все схемы MCP-инструментов.
+  Направление зависимости не переворачивается — реестр про адаптеры не знает.
+
+**Компонент: Chain/Address Normalization — NOW (M1, часть D5; расширен TASK-006 R-55)**
 
 - **Назначение:** единая точка входа для валидации и канонизации адресов/сетей, используемая и
   MCP-tool input-схемами, и адаптерами при построении кеш-ключа — гарантирует «один и тот же адрес
   в любом регистре ⇒ один и тот же кеш-ключ» (обязательное требование ревьюера TASK-003).
-- **Функции:** `ChainSchema` (enum `ethereum | solana | dash`); `normalizeAddress(chain,
-raw): string` — EIP-55 checksum для EVM, валидация base58/32-байта для Solana (без изменения
-  регистра — base58 регистро-чувствителен); `isValidAddress(chain, raw): boolean`.
-- **Зависимости:** используется `Provider Adapters`, MCP-tool input-схемами (§5.1); не зависит ни
-  от чего внутри движка.
+- **Функции:** `ChainSchema` (canonical caip2) + `ChainInputSchema` (вход, резолвит алиасы) —
+  **две схемы вместо прежнего единого enum'а `ethereum | solana | dash`**, чтобы алиас не мог
+  просочиться в тело канонического объекта и оттуда в ключ кеша (§4.2.2);
+  `normalizeAddress(chain, raw)` / `isValidAddress(chain, raw)` — ветвление по
+  **`chainInfo.family`**, а не по имени сети: одна ветка `evm` обслуживает все EVM-сети.
+- **Related Use Cases:** TASK-006 UC-7 (валидация по семейству), UC-6 (совместимость кеш-ключа).
+- **Зависимости:** зависит от `Chain Registry`; используется `Provider Adapters` и MCP-tool
+  input-схемами (§5.1).
 
 **Компонент: Provider Adapters + Capability Registry — NOW (M1, D4)**
 
