@@ -81,7 +81,7 @@ covered(smart-money.flows) = SmartMoneyChain ∩ TGMHoldersChain = 17 сетей
    реакция агента.
 5. **Гейт покрытия выше резервирования кредитов** (system-architecture.md §3.2, порядок 1→6).
 6. **`rpcHosts` — курируемая колонка**, автозаполнение запрещено (security.md §7.2.1).
-7. **Адреса ветвятся по `family`** (system-architecture.md §4.1).
+7. **Адреса ветвятся по `family`** (system-architecture.md §3.2.1).
 
 ### 0.4. Кеш: разовая холодная инвалидация — подтверждено владельцем 2026-07-26
 

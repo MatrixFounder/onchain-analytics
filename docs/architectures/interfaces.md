@@ -1,64 +1,62 @@
-# 5. Интерфейсы
+# 5. Interfaces
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. Внешние API — 5 MCP-tools (M1) + 3 MCP-tools (M2) + 2 MCP-tools (TASK-006)
+### 5.1. External API — 10 MCP tools
 
-`onchain_ping` (M0, не меняется, R-20) — см. v1.1 §5.1 (сохранено ниже в §5.1.1).
+`onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
+Nansen-backed tools in M2 (§5.1.2), and two registry-backed tools with TASK-006 (§5.1.3).
 
-> **TASK-006 (R-50) — сквозное изменение контракта всех 7 chain-принимающих инструментов.**
-> Литерал `chain: z.enum(['ethereum','solana'])`, повторённый в 7 файлах, заменяется на
-> `ChainInputSchema` (§3.2): открытая строка + рантайм-резолв по реестру. Ниже по тексту
-> сохранены исторические формулировки «сужен до 2 сетей» — они описывают **состояние M1/M2**;
-> актуальная граница — реестр + матрица покрытия (§4.2.3), см. §5.1.3.
+**The `chain` parameter, stated once.** Eight of the ten tools take a chain, and every one of them
+declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
+resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
+`ethereum` and `solana` are aliases and stay valid indefinitely. What a tool can actually serve is
+**coverage** (§4.2.3), never a narrower parameter — the schema accepts the chain and the coverage
+matrix refuses the pair with a message naming what IS available. The full contract — schema cost,
+the two refusal shapes, backward compatibility — is in §5.1.3.
 
-**Новые 4 (M1), input/output — уровень контракта, не буквальный код:**
+**The four M1 tools; input/output at the contract level, not literal code:**
 
 ```jsonc
-// onchain_get_token — { chain: "ethereum"|"solana", address: string (.max(64)) }
-// → Token (§4.1) | isError: true при недоступности/невалидном адресе
-// (chain сужен до 2 сетей, TASK.md UC-2 сам ограничивает M1-tools ethereum+solana; 'dash'
-// остаётся в ChainSchema/Token для консистентности словаря, но ни один M1-tool его не принимает
-// на входе — см. также WalletBalancesInputSchema ниже, Major-2 ревью цикла 1)
-// Capability: token.price (переключено с token.metadata в цикле 3 — normalize() coingecko даёт
-// побайтово идентичный Token по обоим маршрутам, но кешируется под TTL самой волатильной
-// составляющей: 60с price, а не 3600с metadata — иначе priceUsd легально мог протухнуть до часа;
-// маршрут token.metadata остаётся зарегистрированным для будущих metadata-only потребителей)
-// onchain_wallet_balances — { chain: "ethereum"|"solana", address: string (.max(64)) }
-// → Wallet (§4.1, balances: Balance[] — только assetType:'native' в M1)
-// onchain_new_pairs — { chain: "ethereum"|"solana", limit?: number }
+// onchain_get_token — { chain: ChainInput, address: string (.max(64)) }
+// → Token (§4.1) | isError: true when unavailable or the address is invalid
+// Capability: token.price, not token.metadata — coingecko's normalize() yields a byte-identical
+// Token on either route, but the entry is cached under the TTL of its most volatile part (60s
+// price, not 3600s metadata), otherwise priceUsd could legally go stale for an hour. The
+// token.metadata route stays registered for future metadata-only consumers.
+// onchain_wallet_balances — { chain: ChainInput, address: string (.max(64)) }
+// → Wallet (§4.1, balances: Balance[] — only assetType:'native' in M1)
+// onchain_new_pairs — { chain: ChainInput, limit?: number }
 // → { chain, pairs: Pool[], source, fetchedAt }
-// (limit-дефолт материализуется ДО построения args — post-M1 polish, fix 1: раньше опущенный
-// limit и явный limit:10 давали разные deriveArgsHash-ключи для одного и того же логического
-// запроса, что дублировало апстрим-фетч вместо одного общего кеш-попадания)
-// onchain_protocol_tvl — { chain: "ethereum"|"solana", protocolSlug: string (.max(128)) }
+// (the limit default is materialized BEFORE args are built: an omitted limit and an explicit
+// limit:10 would otherwise derive different args hashes for one logical request, duplicating the
+// upstream fetch instead of sharing one cache entry)
+// onchain_protocol_tvl — { chain: ChainInput, protocolSlug: string (.max(128)) }
 // → { protocol, chain, tvlUsd, totalTvlUsd, source, fetchedAt }
 ```
 
-`address`/`protocolSlug` — явные `.max()`-границы (адверсариальный цикл 2, finding 3 + post-M1
-polish, fix 2): `address.max(64)` (реальный EVM-адрес ≤42, Solana base58-pubkey ≤44) с
-дополнительной length-guard-проверкой в начале `superRefine` (гарантирует, что дорогой
-`isValidAddress`/`bs58.decode` пропускается целиком для патологически длинного входа, а не просто
-«в итоге отклоняется» уже после его выполнения); `protocolSlug.max(128)` — дешёвый отсеч на уровне
-схемы до того, как значение попадёт в URL/кеш-ключ. `onchain_protocol_tvl`'s хендлер использует
-`safeParse` (не `parse`) при валидации ответа провайдера — сбой возвращает `{ok:false, reason}` по
-контракту, никогда не бросает (цикл 2, finding 1a); `defillama.normalize()` со своей стороны уже
-отвергает non-finite/negative `tvlUsd`/`totalTvlUsd` до попадания в кеш (finding 1b).
+`address`/`protocolSlug` carry explicit `.max()` bounds: `address.max(64)` (a real EVM address is
+≤42, a Solana base58 pubkey ≤44) plus a length guard at the top of `superRefine`, and
+`protocolSlug.max(128)` as a cheap cut before the value can reach a URL or a cache key. The length
+guard is not a second rejection — `.max()` has already failed the parse — it is what actually
+guarantees the expensive `isValidAddress`/`bs58.decode` work is skipped for a pathologically long
+input, instead of being performed and only then discarded.
 
-Каждый ответ несёт `_meta.cache: { status: 'hit'|'miss', ageMs?, provider, capability }` (§3.2) —
-вне `structuredContent`, схема выхода не растёт.
+`onchain_protocol_tvl`'s handler validates the provider response with `safeParse`, not `parse`: a
+failure returns `{ok:false, reason}` per the contract and never throws. `defillama.normalize()`
+rejects non-finite or negative `tvlUsd`/`totalTvlUsd` on its own side, before the value reaches the
+cache.
 
-`chain`+`address`-входы валидируются через общий idiom:
+Every response carries `_meta.cache: { status: 'hit'|'miss', ageMs?, provider, capability }` (§3.2)
+— outside `structuredContent`, so the output schema does not grow.
+
+`chain`+`address` inputs are validated through one shared idiom:
 
 ```ts
-// chain сужен до z.enum(['ethereum','solana']) — НЕ полный ChainSchema (Major-2, ревью цикл 1):
-// isValidAddress()/normalizeAddress() не реализуют валидацию Dash-адресов (§4.1 — dash-platform
-// работает через Snapshot, не Wallet/Balance), поэтому 'dash' здесь был бы принимаемым, но
-// гарантированно проваливающим superRefine значением — вводящий в заблуждение контракт.
 export const WalletBalancesInputSchema = z
   .object({
-    chain: z.enum(['ethereum', 'solana']),
-    address: z.string().min(1).max(64), // .max() cap — adversarial cycle 2, finding 3
+    chain: ChainInputSchema, // §3.2 — open string, resolved against the registry
+    address: z.string().min(1).max(64),
   })
   .strict()
   .superRefine((val, ctx) => {
@@ -73,138 +71,163 @@ export const WalletBalancesInputSchema = z
   });
 ```
 
-Ошибки — MCP tool-error (`isError: true`), не падение процесса (UC-2 alt, унаследовано от M0
-§7.3-инварианта: невалидный вход/недоступная способность никогда не крашит сервер).
+Errors are MCP tool errors (`isError: true`), not process failures (UC-2 alt, inherited from the M0
+§7.3 invariant: invalid input or an unavailable capability never crashes the server).
 
-#### 5.1.1 `onchain_ping` (M0, сохранено без изменений)
+#### 5.1.1 `onchain_ping` (M0, unchanged)
 
 ```jsonc
 // tools/call { name: "onchain_ping", arguments: {} }
 // → { "ok": true, "service": "onchain-intel-mcp-server", "version": "0.1.0", "ts": 1784000000000 }
 ```
 
-#### 5.1.2 Новые 3 (M2, TASK-005) — платные, Nansen-backed
+#### 5.1.2 The three paid, Nansen-backed tools (M2, TASK-005)
 
 ```jsonc
-// onchain_smart_money_flows — { chain: "ethereum"|"solana", tokenAddress: string (.max(64)) }
-// → SmartMoneyFlow (§4.1) | isError: true при недоступности ключа/бюджета
-// Capability: smart-money.flows (costOf() = 10cr фикс — netflow 5cr + tgm/holders 5cr, R-41)
+// onchain_smart_money_flows — { chain: ChainInput, tokenAddress: string (.max(64)) }
+// → SmartMoneyFlow (§4.1) | isError: true when the key or the budget is unavailable
+// Capability: smart-money.flows (costOf() = 10cr fixed — netflow 5cr + tgm/holders 5cr, R-41)
 // onchain_entity_label — {
-//   chain: "ethereum"|"solana",
-//   query?: string (.max(200)),        // по имени/символу/адресу, требуется если tokenAddress не задан
-//   tokenAddress?: string (.max(64)),  // токен-scoped обогащение метками; обязателен при exhaustive
-//   exhaustive?: boolean (default false), // opt-in эскалация — budget-gated, требует tokenAddress
+//   chain: ChainInput,
+//   query?: string (.max(200)),        // by name/symbol/address, required unless tokenAddress is set
+//   tokenAddress?: string (.max(64)),  // token-scoped label enrichment; required when exhaustive
+//   exhaustive?: boolean (default false), // opt-in escalation — budget-gated, requires tokenAddress
 // }
 // → { chain, entities: EntityLabel[] (§4.1), source, fetchedAt } | isError: true
-// Capability: entity.labels — costOf() трёхуровневый: 0cr (query-only) / 5cr (tokenAddress,
-// !exhaustive) / 100cr (exhaustive:true — ТОЛЬКО /profiler/address/labels, не дублирует 5cr-путь)
-// onchain_token_risk — { chain: "ethereum"|"solana", tokenAddress: string (.max(64)) }
+// Capability: entity.labels — costOf() has three tiers: 0cr (query-only) / 5cr (tokenAddress,
+// !exhaustive) / 100cr (exhaustive:true — ONLY /profiler/address/labels, it does not duplicate the
+// 5cr path)
+// onchain_token_risk — { chain: ChainInput, tokenAddress: string (.max(64)) }
 // → TokenRiskScore (§4.1) | isError: true
-// Capability: token.risk (costOf() = 6cr фикс — tgm/indicators 5cr + tgm/token-information 1cr, R-43)
+// Capability: token.risk (costOf() = 6cr fixed — tgm/indicators 5cr + tgm/token-information 1cr, R-43)
 ```
 
-`chain` — сужен до `z.enum(['ethereum','solana'])`, буквально та же пара, что 4 M1-tools (решение
-по OQ-3, §3.2 — три релевантных Nansen-энумератора чейнов не идентичны друг другу, расширение —
-задокументированный backlog, §11). `tokenAddress`/`query` — те же `.max()`-границы и
-`superRefine`/`isValidAddress`-идиом, что `onchain_get_token` выше — переиспользуется, не
-изобретается заново. `onchain_entity_label`'s input — единственный из 7 tools с `superRefine`,
-требующим **хотя бы одно** из `query`/`tokenAddress` (иначе нет способа определить, что искать) и
-`chain`+`tokenAddress` обязательны вместе, когда `exhaustive: true`.
+Coverage of the three paid capabilities is per capability and comes from the coverage matrix
+(§4.2.3), not from an enum in the schema: `smart-money.flows` is served on 16 chains,
+`entity.labels` on 18, `token.risk` on 18. A chain outside that set is refused before any credit is
+reserved.
 
-**`_meta.budget` — видимость бюджета вызывающему (R-41 «аналог `_meta.cache`»):**
+`tokenAddress`/`query` reuse the same `.max()` bounds and the same
+`superRefine`/`isValidAddress` idiom as `onchain_get_token` above — reused, not reinvented.
+`onchain_entity_label` has the only compound `superRefine` of the ten tools: **at least one** of
+`query`/`tokenAddress` is required (otherwise there is nothing to search for), and `tokenAddress`
+is mandatory when `exhaustive: true`.
+
+**`_meta.budget` — budget visibility for the caller (R-41, the analogue of `_meta.cache`):**
 
 ```ts
 export interface BudgetMeta {
   provider: 'nansen';
-  creditsUsedToday: number; // usage.credits_used текущего day-бакета ПОСЛЕ этого вызова
+  creditsUsedToday: number; // usage.credits_used of the current day bucket, AFTER this call
 }
 ```
 
-Присутствует **только** когда способность платная И реально исполнилась (`_meta.cache.status ===
-'miss'` — на `'hit'` гейт/costOf()/сеть не исполняются вовсе, UC-5, поэтому `_meta.budget`
-**отсутствует** целиком на кеш-хите, не коэрсится в `0`/`null` — тот же принцип, что
-`_meta.cache.ageMs` на `'miss'`, §3.2). **Архитектурное решение (не через
-`CapabilityRegistry.resolve()`'s возвращаемый тип — он общий для всех 10 адаптеров и не растёт ради
-одного платного):** три новых tool-хендлера сами читают `budgetStore.getUsage('nansen',
-dayBucketMs(Date.now()))` **отдельным** SQLite SELECT'ом ПОСЛЕ `registry.resolve()` вернул
-результат — не часть gate-решения (которое уже случилось внутри `nansen.fetch()`, §3.2), чисто
-для отображения. `BudgetStore` инжектируется в контекст этих 3 tool-хендлеров тем же способом,
-что `registry` (task 003-7 паттерн, `GetTokenContext`-подобный интерфейс).
+It is present **only** when the capability is paid AND actually executed (`_meta.cache.status ===
+'miss'`). On a hit the gate, `costOf()` and the network are not exercised at all (UC-5), so
+`_meta.budget` is **absent entirely** rather than coerced to `0`/`null` — the same principle as
+`_meta.cache.ageMs` on a miss (§3.2).
 
-#### 5.1.3 Новые 2 (TASK-006) — бесплатные, реестр-backed
+The read does **not** go through `CapabilityRegistry.resolve()`'s return type: that type is shared
+by all ten adapters and must not grow for the sake of one paid provider. The three tool handlers
+instead read `budgetStore.getUsage('nansen', dayBucketMs(Date.now()))` with a **separate** SQLite
+SELECT after `registry.resolve()` has returned — purely for display, never part of the gate decision
+(which has already happened inside `nansen.fetch()`, §3.2). `BudgetStore` is injected into those
+three handlers the same way `registry` is. Both degradation paths — no injected store, or a store
+that throws — resolve to `undefined`: visibility must never turn an otherwise successful call into
+an error.
+
+#### 5.1.3 The two registry-backed tools (TASK-006) — free
 
 ```jsonc
-// onchain_list_chains — discovery, НОЛЬ сетевых вызовов (R-52b)
+// onchain_list_chains — discovery, ZERO network calls (R-52b)
 // {
-//   query?: string (.max(64)),      // подстрока по slug / name / aliases
+//   query?: string (.max(64)),      // substring over slug / name / aliases
 //   family?: "evm"|"svm"|"move"|"cosmos"|"utxo"|"other",
-//   capability?: string (.max(64)), // вернуть только сети, где эта capability реально покрыта
-//   minTvlUsd?: number,             // фильтр по tvlUsdAtRegistrySync — заведомо устаревшему
+//   capability?: string (.max(64)), // keep only chains where this capability is actually covered
+//   minTvlUsd?: number,             // filter on tvlUsdAtRegistrySync — knowingly stale
 //   limit?: number (default 50, .max(200)),
 // }
 // → {
 //     chains: Array<{ slug, caip2, name, family, nativeSymbol,
-//                     capabilities: string[],           // покрытые на ЭТОЙ сети
-//                     tvlUsdAtRegistrySync: number|null, // НЕ ответ на вопрос «какой TVL»
-//                     deprecated: boolean }>,
-//     total: number,        // сколько подошло под фильтр ДО применения limit
-//     registrySyncedAt: number, // epoch-ms UTC — когда реестр синхронизировали
+//                     capabilities: string[],            // covered on THIS chain
+//                     tvlUsdAtRegistrySync: number|null  // NOT an answer to "what is the TVL"
+//                   }>,
+//     total: number,            // how many matched the filter BEFORE limit was applied
+//     registrySyncedAt: number, // epoch-ms UTC — when the registry was synced
 //   }
-// onchain_chain_tvl — TVL СЕТИ (не протокола), DeFiLlama-backed, keyless
+// onchain_chain_tvl — TVL of a CHAIN (not a protocol), DeFiLlama-backed, keyless
 // { chain: ChainInput }
 // → { chain, name, tvlUsd, source: "defillama", fetchedAt }
 // Capability: chain.tvl
 ```
 
-**Почему `onchain_chain_tvl` — отдельный инструмент, а не параметр `onchain_protocol_tvl`
-(R-53b).** Сеть и протокол — разные сущности с разными источниками (`/v2/chains` против
-`/protocol/{slug}`) и разными выходными контрактами: у протокола есть `totalTvlUsd` поверх всех
-сетей, у сети такого понятия нет. Склейка их в один инструмент дала бы параметр, меняющий смысл
-всех остальных полей, — это худшая форма перегрузки контракта. Форма результата следует прецеденту
-`ProtocolTvlResult`: `tvlUsd: number` + отказ на non-finite/отрицательном значении **до** записи в
-кеш (R-53c) — та же защита, что `defillama.normalize()` уже реализует.
+Deprecated chains are absent from the listing and from every coverage answer (§4.2.3), so a row in
+this payload is by construction a chain that still exists.
 
-**Почему `total` и дефолтный `limit` обязательны (R-52c).** Без них `onchain_list_chains({})`
-вывалил бы в контекст модели 458 строк — то есть инструмент, созданный чтобы **сэкономить**
-8.7k токенов схемы, тратил бы больше при первом же вызове. `total` сохраняет честность: агент
-видит, что список урезан, и может сузить фильтр вместо того, чтобы решить, что сетей всего 50.
+**Why `onchain_chain_tvl` is a separate tool and not a parameter of `onchain_protocol_tvl` (R-53b).**
+A chain and a protocol are different subjects with different sources (`/v2/chains` vs
+`/protocol/{slug}`) and different output contracts: a protocol has `totalTvlUsd` across all chains, a
+chain has no such notion. Merging them would introduce a parameter that changes the meaning of every
+other field — the worst form of contract overloading. The result shape follows the `ProtocolTvlResult`
+precedent: `tvlUsd: number`, with non-finite or negative values refused **before** the cache is
+written (R-53c) — the same protection `defillama.normalize()` already implements.
 
-**Контракт параметра `chain` (R-50, все 9 chain-принимающих инструментов):**
+**Why `total` and a default `limit` are mandatory (R-52c).** Without them `onchain_list_chains({})`
+would dump 458 rows into the model's context — a tool created to **save** 8.7k tokens of schema
+would spend more than that on its first call. `total` keeps it honest: the agent can see the list was
+truncated and narrow the filter, instead of concluding there are only 50 chains.
+
+**The `chain` parameter contract (R-50), shared by all eight chain-taking tools:**
 
 ```ts
-// БЫЛО (в 7 файлах): chain: z.enum(['ethereum', 'solana'])
-// СТАЛО (единый импорт, ноль литералов сетей в mcp-server):
-chain: ChainInputSchema, // §3.2 — принимает slug | alias | caip2, отдаёт canonical caip2
+// One shared import; zero chain literals anywhere in mcp-server:
+chain: ChainInputSchema, // §3.2 — accepts slug | alias | caip2, resolves to the canonical slug
 ```
 
-- **Стоимость схемы:** ~5 токенов на параметр вместо ~1249. При 458 сетях закрытый енум стоил бы
-  **≈8.7k токенов в каждом запросе к модели** (измерено, TASK §0) — это и есть причина решения
-  владельца §1.3.1, а не эстетика.
-- **Ошибка неизвестной сети (R-50c)** — tool-error, ноль сетевых вызовов, ноль кредитов:
+- **Schema cost:** ~5 tokens per parameter instead of ~1249. Across the seven tools that carried the
+  closed enum, 458 chains would have cost **≈8.7k tokens in every single request to the model**
+  (measured, TASK §0). That is the reason for the owner's decision of 2026-07-26, not aesthetics. The
+  correctness the enum bought is not lost, only moved into the runtime resolve — which fails with a
+  "did you mean" list, zero network calls and zero credits, because a mistyped chain name is the
+  most common way an agent misses on a paid route.
+- **Validation here, canonicalization in the handler, deliberately not a `.transform()`.** The MCP
+  SDK renders every tool input schema to JSON Schema for `tools/list`, and a zod transform has no
+  JSON Schema representation — the SDK would answer `tools/list` with
+  `-32603 Transforms cannot be represented in JSON Schema`, taking down tool discovery, i.e. the
+  whole server. So the schema only validates, and `canonicalizeChain()` resolves one line into the
+  handler, still well ahead of `deriveArgsHash`.
+- **Unknown chain (R-50c)** — a tool error, zero network calls, zero credits:
 
   ```
-  unknown chain 'beara'. Did you mean: berachain?
-  Call onchain_list_chains to browse 458 chains.
+  unknown chain 'beara'. Did you mean: berachain? Call onchain_list_chains to browse 458 chains.
   ```
 
-- **Ошибка непокрытой пары (R-51c)** — отдельный тип, не сливается с «провайдер недоступен»:
+  The echoed input is truncated: this message travels back into the model's context, so reflecting
+  an arbitrarily long argument verbatim would hand a caller a way to put a megabyte of its own text
+  there.
+
+- **Uncovered pair (R-51c)** — a distinct type, never merged with "provider unavailable":
 
   ```
   capability 'smart-money.flows' is not available on chain 'berachain'.
-    Provider 'nansen' covers: ethereum, solana, base, …
-    Available on berachain instead: chain.tvl, token.price, token.metadata, pairs.new
+  Available on: arbitrum, avalanche, base, bnb, ethereum, … (+11 more).
+  Available on 'berachain' instead: chain.tvl, token.price, token.metadata, pairs.new.
   ```
 
-  Оба списка вычисляются из матрицы покрытия (§4.2.3), поэтому не могут разойтись с поведением.
+  Both lists are computed from the coverage matrix (§4.2.3), so they cannot drift from actual
+  behavior, and both are capped at ten entries plus an honest `+N more` — an error meant to save the
+  caller a wasted call must not itself dump 458 slugs into the context. When the "available instead"
+  list was not computed, it renders nothing: an empty list would read as "nothing works here", which
+  is a false statement that talks an agent out of calls that would have succeeded.
 
-**Обратная совместимость (R-59).** `"ethereum"` и `"solana"` остаются валидными **бессрочно** —
-как алиасы, а не как переходный режим. Форма ответов не меняется. Единственное наблюдаемое
-следствие — разовая холодная инвалидация кеша (§4.2.2), объявленная в changelog.
+**Backward compatibility (R-59).** `"ethereum"` and `"solana"` remain valid **indefinitely** — as
+aliases, not as a transitional mode. Response shapes do not change: tools still answer
+`chain: "ethereum"`, the canonical slug. Cache entries were not invalidated (§4.2.2).
 
-### 5.2. Внутренние интерфейсы
+### 5.2. Internal interfaces
 
 ```ts
-// packages/core — публичный API пакета (реэкспорт из src/index.ts)
+// packages/core — the package's public API (re-exported from src/index.ts)
 export {
   ChainSchema,
   TokenSchema,
@@ -225,49 +248,60 @@ export { routes, adapterRegistrations } from './providers.config.js';
 export { safeFetch, assertAllowedHost, throttle };
 export { getCacheStats } from './cache/stats.js';
 
-// M2 (TASK-005, minor M-1 review — этот блок раньше не обновлялся): три новых canonical-типа +
-// единственная публично экспортируемая фабрика nansen (уже budget-gated внутри, §3.2 OQ-2 —
-// НЕТ отдельного "сырого" экспорта) + BudgetStore-интерфейс/фабрика (тот же паттерн, что
-// createCacheStore/CacheStore).
+// M2 (TASK-005): three new canonical types + the only publicly exported nansen factory (already
+// budget-gated inside, §3.2 — there is NO separate "raw" export) + the BudgetStore
+// interface/factory, the same pattern as createCacheStore/CacheStore.
 export { SmartMoneyFlowSchema, type SmartMoneyFlow };
 export { EntityLabelSchema, type EntityLabel };
 export { TokenRiskScoreSchema, type TokenRiskScore };
 export { createNansenAdapter, type NansenAdapterDeps } from './adapters/nansen/index.js';
-export { type BudgetStore } from './cache/budget-store.js';
-export { createBudgetStore } from './cache/budget-store.js'; // фабрика, тот же принцип, что createCacheStore (§8)
+export { type BudgetStore, createBudgetStore } from './cache/budget-store.js';
 
-// packages/mcp-server/src/server.ts — расширенная фабрика (transport-agnostic, D3, не меняется):
+// TASK-006: the chain registry, the chain-input schema, the derived coverage matrix and the two
+// chain errors. `loadChainRegistry`/`createCoverage` are factories, never module singletons (§8),
+// so each consumer constructs and injects its own instance.
+export {
+  loadChainRegistry,
+  type ChainInfo,
+  type ChainFamily,
+  type ChainRegistry,
+} from './chain/registry.js';
+export { ChainInputSchema, createChainInputSchema, canonicalizeChain };
+export { createCoverage, type Coverage };
+export { UnknownChainError, ChainRegistryLoadError, CapabilityNotCoveredOnChainError };
+
+// packages/mcp-server/src/server.ts — the server factory (transport-agnostic, D3):
 export function createServer(deps: {
   env: Env;
   version: string;
-  registry?: CapabilityRegistry; // injectable для тестов (§3.2)
-  budgetStore?: BudgetStore; // M2 — injectable тем же способом, что registry; используется 3 новыми
-  // tool-хендлерами ТОЛЬКО для read-only `_meta.budget` (§5.1.2) — сам gate уже внутри nansen-адаптера
+  registry?: CapabilityRegistry; // injectable for tests (§3.2)
+  budgetStore?: BudgetStore; // injected the same way as registry; used by the three paid tool
+  // handlers ONLY for the read-only `_meta.budget` (§5.1.2) — the gate itself lives in the nansen adapter
 }): McpServer;
 ```
 
-`registry` по умолчанию — единственная реальная сборка из `providers.config.ts` + `adapterRegistrations`
-(строится один раз в `index.ts`, передаётся в `createServer`); тесты передают собственную реализацию
-того же публичного контракта `resolve()`, собранную из фикстур (не мокая транспорт/сеть глобально).
-`budgetStore` следует тому же правилу — по умолчанию реальный `SqliteBudgetStore` (M-2, §3.2),
-тесты инжектируют in-memory/fixture-реализацию того же интерфейса.
+`registry` defaults to the single real build from `providers.config.ts` + `adapterRegistrations`
+(constructed once in `index.ts` and passed into `createServer`); tests pass their own implementation
+of the same public `resolve()` contract, assembled from fixtures, rather than mocking transport or
+network globally. `budgetStore` follows the same rule — the real `SqliteBudgetStore` by default
+(§3.2), an in-memory/fixture implementation of the same interface in tests.
 
-### 5.3. Интеграции с внешними системами
+### 5.3. Integrations with external systems
 
-| Провайдер (`adapter.id`) | Base host(s)                                                                     | Auth                                                                                             | Транспорт                              | Статус в M1                                           |
-| ------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------- | ----------------------------------------------------- |
-| `coingecko`              | `api.coingecko.com`, `pro-api.coingecko.com`                                     | опц. `COINGECKO_API_KEY` (demo-контур) / `COINGECKO_PRO_API_KEY` (Pro-контур → pro-хост, v2.2.1) | REST                                   | live                                                  |
-| `dexscreener`            | `api.dexscreener.com`                                                            | none                                                                                             | REST                                   | live                                                  |
-| `defillama`              | `api.llama.fi`                                                                   | none                                                                                             | REST                                   | live                                                  |
-| `dune`                   | `api.dune.com`                                                                   | `DUNE_API_KEY` (free)                                                                            | REST (Query API)                       | **interface/stub, не вызывается** (F-2/minor)         |
-| `rpc-evm`                | `ethereum-rpc.publicnode.com` (primary), `eth.drpc.org` (fallback)               | none                                                                                             | JSON-RPC over HTTP                     | live                                                  |
-| `rpc-solana`             | `api.mainnet-beta.solana.com`                                                    | none                                                                                             | JSON-RPC over HTTP                     | live                                                  |
-| `dash-platform`          | evonode host(s) — TBD, backlog §11                                               | none                                                                                             | gRPC                                   | **interface + fixture-контракт, не вызывается** (F-3) |
-| `platform-explorer`      | `platform-explorer.pshenmic.dev`                                                 | none                                                                                             | REST                                   | live — единственный live Dash-источник M1             |
-| `pg-history`             | из `ONCHAIN_PG_URL` (не hostname-allowlist — DSN сам является контролем доступа) | DSN (не логируется)                                                                              | Postgres wire (SELECT-only)            | live, опционально (R-12)                              |
-| `nansen` (M2)            | `api.nansen.ai`                                                                  | `NANSEN_API_KEY` через заголовок `apiKey` (НЕ `Authorization: Bearer`)                           | REST (POST JSON, кроме `GET /account`) | live, платный — первый M2-адаптер (R-29)              |
+| Provider (`adapter.id`) | Base host(s)                                                                                               | Auth                                                                                     | Transport                               | Status                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------------------------- |
+| `coingecko`             | `api.coingecko.com`, `pro-api.coingecko.com`                                                               | optional `COINGECKO_API_KEY` (demo tier) / `COINGECKO_PRO_API_KEY` (Pro tier → pro host) | REST                                    | live                                         |
+| `dexscreener`           | `api.dexscreener.com`                                                                                      | none                                                                                     | REST                                    | live                                         |
+| `defillama`             | `api.llama.fi`                                                                                             | none                                                                                     | REST                                    | live                                         |
+| `dune`                  | `api.dune.com`                                                                                             | `DUNE_API_KEY` (free)                                                                    | REST (Query API)                        | **interface/config stub, never called**      |
+| `rpc-evm`               | the chain's own curated `rpcHosts` (§4.1) — for `ethereum`, `ethereum-rpc.publicnode.com` + `eth.drpc.org` | none                                                                                     | JSON-RPC over HTTP                      | live                                         |
+| `rpc-solana`            | `api.mainnet-beta.solana.com`                                                                              | none                                                                                     | JSON-RPC over HTTP                      | live                                         |
+| `dash-platform`         | evonode host(s) — TBD, backlog §11                                                                         | none                                                                                     | gRPC                                    | **interface + fixture contract, not called** |
+| `platform-explorer`     | `platform-explorer.pshenmic.dev`                                                                           | none                                                                                     | REST                                    | live — the only live Dash source             |
+| `pg-history`            | from `ONCHAIN_PG_URL` (no hostname allowlist — the DSN is the access control)                              | DSN (never logged)                                                                       | Postgres wire (SELECT-only)             | live, optional (R-12)                        |
+| `nansen`                | `api.nansen.ai`                                                                                            | `NANSEN_API_KEY` via the `apiKey` header (NOT `Authorization: Bearer`)                   | REST (POST JSON, except `GET /account`) | live, paid (R-29)                            |
 
-Каждая строка — источник `hosts`-allowlist SSRF-гейта для **своего** адаптера (§3.2, §7); `dune` и
-`dash-platform` регистрируют `hosts`/DSN-конфигурацию, но не совершают исходящих вызовов в M1.
-`nansen` — десятая строка (M2, TASK-005) — единственный платный, бюджет-гейтуемый адаптер реестра;
-`NANSEN_API_KEY` подчиняется тому же секретному контракту, что 5 ключей M1 (§7.2 ниже).
+Each row is the source of the `hosts` SSRF allowlist for **its own** adapter (§3.2, §7); `dune` and
+`dash-platform` register `hosts`/DSN configuration but make no outbound calls. `nansen` is the tenth
+row and the only paid, budget-gated adapter in the registry; `NANSEN_API_KEY` obeys the same secret
+contract as the five M1 keys (§7.2).

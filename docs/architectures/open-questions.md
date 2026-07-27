@@ -1,166 +1,191 @@
-# 11. Открытые вопросы
+# 11. Open questions
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-Блокирующих для старта Planning-фазы нет — интерфейсные контракты (типы, `ProviderAdapter`,
-Registry, cache DDL, tool-схемы) решены и не зависят от пунктов ниже. Зафиксированы как
-**неблокирующие**, требующие live-пробника/решения до соответствующей атомарной Dev-задачи
-(vendor-drift дисциплина, ADR-001):
+Two parts. **Open** — items that still need a decision or a live probe before the task that depends
+on them; none of them blocks the interface contracts (canonical types, `ProviderAdapter`, registry,
+cache DDL, tool schemas). **Resolved** — settled items, kept with the reason that settled them, so
+that a closed question is not reopened from scratch.
 
-- **DAPI живой gRPC-транспорт — backlog, не блокирует M1 (F-3):** `dash-platform` — interface +
-  fixture-контракт only (§3.2); живой транспорт (evonode host, `@grpc/grpc-js`+`@grpc/proto-loader`,
-  вендоринг `.proto`, канал-level `assertAllowedHost`) — отдельная, не атомарная M1, задача бэклога.
-  `platform-explorer` несёт 100% фактического Dash-трафика в M1 (R-9/R-10/R-11 удовлетворены через
-  реальный, не симулированный fallback-путь, §3.2).
-- **Второй keyless Solana RPC-эндпоинт (fallback):** не найден в M1 — `rpc-solana` стартует с
-  единственным подтверждённым хостом (`api.mainnet-beta.solana.com`), retry без hot-swap; нужен
-  отдельный живой пробник второго кандидата перед добавлением в `hosts`/`adapterIds`.
-- **Dune `token.holders` — точный query id/SQL:** авторится в Development на M2, вместе с
-  `onchain_token_risk` — первым реальным потребителем способности (см. также R-8 ниже).
-- **Dune R-8 — сужение scope, не блокирует (F-2/minor):** M1 поставляет `dune` как
-  interface/config-stub (без `fetch`/`normalize`/фикстуры/теста) — ýже буквальной acceptance R-8 в
-  TASK.md («contract-тест на фикстуре»). Одобрено ревью архитектуры; Planner принимает как
-  обновлённый scope или эскалирует к Analyst для формальной правки RTM.
-- **DexScreener endpoint для `pairs.new`/`pool.info` — RESOLVED (task 003-4):**
-  `GET /latest/dex/search?q=<NATIVE_QUERY>` (`ETH`/`SOL`), подтверждено живым пробником 2026-07-22 +
-  фикстурами; ответ — объект `{schemaVersion, pairs}`, не top-level массив (shape-trap,
-  зафиксирован регрессионным тестом).
-- **Лицензия `dashpay/platform`** (для вендоринга `.proto`, когда backlog-задача живого gRPC
-  landится) — проверить `LICENSE`-файл репозитория в Development перед копированием IDL (ожидание:
-  permissive). Остаётся открытым — не проверялось.
-- **`ONCHAIN_PG_URL` zod-валидация — RESOLVED (task 003-6):** `z.string().url()` эмпирически
-  подтверждён на реалистичной Supabase-строке (percent-encoded спецсимвол в пароле + query-string);
-  fallback не понадобился.
-- **ERC-20/SPL-балансы** — явно вне M1 (§3.2); backlog work-item для M1.5/M2, схема `Balance` уже
-  готова принять их без миграции.
-- **`pnpm -r build`/`test`-топология — RESOLVED (task 003-5):** подтверждено порядком вывода
-  живого `pnpm -r build` (core перед mcp-server), не только предположение о default-поведении pnpm.
-- **M2-дефолты, зафиксированные как НЕ баги M1 (адверсариальные циклы, один компактный пункт, не
-  блокирует M1):** singleflight/dedup конкурентных промахов на один и тот же `(provider,
-capability, argsHash)` с учётом будущего budget-guard (M2, ADR-001 §Revisit — **реализовано ниже,
-  R-39**); `safeFetch`'s Content-Length-кап не покрывает chunked/no-Content-Length ответы — нужен
-  потоковый byte-counter (§3.2, R-47, остаётся оппортунистическим); `rpc-solana` не парсит точный
-  lamport-баланс выше `Number.MAX_SAFE_INTEGER` (~9.007M SOL, вендорное ограничение JSON-числа,
-  §3.2, R-47, остаётся оппортунистическим).
+## Open
 
-## M2 (TASK-005 `m2-alpha-paid`) — OQ-1…OQ-5, RESOLVED в этой архитектуре
+### DAPI live gRPC transport — backlog
 
-- **OQ-1 — формула потолка бакета: RESOLVED — ДВА раздельных условия, не один `min()`.**
-  Вендорский лимит — **anchor-relative**: `snapshot.usageAtObserve` (расход, уже учтённый в
-  `creditsRemainingAtObserve` на момент resync'а, читается тем же логическим шагом, что и
-  `/account`) вычитается из бакет-суммарного `usage.credits_used(bucket)`, и только эта разница
-  (`spentSinceAnchor`) сравнивается с `creditsRemainingAtObserve`. Self-imposed
-  `NANSEN_DAILY_CREDIT_CAP` — по-прежнему **bucket-relative** (сравнивается с полным `usage`
-  бакета напрямую, без якоря — это дневной потолок собственного pacing'а, а не вендорский остаток).
-  **Оба условия обязательны одновременно; схлопывать их в один `min()` в СЫРОМ виде НЕЛЬЗЯ**
-  (корректное схлопывание существует ровно одно — сначала перебазировать вендорский член:
-  `effectiveCeiling = min(usageAtObserve + creditsRemainingAtObserve, CAP)`, см. §3.2) — первая версия
-  этой резолюции делала именно это и повторно вычитала уже учтённый расход на каждом mid-bucket
-  resync'е (unreconciled-триггер, R-38), давая phantom lockout вместо защиты от него — найдено на
-  ревью и исправлено; полная формула + числовой пример — system-architecture.md §3.2. Resync
-  триггерится cold-start'ом (нет снимка/снимок из прошлого day-бакета) и `unreconciled`-флагом
-  (R-38/UC-6), не на каждый вызов (§3.2 «Account-state»). День-бакет — **собственный
-  pacing-инструмент** движка (R-36), не
-  предположение о вендорском cadence сброса, которое пробник не подтверждает.
-- **OQ-2 — размещение budget-gate: RESOLVED.** Ни `CapabilityRegistry.resolve()` (был бы Nansen-
-  специфичный код внутри универсального компонента), ни MCP tool-хендлер (ломает обязательный
-  порядок «cache-miss до gate», R-37/UC-5). Гейт — внутренний приватный слой реализации `fetch()`
-  самого `nansen`-адаптера (`adapters/nansen/index.ts`), на уже существующем шве, которым
-  `CapabilityRegistry.resolve()` вызывает `adapter.fetch()`. Небайпассируемость — структурная:
-  единственная публично экспортируемая фабрика пакета для nansen — `createNansenAdapter()`.
-  **Уточнение (vdd-multi цикл 4, G-3):** негейтуемый путь всё же существует — за ЯВНЫМ опт-ином
-  `__ungatedForTestsOnly: true` при опущенном `budgetStore` (эскейп-хетч для изолированных
-  HTTP-контрактных тестов). Одного флага достаточно: `fetchImpl` падает на реальный глобальный
-  `fetch`. Прод его никогда не ставит (`mcp-server` всегда передаёт `budgetStore`), но гарантия
-  формулируется как «один явный флаг», а не «негейтуемого варианта нет» — денежная защита не должна
-  описываться сильнее, чем её обеспечивает код. Детали — system-architecture.md §3.2.
-- **OQ-3 — chain-scope: RESOLVED — `ethereum`+`solana`, то же подмножество, что M1.** Живая
-  эвиденция показала, что три релевантных Nansen per-endpoint энумератора (`SmartMoneyChain` — 17,
-  `TGMHoldersChain`/`TGMChain` — по 24) **не идентичны друг другу**, и что «~32 сети» пробника —
-  другая, вне-скоупа поверхность (официальный MCP-сервер). Расширение до более широкого
-  Nansen-специфичного списка сетей — задокументированный backlog-кандидат ниже, не в M2.
-- **OQ-4 — дефолт эскалации `onchain_entity_label` на Pro: RESOLVED — НЕ поднимается
-  автоматически, `exhaustive` остаётся explicit opt-in независимо от плана.** Обе цены
-  (`/profiler/address/labels`=100cr, `/profiler/address/premium-labels`=500cr) теперь статически
-  известны, но автоматическое повышение дефолта на Pro сделало бы поведение tool'а зависящим от
-  недетерминированного внешнего состояния (текущий план аккаунта) без явного намерения вызывающего
-  агента — тот же принцип, что уже применён к rate-limit/TTL (конфиг, не скрытая эвристика).
-  Поднять дефолт в будущем — тривиальная правка (один флаг), не архитектурное решение сейчас.
-- **OQ-5 — самостоятельный env-потолок: RESOLVED — ДА, `NANSEN_DAILY_CREDIT_CAP`.**
-  Сужает (никогда не расширяет) live-derived потолок — решение владельца TASK.md §1 п.1 не
-  нарушается. `EnvSchema`-паттерн (`emptyAsUndefined`, D10) — тот же, что 6 остальных ключей.
-  **Обновлено 2026-07-25 (Q-2):** ключ перестал быть просто «опциональным» — у него ТРИ состояния.
-  Не задан → потолок выводится движком (`max(30, 25% от баланса на НАЧАЛО суточного бакета)`,
-  фиксируется на бакет); целое положительное → явный потолок оператора; `off` → самоограничение
-  выключено (доQ-2-поведение). Защита работает из коробки, `0` остаётся невалидным намеренно.
-  Вывод считается от якоря `usageAtObserve + credits_remaining`, а не от живого остатка — иначе
-  перезапуск сервера среди дня пересчитывал потолок от ПОСЛЕ-расходного баланса и запирал платный
-  слой до конца UTC-суток (vdd-multi цикл 4, L-2).
+`dash-platform` is interface + fixture contract only (§3.2). The live transport (evonode host,
+`@grpc/grpc-js` + `@grpc/proto-loader`, vendored `.proto`, channel-level `assertAllowedHost`) is a
+separate, non-atomic backlog task. `platform-explorer` carries 100% of actual Dash traffic —
+R-9/R-10/R-11 are satisfied through a real, not simulated, fallback path (§3.2).
 
-**Backlog-кандидат, НЕ блокирующий M2 (OQ-3 продолжение):** более широкий Nansen-специфичный
-chain-scope для одной или нескольких из трёх M2-способностей — требует отдельного живого пробника
-**на каждую способность** (энумераторы не совпадают) и явного продуктового запроса, которого exit-
-критерии ROADMAP §M2 не формулируют.
+### A second keyless Solana RPC endpoint
 
----
+Not found. `rpc-solana` runs with a single confirmed host (`api.mainnet-beta.solana.com`) and
+retries without hot-swap. A second candidate needs its own live probe before it enters
+`hosts`/`adapterIds`.
 
-## M3 — OQ-M3-1: каким интерфейсом n8n вызывает способности движка
+### `dashpay/platform` license
 
-**Статус: ОТКРЫТ.** Порождён решением владельца 2026-07-25 (автономный контур = n8n + Postgres,
-ADR-001 D8/D9-дополнения). Решение сняло противоречие про «поглощение снапшоттера», но открыло
-следствие, которого раньше не было: **если расписание живёт в n8n, а канонические способности — в
-движке, между ними нужен транспорт.**
+The repository's `LICENSE` file must be checked before any `.proto` is copied, i.e. when the live
+gRPC backlog task lands. The expectation is permissive; nobody has verified it.
 
-Сейчас транспорта нет. MCP-сервер — **stdio-only** (решение D3, «локальный stdio под Claude Code»),
-а stdio по сети не вызывается. Снапшоттер обходит это тем, что ходит в DAPI напрямую, минуя движок
-— на диаграмме это отдельное ребро «независимый вызов n8n, не через движок». Для M3 так уже не
-получится: правила должны считаться на **канонических** данных, с budget-guard и кешем, то есть
-именно через движок. Иначе n8n станет вторым, параллельным клиентом провайдеров — с собственной
-нормализацией и без учёта кредитов, что сводит на нет весь M2.
+### ERC-20 / SPL balances
 
-Варианты (не выбран ни один):
+Deliberately out of scope (§3.2) — a backlog work item. The `Balance` schema already accepts them
+without a migration.
 
-1. **Поднять Streamable HTTP-транспорт раньше срока** (сейчас он в M6). Транспортная абстракция под
-   это уже заложена в D3. Даёт n8n нормальный HTTP-вызов способностей. Цена — публичная поверхность
-   и связанные с ней auth/CORS/порт, которые M6 планировал решать отдельным ADR.
-2. **CLI-режим one-shot**: n8n дёргает `Execute Command` → процесс движка выполняет одну способность
-   и завершается. Никакой сетевой поверхности, весь budget-guard и кеш работают как есть (`DATA_DIR`
-   общий). Цена — старт процесса на каждый вызов и то, что n8n должен жить на той же машине.
-3. **n8n пишет задание в Postgres, движок его забирает.** Инвертирует зависимость, но возвращает
-   нас к необходимости always-on процесса движка — то есть противоречит самому решению.
+### Opportunistic hardening
 
-Вариант 2 выглядит наименее инвазивным для M3 и не тратит решения, зарезервированные за M6; вариант
-1 — правильный, если движок в принципе должен быть сетевым сервисом. **Решается ADR'ом на старте M3**
-— это первый вопрос, который упрётся в реализацию, а не деталь.
+Two known limits. Neither blocks anything; both are cheap to close next time the code is touched.
 
----
+- `safeFetch`'s Content-Length cap does not cover chunked / no-Content-Length responses — that
+  needs a streaming byte counter (§3.2, R-47).
+- `rpc-solana` does not parse exact lamport balances above `Number.MAX_SAFE_INTEGER` (~9.007M SOL)
+  — a vendor JSON-number limitation (§3.2, R-47).
 
-## TASK-006 (`universal-chain-registry`) — OQ-1…OQ-5
+### OQ-6 — who runs `sync-chain-registry.ts`, and how often
 
-Два форка, определявших контракт инструментов, владелец закрыл **до** архитектуры (TASK §1.3), и
-эта архитектура их не пересматривает: (1) `chain` — открытая строка + `onchain_list_chains`, не
-`z.enum`; (2) непокрытые пары — матрица покрытия + мягкая деградация. Ниже — то, что осталось.
+§4.2.1 deliberately makes registry freshness the **operator's** duty rather than the runtime's, for
+the sake of the offline gate and control over the security surface. The flip side is stated
+plainly: the registry goes stale exactly as fast as people forget about it, and the first symptom
+is "no such chain" — a message that looks like missing support rather than stale data.
 
-| ID       | Вопрос                                             | Статус                                        | Решение / дефолт в этой архитектуре                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| -------- | -------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **OQ-1** | Какие не-EVM семейства адресов получают валидаторы | **ПЕРЕСМОТРЕН 2026-07-27 — триггер сработал** | Валидаторы по-прежнему только у `evm` + `svm`. Изменилось следствие: **платные способности теперь ОТКАЗЫВАЮТ на семействе без валидатора** (`hasAddressValidator`, `chain/address.ts`). Исходное решение «приём без канонизации, цена — расщепление кеша» было верным ровно до того момента, который оно само называло триггером: TASK-006 привела платного Nansen на 7 сетей семейства `other`, и там одновременно (а) `isValidAddress` принимает любую строку до 128 символов, то есть мусорный `tokenAddress` резервирует кредиты, (б) два регистровых варианта одного адреса — две платные записи кеша, (в) правило регистра DF-1 для этих сетей неизвестно. Цена решения названа в коде и в отчёте: `entity.labels` 25→18, `token.risk` 24→18, `smart-money.flows` 17→16. Возврат сети — после написания валидатора её семейства, а не после смягчения правила. Подробности — [C-1 в отчёте цикла 6](../reviews/task-006-vdd-multi-cycle6.md). |
-| **OQ-2** | Критерий включения сети в `rpcHosts`               | **RESOLVED (дефолт, подтвердить владельцу)**  | Топ-N по TVL + ручная проверка живости, автозаполнение запрещено (§7.2.1). Обоснование порога — топ-50 = 99.1% TVL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **OQ-3** | Приемлема ли разовая холодная инвалидация кеша     | **RESOLVED — и НЕ НАСТУПИЛА**                 | Владелец подтвердил приемлемость 2026-07-26, dual-read снят как YAGNI. **Реализация показала, что инвалидация не происходит вовсе** (задача 006-6): каноническим значением стал слаг, а до TASK-006 инструменты принимали только `ethereum`/`solana`, которые и **есть** их слаги, поэтому `args_hash` существующих записей не изменился. Заложенная в план холодная сессия не понадобилась.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **OQ-4** | Исторические ряды `chain.tvl`                      | **RESOLVED**                                  | Только текущее значение (TASK §4 п.5). Ряды — отдельная задача.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **OQ-5** | Порядок относительно M3                            | **RESOLVED (дефолт)**                         | TASK-006 целиком **перед** M3: сигналы M3 будут строиться поверх chain-слоя, и делать их до универсализации значит переделывать дважды.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+Options: (a) nothing, a manual run when needed; (b) a CI job that opens a PR with the registry
+diff — keeps human review of `rpcHosts` and removes the remembering; (c) surface registry age
+(`registrySyncedAt`, already returned by `onchain_list_chains`, §5.1.3) as a stderr warning at
+startup once it crosses a threshold. (b) + (c) looks right, but this is a **process** decision, not
+an architectural one — it changes nothing in the design.
 
-**Новый вопрос, порождённый этой архитектурой:**
+### OQ-M3-1 — the interface n8n uses to call engine capabilities
 
-| ID       | Вопрос                                                          | Статус                   |
-| -------- | --------------------------------------------------------------- | ------------------------ |
-| **OQ-6** | Кто и с какой периодичностью запускает `sync-chain-registry.ts` | **ОТКРЫТ, не блокирует** |
+The snapshotter stays on n8n + Postgres permanently (owner decision 2026-07-25, ADR-001 D8/D9
+addenda). That settles ownership and opens a consequence: **if the schedule lives in n8n and the
+canonical capabilities live in the engine, something has to carry calls between them.**
 
-§4.2.1 сознательно делает свежесть реестра обязанностью **оператора**, а не рантайма — ради
-оффлайн-гейта и контроля security-поверхности. Обратная сторона названа прямо: реестр будет
-устаревать ровно настолько, насколько редко о нём вспоминают, и первым симптомом станет
-«новой сети нет» — сообщение, которое выглядит как отсутствие поддержки, а не как несвежие данные.
-Варианты: (а) ничего, ручной прогон по необходимости; (б) CI-джоб, открывающий PR с диффом
-реестра — сохраняет человеческое ревью и снимает «вспомнить»; (в) добавить возраст реестра
-(`registrySyncedAt`, уже есть в выдаче `onchain_list_chains`, §5.1.3) в stderr-предупреждение при
-старте после порога. Вариант (б)+(в) выглядит правильным, но это **процессное** решение, а не
-архитектурное — оно ничего не меняет в дизайне и потому не гейтит Planning.
+There is no transport today. The MCP server is **stdio-only** (D3, "local stdio under Claude
+Code"), and stdio is not callable over a network. The snapshotter sidesteps this by calling DAPI
+directly, bypassing the engine — on the diagram that is a separate edge, "n8n's own call, not
+through the engine". M3 cannot repeat that: rules must be computed on **canonical** data, with the
+budget gate and the cache, which means through the engine. Otherwise n8n becomes a second, parallel
+provider client with its own normalization and no credit accounting, which throws away all of M2.
+
+Options (none chosen):
+
+1. **Bring the Streamable HTTP transport forward** (currently M6). The transport abstraction for it
+   is already in D3, and it gives n8n a normal HTTP call. The price is a public surface plus the
+   auth/CORS/port questions M6 planned to settle in an ADR of its own.
+2. **One-shot CLI mode:** n8n triggers `Execute Command`, the engine process performs one
+   capability and exits. No network surface; the budget gate and cache work as-is (shared
+   `DATA_DIR`). The price is a process start per call, and n8n has to live on the same machine.
+3. **n8n writes a job into Postgres and the engine picks it up.** Inverts the dependency but brings
+   back an always-on engine process — which contradicts the decision itself.
+
+Option 2 is the least invasive for M3 and spends none of the decisions reserved for M6; option 1 is
+the correct one if the engine is meant to be a network service at all. **Settled by an ADR at M3
+kickoff** — this is the first question implementation will hit, not a detail.
+
+### Backlog candidate — a wider Nansen chain scope
+
+A broader Nansen-specific chain scope for one or more of the three paid capabilities. It requires a
+separate live probe **per capability** (the vendor's per-endpoint enumerators do not agree with each
+other) and an explicit product request, which the ROADMAP §M2 exit criteria do not state.
+
+## Resolved
+
+### M1 (TASK-003)
+
+| ID                              | Question                                  | Resolution and reason                                                                                                                                                                                                                                                              |
+| ------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DexScreener endpoint            | which call serves `pairs.new`/`pool.info` | `GET /latest/dex/search?q=<NATIVE_QUERY>` (`ETH`/`SOL`), confirmed by a live probe 2026-07-22 plus fixtures. The response is an object `{schemaVersion, pairs}`, not a top-level array — a shape trap, pinned by a regression test.                                                |
+| `ONCHAIN_PG_URL` validation     | is `z.string().url()` enough              | Yes. Verified empirically on a realistic Supabase string (percent-encoded special character in the password plus a query string); the planned fallback was not needed.                                                                                                             |
+| `pnpm -r build`/`test` topology | does `core` build before `mcp-server`     | Yes — confirmed by the output order of a live `pnpm -r build`, not assumed from pnpm's documented default (§6.4).                                                                                                                                                                  |
+| Dune R-8 scope                  | how much of R-8 ships                     | `dune` ships as an interface/config stub — no `fetch`/`normalize`, no fixture, no contract test — narrower than R-8's literal acceptance wording. `token.risk` has been served by Nansen since M2, so the exact `token.holders` query id / SQL has no consumer to be authored for. |
+
+### M2 (TASK-005 `m2-alpha-paid`) — OQ-1…OQ-5
+
+**OQ-1 — the bucket ceiling formula: two separate conditions, not one `min()`.** The vendor limit is
+**anchor-relative**: `snapshot.usageAtObserve` (the spend already accounted for in
+`creditsRemainingAtObserve` at the moment of the resync, read in the same logical step as
+`/account`) is subtracted from the bucket-total `usage.credits_used(bucket)`, and only that
+difference (`spentSinceAnchor`) is compared against `creditsRemainingAtObserve`. The self-imposed
+`NANSEN_DAILY_CREDIT_CAP` stays **bucket-relative** — compared against the full bucket usage
+directly, with no anchor, because it is a daily ceiling on our own pacing, not a vendor remainder.
+
+Both conditions apply simultaneously, and they must not be collapsed into a **raw** `min()`. Exactly
+one correct collapse exists, and it rebases the vendor term first:
+`effectiveCeiling = min(usageAtObserve + creditsRemainingAtObserve, CAP)` (§3.2). A raw `min()`
+subtracts already-counted spend again on every mid-bucket resync (the `unreconciled` trigger, R-38)
+and produces a phantom lockout instead of protection against one. Full formula and a worked numeric
+example: system-architecture.md §3.2.
+
+Resync is triggered by cold start (no snapshot, or a snapshot from a previous day bucket) and by the
+`unreconciled` flag (R-38/UC-6) — not on every call (§3.2 "Account state"). The day bucket is the
+engine's **own** pacing instrument (R-36), not an assumption about the vendor's reset cadence, which
+no probe confirms.
+
+**OQ-2 — where the budget gate lives: inside the `nansen` adapter's `fetch()`.** Not
+`CapabilityRegistry.resolve()` (that would put Nansen-specific code inside a universal component)
+and not the MCP tool handler (that breaks the mandatory "cache miss before gate" order, R-37/UC-5).
+The gate is a private implementation layer of `adapters/nansen/index.ts`, sitting on the seam where
+`CapabilityRegistry.resolve()` already calls `adapter.fetch()`. Non-bypassability is structural: the
+package's only publicly exported nansen factory is `createNansenAdapter()`.
+
+One ungated path does exist, behind an **explicit** opt-in — `__ungatedForTestsOnly: true` with
+`budgetStore` omitted, an escape hatch for isolated HTTP contract tests. One flag is enough:
+`fetchImpl` falls back to the real global `fetch`. Production never sets it (`mcp-server` always
+passes a `budgetStore`), but the guarantee is phrased as "one explicit flag", not "no ungated
+variant exists" — a money guard must never be described as stronger than its code makes it. Details:
+system-architecture.md §3.2.
+
+**OQ-3 — chain scope: `ethereum` + `solana`, the same subset as M1.** Live evidence showed that the
+three relevant Nansen per-endpoint enumerators (`SmartMoneyChain` — 17, `TGMHoldersChain`/`TGMChain`
+— 24 each) are **not identical to one another**, and that the "~32 chains" seen during probing is a
+different, out-of-scope surface (the official Nansen MCP server). Widening is the backlog candidate
+above.
+
+**OQ-4 — the `onchain_entity_label` escalation default on Pro: not raised automatically.**
+`exhaustive` stays an explicit opt-in regardless of plan. Both prices
+(`/profiler/address/labels` = 100 cr, `/profiler/address/premium-labels` = 500 cr) are statically
+known, but raising the default on Pro would make the tool's behaviour depend on non-deterministic
+external state (the current account plan) without the calling agent's intent — the same principle
+already applied to rate limits and TTLs: configuration, not a hidden heuristic. Raising the default
+later is a one-flag edit, not an architectural decision.
+
+**OQ-5 — a self-imposed env ceiling: yes, `NANSEN_DAILY_CREDIT_CAP`.** It narrows, never widens, the
+live-derived ceiling, so the owner's decision in TASK.md §1 item 1 stands. The `EnvSchema` pattern
+(`emptyAsUndefined`, D10) is the same as for the other six keys. The key has **three** states: unset
+→ the engine derives the ceiling (`max(30, 25% of the balance at the START of the day bucket)`,
+fixed for that bucket); a positive integer → an explicit operator ceiling; `off` → self-limiting
+disabled. Protection therefore works out of the box, and `0` remains invalid on purpose. The
+derivation is computed from the `usageAtObserve + credits_remaining` anchor rather than from the
+live remainder — otherwise a mid-day server restart recomputes the ceiling from a POST-spend balance
+and locks the paid layer out for the rest of the UTC day.
+
+### TASK-006 (`universal-chain-registry`) — OQ-1…OQ-5
+
+Two forks that define the tool contract were closed by the owner **before** this architecture
+(TASK §1.3), and it does not revisit them: (1) `chain` is an open string plus `onchain_list_chains`,
+not a `z.enum`; (2) uncovered pairs get the coverage matrix plus soft degradation.
+
+**OQ-1 — which non-EVM address families get validators: still only `evm` and `svm`, and paid
+capabilities now REFUSE on a family without a validator** (`hasAddressValidator`,
+`chain/address.ts`). The original decision — accept without canonicalization, price paid in cache
+splitting — was correct right up to the moment it had itself named as the trigger. TASK-006 brought paid
+Nansen to 7 chains of the `other` family, where three things hold at once: (a) `isValidAddress`
+accepts any string up to 128 characters, so a garbage `tokenAddress` reserves credits; (b) two case
+variants of one address are two paid cache entries; (c) the DF-1 case rule for those chains is
+unknown. The price is named in the code and in the report: `entity.labels` 25→18, `token.risk`
+24→18, `smart-money.flows` 17→16 chains. A chain comes back when someone writes its family's
+validator, not when the rule is relaxed.
+
+**OQ-2 — the criterion for putting a chain into `rpcHosts`:** top-N by TVL plus a manual liveness
+check; auto-fill is forbidden (§7.2.1). The threshold rationale: the top 50 chains hold 99.1% of TVL.
+
+**OQ-3 — is a one-off cold cache invalidation acceptable: yes, and it never happened.** Dual-read was
+dropped as YAGNI. The canonical value became the slug, and before TASK-006 the tools accepted exactly
+`ethereum`/`solana`, which **are** their own slugs — so `args_hash` of existing entries never
+changed. The cold session budgeted in the plan was not needed.
+
+**OQ-4 — historical `chain.tvl` series:** current value only (TASK §4 item 5). Series are a separate
+task.
+
+**OQ-5 — ordering relative to M3:** TASK-006 entirely **before** M3. M3's signals build on top of the
+chain layer, and building them before universalization means building them twice.

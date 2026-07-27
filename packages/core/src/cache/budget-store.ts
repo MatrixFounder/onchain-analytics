@@ -51,7 +51,7 @@ export interface BudgetStore {
    * a partial write — there never was one).
    *
    * `ceiling` is always the caller's already-computed `effectiveCeiling` (system-architecture.md
-   * §3.2 "Формула потолка бакета") — `BudgetStore` itself knows nothing about anchors/
+   * §3.2 "The bucket ceiling formula") — `BudgetStore` itself knows nothing about anchors/
    * `usageAtObserve`/`NansenAccountSnapshot`; it only ever compares two plain numbers.
    *
    * **`velocity`, when supplied, is checked and reserved IN THE SAME TRANSACTION** (SEC-1). That is

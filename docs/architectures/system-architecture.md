@@ -1,114 +1,117 @@
-# 3. Системная архитектура
+# 3. System architecture
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 3.1. Архитектурный стиль
+### 3.1. Architecture style
 
-**Стиль M1: два пакета в pnpm-монорепо** — `packages/core` (новый) + `packages/mcp-server`
-(существующий, M0). Внутри каждого пакета — простая модульная структура, без DI-контейнеров.
+**Two packages in a pnpm monorepo** — `packages/core` and `packages/mcp-server`. Inside each
+package a plain modular structure; no DI containers.
 
-**Решение по OQ-3 (packages/core split — предмет решения архитектора, TASK.md §7):** выбрана
-**ровно одна** дополнительная граница пакета (`packages/core`), а не полная D12-раскладка
-(`core`+`adapters`+`signals`+`cli` четырьмя пакетами).
+Exactly **one** additional package boundary is drawn (`packages/core`), not the full D12 layout
+(`core` + `adapters` + `signals` + `cli` as four packages).
 
-- **Почему не один пакет (не всё в `mcp-server`):** объём M1 — канонические типы, 9 адаптеров,
-  двухуровневый кеш, SSRF-гейт, rate-limiter, PG-клиент — это самостоятельный, тестируемый без
-  MCP-транспорта домен (все контрактные тесты D11 бьют по `normalize()`/`fetch()` напрямую, без
-  сервера). Смешивание его с MCP-обвязкой в одном пакете усложнило бы M2 (Nansen) и M3 (signals):
-  им обоим тоже нужен доступ к Registry/Cache/types, но не к MCP tool-регистрации.
-- **Почему не четыре пакета (`core`+`adapters`+`signals`+`cli` сразу):** M0 уже показал реальную
-  цену **каждого** нового workspace-пакета в этом toolchain (свой `tsconfig.json` +
-  `tsconfig.build.json` + `.prettierignore` из-за CWD-relative resolution — см.
-  `packages/mcp-server/.AGENTS.md`; TS strict + `noUncheckedIndexedAccess` дисциплина). D12 сам
-  говорит «старт минимальный, режем по швам по мере роста» — `signals`/`cli` не имеют кода до
-  M3/по потребности (R-27 anti-scope-creep). Адаптеры — не отдельный пакет, а модульная граница
-  **внутри** `packages/core` (`src/adapters/<id>/`): это уже «шов» D12 на уровне директорий —
-  вынести их в собственный pnpm-пакет в M2/M3 значит переместить директорию + добавить
-  `package.json`, не переписывать код (импорты внутри `core` уже идут через
-  `adapters/registry.ts`, а не напрямую между адаптерами).
-- **Дополнительный выигрыш:** `packages/core` не нуждается в tsup — это чистая библиотека без
-  `bin`, поэтому её `build` — простой `tsc -p tsconfig.build.json` (NodeNext эмит из коробки).
-  Это **обходит** баг tsup/rollup-plugin-dts (TS6/TS7 `baseUrl`-конфликт, см. M0 `.AGENTS.md`)
-  целиком, а не воспроизводит его во втором пакете — `core` проще собрать, чем `mcp-server`.
+- **Why not a single package (everything inside `mcp-server`).** Canonical types, the chain
+  registry, the adapters, the two-level cache, the SSRF gate, the rate limiter and the PG client
+  form a domain that is testable without the MCP transport — every D11 contract test hits
+  `normalize()`/`fetch()` directly, with no server in the loop. Fusing that domain with the MCP
+  wiring would have made the paid layer (M2) and signals (M3) harder: both need
+  Registry/Cache/types, neither needs MCP tool registration.
+- **Why not four packages up front.** M0 measured the real price of **each** new workspace package
+  in this toolchain: its own `tsconfig.json` + `tsconfig.build.json` + `.prettierignore`, because
+  resolution is CWD-relative (see `packages/mcp-server/.AGENTS.md`), on top of the TS strict +
+  `noUncheckedIndexedAccess` discipline. D12 itself says start minimal and cut along the seams as
+  the system grows: `signals`/`cli` have no code until M3 or until needed (R-27). Adapters are not
+  a separate package but a module boundary **inside** `packages/core` (`src/adapters/<id>/`) —
+  already a D12 seam at the directory level. Promoting them to their own pnpm package later means
+  moving a directory and adding a `package.json`, not rewriting code: imports inside `core` already
+  go through `adapters/registry.ts`, never directly between adapters.
+- **Extra payoff.** `packages/core` needs no tsup — it is a pure library with no `bin`, so its
+  `build` is a plain `tsc -p tsconfig.build.json` (NodeNext emit out of the box). That sidesteps
+  the tsup/rollup-plugin-dts bug (the TS6/TS7 `baseUrl` conflict recorded in the M0 `.AGENTS.md`)
+  instead of reproducing it in a second package: `core` is easier to build than `mcp-server`.
 
-**Обоснование стиля в целом:** YAGNI (architecture-design skill, «Simplicity Above All») —
-минимальная граница, которая делает M1 честным (тестируемым независимо от MCP) и не создаёт
-рефакторинг для M2/M3 slicing.
+The style is YAGNI applied to boundaries (architecture-design skill, "Simplicity Above All"): the
+minimum boundary that makes M1 honest — testable independently of MCP — without forcing a refactor
+for the M2/M3 slicing.
 
-### 3.2. Системные компоненты
+### 3.2. System components
 
-#### Компонент: `@onchain-intel/core` (НОВЫЙ, M1)
+#### Component: `@onchain-intel/core`
 
-- **Тип:** TypeScript library-пакет (без `bin`), потребляется `mcp-server` через
-  `workspace:*`-зависимость.
-- **Назначение:** канонические типы, chain/address normalization, Adapter + Capability Registry,
-  девять адаптеров (два — `dash-platform` и `dune` — interface/fixture-only в M1, см. ниже),
-  двухуровневый кеш, SSRF-гейт, rate-limiter, read-only PG-клиент (`pg-history`-адаптер).
-- **Технологии:** TypeScript strict, zod, `better-sqlite3`, `lru-cache`, `ulid`, `@noble/hashes`
-  (EIP-55 keccak256 — единственная причина её появления: ADR-001 D5 явно требует EVM-checksum, не
-  просто lowercase; см. §4.1), `bs58` (Solana base58 decode/validate — не переизобретается вручную
-  ради корректности на security-границе валидации адреса), `pg` (read-only PG-клиент,
-  `pg-history`-адаптер). **`@grpc/grpc-js`+`@grpc/proto-loader` НЕ входят в M1** (были в v2 —
-  убраны в v2.1, F-3): `dash-platform` сужен до interface + fixture-контракта, живого gRPC-вызова
-  в M1 нет — см. §3.2 `dash-platform` ниже.
-  > Версии выше — реалистичные мажоры, **не** проверенные `pnpm add`-резолвом (в отличие от уже
-  > установленных M0-зависимостей в `mcp-server/package.json`); точные minor/patch фиксируются в
-  > Development при первом `pnpm add`, не изобретаются здесь (vendor-drift дисциплина).
+- **Type:** TypeScript library package (no `bin`), consumed by `mcp-server` through a
+  `workspace:*` dependency.
+- **Purpose:** canonical types, the chain registry, chain/address normalization, the Adapter +
+  Capability Registry, ten provider adapters (nine landed in M1 — two of them, `dash-platform` and
+  `dune`, interface/fixture-only — plus the paid `nansen` from M2), the two-level cache, the SSRF
+  gate, the rate limiter, the credit budget gate, and a read-only PG client (`pg-history` adapter).
+- **Technologies:** TypeScript strict, zod, `better-sqlite3`, `lru-cache`, `ulid`, `@noble/hashes`
+  (keccak256 for EIP-55 — its only reason for existing here: ADR-001 D5 requires an EVM checksum,
+  not just lowercase; §3.2.1), `bs58` (Solana base58 decode/validate — not hand-rolled, because
+  address validation is a security boundary), `pg` (the read-only client behind `pg-history`).
+  `@grpc/grpc-js` and `@grpc/proto-loader` are **not** dependencies: `dash-platform` is an
+  interface + fixture contract with no live transport (below).
 
-**Модуль: `src/types/*`** (D5, R-1/R-2)
+**Module: `src/types/*`** (D5, R-1/R-2)
 
-Канонические zod-схемы, единственный источник правды (используются и рантайм-валидацией, и
-tool-схемами через реэкспорт в `mcp-server`):
+Canonical zod schemas, the single source of truth — used both by runtime validation and by the MCP
+tool schemas (re-exported into `mcp-server`):
 
 ```ts
-// TASK-006 (R-50b): БЫЛО `z.enum(['ethereum','solana','dash'])` — закрытый литерал, который
-// приходилось править в пяти слоях ради каждой новой сети. СТАЛО: множество допустимых значений
-// живёт в реестре (§3.2 «Модуль src/chain/registry»), не в типе.
+// The set of accepted chain values lives in the registry (§3.2, "Module src/chain/registry"), not
+// in the type. A closed `z.enum(['ethereum','solana','dash'])` literal had to be edited in five
+// layers for every new chain (R-50b).
 //
-// ДВЕ схемы, а не одна — намеренно. Одна схема не может обслуживать и вход, и канонический выход:
-//   • на ВХОДЕ надо принять всё, что мог написать агент (`ethereum`, `berachain`, `eip155:1`);
-//   • на ВЫХОДЕ в canonical-типе обязан лежать УЖЕ разрешённый caip2 — иначе алиас просочится
-//     в тело канонического объекта, оттуда в ключ кеша, и мы получим две записи на один запрос
-//     (§4.2.2 — это денежный дефект на платных маршрутах, не косметика).
+// TWO schemas, deliberately. One schema cannot serve both the input and the canonical output:
+//   • on INPUT we must accept anything an agent might write (`ethereum`, `berachain`, `eip155:1`);
+//   • on OUTPUT the canonical type must already carry a RESOLVED value — otherwise an alias leaks
+//     into the canonical object, from there into the cache key, and one request yields two cache
+//     entries (§4.2.2 — a money defect on paid routes, not cosmetics).
 
-// Канонический вид — используется ВНУТРИ доменных типов. Ничего не резолвит: только проверяет,
-// что значение уже canonical и известно реестру.
-export const ChainSchema = z
-  .string()
-  .refine(isKnownCaip2, { message: 'chain must be a canonical CAIP-2 id known to the registry' })
-  .brand<'Caip2'>();
+// Canonical form — used INSIDE domain types. The canonical value is the chain's SLUG, not its
+// CAIP-2 id: R-59d forbids changing the shape of tool responses, and `onchain_get_token` has
+// always answered `chain: "ethereum"`. CAIP-2 remains the registry's primary key; the slug is 1:1
+// with it, unique, and never an alias — so the §4.2.2 requirement (no alias ever reaches a cache
+// key) is met either way.
+export const ChainSchema = z.string().min(1);
 export type Chain = z.infer<typeof ChainSchema>;
 
-// Входной вид — используется ТОЛЬКО в схемах MCP-инструментов (§5.1). Принимает slug/алиас/caip2,
-// отдаёт canonical. Неизвестная сеть → issue с кандидатами (R-50c), ноль сетевых вызовов.
-export const ChainInputSchema = z.string().min(1).transform(resolveChainOrIssue) as z.ZodType<
-  Chain,
-  z.ZodTypeDef,
-  string
->;
+// Input form — used ONLY in MCP tool schemas (§5.1). Accepts slug/alias/caip2. It VALIDATES and
+// does not transform: the MCP SDK renders every tool input schema to JSON Schema for `tools/list`,
+// and a zod transform has no JSON Schema representation, so a transforming schema makes the server
+// answer `tools/list` with `-32603` — taking down tool DISCOVERY, i.e. the whole server. An unknown
+// chain fails validation with a "did you mean" list (R-50c), at zero network calls and zero credits.
+export const ChainInputSchema = z
+  .string()
+  .min(1)
+  .max(MAX_CHAIN_INPUT_LENGTH)
+  .superRefine(assertKnownChain); // registry lookup, skipped entirely for over-length input
+
+// Canonicalization happens one line into each tool handler, still BEFORE the value reaches `args`
+// and therefore before `deriveArgsHash`.
+export function canonicalizeChain(raw: string, chains?: ChainRegistry): string; // → ChainInfo.slug
 
 export const TokenSchema = z
   .object({
     chain: ChainSchema,
-    address: z.string(), // нормализован: checksum EVM / base58 Solana
+    address: z.string(), // normalized: EVM checksum / Solana base58
     symbol: z.string(),
     name: z.string(),
     decimals: z.number().int().nonnegative().optional(),
     priceUsd: z.number().nonnegative().optional(),
     marketCapUsd: z.number().nonnegative().optional(),
-    source: z.string(), // id адаптера-источника
+    source: z.string(), // id of the source adapter
     fetchedAt: z.number().int(), // epoch-ms UTC
   })
   .strict();
 
 export const BalanceSchema = z
   .object({
-    assetType: z.enum(['native', 'token']), // M1 заполняет только 'native' — см. §4.1 ниже
+    assetType: z.enum(['native', 'token']), // M1 fills only 'native' — see the ERC-20/SPL decision
     symbol: z.string(),
     decimals: z.number().int().nonnegative(),
-    amountRaw: z.string(), // точное целое строкой (DB-SCHEMA §1.7 конвенция)
-    amountNum: z.number().optional(), // lossy-проекция
-    contractAddress: z.string().optional(), // заполняется, когда assetType === 'token'
+    amountRaw: z.string(), // exact integer as a string (DB-SCHEMA §1.7 convention)
+    amountNum: z.number().optional(), // lossy projection
+    contractAddress: z.string().optional(), // filled when assetType === 'token'
   })
   .strict();
 
@@ -138,8 +141,8 @@ export const PoolSchema = z
   })
   .strict();
 
-// Зарезервирован (R-1 требует существование типа), M1 не подключает ни одного потребляющего
-// tool — первый потребитель: будущий candlestick/chart-tool (M1.5+).
+// Reserved (R-1 requires the type to exist); no tool consumes it yet — the first consumer will be
+// a candlestick/chart tool (M1.5+).
 export const OhlcvSchema = z
   .object({
     chain: ChainSchema,
@@ -154,11 +157,12 @@ export const OhlcvSchema = z
   })
   .strict();
 
-// Персистентная форма D5-дополнения (snapshotter-режим) — согласована с DB-SCHEMA-CONCEPT §2,
-// но движок её не пишет и не начнёт (n8n пишет; поглощение отменено решением владельца 2026-07-25,
-// ADR-001 D8-дополнение) — тип существует как каноническая форма ЧТЕНИЯ той же таблицы (R-2/R-12).
-// Маппинг имён на persistence-границе (нужен на читающей стороне в M3): valueRaw↔value_raw, valueNum↔value_num
-// — остальные поля совпадают буквально (см. §4.1 Entity Snapshot).
+// Persistent form of the D5 addendum (snapshotter mode), aligned with DB-SCHEMA-CONCEPT §2. The
+// engine does not write it and will not: the snapshotter stays on n8n permanently (owner decision
+// 2026-07-25, ADR-001 D8 addendum). The type exists as the canonical form for READING that table
+// (R-2/R-12). Name mapping at the persistence boundary (needed on the reading side in M3):
+// valueRaw↔value_raw, valueNum↔value_num — every other field matches literally (§4.1, Entity
+// Snapshot).
 export const SnapshotSchema = z
   .object({
     metric: z.string(),
@@ -172,197 +176,206 @@ export const SnapshotSchema = z
   .strict();
 ```
 
-**Модуль: `src/chain/registry.ts` + `src/chain/registry.data.json` (НОВЫЙ, TASK-006, R-48/R-60)**
+**Module: `src/chain/registry.ts` + `src/chain/registry.data.json`** (TASK-006, R-48/R-60)
 
-Единственный источник фактов о сетях. Данные — отдельным `.json`, код — отдельным `.ts`: дифф
-реестра (сотни строк при каждой синхронизации) не должен смешиваться с диффом логики в ревью.
+The single source of facts about chains — **458** rows. Data lives in its own `.json`, code in its
+own `.ts`: a registry diff (hundreds of lines on every sync) must not be mixed with a logic diff in
+review.
 
 ```ts
 export interface ChainInfo {
-  caip2: string; // PK, напр. 'eip155:80094'
-  slug: string; // UNIQUE, напр. 'berachain'
+  caip2: string; // PK, e.g. 'eip155:80094'
+  slug: string; // UNIQUE, e.g. 'berachain'
   name: string;
   family: 'evm' | 'svm' | 'move' | 'cosmos' | 'utxo' | 'other';
-  aliases: readonly string[]; // включая legacy 'ethereum'/'solana' (R-59a)
+  aliases: readonly string[]; // including the legacy 'ethereum'/'solana' (R-59a)
   nativeSymbol: string | null;
-  vendors: Readonly<Record<string, string | null>>; // ИМЕНОВАНИЕ, не покрытие (§4.1 rule 4)
-  rpcHosts: readonly string[] | null; // курируемый SSRF-allowlist (§7.2)
-  tvlUsdAtSync: number | null; // заведомо устаревший, только для list_chains
+  vendors: Readonly<Record<string, string | null>>; // NAMING, not coverage (§4.1, rule 4)
+  rpcHosts: readonly string[] | null; // curated SSRF allowlist (§7.2)
+  tvlUsdAtSync: number | null; // knowingly stale, only for list_chains
   deprecated: boolean;
 }
 
 export interface ChainRegistry {
-  resolve(input: string): ChainInfo; // throws UnknownChainError с кандидатами
+  resolve(input: string): ChainInfo; // throws UnknownChainError with candidates
   tryResolve(input: string): ChainInfo | null;
   get(caip2: string): ChainInfo | null;
   list(filter?: ChainListFilter): ChainInfo[];
   size(): number;
 }
 
-export function loadChainRegistry(deps?: { data?: unknown }): ChainRegistry; // валидирует на старте
+export function loadChainRegistry(deps?: { data?: unknown }): ChainRegistry; // validates at startup
 ```
 
-- **Резолв — чистая функция без сети.** Порядок разрешения: точное совпадение `caip2` → `slug` →
-  `aliases` → нормализованная форма (lowercase, схлопывание `[^a-z0-9]`). Промах → `UnknownChainError`
-  с кандидатами по расстоянию Левенштейна над `slug ∪ aliases` (R-50c). Стоимость промаха — ноль
-  сетевых вызовов и ноль кредитов; это важнее удобства, потому что промах чаще всего случается
-  именно на платном маршруте (агент угадывает имя сети).
-- **Индексы (в памяти, строятся один раз при загрузке):** `Map<caip2>`, `Map<slug>`,
-  `Map<alias>`. Резолв — O(1) на точном совпадении; O(n) деградация только на пути «did you mean»,
-  который выполняется исключительно в момент ошибки. 461 запись — это десятки килобайт, вопроса
-  масштабирования здесь нет и не предвидится (даже 2660 EVM-сетей `chainid.network` — единицы МБ).
-- **Инъекция (`deps.data`)** — тот же DI-паттерн, что у `CacheStore`/`BudgetStore`: тесты грузят
-  маленький синтетический реестр вместо боевого, не трогая файловую систему. Реестр —
-  **фабрика, не модульный синглтон** (§8 уже требует этого от `CapabilityRegistry`/`SqliteCacheStore`).
-- **Валидация на старте (R-60c):** уникальность `caip2`/`slug`, глобальная непересекаемость
-  `aliases`, формат CAIP-2, непустой `name`. Нарушение — исключение при загрузке, не при первом
-  запросе. Деградация в пустой реестр запрещена (§4.2.1).
+- **Resolution is a pure function with no network.** Order: exact `caip2` → `slug` → `aliases` →
+  normalized form (lowercase, `[^a-z0-9]` collapsed). A miss raises `UnknownChainError` with
+  candidates by Levenshtein distance over `slug ∪ aliases` (R-50c). A miss costs zero network calls
+  and zero credits, which matters more than convenience: misses happen most often on the paid route,
+  where an agent is guessing a chain name.
+- **Indexes** (in memory, built once at load): `Map<caip2>`, `Map<slug>`, `Map<alias>`. Resolution
+  is O(1) on an exact match; the O(n) "did you mean" path runs only while building an error. 458
+  rows are tens of kilobytes — there is no scaling question here, and none is coming (even the 2660
+  EVM chains of `chainid.network` would be single-digit megabytes).
+- **Injection (`deps.data`)** is the same DI pattern as `CacheStore`/`BudgetStore`: tests load a
+  small synthetic registry instead of the production one, touching no filesystem. The registry is a
+  **factory, not a module singleton** (§8 already requires that of
+  `CapabilityRegistry`/`SqliteCacheStore`).
+- **Startup validation (R-60c):** `caip2`/`slug` uniqueness, global non-overlap of `aliases`, CAIP-2
+  format, non-empty `name`. A violation throws at load, not on the first request. Degrading to an
+  empty registry is forbidden (§4.2.1).
 
-**Модуль: `scripts/sync-chain-registry.ts` (НОВЫЙ, dev-only, TASK-006, R-49)**
+**Module: `scripts/sync-chain-registry.ts`** (dev-only, TASK-006, R-49)
 
-- **Не входит в рантайм-сборку** и не импортируется ни одним модулем `src/` — это dev-скрипт,
-  запускаемый оператором вручную (TASK-006 UC-4). Гейт: тест-проверка, что `src/` не содержит импортов из
-  `scripts/` — иначе оффлайн-гейт (R-60a) можно сломать незаметно.
-- **Источники и ключи join'а** (все три keyless, живая проба 2026-07-26 — evidence в
+- **Not part of the runtime build** and imported by no module under `src/` — it is a dev script the
+  operator runs by hand (TASK-006 UC-4). A test asserts that `src/` contains no imports from
+  `scripts/`; otherwise the offline gate (R-60a) could be broken unnoticed.
+- **Sources and join keys** (all three keyless; live probe 2026-07-26, evidence in
   [raw/chain-registry-probe-2026-07-26.json](../onchain-analytics/raw/chain-registry-probe-2026-07-26.json)):
 
-  | Источник                           | Даёт                                                  | Ключ join                                                                                                |
-  | ---------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-  | DeFiLlama `/v2/chains` (461)       | `name`, `tvlUsdAtSync`, `gecko_id`                    | — базовый список                                                                                         |
-  | CoinGecko `/asset_platforms` (461) | `coingecko` platform id, `chain_identifier` (EIP-155) | `defillama.gecko_id` → `coingecko.native_coin_id` (**235** совпадений, явный вендорский cross-reference) |
-  | `chainid.network` (2660)           | `nativeCurrency`, кандидаты в `rpcHosts`              | `coingecko.chain_identifier` → `chainId` (**257 из 270**)                                                |
+  | Source                             | Provides                                              | Join key                                                                                                |
+  | ---------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+  | DeFiLlama `/v2/chains` (461)       | `name`, `tvlUsdAtSync`, `gecko_id`                    | — the base list                                                                                         |
+  | CoinGecko `/asset_platforms` (461) | `coingecko` platform id, `chain_identifier` (EIP-155) | `defillama.gecko_id` → `coingecko.native_coin_id` (**235** matches, an explicit vendor cross-reference) |
+  | `chainid.network` (2660)           | `nativeCurrency`, `rpcHosts` candidates               | `coingecko.chain_identifier` → `chainId` (**257 of 270**)                                               |
 
-- **Фаззи-ключ (нормализованное имя, 255 совпадений) — только fallback, и он ОБЯЗАН быть виден.**
-  Строки, склеенные по имени, попадают в отдельную секцию дифф-отчёта и требуют глазами
-  подтверждённого коммита. Молчаливая фаззи-склейка — это ровно тот класс ошибки, который потом
-  проявится как «TVL не той сети», и найти его будет уже нечем.
-- **Детерминизм (R-49c):** стабильная сортировка по `caip2`, отсутствие timestamp'ов **внутри**
-  файла (дата синхронизации — в отдельном мета-поле шапки, меняющемся только при реальном
-  изменении данных), стабильный порядок ключей. Критерий приёмки — два прогона подряд дают
-  побайтово одинаковый файл.
-- **Отказоустойчивость (R-49e):** недоступность любого из трёх источников → громкий выход
-  ненулевым кодом **без записи файла**. Частично записанный реестр хуже отсутствующего: он
-  проходит валидацию и молча сужает мир.
-- **Исчезнувшие сети (R-49f):** не удаляются, помечаются `deprecated: true`. Удаление сломало бы
-  резолв уже сохранённых ссылок; «сеть умерла» и «вендор её временно не отдал» снаружи неразличимы.
+  The registry ends at **458** rows: the vendor catalogs list 461 each, and testnet rows are
+  excluded after the join.
 
-**Модуль: `src/chain/coverage.ts` (НОВЫЙ, TASK-006, R-51)**
+- **The fuzzy key (normalized name, 255 matches) is a fallback only, and it MUST be visible.** Rows
+  glued by name land in a separate section of the diff report and require a commit confirmed by
+  eye. A silent fuzzy join is exactly the class of error that later surfaces as "TVL of the wrong
+  chain", with nothing left to find it by.
+- **Determinism (R-49c):** stable sort by `caip2`, no timestamps **inside** the file (the sync date
+  lives in a separate header meta field that changes only when the data actually changes), stable
+  key order. The acceptance criterion is that two consecutive runs produce a byte-identical file.
+- **Failure behaviour (R-49e):** if any of the three sources is unavailable, exit loudly with a
+  non-zero code and **write no file**. A partially written registry is worse than a missing one: it
+  passes validation and silently narrows the world.
+- **Vanished chains (R-49f):** never deleted, marked `deprecated: true`. Deleting would break
+  resolution of already-stored references, and "the chain died" is indistinguishable from "the
+  vendor did not return it this time" from the outside.
 
-Реализует `covered(capability, chain)` из §4.2.3 — композицию `routes` × `adapter.chainSupport()`.
-Здесь же живёт построение текста ошибки `CapabilityNotCoveredOnChainError`: оба списка (сети для
-capability, capability для сети) вычисляются из тех же двух источников, поэтому не могут
-разъехаться с реальным поведением.
+**Module: `src/chain/coverage.ts`** (TASK-006, R-51)
 
-**Точка вызова — критична для денег (R-51d).** Проверка покрытия выполняется в
-`CapabilityRegistry.resolve()` **до** обращения к адаптеру, то есть до budget-gate и до HTTP.
-Порядок гейтов на платном маршруте:
+Implements `covered(capability, chain)` from §4.2.3 — the composition of `routes` ×
+`adapter.chainSupport()`. The text of `CapabilityNotCoveredOnChainError` is built here too: both
+lists (chains for a capability, capabilities for a chain) are computed from those same two sources,
+so they cannot drift away from actual behaviour.
+
+**The call site is money-critical (R-51d).** The coverage check runs inside
+`CapabilityRegistry.resolve()` **before** the adapter is touched — before the budget gate and
+before HTTP. The gate order on a paid route:
 
 ```
 resolve(capability, args)
-  → 1. резолв chain по реестру          (нет сети, нет денег)
-  → 2. проверка покрытия пары            (нет сети, нет денег)   ← НОВЫЙ гейт, TASK-006
-  → 3. cache lookup                      (нет сети, нет денег)
-  → 4. adapter.isAvailable()             (нет сети, нет денег)
-  → 5. budget-gate: check + reserve      (деньги резервируются)
-  → 6. adapter.fetch()                   (сеть, деньги тратятся)
+  → 1. resolve chain against the registry  (no network, no money)
+  → 2. check coverage of the pair          (no network, no money)
+  → 3. cache lookup                        (no network, no money)
+  → 4. adapter.isAvailable()               (no network, no money)
+  → 5. budget gate: check + reserve        (money is reserved)
+  → 6. adapter.fetch()                     (network, money is spent)
 ```
 
-Гейт покрытия обязан стоять **выше** пункта 5: расширение множества сетей с 2 до 461 умножает
-число способов промахнуться мимо покрытия, и если промах будет стоить резервации кредитов, само
-расширение станет вектором расхода денег (NFR TASK §7). Это же требование сняло с платного пути
-целый класс заведомо бесполезных вызовов — что было частью поверхности **SEC-1**, пока сам
-velocity-guard не появился (**SEC-1 закрыт 2026-07-27**: кредиты-за-окно, проверяются в той же
-транзакции, что и дневная бронь; см. §«Два вторых знаменателя» ниже).
+The coverage gate must sit **above** step 5: growing the chain set from 2 to 458 multiplies the ways
+to miss coverage, and if a miss cost a credit reservation, the expansion itself would become a
+spending vector (NFR, TASK §7). This also removed a whole class of knowingly useless calls from the
+paid path — part of the surface **SEC-1** described before the velocity guard existed. SEC-1 is
+closed: credits per window, checked in the same transaction as the daily reservation (see "Two
+second denominators" below).
 
-#### 4.1 Address/Chain Normalization (`src/chain/address.ts`) — детально по замечанию ревьюера
+#### 3.2.1. Address/chain normalization (`src/chain/address.ts`)
 
-- **EVM (ethereum):** канонический вид — **EIP-55 checksum**, не lowercase (ADR-001 D5 явно
-  требует checksum). Алгоритм: `keccak256` от lowercase hex-адреса (без `0x`, как ASCII-байты) →
-  для каждого hex-символа исходного lowercase-адреса — если соответствующий ниббл хеша ≥ 8,
-  символ идёт в верхнем регистре, иначе в нижнем. Это **чистая функция байт адреса**: любой
-  входной регистр даёт **один и тот же** checksum-результат — кеш-ключ и хранение детерминированы
-  автоматически, отдельная «lowercase-для-ключей» форма не нужна.
-- **Solana:** канонический вид — **как есть** (base58 регистро-чувствителен: lowercase испортил
-  бы адрес, в отличие от hex). Валидация: base58-декодирование успешно **и** длина декодированных
-  байт **точно 32** (Solana-адрес — сырой ed25519-pubkey, без version/checksum-байтов в отличие
-  от Bitcoin base58check).
-- **Dash:** участвует в словаре реестра для консистентности с `assets.chain_family` из DB-SCHEMA,
-  но `Wallet`/`Balance`-типы для него не используются — dash-platform отдаёт `Snapshot`, не
-  `Balance` (см. §2.1).
-- **Единая точка использования:** и MCP-tool input-схемы (`superRefine` вызывает
-  `isValidAddress(chain, address)`), и адаптеры (`normalizeAddress` перед вызовом
-  `fetch`/построением кеш-ключа) — один модуль, не дублируется.
+- **EVM:** the canonical form is the **EIP-55 checksum**, not lowercase (ADR-001 D5 requires the
+  checksum). Algorithm: `keccak256` of the lowercase hex address (without `0x`, as ASCII bytes);
+  for each hex character of the source lowercase address, upper-case it if the corresponding nibble
+  of the hash is ≥ 8, lower-case it otherwise. This is a **pure function of the address bytes**: any
+  input casing yields the **same** checksum result, so cache keys and storage are deterministic
+  automatically and no separate "lowercase for keys" form is needed.
+- **Solana:** the canonical form is **as-is** (base58 is case-sensitive: lowercasing would corrupt
+  the address, unlike hex). Validation: base58 decoding succeeds **and** the decoded length is
+  **exactly 32** bytes (a Solana address is a raw ed25519 pubkey, with no version/checksum bytes,
+  unlike Bitcoin base58check).
+- **Dash:** present in the registry vocabulary for consistency with `assets.chain_family` from
+  DB-SCHEMA, but the `Wallet`/`Balance` types are not used for it — dash-platform returns
+  `Snapshot`, not `Balance` (§2.1).
+- **One point of use:** both the MCP tool input schemas (`superRefine` calls
+  `isValidAddress(chain, address)`) and the adapters (`normalizeAddress` before `fetch` / before
+  building the cache key) go through this single module; nothing is duplicated.
 
-**TASK-006 (R-55): ветвление по `family`, а не по имени сети.** `switch (chain)` по литералам
-`'ethereum' | 'solana' | 'dash'` заменяется на `switch (chainInfo.family)`. Содержание веток
-`evm`/`svm` **не меняется ни на строку** — те же EIP-55 и base58+32 байта, те же тесты (R-55d).
-Меняется только охват: одна ветка `evm` начинает обслуживать все 270+ EVM-сетей вместо одной.
+**Branching is by `family`, not by chain name (R-55).** `switch (chainInfo.family)` replaced
+`switch (chain)` over the `'ethereum' | 'solana' | 'dash'` literals. The bodies of the `evm`/`svm`
+branches did not change by a single line — the same EIP-55 and base58+32 bytes, the same tests
+(R-55d). Only the reach changed: one `evm` branch now serves all 270+ EVM chains instead of one.
 
-| `family`                             | Валидация                            | Канонизация         |
-| ------------------------------------ | ------------------------------------ | ------------------- |
-| `evm`                                | 40 hex-символов (с/без `0x`)         | EIP-55 checksum     |
-| `svm`                                | base58 декодируется в ровно 32 байта | как есть            |
-| `move` / `cosmos` / `utxo` / `other` | **нет валидатора** — приём как есть  | **нет канонизации** |
+| `family`                             | Validation                            | Canonicalization        |
+| ------------------------------------ | ------------------------------------- | ----------------------- |
+| `evm`                                | 40 hex characters (with/without `0x`) | EIP-55 checksum         |
+| `svm`                                | base58 decodes to exactly 32 bytes    | as-is                   |
+| `move` / `cosmos` / `utxo` / `other` | **no validator** — accepted as-is     | **no canonicalization** |
 
-**Отсутствие валидатора — не отказ в обслуживании (R-55c).** Для семейства без валидатора адрес
-принимается и передаётся вендору как есть; «адрес не найден» от вендора — нормальный ответ, а не
-наш баг. Обратное поведение (отказ) означало бы, что мы не поддерживаем сеть до тех пор, пока не
-напишем для неё парсер адресов, — то есть ровно ту связку «сеть = код», которую эта задача
-устраняет.
+**A missing validator is not a refusal of service on free routes (R-55c).** For a family with no
+validator the address is accepted and passed to the vendor as-is; "address not found" from the
+vendor is a normal answer, not a bug of ours. The opposite behaviour would mean we do not support a
+chain until we write an address parser for it — exactly the "chain = code" coupling the registry
+removes.
 
-**Осознанная цена, зафиксированная явно:** без канонизации ключ кеша строится от исходной строки,
-поэтому один и тот же адрес, написанный в разном регистре, даст **две** записи кеша. Это потеря
-эффективности кеша, **не** потеря корректности (ответы одинаковы). На бесплатных маршрутах это
-неважно; появление платного провайдера на не-`evm`/`svm` семействе делает написание валидатора для
-этого семейства приоритетным — зафиксировано здесь, чтобы вопрос не открывался заново (OQ-1).
+**On paid routes it is a refusal (OQ-1, revised 2026-07-27).** A paid call on a family with no
+validator spends credits on a string we never checked, and a vendor's "not found" is then
+indistinguishable from our own garbage input. Paid capabilities therefore refuse on any family
+other than `evm`/`svm`; writing a validator for a family is the prerequisite for paid coverage
+there, not an optimization.
 
-**Модуль: `src/adapters/*`** (D4, R-3, R-5…R-11)
+**The price of no canonicalization, stated explicitly:** the cache key is built from the source
+string, so the same address written in different casing produces **two** cache entries. That is a
+loss of cache efficiency, **not** of correctness (the answers are identical).
+
+**Module: `src/adapters/*`** (D4, R-3, R-5…R-11)
 
 ```ts
 export interface CapabilityDescriptor {
   id: string; // 'token.price' | 'wallet.balances.native' | 'pairs.new' | ...
-  chains?: Chain[]; // отсутствует = capability не привязана к конкретной сети
+  chains?: Chain[]; // absent = the capability is not bound to a specific chain
 }
 
 export interface ProviderAdapter {
-  id: string; // D4: явное поле id
+  id: string; // D4: an explicit id field
   capabilities(): CapabilityDescriptor[];
   costOf(cap: string, args: Record<string, unknown>): { credits: number };
   fetch(cap: string, args: Record<string, unknown>): Promise<unknown>;
-  normalize(cap: string, raw: unknown): unknown; // сужается адаптером внутри
-  isAvailable?(): { ok: true } | { ok: false; reason: string }; // env/key-готовность, R-24
+  normalize(cap: string, raw: unknown): unknown; // narrowed by the adapter internally
+  isAvailable?(): { ok: true } | { ok: false; reason: string }; // env/key readiness, R-24
 
-  // TASK-006 (R-51a/R-54c): «умею ли я эту сеть» — ПРЕДИКАТ над ChainInfo, не список.
-  // Список пришлось бы держать в синхроне с реестром; предикат не может разъехаться.
-  // Отсутствует ⇒ адаптер не привязан к сети (см. CapabilityDescriptor.chains).
+  // "Can I serve this chain" — a PREDICATE over ChainInfo, not a list (R-51a/R-54c). A list would
+  // have to be kept in sync with the registry; a predicate cannot drift from it.
+  // Absent ⇒ the adapter is not chain-bound (see CapabilityDescriptor.chains).
   chainSupport?(chain: ChainInfo): boolean;
 }
 ```
 
-**TASK-006 (R-54): приватные вендорские мапы сети удаляются из адаптеров.** Три адаптера держат
-собственные копии знания о сетях — каждая со своим типом `SupportedChain`, дублирующим `chains:`
-из `providers.config.ts`:
+**Adapters hold no private vendor chain maps (R-54).** Each of these was a private copy of chain
+knowledge, with its own `SupportedChain` type duplicating the `chains:` literals of
+`providers.config.ts`:
 
-| Адаптер       | Что удаляется                                                                   | Чем заменяется                                                                     |
-| ------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `defillama`   | `type SupportedChain`, `CHAIN_TVL_KEY = {ethereum:'Ethereum', solana:'Solana'}` | `chain.vendors.defillama`                                                          |
-| `dexscreener` | `type SupportedChain`, `NATIVE_QUERY = {ethereum:'ETH', solana:'SOL'}`          | `chain.nativeSymbol` (R-57a) + `chain.vendors.dexscreener` для client-side фильтра |
-| `nansen`      | `type NansenChain = 'ethereum' \| 'solana'`                                     | `chain.vendors.nansen` + `CoverageProbe` (§4.2.3)                                  |
-| `coingecko`   | inline-проверка `chain !== 'ethereum' && chain !== 'solana'`                    | `chain.vendors.coingecko` (platform id прямо в URL)                                |
-| `rpc-evm`     | проверка `chain !== 'ethereum'` + хосты из `adapterRegistrations`               | `chain.family === 'evm'` + `chain.rpcHosts` (§7.2)                                 |
+| Adapter       | Removed                                                                         | Replaced by                                                                           |
+| ------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `defillama`   | `type SupportedChain`, `CHAIN_TVL_KEY = {ethereum:'Ethereum', solana:'Solana'}` | `chain.vendors.defillama`                                                             |
+| `dexscreener` | `type SupportedChain`, `NATIVE_QUERY = {ethereum:'ETH', solana:'SOL'}`          | `chain.nativeSymbol` (R-57a) + `chain.vendors.dexscreener` for the client-side filter |
+| `nansen`      | `type NansenChain = 'ethereum' \| 'solana'`                                     | `chain.vendors.nansen` + `CoverageProbe` (§4.2.3)                                     |
+| `coingecko`   | inline check `chain !== 'ethereum' && chain !== 'solana'`                       | `chain.vendors.coingecko` (platform id straight into the URL)                         |
+| `rpc-evm`     | check `chain !== 'ethereum'` + hosts from `adapterRegistrations`                | `chain.family === 'evm'` + `chain.rpcHosts` (§7.2)                                    |
 
-**Anti-corruption layer (D4) сохраняется без ослабления.** Реестр отдаёт адаптеру вендорский
-**ключ** — короткую строку-идентификатор — и ничего больше. Вендорские DTO наружу по-прежнему не
-текут, `normalize()` остаётся единственным местом сужения (R-54d). Направление зависимости не
-переворачивается: адаптер читает реестр, реестр про адаптеры не знает.
+**The anti-corruption layer (D4) is not weakened by this.** The registry hands the adapter a vendor
+**key** — a short identifier string — and nothing else. Vendor DTOs still never leak outward,
+`normalize()` remains the single narrowing point (R-54d), and the dependency direction does not
+invert: the adapter reads the registry, the registry knows nothing about adapters.
 
-**Capability Registry** (`src/adapters/registry.ts`) маршрутизирует по `(capability, chain)`:
+**Capability Registry** (`src/adapters/registry.ts`) routes on `(capability, chain)`:
 
 ```ts
 export interface CapabilityRoute {
   capability: string;
   chains?: Chain[];
-  adapterIds: string[]; // порядок = приоритет + fallback-цепочка (R-11)
+  adapterIds: string[]; // order = priority + fallback chain (R-11)
 }
 
 export class CapabilityRegistry {
@@ -371,27 +384,29 @@ export class CapabilityRegistry {
     chain: Chain,
     args: Record<string, unknown>,
   ): Promise<{ result: unknown; source: string; cache: 'hit' | 'miss'; ageMs?: number }>;
-  // при недоступности всех адаптеров маршрута — бросает CapabilityUnavailableError со списком
-  // (adapterId, reason) — не тихий пустой ответ (R-24); при ошибке fetch/normalize текущего
-  // адаптера — переходит к следующему в adapterIds (R-11 hot-swap), не падает целиком.
+  // If every adapter on the route is unavailable, throws CapabilityUnavailableError listing
+  // (adapterId, reason) — never a silent empty answer (R-24). If the current adapter's
+  // fetch/normalize fails, moves on to the next id in adapterIds (R-11 hot-swap) instead of
+  // failing the whole call.
   //
-  // Cache-fault contract (cycle 1, A1/A2) — ДВА разных контракта: fetch/normalize ошибка →
-  // «этот адаптер не смог ответить, пробуем следующий» (в tried); cache.get()/set() ошибка →
-  // всегда BEST-EFFORT, никогда не фатальна, никогда не CapabilityUnavailableError — get() throw
-  // логируется и трактуется как miss; set() throw логируется в СВОЁМ nested try/catch (не в tried,
-  // не триггерит fallback) — уже полученный result всё равно возвращается как 'miss'.
+  // Cache-fault contract — TWO different contracts. A fetch/normalize error means "this adapter
+  // could not answer, try the next one" (recorded in `tried`). A cache.get()/set() error is ALWAYS
+  // best-effort, never fatal, never a CapabilityUnavailableError: a get() throw is logged and
+  // treated as a miss; a set() throw is logged in its OWN nested try/catch (not in `tried`, does
+  // not trigger fallback) and the already-fetched result is still returned as 'miss'.
 }
 ```
 
-`providers.config.ts` — декларативные маршруты + реестр адаптеров (id → hosts/rate-limit/env):
+`providers.config.ts` holds the declarative routes plus the adapter registry (id →
+hosts/rate-limit/env):
 
 ```ts
 export const routes: CapabilityRoute[] = [
   { capability: 'token.price', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
   { capability: 'token.metadata', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
   { capability: 'pairs.new', chains: ['ethereum', 'solana'], adapterIds: ['dexscreener'] },
-  // R-6 Must требует и pairs.new, и pool.info — pool.info пока без tool-потребителя в M1
-  // (дёшево объявить сейчас, major fix, ревью цикл 1):
+  // R-6 Must requires both pairs.new and pool.info; pool.info has no tool consumer yet — cheap to
+  // declare now:
   { capability: 'pool.info', chains: ['ethereum', 'solana'], adapterIds: ['dexscreener'] },
   { capability: 'protocol.tvl', chains: ['ethereum', 'solana'], adapterIds: ['defillama'] },
   { capability: 'wallet.balances.native', chains: ['ethereum'], adapterIds: ['rpc-evm'] },
@@ -421,9 +436,9 @@ export const routes: CapabilityRoute[] = [
     chains: ['dash'],
     adapterIds: ['dash-platform', 'platform-explorer'],
   },
-  // R-10 (platform-explorer's own history, always live/keyless) + R-12 (opt. PG-backed history) —
-  // fix F-2, ревью цикл 1: platform-explorer первым (не нужен DSN, всегда доступен), pg-history
-  // вторым (доп./альтернативный вид истории, только когда задан ONCHAIN_PG_URL):
+  // R-10 (platform-explorer's own history, always live/keyless) + R-12 (optional PG-backed
+  // history): platform-explorer first (needs no DSN, always available), pg-history second (an
+  // additional/alternative view of history, only when ONCHAIN_PG_URL is set):
   {
     capability: 'privacy.shielded_pool.history',
     chains: ['dash'],
@@ -434,8 +449,8 @@ export const routes: CapabilityRoute[] = [
     chains: ['dash'],
     adapterIds: ['platform-explorer', 'pg-history'],
   },
-  // R-8 — Dune, Should, interface/config-stub в M1 (см. решение по dune ниже, F-2/minor):
-  // зарегистрирован, не потребляется ни одним из 4 tools, live fetch/фикстура — не в M1.
+  // R-8 — Dune, Should: registered as an interface/config stub, consumed by no tool; no live
+  // fetch and no fixture (see the dune decision below).
   { capability: 'token.holders', chains: ['ethereum'], adapterIds: ['dune'] },
 ];
 
@@ -458,7 +473,7 @@ export const adapterRegistrations: AdapterRegistration[] = [
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
   },
-  // interface/config-stub в M1 — isAvailable() возвращает false безусловно (см. решение ниже):
+  // interface/config stub — isAvailable() returns false unconditionally (see below):
   {
     id: 'dune',
     hosts: ['api.dune.com'],
@@ -477,8 +492,8 @@ export const adapterRegistrations: AdapterRegistration[] = [
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
   },
-  // F-3: нет live host в M1 — interface + fixture-контракт only; hosts заполняются, когда
-  // приземлится отложенная backlog-задача живого gRPC-транспорта (§11):
+  // No live host: interface + fixture contract only. Hosts get filled in when the deferred live
+  // gRPC transport lands (§11):
   { id: 'dash-platform', hosts: [], rateLimit: { capacity: 5, refillPerSec: 1 }, requiresEnv: [] },
   {
     id: 'platform-explorer',
@@ -486,8 +501,8 @@ export const adapterRegistrations: AdapterRegistration[] = [
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
   },
-  // NEW (F-2) — не HTTP-хост: Postgres wire-протокол; сам DSN — контроль доступа, не
-  // hostname-allowlist. Регистрация здесь нужна ИСКЛЮЧИТЕЛЬНО для providers-FK (§4.2).
+  // Not an HTTP host: the Postgres wire protocol. The DSN itself is the access control, not a
+  // hostname allowlist. Registered here SOLELY for the providers FK (§4.2).
   {
     id: 'pg-history',
     hosts: [],
@@ -497,130 +512,134 @@ export const adapterRegistrations: AdapterRegistration[] = [
 ];
 ```
 
-Rate-limit значения — консервативные стартовые (не документированные вендором лимиты, кроме
-Dune-кредитов) — легко подкручиваются правкой конфига без изменения кода вызывающей стороны (R-4).
+**Chain scoping is a derived value, not a literal.** The `chains:` arrays above are the committed
+form of the routes; they are not the authority on which chains a capability serves. The registry
+resolves the chain, and `covered(capability, chain)` (§4.2.3) composes the route with the adapter's
+`chainSupport()` predicate over `ChainInfo` — that composition is the coverage matrix. A hand-kept
+list would have to track 458 registry rows; a predicate cannot drift from them.
 
-**Девять адаптеров — сводка:**
+Rate-limit values are conservative starting points (not vendor-documented limits, except for the
+Dune credits) and can be tuned by editing the config, with no change on the calling side (R-4).
 
-| id                  | Capability(-ies)                                            | Транспорт                                                             | Ключ                                                                                                                        | Примечание                                                                                                                                                           |
-| ------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `coingecko`         | `token.price`, `token.metadata`                             | REST (`fetch`), `/coins/{platform}/contract/{address}`                | опц. `COINGECKO_API_KEY` (demo, free работает без) / `COINGECKO_PRO_API_KEY` (Pro-контур: pro-хост + pro-заголовок, v2.2.1) | R-5, **live**                                                                                                                                                        |
-| `dexscreener`       | `pairs.new`, `pool.info`                                    | REST (`fetch`)                                                        | нет (keyless)                                                                                                               | R-6 Must требует оба; `pool.info` пока без tool-потребителя (дёшево объявить, major fix); точный endpoint — подтверждается при записи фикстуры (R-22), §11; **live** |
-| `defillama`         | `protocol.tvl`                                              | REST (`fetch`), `/protocol/{slug}`, срез `chainTvls[chain]`           | нет (keyless)                                                                                                               | R-7, **live**                                                                                                                                                        |
-| `dune`              | `token.holders` (Should, не в 4 tools)                      | REST Query API — **не реализован в M1** (interface/config-stub)       | `DUNE_API_KEY` (free tier), но `isAvailable()` безусловно `false` в M1                                                      | R-8, решение ниже                                                                                                                                                    |
-| `rpc-evm`           | `wallet.balances.native` (ethereum)                         | JSON-RPC `eth_getBalance` (`fetch`)                                   | нет (keyless)                                                                                                               | R-16/R-17, OQ-1, **live**                                                                                                                                            |
-| `rpc-solana`        | `wallet.balances.native` (solana)                           | JSON-RPC `getBalance` (`fetch`)                                       | нет (keyless)                                                                                                               | R-16/R-17, OQ-1, **live**                                                                                                                                            |
-| `dash-platform`     | `privacy.shielded_pool`, `platform.*`                       | **gRPC** — **не реализован в M1** (interface + fixture-контракт only) | нет (keyless), но недостижим в M1                                                                                           | R-9 через мок, F-3; см. ниже                                                                                                                                         |
-| `platform-explorer` | те же (fallback) + `*.history`                              | REST (`fetch`)                                                        | нет (keyless)                                                                                                               | R-10/R-11, **единственный live Dash-источник M1**                                                                                                                    |
-| `pg-history`        | `privacy.shielded_pool.history`, `platform.metrics.history` | Postgres wire (SELECT-only)                                           | `ONCHAIN_PG_URL` (опц.)                                                                                                     | R-12, новый (F-2), **live опционально**                                                                                                                              |
+**The nine M1 adapters — summary:**
 
-**Input/response hardening по адаптерам (адверсариальные циклы, никогда не доверять сырому
-вендор-ответу):** `rpc-evm` — hex-guard ужесточён до `/^0x[0-9a-fA-F]+$/` (требует ≥1 hex-цифру
-после `0x`; голая строка `"0x"` раньше давала сырой `BigInt("0x")` `SyntaxError` вместо понятной
-ошибки). `rpc-solana` — `result.value` (lamports) валидируется как неотрицательное safe-integer
-(`Number.isInteger && >=0 && <=Number.MAX_SAFE_INTEGER`) до `String()`; **задокументированный M2-
-дефолт:** баланс выше ~9.007M SOL уже потерял точность на уровне `response.json()` (вендор отдаёт
-`result.value` JSON-числом, не hex-строкой, в отличие от `eth_getBalance`) — точный parse больших
-значений не решается в M1. `dexscreener.normalize()` — skip-and-log: каждый кандидат-`Pool`
-валидируется независимо (`PoolSchema.safeParse`), малформленный дропается (не бросает всю партию),
-одна stderr-строка со счётчиком; throw — только если **все** кандидаты партии малформлены (иначе
-пустой `Pool[]` неотличим от «новых пар сейчас нет», R-24). `defillama.normalize()` — отвергает
-non-finite/negative `tvlUsd`/`totalTvlUsd` **до** попадания в кеш (иначе `onchain_protocol_tvl`'s
-собственная `.nonnegative()`-схема увидела бы уже закешированное битое значение). Оба RPC-адаптера
-усекают сообщения об ошибке через общий `src/adapters/stringify-truncated.ts` (500 символов +
-`…[truncated]`) — раньше сырой JSON-RPC envelope мог попасть в `Error.message` целиком, вплоть до
-`safeFetch`'s 10MB-капа.
+| id                  | Capabilities                                                | Transport                                                          | Key                                                                                                                    | Note                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `coingecko`         | `token.price`, `token.metadata`                             | REST (`fetch`), `/coins/{platform}/contract/{address}`             | optional `COINGECKO_API_KEY` (demo; free works without) / `COINGECKO_PRO_API_KEY` (Pro circuit: pro host + pro header) | R-5, **live**                                                                                                                             |
+| `dexscreener`       | `pairs.new`, `pool.info`                                    | REST (`fetch`)                                                     | none (keyless)                                                                                                         | R-6 Must requires both; `pool.info` has no tool consumer yet; exact endpoint confirmed when the fixture is recorded (R-22), §11; **live** |
+| `defillama`         | `protocol.tvl`                                              | REST (`fetch`), `/protocol/{slug}`, slice `chainTvls[chain]`       | none (keyless)                                                                                                         | R-7, **live**                                                                                                                             |
+| `dune`              | `token.holders` (Should, no tool consumer)                  | REST Query API — **not implemented** (interface/config stub)       | `DUNE_API_KEY` (free tier), but `isAvailable()` is unconditionally `false`                                             | R-8, decision below                                                                                                                       |
+| `rpc-evm`           | `wallet.balances.native` (EVM)                              | JSON-RPC `eth_getBalance` (`fetch`)                                | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                       |
+| `rpc-solana`        | `wallet.balances.native` (Solana)                           | JSON-RPC `getBalance` (`fetch`)                                    | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                       |
+| `dash-platform`     | `privacy.shielded_pool`, `platform.*`                       | **gRPC** — **not implemented** (interface + fixture contract only) | none (keyless), but unreachable                                                                                        | R-9 via a mock; see below                                                                                                                 |
+| `platform-explorer` | the same (fallback) + `*.history`                           | REST (`fetch`)                                                     | none (keyless)                                                                                                         | R-10/R-11, **the only live Dash source**                                                                                                  |
+| `pg-history`        | `privacy.shielded_pool.history`, `platform.metrics.history` | Postgres wire (SELECT-only)                                        | `ONCHAIN_PG_URL` (optional)                                                                                            | R-12, **live, optional**                                                                                                                  |
 
-**`dash-platform` — сужен до interface + fixture-контракта в M1 (F-3, решение ревью-цикла 1):**
-живой gRPC-транспорт (v2) — самый дорогой/наименее окупаемый пункт M1-критического пути: нет
-tool-потребителя (OQ-2 ниже), evonode-host не верифицирован (§11), а `privacy.shielded_pool`/
-`platform.*` уже полностью покрыты `platform-explorer` (keyless REST). **Решение** — только
-интерфейс + fixture-backed contract-тест: `capabilities()` объявляет все пять способностей
+**Input/response hardening per adapter — never trust a raw vendor response.**
+
+- `rpc-evm`: the hex guard is `/^0x[0-9a-fA-F]+$/`, requiring at least one hex digit after `0x`.
+  A bare `"0x"` otherwise produced a raw `BigInt("0x")` `SyntaxError` instead of a legible error.
+- `rpc-solana`: `result.value` (lamports) is validated as a non-negative safe integer
+  (`Number.isInteger && >=0 && <=Number.MAX_SAFE_INTEGER`) before `String()`. Documented default:
+  a balance above ~9.007M SOL has already lost precision at `response.json()` — the vendor returns
+  `result.value` as a JSON number, not a hex string as `eth_getBalance` does — so exact parsing of
+  large values is out of scope here.
+- `dexscreener.normalize()`: skip-and-log. Each candidate `Pool` is validated independently
+  (`PoolSchema.safeParse`); a malformed one is dropped rather than failing the whole batch, with a
+  single stderr line carrying the count. It throws only when **every** candidate in the batch is
+  malformed — otherwise an empty `Pool[]` would be indistinguishable from "there are no new pairs
+  right now" (R-24).
+- `defillama.normalize()`: rejects non-finite/negative `tvlUsd`/`totalTvlUsd` **before** it reaches
+  the cache; otherwise `onchain_protocol_tvl`'s own `.nonnegative()` schema would meet an already
+  cached broken value.
+- Both RPC adapters truncate error messages through the shared
+  `src/adapters/stringify-truncated.ts` (500 characters + `…[truncated]`), so a raw JSON-RPC
+  envelope cannot land in `Error.message` in full, up to `safeFetch`'s 10MB cap.
+
+**`dash-platform` is narrowed to an interface + fixture contract.** A live gRPC transport is the
+most expensive and least repaid item on the critical path: no tool consumes it (OQ-2 below), the
+evonode host is unverified (§11), and `privacy.shielded_pool`/`platform.*` are already fully
+covered by `platform-explorer` (keyless REST). So: `capabilities()` declares all five capabilities
 (`privacy.shielded_pool` + `platform.identities/contracts/documents/credits`, R-9); `normalize()`
-реализован и golden-протестирован против **вручную собранной** фикстуры (форма списана с полей
-addendum — `getShieldedPoolState`/`getTotalCreditsInPlatform`) — R-9 удовлетворено через мок, не
-живой пробник; `fetch()` — stub (`NotImplementedInM1Error`), недостижим в рантайме, т.к.
-`isAvailable()` уже отсекает адаптер раньше. `isAvailable()` **безусловно** возвращает
-`{ ok: false, reason: 'dash-platform live transport deferred — see backlog, use platform-explorer'
-}` (не «если evonode недоступен», а всегда) → Registry **всегда** маршрутизирует
-`privacy.shielded_pool`/`platform.*` на `platform-explorer` — не имитация hot-swap «на всякий
-случай», а **реальный, постоянно активный** fallback-путь, доказывающий механизм Registry (R-11)
-настоящим прогоном. `@grpc/grpc-js`/`@grpc/proto-loader` убраны из M1-зависимостей (были в v2,
-удалены в v2.1) — не нужны, пока `fetch()` не реализован. **Живой gRPC-транспорт — отдельная, не
-блокирующая M1, backlog-задача** (§11): вендоринг `.proto`, `@grpc/grpc-js`+`@grpc/proto-loader`,
-конкретный evonode-host (живой пробник), канал-level `assertAllowedHost()`; когда задача landится,
-`isAvailable()` заменяется на условную проверку, не меняя `ProviderAdapter`-контракт наружу.
+is implemented and golden-tested against a **hand-built** fixture whose shape is taken from the
+addendum fields (`getShieldedPoolState`/`getTotalCreditsInPlatform`) — R-9 satisfied through a mock,
+not a live probe; `fetch()` is a stub (`NotImplementedInM1Error`) and is unreachable at runtime
+because `isAvailable()` cuts the adapter off earlier. `isAvailable()` **unconditionally** returns
+`{ ok: false, reason: 'dash-platform live transport deferred — see backlog, use platform-explorer' }`
+— not "if the evonode is down", always — so the Registry **always** routes
+`privacy.shielded_pool`/`platform.*` to `platform-explorer`. That is not a simulated hot-swap kept
+around for show but a real, permanently active fallback path that exercises the Registry mechanism
+(R-11) on every run. The live gRPC transport is a separate backlog item (§11): vendoring the
+`.proto`, `@grpc/grpc-js` + `@grpc/proto-loader`, a concrete evonode host (live probe), and a
+channel-level `assertAllowedHost()`. When it lands, `isAvailable()` becomes a conditional check
+without changing the `ProviderAdapter` contract outward.
 
-**`platform-explorer` — единственный live Dash-источник M1 (F-3 требование):** реализует ту же
-capability-поверхность, что и `dash-platform` (REST, keyless, всегда доступен), **и** собственный
-history-метод (R-10) — используется первым в history-маршрутах (`privacy.shielded_pool.history`/
-`platform.metrics.history`, `routes` выше), не только как fallback для live-состояния.
+**`platform-explorer` is the only live Dash source.** It implements the same capability surface as
+`dash-platform` (REST, keyless, always available) **and** its own history method (R-10) — used
+first on the history routes (`privacy.shielded_pool.history`/`platform.metrics.history` above), not
+only as a fallback for live state.
 
-**dash-platform / platform-explorer / dune — не получают отдельный tool (OQ-2, решение
-архитектора):** ROADMAP называет ровно 4 MCP-tool для M1, ни один не про Platform-метрики или
-holder-статистику; Registry регистрирует способности и покрывает их contract-тестами там, где они
-существуют (R-9/R-10/R-11 через `platform-explorer` + мок `dash-platform`) — первый реальный
-**потребитель**-tool для Platform-метрик появится в M3 (privacy-правила), для `token.holders` —
-в M2 (`onchain_token_risk`).
+**dash-platform / platform-explorer / dune get no tool of their own (OQ-2).** The ROADMAP names
+exactly four MCP tools for M1, none of them about Platform metrics or holder statistics. The
+Registry registers the capabilities and covers them with contract tests where they exist (R-9/R-10/
+R-11 via `platform-explorer` + the `dash-platform` mock). The first real **consumer** tool for
+Platform metrics arrives in M3 (privacy rules), and for `token.holders` in M2
+(`onchain_token_risk`).
 
-**`dune` — R-8 явное решение (реконсиляция ревью-цикла 1, minor):** ревьюер рекомендовал более
-узкую резолюцию R-8, чем «полный адаптер + фикстура» из v2 — **interface/config-stub в M1**:
-`capabilities()` объявляет `token.holders` (число держателей + концентрация топ-10 — способность,
-не покрытая ни одним из остальных восьми адаптеров); `fetch()`/`normalize()` **не реализованы**
-(fixture-less — нечего golden-тестировать до авторинга запроса); `isAvailable()` возвращает
-`{ ok: false, reason: 'dune query authoring deferred to M2' }` безусловно, независимо от
-`DUNE_API_KEY` — авторинг живого Dune SQL-запроса (query id, параметризация) переносится на M2
-вместе с первым реальным потребителем (`onchain_token_risk`). Ни один из 4 Must-tools от
-`token.holders` не зависит ⇒ пустой `.env` остаётся полностью функциональным (UC-1) независимо от
-этого решения. **Для Planner:** ýже буквального текста acceptance R-8 («contract-тест на
-фикстуре», TASK.md) — резолюция одобрена ревьюером архитектуры явно (F-2/minor, цикл 1); Planner
-либо принимает её как обновлённый scope R-8 для M1-задачи, либо эскалирует к Analyst для
-формальной правки RTM, если нужен строгий 1:1 с исходной acceptance-формулировкой.
+**`dune` — the R-8 resolution: an interface/config stub, narrower than the literal acceptance
+text.** `capabilities()` declares `token.holders` (holder count + top-10 concentration — a
+capability none of the other eight M1 adapters covers); `fetch()`/`normalize()` are **not**
+implemented (fixture-less — there is nothing to golden-test before the query is authored);
+`isAvailable()` returns `{ ok: false, reason: 'dune query authoring deferred to M2' }`
+unconditionally, regardless of `DUNE_API_KEY`. Authoring a live Dune SQL query (query id,
+parameterization) moves to M2 together with its first real consumer (`onchain_token_risk`). None of
+the four Must tools depends on `token.holders`, so an empty `.env` stays fully functional (UC-1)
+regardless of this decision.
 
-**ERC-20/SPL-балансы — решение архитектора (не в M1):** `onchain_wallet_balances` в M1 заполняет
-только `assetType: 'native'` (нативный ETH/SOL через `rpc-evm`/`rpc-solana`). Токен-балансы
-(ERC-20/SPL) требуют **либо** per-контракт `eth_call`/`getTokenAccountsByOwner` над неограниченным
-множеством контрактов (нужен источник «какие токены проверять» — вопрос не тривиальный на $0),
-**либо** индексер/multicall-сервис (обычно платный/недостаточно надёжный keyless), **либо** Dune
-(кредиты + латентность). R-17 acceptance ограничивается «контракт зафиксирован, ≥2 сети реально
-работают» — нативный баланс это закрывает дёшево. `BalanceSchema` уже несёт `assetType`/
-`contractAddress` (§4.1 выше) специально, чтобы M1.5/M2 добавили ERC-20/SPL **без** изменения
-схемы — только заполнением дополнительных строк массива `balances`. Зафиксировано как backlog
-work-item, не блокирует M1.
+**ERC-20/SPL balances are out of scope.** `onchain_wallet_balances` fills only
+`assetType: 'native'` (native ETH/SOL through `rpc-evm`/`rpc-solana`). Token balances require
+**either** per-contract `eth_call`/`getTokenAccountsByOwner` over an unbounded set of contracts
+(which needs a source of "which tokens to check" — not a trivial question at $0), **or** an
+indexer/multicall service (usually paid, or not reliable enough keyless), **or** Dune (credits plus
+latency). R-17 acceptance stops at "the contract is fixed, ≥2 chains actually work", which the
+native balance closes cheaply. `BalanceSchema` already carries `assetType`/`contractAddress`
+precisely so that M1.5/M2 can add ERC-20/SPL **without** a schema change — only by appending rows
+to the `balances` array. Recorded as a backlog work item.
 
-**Десятый адаптер (M2, TASK-005 `m2-alpha-paid`, R-29/R-30): `nansen` — первый платный
-адаптер.** Три способности — `smart-money.flows`, `entity.labels`, `token.risk` — поверх REST
-`api.nansen.ai`, **не** через официальный MCP-сервер Nansen (`mcp.nansen.ai/ra/mcp`, 37 tools,
-решение владельца TASK.md §1 п.2: несколько его tools отдают markdown-текст — непригодно для
-canonical zod-нормализации D5 — и проксирование обошло бы наш собственный кеш/бюджет/SSRF-гейт).
-Источники формы ответа и цены — **только** `nansen-probe-2026-07-23.json` (живой `/account`,
-`credit_cost_table`) и `nansen-openapi-2026-07-23.json` (75 путей, request/response контракты) —
-TASK.md §7 запрещает изобретать что-либо сверх них.
+**The tenth adapter (M2, TASK-005 `m2-alpha-paid`, R-29/R-30): `nansen`, the first paid adapter.**
+Three capabilities — `smart-money.flows`, `entity.labels`, `token.risk` — over the REST API at
+`api.nansen.ai`, **not** through Nansen's official MCP server (`mcp.nansen.ai/ra/mcp`, 37 tools;
+owner decision, TASK.md §1.2): several of its tools return markdown text, which is unusable for
+canonical zod normalization (D5), and proxying would bypass our own cache, budget and SSRF gate.
+The only sources for response shape and price are `nansen-probe-2026-07-23.json` (a live `/account`
+call plus `credit_cost_table`) and `nansen-openapi-2026-07-23.json` (75 paths, request/response
+contracts); TASK.md §7 forbids inventing anything beyond them.
 
-_Регистрация (`providers.config.ts.adapterRegistrations`, 10-я запись):_
+_Registration (`providers.config.ts.adapterRegistrations`, the tenth entry):_
 
 ```ts
 {
   id: 'nansen',
   hosts: ['api.nansen.ai'],
-  // Тот же консервативный старт, что уже используют 5 из 9 M1-адаптеров (dexscreener/defillama/
-  // rpc-evm/rpc-solana/platform-explorer) — заведомо ниже ВСЕХ четырёх документированных вендором
-  // порогов (ratelimit-limit:15/окно не подтверждено, -second:150, -minute:3000,
-  // -credit-fails-minute:10), независимо от того, как трактовать неподтверждённое окно «15» (R-29).
+  // The same conservative start already used by five of the nine M1 adapters (dexscreener/
+  // defillama/rpc-evm/rpc-solana/platform-explorer) — knowingly below ALL four vendor-documented
+  // thresholds (ratelimit-limit: 15/window unconfirmed, -second: 150, -minute: 3000,
+  // -credit-fails-minute: 10), whichever way the unconfirmed "15" window is read (R-29).
   rateLimit: { capacity: 5, refillPerSec: 1 },
   requiresEnv: ['NANSEN_API_KEY'],
 },
 ```
 
-_Аутентификация:_ заголовок `apiKey: <NANSEN_API_KEY>`, **не** `Authorization: Bearer` (пробник:
-`auth.scheme: 'apiKey', in: 'header', name: 'apiKey'`) — легко перепутать именно с MCP-эндпоинтом,
-который использует `Authorization: Bearer <key>`; REST — нет. Все используемые эндпоинты, **кроме**
-`GET /api/v1/account`, — `POST` с JSON-телом (подтверждено и пробником, и openapi-путями) — та же
-форма `fetch()`, что `rpc-evm`'s JSON-RPC POST (§3.2 выше): `{method:'POST',
-headers:{'content-type':'application/json', apiKey}, body: JSON.stringify(...)}`; fixture-recorder
-(R-44, расширение `record-fixture.mjs`) обязан сериализовать тело запроса, не только query-string.
+_Authentication:_ the header is `apiKey: <NANSEN_API_KEY>`, **not** `Authorization: Bearer` (probe:
+`auth.scheme: 'apiKey', in: 'header', name: 'apiKey'`). The MCP endpoint is the one that uses
+`Authorization: Bearer <key>`; REST does not, and the two are easy to confuse. Every endpoint used
+except `GET /api/v1/account` is a `POST` with a JSON body (confirmed by both the probe and the
+openapi paths) — the same `fetch()` shape as `rpc-evm`'s JSON-RPC POST:
+`{method:'POST', headers:{'content-type':'application/json', apiKey}, body: JSON.stringify(...)}`.
+The fixture recorder (R-44, an extension of `record-fixture.mjs`) must serialize the request body,
+not only the query string.
 
-_Три маршрута (`providers.config.ts.routes`, без fallback-адаптера — нет бесплатного эквивалента,
+_Three routes (`providers.config.ts.routes`, with no fallback adapter — there is no free equivalent,
 R-30):_
 
 ```ts
@@ -629,31 +648,28 @@ R-30):_
 { capability: 'token.risk', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
 ```
 
-_**Chain-scope — решение по OQ-3:** `ethereum`+`solana`, буквально то же подмножество, что M1._
-Живая эвиденция показывает, что три релевантных Nansen-энумератора чейнов **не совпадают друг с
-другом**: `SmartMoneyChain` — 17 сетей, `TGMHoldersChain`/`TGMChain` — по 24, а «~32 сети» из
-`supported_chains_mcp` пробника относится к **другой**, вне-скоупа M2 поверхности (официальный
-MCP-сервер, §1 п.2 — не тот список, с которым вообще стоит сравнивать это решение). Все три
-энумератора — **надмножества** `{ethereum, solana}`, но не идентичны друг другу — «поддержать все
-Nansen-сети» означало бы для каждой из трёх способностей свой, дрейфующий независимо от вендора
-список, без единого проверенного продуктового запроса на такую широту (exit-критерии ROADMAP §M2
-просят «flows+labels» и «budget-guard режет», не многосетевой охват). Держим tool-контракт
-идентичным M1 (`chain: z.enum(['ethereum','solana'])` на все 3 новых tool, тот же `superRefine`
-`isValidAddress`-идиом, §5.1) — меньше когнитивной нагрузки, ноль нового vendor-drift-риска.
-Расширение на более широкий список Nansen-сетей — задокументированный backlog-кандидат (§11), не
-блокирующий M2, требующий отдельного пробника **на способность**, когда появится реальный запрос.
+**Paid chain scope is derived, not enumerated.** The three routes were introduced with the same
+`ethereum`+`solana` subset as M1 — the vendor's own chain enumerators disagree with each other
+(`SmartMoneyChain` lists 17 chains, `TGMHoldersChain`/`TGMChain` 24 each, and the "~32 chains" of
+the probe's `supported_chains_mcp` belongs to the out-of-scope MCP surface), so no vendor list could
+be trusted as the definition of coverage. Coverage is now computed instead of enumerated: the
+`nansen` adapter's `chainSupport()` composes the registry with the recorded `CoverageProbe`
+(§4.2.3), and with the paid address-family gate applied (§3.2.1) it resolves to **16** chains for
+`smart-money.flows` and **18** each for `entity.labels` and `token.risk`. An unprobed chain is
+reported as `unverified`, never as `unsupported` (R-58d).
 
-_**Cost-table generation — костяк `costOf()` (R-37):**_ таблица `(method+path, plan) →
-{free,pro}` генерируется **из закоммиченного** `nansen-openapi-2026-07-23.json`'s `x-credit-cost`
-per-operation extension (присутствует на всех 74 операциях спеки — подтверждено grep'ом при
-разведке этой архитектуры) — **не** тратит кредиты на выяснение цены. Механизм — **committed
-`.ts`-модуль, сгенерированный dev-скриптом**, не runtime-парсинг JSON и не build-time codegen в CI:
+_**Cost-table generation — the backbone of `costOf()` (R-37).**_ The `(method+path, plan) →
+{free,pro}` table is generated **from the committed** `nansen-openapi-2026-07-23.json`, whose
+`x-credit-cost` per-operation extension is present on all 74 operations of the spec — so determining
+a price spends no credits. The mechanism is a **committed `.ts` module generated by a dev script**,
+not runtime JSON parsing and not build-time codegen in CI:
 
 ```ts
-// packages/core/scripts/generate-nansen-cost-table.mjs — ручной dev-скрипт (аналог
-// record-fixture.mjs, ВНЕ CI): читает x-credit-cost из nansen-openapi-<date>.json, пишет
-// packages/core/src/adapters/nansen/cost-table.ts — литерал, коммитится, git-diff'абелен (дрейф
-// вендорских цен при следующей перегенерации виден как обычный diff, не скрыт в бинарнике/кеше).
+// packages/core/scripts/generate-nansen-cost-table.mjs — a manual dev script (like
+// record-fixture.mjs, OUTSIDE CI): reads x-credit-cost from nansen-openapi-<date>.json and writes
+// packages/core/src/adapters/nansen/cost-table.ts — a literal, committed and git-diffable, so a
+// vendor price drift shows up as an ordinary diff on the next regeneration instead of hiding in a
+// binary or a cache.
 export const NANSEN_COST_TABLE: Readonly<Record<string, { free: number; pro: number }>> = {
   'GET /api/v1/account': { free: 0, pro: 0 },
   'POST /api/v1/smart-money/netflow': { free: 5, pro: 5 },
@@ -667,51 +683,51 @@ export const NANSEN_COST_TABLE: Readonly<Record<string, { free: number; pro: num
 };
 ```
 
-Выбор в пользу committed-`.ts` (не `resolveJsonModule`-импорт `.json`, не runtime-fetch спеки):
-согласуется со стилем `providers.config.ts` (декларативные литералы, регенерируемые правкой файла,
-не рантайм-парсингом), не требует `resolveJsonModule`/import-attributes возни под NodeNext-ESM
-(`core`'s build — plain `tsc`, §6.1), и держит артефакт человекочитаемым/ревьюабельным в PR-диффе.
+A committed `.ts` (rather than a `resolveJsonModule` import of the `.json`, or fetching the spec at
+runtime) matches the style of `providers.config.ts` — declarative literals regenerated by editing a
+file — avoids `resolveJsonModule`/import-attributes friction under NodeNext ESM (`core` builds with
+plain `tsc`, §6.1), and keeps the artifact human-readable and reviewable in a PR diff.
 
-`nansen`-адаптер's собственный `costOf(cap, args)` (интерфейсный метод `ProviderAdapter` уже
-существует с M1 — все 9 адаптеров тривиально возвращают `{credits: 0}`; `nansen` — первый, кто
-реализует его по-настоящему) мэпит capability → фиксированный список `(method,path)` **и суммирует**
-их цены под живым `plan` (см. account-state ниже) — **не оценка**, ровно то число, которое реально
-спишется:
+The `nansen` adapter's own `costOf(cap, args)` (the `ProviderAdapter` method has existed since M1,
+where all nine adapters trivially return `{credits: 0}`; `nansen` is the first to implement it for
+real) maps a capability to a fixed list of `(method, path)` pairs and **sums** their prices under
+the live `plan` (account state below). This is not an estimate — it is exactly the number that will
+be charged:
 
-| Capability                                                          | HTTP-вызовы (метод+путь)                                                   | `costOf()`              |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------- |
-| `smart-money.flows`                                                 | `POST /smart-money/netflow` + `POST /tgm/holders` (всегда оба — R-41)      | **10** (5+5, оба плана) |
-| `entity.labels`, дефолт (только `query`)                            | `POST /search/general` [+ `POST /search/entity-name`]                      | **0**                   |
-| `entity.labels`, token-scoped (`tokenAddress`, `exhaustive: false`) | + `POST /tgm/holders`                                                      | **5**                   |
-| `entity.labels`, `exhaustive: true`                                 | **только** `POST /profiler/address/labels` (не дублирует дешёвый путь)     | **100**                 |
-| `token.risk`                                                        | `POST /tgm/indicators` + `POST /tgm/token-information` (всегда оба — R-43) | **6** (5+1, оба плана)  |
+| Capability                                                          | HTTP calls (method + path)                                                 | `costOf()`               |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------ |
+| `smart-money.flows`                                                 | `POST /smart-money/netflow` + `POST /tgm/holders` (always both, R-41)      | **10** (5+5, both plans) |
+| `entity.labels`, default (`query` only)                             | `POST /search/general` [+ `POST /search/entity-name`]                      | **0**                    |
+| `entity.labels`, token-scoped (`tokenAddress`, `exhaustive: false`) | + `POST /tgm/holders`                                                      | **5**                    |
+| `entity.labels`, `exhaustive: true`                                 | **only** `POST /profiler/address/labels` (does not repeat the cheap path)  | **100**                  |
+| `token.risk`                                                        | `POST /tgm/indicators` + `POST /tgm/token-information` (always both, R-43) | **6** (5+1, both plans)  |
 
-**Неизвестный `(method,path)` в `NANSEN_COST_TABLE` → `costOf()` возвращает
-`Number.POSITIVE_INFINITY`, никогда `0`** (R-37 MIN-3, буквально второй вариант из требования —
-«отказ / бесконечная цена»): защита от будущего дрейфа спеки (перегенерация таблицы теряет ключ),
-хотя при текущей, ручно-подобранной capability→endpoint карте это не должно срабатывать. Гейт (ниже)
-проверяет `Number.isFinite(cost)` **до** любого обращения к `BudgetStore`/сети — `Infinity` никогда
-не достигает SQLite-параметра (нечего было бы туда биндить).
+**An unknown `(method, path)` makes `costOf()` return `Number.POSITIVE_INFINITY`, never `0`** (R-37
+MIN-3 — literally the second option of the requirement, "refuse / infinite price"): protection
+against future spec drift, where a regeneration loses a key. With the current hand-picked
+capability→endpoint map it should never fire. The gate checks `Number.isFinite(cost)` **before**
+touching `BudgetStore` or the network, so `Infinity` never reaches a SQLite parameter — there would
+be nothing to bind.
 
-_**Account-state — общая опора для `costOf()`'s "живой plan" и потолка бюджета (OQ-1):**_
-`ProviderAdapter.costOf()` остаётся **синхронным** (существующая сигнатура, ломать её ради одного
-адаптера — межпакетная breaking change, задевающая всех 9 M1-адаптеров) — «живой план» читается из
-мутируемого объекта состояния, который сам адаптер обновляет асинхронно ДО синхронного вызова
-`costOf()`:
+_**Account state — the shared basis for `costOf()`'s live plan and for the budget ceiling
+(OQ-1).**_ `ProviderAdapter.costOf()` stays **synchronous** (breaking that signature for one adapter
+would be a cross-package breaking change touching all nine M1 adapters), so the live plan is read
+from a mutable state object that the adapter refreshes asynchronously **before** the synchronous
+`costOf()` call:
 
 ```ts
 // packages/core/src/adapters/nansen/account-state.ts
 export interface NansenAccountSnapshot {
   plan: 'free' | 'pro';
   creditsRemainingAtObserve: number;
-  usageAtObserve: number; // usage.credits_used(provider, dayBucketMs) в ТОТ ЖЕ логический шаг, что /account
+  usageAtObserve: number; // usage.credits_used(provider, dayBucketMs) in the SAME logical step as /account
   observedAtMs: number;
-  dayBucketMs: number; // floor(observedAtMs/86400000)*86400000 — какой бакет этот снимок обслуживает
+  dayBucketMs: number; // floor(observedAtMs/86400000)*86400000 — the bucket this snapshot serves
 }
 export interface NansenAccountState {
-  get(): NansenAccountSnapshot | undefined; // undefined = ни разу не резолвилось (cold start)
+  get(): NansenAccountSnapshot | undefined; // undefined = never resolved (cold start)
   set(snapshot: NansenAccountSnapshot): void;
-  markUnreconciled(): void; // R-38 — транспортная ошибка/402 после резервации
+  markUnreconciled(): void; // R-38 — transport error / 402 after a reservation
   isUnreconciled(): boolean;
   clearUnreconciled(): void;
 }
@@ -720,52 +736,51 @@ export function createNansenAccountState(): NansenAccountState {
 }
 ```
 
-**Инициализация — консервативный дефолт `plan: 'free'`, не «неизвестно/0»:** таблица цен показывает
-`free` цену `>= pro` цену на **каждом** из 8 используемых эндпоинтов (единственная во всей 74-путей
-таблице пара, где `free≠pro`, — `GET /search/token-sectors` (1 vs 0) — не используется M2), так
-`plan:'free'` как дефолт до первого резолва не переоценивает бюджет ни на одном пути M2 (в худшем
-случае недооценивает щедрость Pro-плана на один кредит на неиспользуемом эндпоинте — безопасное
-направление ошибки).
+**The initial value is the conservative `plan: 'free'`, not "unknown"/0.** The price table shows the
+`free` price `>=` the `pro` price on **every** one of the eight endpoints used (the single `free≠pro`
+pair in the whole 74-path table is `GET /search/token-sectors`, 1 vs 0, which M2 does not call), so
+defaulting to `free` before the first resolve never over-spends the budget on any M2 path. In the
+worst case it under-states the Pro plan's generosity by one credit on an unused endpoint — the safe
+direction to be wrong in.
 
-**Когда происходит resync (`GET /api/v1/account`, 0cr, тот же rate-limit bucket, что любой другой
-nansen-вызов):**
+**When a resync happens** (`GET /api/v1/account`, 0 credits, same rate-limit bucket as any other
+nansen call):
 
-1. **Cold start** — `accountState.get()` возвращает `undefined` (ни разу не резолвилось в этом
-   процессе) **или** снимок принадлежит **прошлому** day-бакету (`snapshot.dayBucketMs !==
-floor(now/86400000)*86400000`) — новый бакет начинается с обязательного 0-кредитного resync,
-   не с непроверенного переноса вчерашнего остатка.
-2. **Unreconciled** (`accountState.isUnreconciled()`) — предыдущий вызов оставил резервацию
-   несверенной (транспортная ошибка/таймаут без ответа — R-38, **или** `402 Payment Required` —
-   UC-6, оба используют один и тот же флаг/путь восстановления, а не два разных механизма).
-3. **Иначе — НЕ резолвится на каждый вызов.** `/account` бесплатен по кредитам, но не бесплатен по
-   rate-limit-слоту и латентности; резолвить на каждый платный вызов означало бы удвоить сетевые
-   round-trip'ы без функциональной пользы поверх (1)/(2). Между resync'ами потолок бакета —
-   **зафиксированный на момент последнего снимка** остаток (см. формулу ниже) — не «текущий живой».
+1. **Cold start** — `accountState.get()` returns `undefined` (never resolved in this process) **or**
+   the snapshot belongs to a **previous** day bucket (`snapshot.dayBucketMs !==
+floor(now/86400000)*86400000`). A new bucket starts with a mandatory zero-credit resync, not with
+   an unverified carry-over of yesterday's remainder.
+2. **Unreconciled** (`accountState.isUnreconciled()`) — the previous call left a reservation
+   unreconciled: a transport error/timeout with no response (R-38) **or** a `402 Payment Required`
+   (UC-6). Both use the same flag and the same recovery path, not two mechanisms.
+3. **Otherwise, no resync.** `/account` is free in credits but not free in rate-limit slots and
+   latency; resolving before every paid call would double the network round-trips for no functional
+   gain on top of (1)/(2). Between resyncs the bucket ceiling is the remainder **fixed at the last
+   snapshot** (formula below), not a live figure.
 
-_**Формула потолка бакета (OQ-1, снимает ловушку двойного счёта из UC-4/§7 open-questions) — ДВА
-раздельных условия, не один `min()`:**_ первая версия этого раздела схлопывала вендорский лимит и
-`NANSEN_DAILY_CREDIT_CAP` в один `min(...)`, сравниваемый с **бакет-суммарным** `usage` — это
-корректно только при resync НА старте бакета (`usageAtObserve` тогда неявно `0`), но resync-триггер
-(2) («unreconciled») срабатывает **посреди** бакета, когда `creditsRemainingAtObserve` уже учитывает
-весь потраченный в этом бакете расход, а `usage.credits_used(bucket)` — тот же самый расход ещё раз:
-двойной счёт, ровно та ловушка, которую формула должна была исключать (найдено координатором на
-ревью этой архитектуры). **Исправление — якорить остаток на `usageAtObserve`, а не на старте бакета,
-и считать вендорский лимит от расхода "с якоря", а не от расхода "с начала бакета":**
+_**The bucket ceiling formula (OQ-1) — TWO separate conditions, not one `min()`.**_ Anchor the
+remainder to `usageAtObserve` and measure the vendor term against spend "since the anchor", not
+spend "since the start of the bucket":
 
 ```
 spentSinceAnchor = usage.credits_used(provider, bucket) - snapshot.usageAtObserve
 
-allowed  ⟺  (spentSinceAnchor + costOf()) <= snapshot.creditsRemainingAtObserve            // вендорский лимит, anchor-relative
+allowed  ⟺  (spentSinceAnchor + costOf()) <= snapshot.creditsRemainingAtObserve            // vendor limit, anchor-relative
            ∧  (usage.credits_used(provider, bucket) + costOf()) <= (NANSEN_DAILY_CREDIT_CAP ?? Infinity)  // self-imposed cap, bucket-relative
 ```
 
-**Оба условия обязательны одновременно** — намеренно измеряют РАЗНЫЕ вещи (anchor-relative vs
-bucket-relative), поэтому **сырой** `creditsRemainingAtObserve` НЕ схлопывается в один `min()` с
-`NANSEN_DAILY_CREDIT_CAP` напрямую (это и была ошибка первой версии этого раздела, которую нашло
-координаторское ревью). Но `BudgetStore.checkAndReserve()` (интерфейс — §«Модуль `src/cache/*»`
-ниже, M-1) намеренно принимает **один** скалярный `ceiling` — он provider-agnostic, ничего не
-знает про якоря, D7-совместим. Оба условия **алгебраически сводятся** к одному bucket-relative
-скаляру, если сначала перебазировать вендорский член на `usageAtObserve` — и только так:
+**Both conditions hold simultaneously and measure different things** (anchor-relative vs
+bucket-relative), so raw `creditsRemainingAtObserve` must **not** be collapsed into a `min()` with
+`NANSEN_DAILY_CREDIT_CAP`. Collapsing them is only correct when the resync happens at the start of a
+bucket (where `usageAtObserve` is implicitly `0`); trigger (2) fires **mid-bucket**, when
+`creditsRemainingAtObserve` already accounts for everything spent in this bucket and
+`usage.credits_used(bucket)` counts that same spend a second time — a double count, exactly the trap
+the formula exists to avoid.
+
+`BudgetStore.checkAndReserve()` (interface below, under "Module `src/cache/*`") deliberately takes a
+**single** scalar `ceiling`: it is provider-agnostic, knows nothing about anchors, and stays
+D7-compatible. The two conditions **reduce algebraically** to one bucket-relative scalar — but only
+after the vendor term is rebased onto `usageAtObserve`:
 
 ```
 spentSinceAnchor + cost <= creditsRemainingAtObserve
@@ -778,270 +793,276 @@ effectiveCeiling = min( snapshot.usageAtObserve + snapshot.creditsRemainingAtObs
 allowed  ⟺  usage.credits_used(provider, bucket) + costOf() <= effectiveCeiling
 ```
 
-**Это — единственная корректная точка, где `min()` разрешён** (наивный `min(creditsRemainingAt
-Observe, CAP)` БЕЗ перебазирования на `usageAtObserve` — ровно тот дефект, что был исправлен
-предыдущим раундом; координатор явно указал, что интерфейс с одним скалярным `ceiling` без этой
-формулы-мостика выглядит как приглашение написать именно наивный вариант заново). `effectiveCeiling`
-— **то самое значение**, которое адаптер вычисляет из `NansenAccountSnapshot` и передаёт как
-четвёртый аргумент в `checkAndReserve(provider, bucket, cost, effectiveCeiling, velocity?)`; `BudgetStore` со
-своей стороны сравнивает его буквально с `usage.credits_used(bucket) + cost` — простое
-bucket-relative сравнение, вся anchor-арифметика уже свёрнута ДО вызова, снаружи `BudgetStore`
-(тот же R-35-паттерн разделения ответственности, что уже задокументирован выше: `BudgetStore` —
-provider-agnostic леджер, живой ceiling/anchor — Nansen-специфичная забота вызывающего). **`/account`
-и чтение `usage.credits_used(provider, bucket)` для `usageAtObserve` — один логический шаг
-resync'а** (оба значения читаются друг за другом без промежуточного платного вызова, попадают в
-ОДИН `NansenAccountSnapshot`) — иначе сам якорь мог бы устареть до того, как станет частью снимка.
+**That is the only place where `min()` is legitimate.** A naive `min(creditsRemainingAtObserve, CAP)`
+without the rebase produces a phantom lockout (worked example below). `effectiveCeiling` is the
+value the adapter computes from `NansenAccountSnapshot` and passes as the fourth argument to
+`checkAndReserve(provider, bucket, cost, effectiveCeiling, velocity?)`; `BudgetStore` compares it
+literally against `usage.credits_used(bucket) + cost` — a plain bucket-relative comparison, with all
+anchor arithmetic already folded away outside the store. That is the same R-35 separation documented
+elsewhere here: `BudgetStore` is a provider-agnostic ledger, the live ceiling/anchor is a
+Nansen-specific concern of the caller.
 
-**Проверка на cold start:** `usageAtObserve` при самом первом resync'е бакета — это то, что уже
-персистентно накоплено в `usage` (обычно `0` для нового дня, но НЕ обязательно `0` при рестарте
-процесса посреди уже начатого бакета — та же формула корректно обрабатывает и этот случай, не
-только «unreconciled»-триггер).
+**`/account` and the read of `usage.credits_used(provider, bucket)` for `usageAtObserve` are one
+logical resync step** — both values are read back to back with no paid call in between and land in
+**one** `NansenAccountSnapshot`. Otherwise the anchor itself could go stale before becoming part of
+the snapshot.
 
-**Числовой пример (реальный free/100cr аккаунт, ровно кейс координаторского ревью; `NANSEN_DAILY_
-CREDIT_CAP` не задан ⇒ `Infinity`, не влияет на `min()` ниже):**
+On cold start, `usageAtObserve` at the bucket's first resync is whatever is already persisted in
+`usage` — usually `0` for a new day, but **not necessarily** `0` when the process restarts
+mid-bucket. The same formula handles that case correctly; it is not specific to the unreconciled
+trigger.
 
-| Шаг                               | `usage.credits_used`                                                                                                             | `creditsRemainingAtObserve`                           | `usageAtObserve`                                | `spentSinceAnchor`     | `effectiveCeiling` = `usageAtObserve + creditsRemainingAtObserve`  | Итог                                                                                                                  |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------- | ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Cold start, resync #1             | 0                                                                                                                                | 100                                                   | 0                                               | 0                      | `0 + 100 = 100`                                                    | снимок: remaining=100, anchor=0, ceiling=100                                                                          |
-| 5× вызов по 5cr, все успешны      | 25                                                                                                                               | 100 (снимок не менялся)                               | 0                                               | 25                     | 100 (снимок не менялся)                                            | допустимо: `25+5≤100` (bucket-relative проверка через `effectiveCeiling`, алгебраически = `25+5≤100` anchor-relative) |
-| 6-й вызов — таймаут ДО ответа     | 25 (резервация делалась, но не была реконсилирована — прибавка на резервацию произошла отдельно, здесь считаем уже осевший факт) | 100                                                   | 0                                               | —                      | 100                                                                | `markUnreconciled()`                                                                                                  |
-| Следующий вход в gate → resync #2 | 25                                                                                                                               | **75** (живой remaining ПОСЛЕ всех пяти успешных 5cr) | **25** (= `usage.credits_used` в тот же момент) | 0 (сразу после снимка) | **`25 + 75 = 100`** (НЕ `75` — перебазировано на `usageAtObserve`) | новый снимок: remaining=75, anchor=25, ceiling=100                                                                    |
-| 7-й вызов, 5cr                    | 25                                                                                                                               | 75                                                    | 25                                              | 0                      | 100                                                                | допустимо: `25+5≤100` (`BudgetStore` видит только это) → **проходит**                                                 |
+**Worked example** (a real free/100cr account; `NANSEN_DAILY_CREDIT_CAP` unset ⇒ `Infinity`, so it
+does not affect the `min()`):
 
-Со СТАРОЙ (однопеременной, наивно-схлопнутой) формулой шаг resync #2 дал бы `ceiling=min(75,
-Infinity)=75` — **без** перебазирования на `usageAtObserve=25` — и сравнение `25+5≤75` тоже прошло
-бы на ЭТОМ шаге, но потолок для ВСЕХ последующих вызовов уже занижен на 25 (было доступно 75
-**новых** кредитов сверх уже потраченных 25, наивная формула видит только 75 суммарно, т.е. 50
-новых) — при накоплении повторных resync'ов (таймауты, рестарты процесса) каждый следующий resync
-**снова** вычитает уже посчитанный расход, пока доступный остаток не сойдётся к нулю раньше
-физического исчерпания счёта — именно тот phantom-lockout, для лечения которого и был введён resync
-R-38. С ПЕРЕБАЗИРОВАННЫМ `effectiveCeiling` (`usageAtObserve + creditsRemainingAtObserve = 100`,
-не меняется между resync'ами до тех пор, пока вендорский остаток на самом деле не меняется иначе,
-чем через наш же учтённый `usage`) ни один resync не съедает уже учтённый расход повторно, сколько
-бы раз он ни срабатывал.
+| Step                                 | `usage.credits_used` | `creditsRemainingAtObserve`                      | `usageAtObserve`                              | `spentSinceAnchor` | `effectiveCeiling`                       | Outcome                           |
+| ------------------------------------ | -------------------- | ------------------------------------------------ | --------------------------------------------- | ------------------ | ---------------------------------------- | --------------------------------- |
+| Cold start, resync #1                | 0                    | 100                                              | 0                                             | 0                  | `0 + 100 = 100`                          | snapshot: remaining 100, anchor 0 |
+| 5 calls × 5cr, all succeed           | 25                   | 100 (snapshot unchanged)                         | 0                                             | 25                 | 100                                      | allowed: `25+5 ≤ 100`             |
+| 6th call — timeout before a reply    | 25                   | 100                                              | 0                                             | —                  | 100                                      | `markUnreconciled()`              |
+| Next entry into the gate → resync #2 | 25                   | **75** (live remainder after the five 5cr calls) | **25** (`usage.credits_used` at that instant) | 0                  | **`25 + 75 = 100`** (not `75` — rebased) | snapshot: remaining 75, anchor 25 |
+| 7th call, 5cr                        | 25                   | 75                                               | 25                                            | 0                  | 100                                      | allowed: `25+5 ≤ 100` → passes    |
 
-**OQ-5 — решение: ДА, вводим необязательный `NANSEN_DAILY_CREDIT_CAP`.** Читается через
-`EnvSchema` (пустой/отсутствующий = без ограничения, поведение не меняется от live-derived базы —
-решение владельца TASK.md §1 п.1 не нарушается: cap может только **сузить** живой потолок, никогда
-не расширить его сверх `credits_remaining`). Дешёвая, полностью опциональная защёлка для оператора,
-опасающегося неконтролируемого расхода агентом за один день, без встраивания в обязательный путь.
+In the timeout row, `usage` reads 25 as the settled fact: the reservation for the sixth call was
+written separately and is reconciled later, not counted here.
 
-_**Budget gate — размещение (OQ-2) и почему НЕ registry-generic и НЕ отдельный wrapper-объект:**_
-Ни `CapabilityRegistry.resolve()` (там гейт был бы Nansen-специфичным кодом внутри универсального
-компонента — code smell, которого TASK.md явно просит избежать, ЛИБО потребовал бы добавить
-generic `BudgetStore`/`costOf()`-плюмбинг в `registry.ts`, задевающий все 9 M1-путей ради одного
-платного), ни MCP tool-хендлер (`CapabilityRegistry` сам владеет cache lookup — гейт на уровне
-хендлера неизбежно исполнялся бы **до** него, ломая обязательный порядок R-37/UC-5 — TASK.md уже
-исключает этот вариант явно). **Решение: гейт живёт как внутренний слой РЕАЛИЗАЦИИ `fetch()` самого
-`nansen`-адаптера** (`packages/core/src/adapters/nansen/index.ts`) — ровно на существующем шве,
-которым `CapabilityRegistry.resolve()` уже вызывает `adapter.fetch(cap, args)` **после**
-cache-miss и **до** `normalize()` (шов задокументирован собственным docstring `registry.ts`, §3.2
-выше, ноль правок туда не требуется). Это не «wrapper-объект вокруг адаптера» (два экспортируемых
-конструктора, где по ошибке можно зарегистрировать несгейченный) — единственная публично
-экспортируемая фабрика пакета — `createNansenAdapter(deps): ProviderAdapter`, и singleflight/
-gate/reconcile — приватные, не экспортируемые шаги ВНУТРИ её `fetch()`. **Небайпассируемость —
-структурная, не конвенция:** `adapters: Map<string, ProviderAdapter>`, которым
-`CapabilityRegistry` инициализируется, — единственная точка, где что-либо регистрируется под
-ключом `'nansen'` (все три M2-маршрута ссылаются на один и тот же id) — «сырых», не прошедших
-gate-логику примитивов **нет в публичном API пакета** вовсе (`src/index.ts` не реэкспортирует ничего
-кроме `createNansenAdapter`; внутренние helper'ы `adapters/nansen/*.ts` доступны только
-package-internal коду — тестам `packages/core/test/` и dev-скрипту `record-fixture.mjs`,
-сознательно и документированно обходящим гейт при **записи фикстур**, не в проде).
+With a naively collapsed formula, resync #2 would give `ceiling = min(75, Infinity) = 75` — no
+rebase onto `usageAtObserve = 25`. The check `25+5 ≤ 75` still passes on _that_ step, but the
+ceiling for every subsequent call is now understated by 25: 75 **new** credits were available on top
+of the 25 already spent, and the naive formula sees only 75 in total, i.e. 50 new. As resyncs
+accumulate (timeouts, process restarts) each one subtracts already-counted spend again, until the
+available remainder converges to zero long before the account is physically exhausted — the exact
+phantom lockout that resync R-38 exists to cure. With the rebased `effectiveCeiling`
+(`usageAtObserve + creditsRemainingAtObserve = 100`, stable across resyncs for as long as the vendor
+remainder only moves through spend we already counted), no resync eats accounted spend twice,
+however often it fires.
 
-**Из этого размещения бесплатно следует ключевой инвариант:** с точки зрения
-`CapabilityRegistry.resolve()` отказ гейта **неотличим** от обычного сетевого сбоя адаптера — оба
-суть `throw` из `adapter.fetch()`, пойманный **уже существующим** try/catch `resolve()`
-(`registry.ts`, §3.2 выше) и записанный в `tried`; поскольку у всех трёх M2-маршрутов нет
-fallback-адаптера (`adapterIds: ['nansen']` — единственный элемент), цикл сразу завершается
-`CapabilityUnavailableError` → tool возвращает `isError: true` — **тот же самый** R-24/R-40-путь,
-что и «ключ не задан», **без единой строки правок в `registry.ts` или `resolve-capability.ts`**
-(M1's 287 тестов и `_meta.cache`-контракт остаются побитово теми же).
+**`NANSEN_DAILY_CREDIT_CAP` is an optional self-imposed cap (OQ-5).** Read through `EnvSchema`
+(empty/absent = no restriction, behaviour unchanged from the live-derived base — owner decision
+TASK.md §1.1 is not violated, since the cap can only **narrow** the live ceiling, never widen it
+past `credits_remaining`). A cheap, entirely optional latch for an operator worried about an agent
+burning through a day's credits, with nothing added to the mandatory path.
 
-#### Два вторых знаменателя (SEC-1 + Q-3, 2026-07-27)
+_**Budget gate placement (OQ-2) — inside the adapter, not registry-generic and not a wrapper
+object.**_ Not `CapabilityRegistry.resolve()`: the gate there would be Nansen-specific code inside a
+universal component, or would require generic `BudgetStore`/`costOf()` plumbing in `registry.ts`
+touching all nine M1 paths for the sake of one paid one. Not the MCP tool handler either:
+`CapabilityRegistry` owns the cache lookup, so a handler-level gate would inevitably run **before**
+it, breaking the mandatory order of R-37/UC-5.
 
-Дневной потолок ограничивает расход **за сутки**. Это предел ущерба, а не тормоз, и он слеп к двум
-вещам сразу — что и зафиксировали две записи реестра:
+**The gate is an internal layer of the `nansen` adapter's own `fetch()` implementation**
+(`packages/core/src/adapters/nansen/index.ts`) — precisely on the seam where
+`CapabilityRegistry.resolve()` already calls `adapter.fetch(cap, args)` **after** a cache miss and
+**before** `normalize()` (the seam is documented in `registry.ts`'s own docstring; it needs no
+edits). This is not a wrapper object around an adapter — two exported constructors, one of which can
+be registered ungated by mistake. The only publicly exported factory of the package is
+`createNansenAdapter(deps): ProviderAdapter`, and singleflight/gate/reconcile are private steps
+inside its `fetch()`.
 
-| Что не видел дневной потолок            | Почему                                                                                                    | Знаменатель, который видит |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------- |
-| Всплеск (**SEC-1**)                     | Троттлинг держит ~5 платных вызовов/с ≈ 50 кредитов/с — потолок в 2500 съедался меньше чем за минуту      | кредиты за окно 60 с       |
-| Вызов ценой **ноль** кредитов (**Q-3**) | `used + 0 > ceiling` ложно всю жизнь бакета при любом потолке — это смысл слова «в кредитах», а не дефект | ВЫЗОВЫ за то же окно       |
+**Non-bypassability is structural, not a convention.** The `adapters: Map<string, ProviderAdapter>`
+that `CapabilityRegistry` is constructed with is the only place anything is registered under the key
+`'nansen'` (all three M2 routes point at that same id), and raw, ungated primitives are **absent
+from the package's public API** entirely: `src/index.ts` re-exports nothing but
+`createNansenAdapter`. The internal helpers under `adapters/nansen/*.ts` are reachable only by
+package-internal code — the tests in `packages/core/test/` and the `record-fixture.mjs` dev script,
+which bypasses the gate deliberately and documentedly **while recording fixtures**, never in
+production.
 
-Оба живут в одной строке `usage_window(provider, window_start, credits_used, calls_made)` и
-проверяются **внутри той же транзакции**, что и дневная бронь. Последнее — не деталь реализации:
-`cache.sqlite3` по умолчанию общий на машину (несколько stdio-сессий — поддерживаемая топология),
-и две связи, проверяющие своё окно вне общей транзакции, прошли бы каждая по устаревшему чтению.
-Либо все лимиты проходят и все счётчики пишутся, либо не трогается ничего.
+**A key invariant follows from that placement for free:** from
+`CapabilityRegistry.resolve()`'s point of view, a gate refusal is **indistinguishable** from an
+ordinary adapter network failure — both are a `throw` out of `adapter.fetch()`, caught by the
+**already existing** try/catch in `resolve()` and recorded in `tried`. Since none of the three M2
+routes has a fallback adapter (`adapterIds: ['nansen']`, a single element), the loop ends
+immediately with `CapabilityUnavailableError` → the tool returns `isError: true` — the **same**
+R-24/R-40 path as "the key is not set", without a single line of change in `registry.ts` or
+`resolve-capability.ts`. The M1 tests and the `_meta.cache` contract are untouched.
 
-`BudgetStore` остаётся провайдер-агностичным: он получает `velocity: {windowStartMs, ceiling,
-maxCalls?}` и сравнивает обычные числа — про минуты, кредиты и вендора он по-прежнему не знает
-ничего, ровно как не знает про `usageAtObserve`.
+#### Two second denominators (burst and zero-credit calls)
 
-**Числа и почему они выведены по-разному.** Кредитный лимит выводится
-(`max(100, потолок/20)` за окно): балансы `free` и `Pro` различаются на порядки, а решение
-владельца #1 требует, чтобы оба работали без правок кода. Делитель 20 даёт минимум ~20 минут на
-исчерпание дня; пол 100 — цена самого дорогого одиночного вызова, потому что лимит ниже стоимости
-одного вызова делает способность невозможной, а не ограниченной. Лимит вызовов, наоборот,
-**фиксирован** (60/мин): вызов есть вызов на любом тарифе — ни лимиты вендора, ни давление на рост
-строк кеша не масштабируются балансом, выводить не из чего.
+The daily ceiling limits spend **per day**. It is a damage bound, not a brake, and it is blind to
+two things at once — which is what the two ledger entries below record:
 
-**Асимметрия возврата.** Кредиты возвращаются (сверка пишет `actual − reserved`, возможно
-отрицательное) и уходят в **то** окно, где была бронь, — не в текущее, иначе долгий вызов
-кредитовал бы окно, которое ничего не тратило. Число вызовов **не возвращается никогда**:
-обращение к вендору состоялось, и «возврат» позволил бы череде дешёвых-и-возвращённых вызовов
-пройти мимо лимита, ради которого он и заведён.
+| What the daily ceiling missed             | Why                                                                                                                                         | Denominator that sees it  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| A burst (**SEC-1**)                       | Throttling allows ~5 paid calls/s ≈ 50 credits/s — a 2500 ceiling is eaten in under a minute                                                | credits per 60s window    |
+| A call costing **zero** credits (**Q-3**) | `used + 0 > ceiling` is false for the entire life of a bucket under any ceiling — that is what "denominated in credits" means, not a defect | CALLS per the same window |
 
-**Три отказа различимы по тексту**, потому что требуют противоположных действий: поднять потолок,
-переждать окно, или — для лимита вызовов — понять, что кредитная ручка тут не поможет вовсе.
+Both live in one `usage_window(provider, window_start, credits_used, calls_made)` row and are checked
+**inside the same transaction** as the daily reservation. That last part is not an implementation
+detail: `cache.sqlite3` is shared per machine by default (several stdio sessions is a supported
+topology), and two connections checking their own window outside a shared transaction would each
+pass on a stale read. Either all limits fit and all counters are written, or nothing is touched.
 
-**Заявленное ограничение:** окно фиксированное (tumbling), не скользящее, поэтому всплеск на
-границе двух окон достигает 2× лимита. Скользящее требует истории вызовов вместо одного счётчика,
-а 2× не отменяет цели «дать человеку время заметить».
+`BudgetStore` stays provider-agnostic: it receives `velocity: {windowStartMs, ceiling, maxCalls?}`
+and compares plain numbers. It knows nothing about minutes, credits or the vendor — exactly as it
+knows nothing about `usageAtObserve`.
 
-_**Атомарный check+reserve (R-37 concurrency-требование):**_ `BudgetStore.checkAndReserve(...)`
-(интерфейс — §«Модуль `src/cache/*`» ниже) реализован через `better-sqlite3`'s
-`db.transaction(fn).immediate()` — **`IMMEDIATE`, не `DEFERRED`** (default) — СИНХРОННУЮ
-читай-сравни-пиши секцию (тот же приём конкурентной безопасности, что уже задокументирован и
-провёрен для `net/rate-limit.ts`'s `throttle()`, §3.2 выше: «refill+consume+decide — целиком
-синхронный шаг» — здесь то же самое для «прочитать usage + сравнить с потолком + аддитивно
-записать резервацию», плюс настоящая SQLite-транзакция поверх, а не только JS-семантика отсутствия
-`await`). В рамках одного процесса два конкурентных логических вызова, чья суммарная цена превышает
-остаток, детерминированно дают **ровно один** `{ok:true}` и один `{ok:false}` — второй никогда не
-достигает сети (R-37(c) acceptance). Отказ **не пишет** резервацию вовсе (не «откат», а просто «нет
-записи») — `usage` остаётся нетронутым (R-37 acceptance a/b); ответ `{ok:false, reason}` называет
-**какой именно** из двух пределов сработал («vendor: need X, remaining (as of last resync) Y» vs
-«self-imposed cap: need X, NANSEN_DAILY_CREDIT_CAP allows Y») — иначе оператор не может отличить
-реальное исчерпание вендорского счёта от собственной защёлки (OQ-5).
+**The numbers, and why they are derived differently.** The credit limit is derived
+(`max(100, ceiling/20)` per window): `free` and `Pro` balances differ by orders of magnitude, and
+owner decision #1 requires both to work with no code change. A divisor of 20 leaves at least ~20
+minutes before a day can be exhausted; the floor of 100 is the price of the most expensive single
+call, because a limit below the cost of one call makes a capability impossible rather than bounded.
+The call limit, by contrast, is **fixed** (60/min): a call is a call on any plan — neither the
+vendor's limits nor the pressure on cache row growth scales with a balance, so there is nothing to
+derive from.
 
-**`dayBucketMs` фиксируется ОДИН раз на вход в gate (M-2 review) — не пересчитывается при
-реконсиляции.** Локальная переменная `const bucket = dayBucketMs(Date.now())`, вычисленная **до**
-`checkAndReserve`, передаётся дальше по всей цепочке одного логического вызова (резервация → HTTP →
-реконсиляция) как параметр, а не пересчитывается из `Date.now()` на каждом шаге. Без этого вызов,
-зарезервированный в 23:59:59.8, чей ответ приходит в 00:00:00.2, писал бы отрицательную дельту в
-**новый** день-бакет (чужая проблема чужого дня, плюс отрицательный `credits_used` ломает
-задокументированный аддитивный/never-overwritten инвариант `usage`, §4.2) — резервация и
-реконсиляция одного вызова всегда бьют в ОДНУ и ту же строку `usage`, независимо от того, что
-`Date.now()` успел показать между ними.
+**Refunds are asymmetric.** Credits are refunded (reconciliation writes `actual − reserved`,
+possibly negative) into **the** window the reservation was made in, not the current one — otherwise
+a long call would credit a window that spent nothing. The call count is **never** refunded: the
+vendor was contacted, and a "refund" would let a chain of cheap-and-refunded calls slip past the
+very limit it exists for.
 
-**Cross-process контракт (M-3 review) — `DATA_DIR` по умолчанию общий на машину
-(`~/.onchain-intel`), т.е. несколько stdio-сессий Claude Code одновременно — несколько writer-
-соединений к одному `cache.sqlite3`.** Атомарность `checkAndReserve` внутри одного процесса не
-означает атомарность между процессами — но `BEGIN IMMEDIATE` (не `DEFERRED`) берёт write-lock СРАЗУ,
-поэтому штатный busy-handler/таймаут действительно применяется (с `DEFERRED` конкурентная запись
-другого процесса между read и upgrade-to-write даёт `SQLITE_BUSY_SNAPSHOT` **немедленно**, минуя
-busy-handler целиком — WAL-специфика, не гипотетическая). `SqliteBudgetStore`'s соединение
-открывается явным `new Database(path, { timeout: 5000 })` (не дефолтный 0мс) — при конкуренции
-`checkAndReserve` подождёт до 5с занятой БД, а не бросит сразу. Бюджет при этом **никогда не
-портится** — транзакция либо целиком коммитится, либо целиком абортится (anchor-формула, §выше,
-уже cross-process-корректна по построению — она не зависит от того, кто именно инкрементировал
-`usage` между resync'ами); единственный наблюдаемый эффект конкуренции — редкий
-`CapabilityUnavailableError` вместо мгновенного успеха, если таймаут всё же истёк (в один stdio-
-процесс на пользователя это практически недостижимо, в многопроцессном сценарии — не порча данных,
-а лишний повтор). **Singleflight (R-39, ниже) — принципиально per-process**, не per-machine: два
-РАЗНЫХ процесса, сделавших идентичный запрос одновременно, — это два настоящих запроса, каждый
-законно платит свою цену; коалессинг здесь не нужен и не применяется.
+**The three refusals are distinguishable by their text**, because they demand opposite actions:
+raise the ceiling, wait out the window, or — for the call limit — understand that the credit knob
+does not help at all.
 
-_**Singleflight (R-39) — где именно:**_ САМЫЙ внешний слой `fetch()`'s реализации, ДО
-check-and-reserve (иначе два одновременных **идентичных** вызова оба зарезервировали бы кредиты —
-двойной счёт для того, что логически один запрос). In-memory `Map<string, Promise<unknown>>`,
-ключ — `deriveArgsHash(capability, args)` (переиспользование существующего `net/args-hash.js`
-экспорта, не новый примитив), запись стирается в `finally` по расчёту промиса — второй одновременный
-идентичный вызов ждёт **тот же** промис (ни второй резервации, ни второго HTTP-запроса, ни второй
-записи в `usage`); вызов, пришедший ПОСЛЕ того как первый уже разрешился, стартует заново
-(корректно — это новый по времени запрос, ему нужна собственная свежая проверка бюджета).
+**Stated limitation:** the window is fixed (tumbling), not sliding, so a burst straddling the
+boundary of two windows reaches 2× the limit. A sliding window would need a history of calls instead
+of a single counter, and 2× does not defeat the goal of giving a human time to notice.
 
-_**Post-call reconciliation + transport-failure/402 resync (R-38, UC-6) — ОБЯЗАТЕЛЬНЫЙ инвариант:
-реконсиляция происходит РОВНО ОДИН РАЗ на логический `fetch()`, ПОСЛЕ того как ВСЕ под-вызовы этого
-`fetch()` завершились** (найдено на ревью, C-1 — предыдущая формулировка «после успешного HTTP-
-ответа» читалась per-response, что для двух-под-вызовных способностей давало `usage += (5-10) +
-(5-10) = 0` вместо реально потраченных 10 — счётчик обнулял сам себя на каждом платном вызове
-`smart-money.flows`/`token.risk`):_
+_**Atomic check + reserve (the R-37 concurrency requirement).**_ `BudgetStore.checkAndReserve(...)`
+is implemented with `better-sqlite3`'s `db.transaction(fn).immediate()` — **`IMMEDIATE`, not the
+default `DEFERRED`** — around a **synchronous** read-compare-write section. This is the same
+concurrency technique already documented for `net/rate-limit.ts`'s `throttle()` ("refill + consume +
+decide is one wholly synchronous step"), here applied to "read usage + compare against the ceiling +
+additively write the reservation", with a real SQLite transaction on top rather than only the JS
+semantics of not awaiting.
 
-- `actualTotal = Σ(X-Nansen-Credits-Used)` по **всем** под-ответам этого `fetch()` (одно число для
-  `smart-money.flows`/`token.risk`, совпадает с единственным под-ответом для `entity.labels`, у
-  которой всегда ровно один платный HTTP-вызов на escalation-путях), `delta = actualTotal -
-reservedTotal` (та же `reservedTotal`, что была передана в `checkAndReserve`, §выше — сумма ОБОИХ
-  цен из `costOf()`-таблицы, не по одной за раз). Пишется ОДНИМ вызовом `budgetStore.recordDelta(
-'nansen', bucket, delta)` тем же аддитивным upsert, что и резервация (не отдельная замещающая
-  запись — R-34/R-38).
-- **Отсутствующий/непарсящийся заголовок `X-Nansen-Credits-Used` ХОТЯ БЫ на ОДНОМ под-ответе →
-  вся реконсиляция этого `fetch()` деградирует к `delta = 0` целиком** (`Number()`+
-  `Number.isFinite`-guard на каждый под-ответ) — **никогда** частичная сумма по тем под-ответам, у
-  которых заголовок распарсился: частичная сумма систематически НЕДО-считает факт (те же −5/+0
-  математически, только по одной стороне) — хуже, чем консервативный ноль. Резервация остаётся
-  единственным известным фактом (никогда не обнуляется молча) + `accountState.markUnreconciled()`.
-- Транспортная ошибка/таймаут на ЛЮБОМ под-вызове (ответ не пришёл вовсе) — тот же
-  `markUnreconciled()`, реконсиляция для этого `fetch()` не запускается вовсе (нечего суммировать).
-- **`402 Payment Required`** (UC-6, openapi: `PaymentRequiredError`, headers `Payment-Required`/
-  `WWW-Authenticate: Payment .../Payment-Receipt`) на любом под-вызове — трактуется как
-  авторитетный сигнал «бюджета сейчас нет»: `fetch()` бросает целиком (см. «Частичный отказ» ниже),
-  резервация остаётся в силе как консервативная оценка факта, плюс `markUnreconciled()` →
-  следующий вход в gate обязательно резолвит `/account`, а не доверяет устаревшему локальному
-  счётчику. Один и тот же механизм покрывает и «сеть отвалилась», и «Nansen сам сказал нет» — не
-  два разных пути.
-- **`bucket` в `recordDelta(...)` — тот же `dayBucketMs`, что был зафиксирован ДО `checkAndReserve`
-  для ЭТОГО ЖЕ логического вызова** (C-2, §выше) — никогда пересчитанный из `Date.now()` заново на
-  момент, когда пришёл ответ.
+Within one process, two concurrent logical calls whose combined cost exceeds the remainder
+deterministically produce **exactly one** `{ok:true}` and one `{ok:false}`; the second never reaches
+the network (R-37(c) acceptance). A refusal **writes no reservation at all** — not a rollback, simply
+no write — so `usage` is left untouched (R-37 acceptance a/b). The `{ok:false, reason}` names
+**which** of the limits fired ("vendor: need X, remaining (as of last resync) Y" vs "self-imposed
+cap: need X, NANSEN_DAILY_CREDIT_CAP allows Y"); otherwise the operator cannot tell a genuinely
+exhausted vendor account from their own latch (OQ-5).
 
-**Частичный отказ композитных способностей (`smart-money.flows`/`token.risk` — по два HTTP-вызова
-каждая):** если ВТОРОЙ под-вызов упал после того, как первый успел вернуться, весь `fetch()`
-адаптера бросает целиком (нет частичных canonical-результатов в M2 — YAGNI, тот же fail-fast
-принцип, что любой другой M1-адаптер) — **и, по инварианту выше, реконсиляция для этого вызова НЕ
-запускается вовсе** (не «частичная сумма по одному ответившему под-вызову» — ровно тот же
-недо-счёт, которого C-1 избегает). Резервация (сделанная на СУММУ обоих под-вызовов) остаётся
-несверенной, `markUnreconciled()` срабатывает как в общем случае, следующий resync подтягивает
-фактический остаток. Отдельного механизма для «частичной» реконсиляции не заводится — переиспользует
-уже описанный путь.
+**`dayBucketMs` is fixed once on entry to the gate and never recomputed at reconciliation.** The
+local `const bucket = dayBucketMs(Date.now())`, computed **before** `checkAndReserve`, is passed
+through the whole chain of one logical call (reservation → HTTP → reconciliation) as a parameter.
+Without that, a call reserved at 23:59:59.8 whose response arrives at 00:00:00.2 would write a
+negative delta into the **new** day bucket — another day's problem, plus a negative `credits_used`
+that breaks the documented additive/never-overwritten invariant of `usage` (§4.2). A call's
+reservation and its reconciliation always hit the **same** `usage` row, whatever `Date.now()`
+managed to show in between.
 
-**429 Too Many Requests (UC-7) — решение: без retry внутри адаптера.** YAGNI-ограничение задачи
-(«no retry/circuit-breaker framework») и явная альтернатива из UC-7 («либо явная ошибка… либо один
-ограниченный retry — точный выбор Architecture-фазы») разрешаются в пользу **явной, немедленной
-ошибки** с `retry-after` в тексте — простейший вариант, ноль нового retry-механизма, не
-взаимодействует с уже сделанной (до HTTP-вызова) резервацией бюджета никаким особым случаем.
-Единый unit-тест на этот путь — R-29 acceptance.
+**Cross-process contract.** `DATA_DIR` defaults to a per-machine location (`~/.onchain-intel`), so
+several concurrent stdio sessions of Claude Code mean several writer connections to one
+`cache.sqlite3`. Atomicity of `checkAndReserve` within one process does not imply atomicity between
+processes — but `BEGIN IMMEDIATE` (not `DEFERRED`) takes the write lock immediately, so the normal
+busy handler/timeout actually applies. With `DEFERRED`, a competing write between the read and the
+upgrade-to-write returns `SQLITE_BUSY_SNAPSHOT` **instantly**, bypassing the busy handler entirely —
+a WAL specific, not a hypothetical. `SqliteBudgetStore` therefore opens its connection with an
+explicit `new Database(path, { timeout: 5000 })` (not the default 0ms): under contention
+`checkAndReserve` waits up to 5s for a busy database instead of throwing at once.
 
-**Полный список аддитивных касаний существующего M1-кода (minor — ревью указал, что «единственная
-точечная правка» в предыдущей версии этого раздела/ARCHITECTURE.md/version-history.md была
-неточной; ни один из пунктов ниже не переписывает существующую логику, все — чистые добавления):**
+The budget itself is **never corrupted**: the transaction either commits entirely or aborts
+entirely, and the anchor formula above is cross-process-correct by construction — it does not depend
+on who incremented `usage` between resyncs. The only observable effect of contention is a rare
+`CapabilityUnavailableError` instead of an instant success if the timeout does expire (practically
+unreachable with one stdio process per user; in a multi-process scenario it is an extra retry, not
+data corruption).
 
-- `cache/sqlite-store.ts`'s `PAID_PROVIDER_IDS` — `'nansen'` добавляется рядом с `'dune'` (чисто
-  информационная `providers.kind`-классификация, ничего не читает эту колонку в логике, см. её
-  собственный docstring — но пропустить строку значило бы молча разойтись с задокументированным
-  инвариантом «paid providers listed here»).
-- `cache/ddl.ts` — `usage`-таблица дописывается в тот же `CACHE_DDL`-темплейт (§4.2, forward-compat
-  комментарий уже подготовлен с M1).
-- `providers.config.ts` — 10-я запись `adapterRegistrations` + 3 новых `routes` (тот же паттерн,
-  что 9 существующих — не структурная правка).
-- `mcp-server/src/env.ts` — `NANSEN_API_KEY` + `NANSEN_DAILY_CREDIT_CAP` в `EnvSchema` (тот же
-  `emptyAsUndefined`-паттерн, что 6 существующих ключей).
-- `.env.example` — `NANSEN_API_KEY` переезжает из «M2+ зарезервировано» в «код читает сейчас»
+**Singleflight (R-39) is deliberately per-process**, not per-machine: two _different_ processes
+making an identical request at the same time are two genuine requests, each legitimately paying its
+own price; coalescing is neither needed nor applied there.
+
+_**Singleflight — exactly where.**_ The outermost layer of `fetch()`'s implementation, **before**
+check-and-reserve (otherwise two simultaneous **identical** calls would both reserve credits — a
+double count for what is logically one request). An in-memory `Map<string, Promise<unknown>>` keyed
+by `deriveArgsHash(capability, args)` (reusing the existing `net/args-hash.js` export, not a new
+primitive); the entry is deleted in `finally` when the promise settles. A second simultaneous
+identical call awaits the **same** promise — no second reservation, no second HTTP request, no
+second `usage` write. A call arriving **after** the first has resolved starts fresh, which is
+correct: it is a new request in time and needs its own budget check.
+
+_**Post-call reconciliation + transport-failure/402 resync (R-38, UC-6).**_ The mandatory invariant:
+**reconciliation happens EXACTLY ONCE per logical `fetch()`, after ALL of that `fetch()`'s
+sub-calls have finished.** Read per-response instead, a two-sub-call capability would write
+`usage += (5-10) + (5-10) = 0` instead of the 10 credits actually spent — the counter zeroing itself
+on every paid `smart-money.flows`/`token.risk` call.
+
+- `actualTotal = Σ(X-Nansen-Credits-Used)` over **all** sub-responses of this `fetch()` (one number
+  for `smart-money.flows`/`token.risk`; identical to the single sub-response for `entity.labels`,
+  which always makes exactly one paid HTTP call on its escalation paths).
+  `delta = actualTotal - reservedTotal`, where `reservedTotal` is the same value passed to
+  `checkAndReserve` — the sum of **both** prices from the `costOf()` table, not one at a time. It is
+  written with a single `budgetStore.recordDelta('nansen', bucket, delta)` using the same additive
+  upsert as the reservation, not a separate replacing write (R-34/R-38).
+- **A missing or unparseable `X-Nansen-Credits-Used` header on even ONE sub-response degrades the
+  whole reconciliation of that `fetch()` to `delta = 0`** (a `Number()` + `Number.isFinite` guard per
+  sub-response) — **never** a partial sum over the sub-responses whose header did parse. A partial
+  sum systematically under-counts the fact (the same −5/+0 arithmetic, applied one-sidedly), which is
+  worse than a conservative zero. The reservation remains the only known fact — never silently
+  zeroed — plus `accountState.markUnreconciled()`.
+- A transport error/timeout on ANY sub-call (no response at all) triggers the same
+  `markUnreconciled()`, and reconciliation for that `fetch()` does not run at all (there is nothing
+  to sum).
+- **`402 Payment Required`** (UC-6; openapi `PaymentRequiredError`, headers `Payment-Required` /
+  `WWW-Authenticate: Payment .../Payment-Receipt`) on any sub-call is treated as an authoritative
+  "there is no budget right now": `fetch()` throws in full (see partial failure below), the
+  reservation stands as a conservative estimate of the fact, and `markUnreconciled()` forces the
+  next entry into the gate to resolve `/account` instead of trusting a stale local counter. One
+  mechanism covers both "the network dropped" and "Nansen itself said no" — not two paths.
+- The `bucket` passed to `recordDelta(...)` is the same `dayBucketMs` fixed **before**
+  `checkAndReserve` for **this same** logical call — never recomputed from `Date.now()` when the
+  response arrives.
+
+**Partial failure of composite capabilities** (`smart-money.flows`/`token.risk`, two HTTP calls
+each): if the second sub-call fails after the first has returned, the adapter's whole `fetch()`
+throws (no partial canonical results — YAGNI, the same fail-fast principle as every other adapter),
+and by the invariant above **reconciliation for that call does not run at all**. Not "a partial sum
+over the one sub-call that answered" — that is precisely the under-count the once-per-`fetch()` rule
+avoids. The reservation (made for the **sum** of both sub-calls) stays unreconciled,
+`markUnreconciled()` fires as in the general case, and the next resync pulls in the actual
+remainder. No separate mechanism for "partial" reconciliation exists; it reuses the path already
+described.
+
+**429 Too Many Requests (UC-7): no retry inside the adapter.** The task's YAGNI constraint ("no
+retry/circuit-breaker framework") and UC-7's explicit alternative ("either an explicit error… or one
+bounded retry") resolve in favour of an **explicit, immediate error** carrying `retry-after` in its
+text — the simplest option, zero new retry machinery, and no special case interacting with the
+budget reservation already made before the HTTP call. A single unit test covers this path (R-29
+acceptance).
+
+**The paid layer touches existing M1 code additively only** — no item below rewrites existing logic:
+
+- `cache/sqlite-store.ts`'s `PAID_PROVIDER_IDS` — `'nansen'` sits next to `'dune'` (a purely
+  informational `providers.kind` classification; no logic reads that column, per its own docstring —
+  but omitting the line would silently diverge from the documented "paid providers listed here"
+  invariant).
+- `cache/ddl.ts` — the `usage` table is appended to the same `CACHE_DDL` template (§4.2; the
+  forward-compat comment has been in place since M1).
+- `providers.config.ts` — a tenth `adapterRegistrations` entry plus three new `routes` (the same
+  pattern as the existing nine, not a structural change).
+- `mcp-server/src/env.ts` — `NANSEN_API_KEY` and `NANSEN_DAILY_CREDIT_CAP` in `EnvSchema` (the same
+  `emptyAsUndefined` pattern as the six existing keys).
+- `.env.example` — `NANSEN_API_KEY` moves from "reserved for M2+" to "the code reads this now"
   (R-46).
-- `scripts/record-fixture.mjs` — расширяется на `nansen` (сериализация POST JSON-тела, не только
-  query-string, R-44) — сам скрипт остаётся вне CI, как и был.
+- `scripts/record-fixture.mjs` — extended for `nansen` (serializing the POST JSON body, not only the
+  query string, R-44); the script itself stays outside CI.
 
-Ни `registry.ts`, ни `resolve-capability.ts`, ни один из 4 M1 tool-файлов, ни один из 9 существующих
-адаптеров **не редактируются** — это утверждение (в отличие от «единственной правки») буквально
-верно и проверяемо диффом.
+Neither `registry.ts`, nor `resolve-capability.ts`, nor any of the four M1 tool files, nor any of the
+nine existing adapters is edited — a claim that is literally verifiable by diff.
 
-**Модуль: `src/cache/*`** (D6, R-13/R-14/R-15)
+**Module: `src/cache/*`** (D6, R-13/R-14/R-15)
 
-Двухуровневый: `lru-cache` (hot, in-process, TTL встроен в `set()`) перед `better-sqlite3`
-(persistent, `DATA_DIR`). DDL следует DB-SCHEMA-CONCEPT §1 конвенциям, применённым к **новому**
-контексту (кеш, не аналитический снапшот):
+Two levels: `lru-cache` (hot, in-process, TTL built into `set()`) in front of `better-sqlite3`
+(persistent, under `DATA_DIR`). The DDL follows the DB-SCHEMA-CONCEPT §1 conventions applied to a
+**new** context (a cache, not an analytical snapshot):
 
 ```sql
 CREATE TABLE IF NOT EXISTS providers (
-  id    TEXT PRIMARY KEY,   -- adapter.id, напр. 'coingecko' | 'rpc-evm' | ...
-  kind  TEXT NOT NULL,      -- 'free' | 'paid' — информационно, отражает приоритет D4
+  id    TEXT PRIMARY KEY,   -- adapter.id, e.g. 'coingecko' | 'rpc-evm' | ...
+  kind  TEXT NOT NULL,      -- 'free' | 'paid' — informational, reflects the D4 priority
   notes TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cache_entries (
-  id          TEXT PRIMARY KEY,              -- ULID, генерит приложение (DB-SCHEMA §1.3)
+  id          TEXT PRIMARY KEY,              -- ULID, generated by the app (DB-SCHEMA §1.3)
   provider    TEXT NOT NULL REFERENCES providers(id),
   capability  TEXT NOT NULL,
-  args_hash   TEXT NOT NULL,                 -- sha256(hex) нормализованных args — НИКОГДА секретов (см. §7)
-  value_json  TEXT NOT NULL,                 -- канонический результат, JSON как TEXT (DB-SCHEMA §1.4)
+  args_hash   TEXT NOT NULL,                 -- sha256(hex) of normalized args — NEVER secrets (§7)
+  value_json  TEXT NOT NULL,                 -- canonical result, JSON as TEXT (DB-SCHEMA §1.4)
   created_at  INTEGER NOT NULL,              -- epoch-ms UTC
   expires_at  INTEGER NOT NULL,              -- epoch-ms UTC = created_at + TTL(capability)
   UNIQUE (provider, capability, args_hash)
@@ -1049,168 +1070,188 @@ CREATE TABLE IF NOT EXISTS cache_entries (
 CREATE INDEX IF NOT EXISTS idx_cache_entries_expiry ON cache_entries (expires_at);
 ```
 
-- **Запись — upsert, не append-only:** кеш-запись — пересчитываемая проекция, не наблюдение
-  (в терминах DB-SCHEMA §1.5 это ветка «`aggregates`», не «`snapshots`»): `INSERT ... ON CONFLICT
-(provider, capability, args_hash) DO UPDATE SET value_json=excluded.value_json,
-created_at=excluded.created_at, expires_at=excluded.expires_at`. Обычный insert-only здесь
-  оставил бы устаревшее значение молча (то же предостережение, что DB-SCHEMA §1.5 даёт для
-  `aggregates`).
-- **`providers` — upsert ДО первой записи в `cache_entries`** (registry bootstrap из **всех
-  девяти** `adapterRegistrations`, включая `pg-history` — F-2, при старте), FK **включён явно**:
-  `PRAGMA foreign_keys=ON` при открытии соединения (DB-SCHEMA §1.6). Это же готовит место для M2
-  `usage(provider, day, credits_used)` — FK на тот же `providers`-реестр без миграции (R-14
-  acceptance).
-- `PRAGMA journal_mode=WAL` — конкурентное чтение hot-path/дебага не блокируется записью.
-- **`DATA_DIR`:** опциональный env, по умолчанию `path.join(os.homedir(), '.onchain-intel')`
-  (не `process.cwd()`-относительный путь — MCP-сервер запускается Claude Code с произвольным cwd,
-  стабильный домашний каталог предсказуем независимо от того, откуда стартовал хост). Файл кеша —
-  `${DATA_DIR}/cache.sqlite3`. Перенос инсталляции = перенос одного каталога (DB-SCHEMA §1.10).
-- **TTL по типу данных** (ADR-001 D6 диапазоны, конкретизированы под M1-способности):
+- **Writes are upserts, not append-only:** a cache entry is a recomputable projection, not an
+  observation (in DB-SCHEMA §1.5 terms this is the `aggregates` branch, not `snapshots`):
+  `INSERT ... ON CONFLICT (provider, capability, args_hash) DO UPDATE SET value_json=excluded.value_json,
+created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-only write would
+  silently keep serving the stale value — the same warning DB-SCHEMA §1.5 gives for `aggregates`.
+- **`providers` is upserted BEFORE the first `cache_entries` write** (registry bootstrap from all
+  ten `adapterRegistrations`, including `pg-history` and `nansen`, at startup), with the FK
+  **explicitly on**: `PRAGMA foreign_keys=ON` when the connection is opened (DB-SCHEMA §1.6). That
+  is also what let `usage(provider, day, credits_used)` reference the same `providers` registry with
+  no migration (R-14 acceptance).
+- `PRAGMA journal_mode=WAL` — concurrent hot-path/debug reads are not blocked by a write.
+- **`DATA_DIR`:** optional env, defaulting to `path.join(os.homedir(), '.onchain-intel')` — not a
+  `process.cwd()`-relative path, because the MCP server is launched by Claude Code with an arbitrary
+  cwd, whereas a stable home directory is predictable regardless of where the host started. The cache
+  file is `${DATA_DIR}/cache.sqlite3`. Moving an installation is moving one directory
+  (DB-SCHEMA §1.10).
+- **TTL by data type** (ADR-001 D6 ranges, made concrete for the M1 capabilities):
 
-  | Capability                            | TTL   | Обоснование                                                                |
-  | ------------------------------------- | ----- | -------------------------------------------------------------------------- |
-  | `token.price`                         | 60с   | D6: цена 15–60с                                                            |
-  | `token.metadata`                      | 3600с | имя/символ/decimals почти не меняются                                      |
-  | `wallet.balances.native`              | 60с   | D6: балансы 1–5мин, нижняя граница — баланс меняется с каждой tx           |
-  | `pairs.new`                           | 30с   | свежесть критична для «new»                                                |
-  | `protocol.tvl`                        | 300с  | D6: TVL 5–30мин, нижняя граница                                            |
-  | `privacy.shielded_pool`, `platform.*` | 3600с | не имеет смысла опрашивать чаще часового каденса существующего снапшоттера |
-  | `token.holders` (dune)                | 3600с | кредит-метрируемо, низкая волатильность                                    |
+  | Capability                            | TTL   | Rationale                                                              |
+  | ------------------------------------- | ----- | ---------------------------------------------------------------------- |
+  | `token.price`                         | 60s   | D6: price 15–60s                                                       |
+  | `token.metadata`                      | 3600s | name/symbol/decimals barely change                                     |
+  | `wallet.balances.native`              | 60s   | D6: balances 1–5 min, lower bound — a balance changes with every tx    |
+  | `pairs.new`                           | 30s   | freshness is the point of "new"                                        |
+  | `protocol.tvl`                        | 300s  | D6: TVL 5–30 min, lower bound                                          |
+  | `privacy.shielded_pool`, `platform.*` | 3600s | no point polling faster than the existing snapshotter's hourly cadence |
+  | `token.holders` (dune)                | 3600s | credit-metered, low volatility                                         |
 
-- **Hit/miss счётчики** (`src/cache/stats.ts`) — `Map<capability, { hit: number; miss: number
-}>` в процессе, инкрементируется внутри `TwoLevelStore.get()` (не правкой `registry.ts` — тот же
-  `CacheStore`-шов task 003-2, ноль изменений в Registry) на каждое разрешение способности;
-  экспортируется функцией `getCacheStats()`, используемой (a) для одной stderr-строки на вызов
-  (`cache=hit|miss provider=<id> capability=<cap> ageMs=<n>` — без значений args/секретов) и (b)
-  для `_meta.cache` в ответе tool. **Обоснование выбора (обе точки, не одна):** stderr —
-  greppable для dev/CI-ассертов без изменения протокола (инвариант §7.3 M0 не нарушается — это
-  не stdout); `_meta` — прямая видимость вызывающему агенту (Claude Code) без парсинга логов,
-  тестируется прямо в E2E через `result._meta.cache`, не растит `structuredContent`/схему выхода
-  (R-15 acceptance «проверяемо в тесте или debug-выводе» — закрыто обоими путями).
-- **Реализационное укрепление `SqliteCacheStore` (адверсариальные циклы + polish):** четыре
-  повторяющихся SQL-запроса (`get()`-SELECT, `get()`-stale-DELETE, `set()`-upsert, sweep-DELETE)
-  `prepare()`-ятся **один раз** в конструкторе, не заново на каждый вызов (цикл 2, fix 5 —
-  чистый перформанс-рефактор, поведение не меняется). **Оппортунистический sweep протухших строк**
-  (цикл 1, fix H): каждый `sweepEveryNWrites`-й (по умолчанию 50) вызов `set()` удаляет строки с
-  `expires_at <= now` через существующий индекс — **задокументированный M2-дефолт: это не
-  retention/size-кап** (нет предела на количество строк/размер диска), только избавление от уже
-  протухших ключей, которые больше никогда не читаются. **Leak-safe конструктор** (post-M1 polish,
-  fix 4): каждый шаг после открытия соединения (PRAGMA/DDL/bootstrap/prepare) обёрнут в try/catch —
-  throw теперь best-effort закрывает уже открытый `better-sqlite3`-хендл перед re-throw, вместо
-  утечки файлового дескриптора; тестовый seam `postOpenTestHook` (никогда не используется в
-  продакшене) позволяет `test/cache.test.ts` симулировать произвольный пост-open сбой. **Честный
-  `ageMs` при LRU-промоушене** (цикл 2, fix 2): `TwoLevelStore` при промоушене cold-хита в hot-слой
-  передаёт `createdAt = Date.now() - coldHit.ageMs` (не момент промоушена) — иначе каждый
-  последующий hot-хит показывал бы `_meta.cache.ageMs` сброшенным к ~0, занижая реальный возраст
-  значения.
+- **Hit/miss counters** (`src/cache/stats.ts`) — a `Map<capability, { hit: number; miss: number }>`
+  in process, incremented inside `TwoLevelStore.get()` (not by editing `registry.ts` — the same
+  `CacheStore` seam, zero changes in the Registry) on every capability resolution. Exposed through
+  `getCacheStats()` and used in two places, deliberately: (a) one stderr line per call
+  (`cache=hit|miss provider=<id> capability=<cap> ageMs=<n>` — never arg values or secrets), which is
+  greppable for dev/CI assertions without changing the protocol (the §7.3 M0 invariant holds — this
+  is not stdout); and (b) `_meta.cache` in the tool response, giving the calling agent direct
+  visibility without log parsing and testable in E2E through `result._meta.cache`, without growing
+  `structuredContent` or the output schema. R-15's "verifiable in a test or debug output" is closed
+  by both paths.
+- **`SqliteCacheStore` implementation hardening.** The four repeated SQL statements (`get()` SELECT,
+  `get()` stale DELETE, `set()` upsert, sweep DELETE) are `prepare()`d **once** in the constructor
+  rather than on every call. An **opportunistic sweep of expired rows** runs on every
+  `sweepEveryNWrites`-th `set()` (default 50), deleting rows with `expires_at <= now` through the
+  existing index — a documented default: this is **not** retention or a size cap (there is no bound
+  on row count or disk size), only the removal of already-expired keys that will never be read again.
+  The constructor is **leak-safe**: every step after the connection is opened (PRAGMA / DDL /
+  bootstrap / prepare) is wrapped in try/catch, so a throw best-effort closes the already-open
+  `better-sqlite3` handle before re-throwing instead of leaking a file descriptor; the
+  `postOpenTestHook` seam (never used in production) lets `test/cache.test.ts` simulate an arbitrary
+  post-open failure. Finally, `ageMs` stays honest across LRU promotion: when `TwoLevelStore`
+  promotes a cold hit into the hot layer it passes `createdAt = Date.now() - coldHit.ageMs`, not the
+  moment of promotion — otherwise every subsequent hot hit would report `_meta.cache.ageMs` reset to
+  ~0 and under-state the real age of the value.
 
-**M2-дополнение: `BudgetStore` — интерфейс (M-1 review — этот блок отсутствовал в предыдущей
-версии раздела, хотя на него уже ссылались §выше и data-model.md §4.2; определение здесь, тот же
-`CacheStore`-паттерн, R-35):**
+**`BudgetStore` — the interface** (the same `CacheStore` pattern, R-35):
 
 ```ts
 // packages/core/src/cache/budget-store.ts
+
+/** The SECOND, rate-denominated limit `checkAndReserve` may enforce (SEC-1) — a bucket start and a
+ * ceiling, exactly like the daily pair, just with a much shorter bucket width. `BudgetStore` stays
+ * provider-agnostic and policy-free: it does not know the window width, how the ceiling was
+ * derived, or that any of this is about credits per minute. */
+export interface VelocityLimit {
+  /** Epoch-ms UTC start of the window this cost falls in. */
+  readonly windowStartMs: number;
+  /** Credits this window may hold in total. */
+  readonly ceiling: number;
+  /** Calls this window may hold in total (Q-3) — a SECOND denominator, not a variant of the first.
+   * A credit-denominated limit cannot refuse a call that costs zero credits. Omitted ⇒ calls are
+   * not bounded. */
+  readonly maxCalls?: number;
+}
+
 export interface BudgetStore {
-  /** Атомарно (см. §выше — db.transaction(fn).immediate()) сравнивает `usage.credits_used(bucket)
-   * + cost` с `ceiling` и пишет резервацию, ЕСЛИ проходит; `ok:false` НИЧЕГО не пишет (usage
-   * остаётся нетронутым).
+  /** Atomically (see "Atomic check + reserve" above — db.transaction(fn).immediate()) compares
+   * `usage.credits_used(provider, dayBucketMs) + cost` against `ceiling` and, only if it fits,
+   * additively reserves `cost`. On `ok:false` NOTHING is written — `usage` is left exactly as it
+   * was (not a rollback of a partial write; there never was one).
    *
-   * `ceiling` — ВСЕГДА `effectiveCeiling` (§выше «Формула потолка бакета»), уже перебазированный
-   * ВЫЗЫВАЮЩИМ (`usageAtObserve + creditsRemainingAtObserve`, затем `min()` с
-   * `NANSEN_DAILY_CREDIT_CAP`) — НЕ сырой `creditsRemainingAtObserve`. `BudgetStore` сам по себе
-   * ничего не знает про anchor/`usageAtObserve`/`NansenAccountSnapshot` — принимает уже готовый
-   * bucket-relative скаляр и сравнивает его с bucket-relative `usage`, простое неравенство без
-   * какой-либо anchor-арифметики внутри (тот же R-35-паттерн разделения, что и отсутствие
-   * "прочитать потолок"-метода, ниже). */
+   * `ceiling` is ALWAYS the caller's already-computed `effectiveCeiling` ("The bucket ceiling
+   * formula" above: `usageAtObserve + creditsRemainingAtObserve`, then `min()` with
+   * `NANSEN_DAILY_CREDIT_CAP`) — never the raw `creditsRemainingAtObserve`. `BudgetStore` itself
+   * knows nothing about anchors / `usageAtObserve` / `NansenAccountSnapshot`; it compares two plain
+   * bucket-relative numbers, with no anchor arithmetic inside.
+   *
+   * `velocity`, when supplied, is checked and reserved IN THE SAME TRANSACTION (SEC-1): either both
+   * limits fit and both counters are written, or nothing is touched. */
   checkAndReserve(
     provider: string,
     dayBucketMs: number,
     cost: number,
     ceiling: number,
+    velocity?: VelocityLimit,
   ): Promise<{ ok: true } | { ok: false; reason: string }>;
-  /** Безусловная аддитивная запись подписанной дельты (резервация ИЛИ post-call reconciliation —
-   * оба используют этот метод, §выше). Никогда не отклоняется — вызывающий уже проверил ceiling
-   * через checkAndReserve; recordDelta сам по себе НЕ гейтует. */
-  recordDelta(provider: string, dayBucketMs: number, signedDelta: number): Promise<void>;
-  /** Read-only — текущий накопленный credits_used за бакет. Используется и внутри checkAndReserve,
-   * и отдельно tool-хендлерами для `_meta.budget` (interfaces.md §5.1.2). */
+
+  /** Unconditional additive write of a SIGNED delta (a reservation uses a positive `cost`;
+   * post-call reconciliation uses `actual - reserved`, which may be negative). Never gates.
+   * `windowStartMs` mirrors the delta into the velocity counter and must be the window the
+   * RESERVATION was made in, never the one that happens to be current at reconcile time. */
+  recordDelta(
+    provider: string,
+    dayBucketMs: number,
+    signedDelta: number,
+    windowStartMs?: number,
+  ): Promise<void>;
+
+  /** Read-only — accumulated `credits_used` for `(provider, dayBucketMs)`. Used inside
+   * `checkAndReserve` and by tool handlers for `_meta.budget` (interfaces.md §5.1.2). */
   getUsage(provider: string, dayBucketMs: number): Promise<number>;
+  /** Read-only — accumulated `credits_used` for `(provider, windowStartMs)`. Observability and
+   * tests; the gate never needs it (the check lives inside the reservation transaction). */
+  getWindowUsage(provider: string, windowStartMs: number): Promise<number>;
+  /** Read-only — accumulated `calls_made` for `(provider, windowStartMs)` (Q-3). */
+  getWindowCalls(provider: string, windowStartMs: number): Promise<number>;
 }
 ```
 
-**`Promise<...>` — интерфейсная сигнатура (согласованность с `CacheStore`, которую `registry.ts`
-уже `await`-ит), но атомарность `checkAndReserve` держится на том, что ТЕЛО транзакции внутри
-СИНХРОННО (minor, ревью).** `SqliteBudgetStore`'s реализация оборачивает `db.transaction(fn)` —
-сам `fn` не содержит ни одного `await` (читает `usage`, сравнивает, пишет — всё синхронным
-`better-sqlite3`-API, тот же приём, что `throttle()`, §выше) — снаружи это выглядит как обычная
-async-функция (для единообразия с `CacheStore`/для будущего Postgres-бэкенда, D7), но именно
-отсутствие `await` ВНУТРИ `db.transaction(fn)` — необходимое условие всей atomicity-гарантии этого
-раздела. **Явное предупреждение будущей Postgres-реализации `BudgetStore` (D7):** если её
-`checkAndReserve` выполнит настоящую асинхронную работу (сетевой round-trip к БД) МЕЖДУ чтением
-`usage` и записью резервации внутри одной "транзакции" — она потеряет ту же atomicity-гарантию,
-которую здесь даёт исключительно синхронность `better-sqlite3`; корректный Postgres-эквивалент
-обязан использовать настоящую SQL-транзакцию с уровнем изоляции, эквивалентным `SELECT ... FOR
-UPDATE` внутри одного `BEGIN`/`COMMIT`, а не просто `await`-нуть два раздельных запроса.
+**The `Promise<...>` signatures are for interface consistency** with `CacheStore` (which
+`registry.ts` already awaits) and for a future Postgres backend (D7) — but the atomicity of
+`checkAndReserve` rests on the transaction **body** being synchronous. `SqliteBudgetStore` wraps
+`db.transaction(fn)` where `fn` contains no `await` at all: it reads `usage`, compares, and writes
+through the synchronous `better-sqlite3` API, the same technique as `throttle()`. **Explicit warning
+for a future Postgres implementation (D7):** if its `checkAndReserve` performs genuinely
+asynchronous work (a network round-trip to the database) **between** reading `usage` and writing the
+reservation inside one "transaction", it loses the guarantee that synchronicity provides here. The
+correct Postgres equivalent must use a real SQL transaction with an isolation level equivalent to
+`SELECT ... FOR UPDATE` inside a single `BEGIN`/`COMMIT`, not two separate awaited queries.
 
-**Осознанное отклонение от буквального текста R-35 (тот же паттерн честного расхождения, что уже
-применён к Dune/R-8, §выше) — `BudgetStore` НЕ содержит метода «прочитать текущий выведенный
-потолок».** R-35 буквально перечисляет три метода как «минимум», включая его; в этой архитектуре
-третий сознательно вынесен в `NansenAccountState` (`creditsRemainingAtObserve`/`usageAtObserve`,
-§выше), не в `BudgetStore`. Причина: «потолок» здесь — не universal-провайдерское понятие (D7
-engine-swap-safety касается ХРАНЕНИЯ usage-леджера, который действительно один и тот же интерфейс
-для любого будущего платного провайдера), а Nansen-специфичная живая величина (`credits_remaining`
-из `/account`, `plan`) — заставить `BudgetStore` знать её означало бы протащить Nansen-специфику в
-предположительно provider-generic интерфейс, тот же анти-паттерн, которого OQ-2's решение (гейт
-внутри адаптера, не в Registry) как раз избегает. `BudgetStore` остаётся чистым «леджером»
-(read/reserve/record), инжектируемым и engine-swap-safe (SQLite→Postgres, D7) независимо от того,
-сколько платных провайдеров появится; каждый провайдер несёт свой собственный live-ceiling-source
-рядом с собой, не в общей таблице. Planner/task-reviewer: это обновлённый scope R-35, аналогично
-тому, как Dune/R-8 был принят ýже буквального текста в M1.
+**A deliberate deviation from the literal text of R-35: `BudgetStore` has no "read the current
+derived ceiling" method.** R-35 lists three methods as a minimum, including that one; here the third
+lives in `NansenAccountState` (`creditsRemainingAtObserve`/`usageAtObserve`) instead. The reason: a
+"ceiling" is not a universal provider concept. D7 engine-swap safety concerns the STORAGE of the
+usage ledger, which really is the same interface for any future paid provider, whereas the ceiling
+is a Nansen-specific live quantity (`credits_remaining` from `/account`, `plan`). Making
+`BudgetStore` know it would drag Nansen specifics into a supposedly provider-generic interface — the
+same anti-pattern that OQ-2's decision (gate inside the adapter, not in the Registry) avoids.
+`BudgetStore` stays a pure ledger (read/reserve/record), injectable and engine-swap-safe
+(SQLite→Postgres, D7) no matter how many paid providers appear; each provider carries its own
+live-ceiling source next to itself, not in a shared table.
 
-**`SqliteBudgetStore` — self-sufficient bootstrap (M-2 review).** С включённым `PRAGMA
-foreign_keys=ON` первый `INSERT INTO usage` с `provider='nansen'` падает `SQLITE_CONSTRAINT_
-FOREIGNKEY`, если строка `providers` для `'nansen'` ещё не существует на ЭТОМ соединении — а
-единственное место, где M1-код её сегодня upsert'ит, это `SqliteCacheStore.bootstrapProviders()`
-(другой класс, другое соединение). Полагаться на порядок конструирования («сначала
-`SqliteCacheStore`, потом `SqliteBudgetStore`») — временная связанность, которую ни один тест не
-поймает и с которой первая же stub-first Dev-задача, строящая `SqliteBudgetStore({dbPath:
-':memory:'})` изолированно, столкнётся как с непонятной FK-ошибкой, выглядящей как баг бюджета.
-**Решение — `SqliteBudgetStore` сам себе bootstrap-ит `providers`:**
+**`SqliteBudgetStore` bootstraps itself.** With `PRAGMA foreign_keys=ON`, the first
+`INSERT INTO usage` with `provider='nansen'` fails with `SQLITE_CONSTRAINT_FOREIGNKEY` unless the
+`providers` row for `'nansen'` already exists on **that** connection — and the only place M1 code
+upserts it is `SqliteCacheStore.bootstrapProviders()` (a different class, a different connection).
+Relying on construction order ("`SqliteCacheStore` first, then `SqliteBudgetStore`") is temporal
+coupling that no test would catch, and the first stub-first development task constructing
+`SqliteBudgetStore({dbPath: ':memory:'})` in isolation would meet it as a baffling FK error that
+looks like a budget bug. So `SqliteBudgetStore` upserts `providers` itself:
 
 ```ts
 export interface SqliteBudgetStoreOptions {
-  dbPath?: string; // по умолчанию тот же cacheDbPath() — тот же файл, что SqliteCacheStore
-  providers?: AdapterRegistration[]; // по умолчанию adapterRegistrations (все 10, включая nansen)
+  dbPath?: string; // defaults to the same cacheDbPath() — the same file as SqliteCacheStore
+  providers?: AdapterRegistration[]; // defaults to adapterRegistrations (all ten, incl. nansen)
 }
 ```
 
-Конструктор выполняет `db.exec(CACHE_DDL)` (та же идемпотентная строка, теперь включающая и
-`usage`) и тот же upsert-в-`providers`-паттерн, что `SqliteCacheStore.bootstrapProviders()` (один
-переиспользуемый `prepare()`'d statement, тот же приём, что уже задокументирован для
-`SqliteCacheStore`, §выше) — **до** любой записи в `usage`. Оба стора теперь идемпотентно
-upsert'ят одни и те же строки `providers` на своих отдельных соединениях к одному файлу — не
-конфликт (upsert, не insert-only), а independence: ни один из двух не обязан быть сконструирован
-первым.
+The constructor runs `db.exec(CACHE_DDL)` (the same idempotent string, now including `usage`) and
+the same upsert-into-`providers` pattern as `SqliteCacheStore.bootstrapProviders()` (one reusable
+prepared statement) **before** any write to `usage`. Both stores now idempotently upsert the same
+`providers` rows over their own connections to the same file — not a conflict (upsert, not
+insert-only) but independence: neither has to be constructed first.
 
-**Budget-warning threshold — именованный конфиг, не хардкод (R-37 «порог — конфиг»):**
-`NANSEN_BUDGET_WARN_RATIO` (опциональный env, `z.coerce.number().min(0).max(1).optional()`,
-дефолт `0.8` — как доля от `ceiling`, не абсолютное число кредитов, т.к. `ceiling` сам живой/
-может меняться между resync'ами) — при `spentSinceAnchor/creditsRemainingAtObserve >=
-NANSEN_BUDGET_WARN_RATIO` (или аналогично для `NANSEN_DAILY_CREDIT_CAP`, если задан) — одна
-stderr-строка (тот же канал, что M1 cache-метрики, §9.3 индекса), не более одного раза на пересечение
-порога за бакет (простой boolean-флаг в `NansenAccountState`, сбрасывается на следующем resync).
+**The budget-warning threshold is named config, not a hardcoded number** (R-37, "the threshold is
+config"): `NANSEN_BUDGET_WARN_RATIO` (optional env, `z.coerce.number().min(0).max(1).optional()`,
+default `0.8`) is a fraction of `ceiling` rather than an absolute credit count, because the ceiling
+itself is live and may change between resyncs. When
+`spentSinceAnchor/creditsRemainingAtObserve >= NANSEN_BUDGET_WARN_RATIO` (or the analogous ratio for
+`NANSEN_DAILY_CREDIT_CAP`, when set), one stderr line is emitted — the same channel as the M1 cache
+metrics (§9.3 of the index) — at most once per threshold crossing per bucket (a simple boolean flag
+in `NansenAccountState`, reset on the next resync).
 
-**`clearUnreconciled()` — где именно вызывается, и cold-start-resync-fails — что происходит:**
-флаг снимается **только** успешным `refreshAccount()`-resync'ом (тем самым, что читает `/account`
+**Where `clearUnreconciled()` is called, and what happens when a cold-start resync fails.** The flag
+is cleared **only** by a successful `refreshAccount()` resync (the one that reads `/account` +
+`usageAtObserve`), never by a successful paid call: a successful reconciliation leaves the flag as it
+is, because the flag means "between this moment and the next resync the live counter cannot be
+trusted", not "this particular call failed". If the resync itself fails (the network is unavailable
+for `/account`) — on either the cold-start or the unreconciled trigger — `fetch()` throws in full
+**before** `checkAndReserve` (there is no valid ceiling, so there is nothing to compute), which is
+the same R-24/R-40 `isError` path as "the key is not set". Fail-closed, never fail-open on a stale
+or zero ceiling.
 
-- `usageAtObserve`, §выше) — не самим успешным платным вызовом (успешная reconciliation оставляет
-  флаг как есть; он существует именно для «между этим моментом и следующим resync'ом доверять
-  живому счётчику нельзя», а не «этот конкретный вызов не удался»). Если сам resync (cold-start ИЛИ
-  unreconciled-триггер) падает (сеть недоступна для `/account`) — `fetch()` целиком бросает **до**
-  `checkAndReserve` (нет валидного `ceiling`, вычислять нечего) → тот же R-24/R-40 `isError`-путь,
-  что «ключ не задан» — fail-closed, не fail-open с устаревшим/нулевым потолком.
-
-**Модуль: `src/net/*`** (SSRF, R-25 + rate-limit, R-26)
+**Module: `src/net/*`** (SSRF, R-25 + rate limiting, R-26)
 
 ```ts
 export function assertAllowedHost(hostname: string, allowlist: string[]): void; // throws SsrfBlockedError
@@ -1221,152 +1262,149 @@ export function safeFetch(
   fetchImpl?: typeof fetch,
   options?: { timeoutMs?: number; maxResponseBytes?: number },
 ): Promise<Response>;
-// safeFetch: redirect: 'manual' + ручная проверка Location-хоста на каждом хопе (макс. 3);
-// https проверяется на ИСХОДНОМ url И на каждом редирект-хопе (cycle 2, finding 4). Hardened
-// (cycle 1, fix B): каждый хоп гонится против AbortSignal.timeout(timeoutMs) (15с дефолт) →
-// SafeFetchTimeoutError; Content-Length сверяется с maxResponseBytes (10MB дефолт) ДО чтения тела
-// → SafeFetchResponseTooLargeError (M2-дефолт: chunked/no-Content-Length не покрыт — нужен
-// потоковый byte-counter). Cross-host редирект срезает Authorization/*-api-key-заголовки
-// (SENSITIVE_HEADER_RE); same-host редирект хранит их как есть.
+// safeFetch: redirect: 'manual' + a manual check of the Location host on every hop (max 3); https
+// is checked on the ORIGINAL url AND on every redirect hop. Each hop races an
+// AbortSignal.timeout(timeoutMs) (15s default) → SafeFetchTimeoutError; Content-Length is compared
+// against maxResponseBytes (10MB default) BEFORE the body is read → SafeFetchResponseTooLargeError
+// (documented default: chunked/no-Content-Length is not covered — that needs a streaming byte
+// counter). A cross-host redirect strips Authorization and *-api-key headers
+// (SENSITIVE_HEADER_RE); a same-host redirect keeps them.
 
 export interface TokenBucketConfig {
   capacity: number;
   refillPerSec: number;
 }
 export function throttle(providerId: string, config: TokenBucketConfig): Promise<void>;
-// Concurrency-safe (cycle 1, fix C): refill+consume+decide — целиком СИНХРОННЫЙ шаг (без await до
-// фиксации состояния), tokens допускает негативный backlog, никогда не сбрасывается после wait —
-// иначе конкурентные вызовы читают одно и то же pre-wait состояние и не расходятся по времени.
-// refillPerSec<=0 → типизированный RateLimitRejectedError немедленно (не Infinity-wait/setTimeout-
-// clamp, что раньше молча съедало rate-limit). 30с fairness-кап (cycle 2, fix 7): waitMs > 30000мс
-// → reject вместо ожидания, с рефандом токена (tokens += 1) перед throw.
+// Concurrency-safe: refill + consume + decide is one wholly SYNCHRONOUS step (no await before the
+// state is committed); tokens may go into a negative backlog and are never reset after a wait —
+// otherwise concurrent callers read the same pre-wait state and fail to spread out in time.
+// refillPerSec <= 0 → a typed RateLimitRejectedError immediately (not an Infinity wait or a
+// setTimeout clamp, which would silently swallow the rate limit). A 30s fairness cap: waitMs >
+// 30000 rejects instead of waiting, refunding the token (tokens += 1) before the throw.
 ```
 
-**Модуль: `src/pg/read-client.ts`** (R-12, используется **только** `adapters/pg-history/index.ts` —
-не отдельный side-channel, F-2)
+**Module: `src/pg/read-client.ts`** (R-12, used **only** by `adapters/pg-history/index.ts` — not a
+separate side channel)
 
-Ленивый `pg.Pool` — создаётся **только** при первом вызове history-способности **и** наличии
-`ONCHAIN_PG_URL`; иначе `pg-history.isAvailable()` возвращает `{ ok: false, reason: 'needs
-ONCHAIN_PG_URL' }` (R-24). `search_path=onchain` через connection option (`options: '-c
-search_path=onchain'`). Все запросы кода движка — **только `SELECT`** (код-ревью гейт + runtime-регекс
-guard, R-27); рекомендация для оператора БД — сама роль на сервере тоже должна быть SELECT-only
-(defense in depth, §7). `pg-history` оборачивает этот клиент в стандартный `ProviderAdapter` (`id:
-'pg-history'`, `capabilities()` → `privacy.shielded_pool.history`/`platform.metrics.history`,
-`normalize()` → `Snapshot[]`) — регистрируется в `providers` наравне с остальными восемью (§4.2).
+A lazy `pg.Pool`, created **only** on the first call of a history capability **and** only when
+`ONCHAIN_PG_URL` is present; otherwise `pg-history.isAvailable()` returns
+`{ ok: false, reason: 'needs ONCHAIN_PG_URL' }` (R-24). `search_path=onchain` is set through a
+connection option (`options: '-c search_path=onchain'`). Every query the engine issues is
+**`SELECT` only** (a code-review gate plus a runtime regex guard, R-27); the recommendation to the
+database operator is that the server-side role be SELECT-only as well (defense in depth, §7).
+`pg-history` wraps this client in a standard `ProviderAdapter` (`id: 'pg-history'`, `capabilities()`
+→ `privacy.shielded_pool.history`/`platform.metrics.history`, `normalize()` → `Snapshot[]`) and is
+registered in `providers` alongside the others (§4.2).
 
-**Pool hardening (adversarial cycle 1, fix D + post-M1 polish, fix 3):** `pool.on('error', ...)`
-навешивается сразу после `new Pool(...)` — idle-соединение может отвалиться независимо от
-`query()`, а необработанный `'error'` на `EventEmitter` иначе роняет весь процесс; лог в stderr,
-игнор. `connectionTimeoutMillis: 10000` / `max: 3` передаются **всегда** явно (не дефолты `pg`).
-**Все** пути отказа — и `pool.query(...)` (D2), и сама **конструкция** `new Pool(...)` (post-M1
-polish, fix 3: раньше throw конструктора при невалидном DSN обходил D2's try/catch и мог утечь
-хост/порт/юзер вызывающему) — санитизируются до единого `'pg-history: database unavailable'`
-(`SANITIZED_QUERY_FAILURE_MESSAGE`, с `{cause: error}`); сырая деталь — только в stderr, DSN и его
-фрагменты никогда не достигают вызывающего/MCP-клиента.
+**Pool hardening.** `pool.on('error', ...)` is attached immediately after `new Pool(...)`: an idle
+connection can drop independently of `query()`, and an unhandled `'error'` on an `EventEmitter`
+would otherwise take down the whole process (logged to stderr, then ignored).
+`connectionTimeoutMillis: 10000` and `max: 3` are **always** passed explicitly, never left to `pg`'s
+defaults. **All** failure paths — `pool.query(...)` and the **construction** of `new Pool(...)`
+itself (a constructor throw on an invalid DSN used to bypass the query try/catch and could leak
+host/port/user to the caller) — are sanitized to a single
+`'pg-history: database unavailable'` (`SANITIZED_QUERY_FAILURE_MESSAGE`, with `{cause: error}`). The
+raw detail goes to stderr only; the DSN and any fragment of it never reach the caller or the MCP
+client.
 
-#### Компонент: `@onchain-intel/mcp-server` (M0, расширяется в M1)
+#### Component: `@onchain-intel/mcp-server` (M0, extended in M1)
 
-- Тип/технологии — без изменений от v1.1 (Node CLI, stdio, `@modelcontextprotocol/sdk`, zod,
-  tsup+tsx+vitest). **Новая** `workspace:*`-зависимость на `@onchain-intel/core`.
-- `createServer(deps: { env: Env; version: string; registry?: CapabilityRegistry })` —
-  **`registry` теперь injectable** (по умолчанию — реальный, собранный из
-  `providers.config.ts`; тесты передают fixture-backed реализацию того же интерфейса
-  `resolve()`). Это единственный механизм «MCP E2E без сети» (R-21) — не мокается глобальный
-  `fetch`, инжектируется другая реализация того же контракта на границе `createServer`.
-  **Важно (F-1, ревью цикл 1):** эта инъекция работает только **in-process** — она недостижима
-  через границу спавненного дочернего процесса (`e2e.stdio.test.ts` спавнит `src/index.ts` как
-  отдельный процесс через `tsx`, у которого нет способа получить объект `registry` вызывающего
-  теста). Поэтому её использует **новый** in-process suite (`e2e.inprocess.test.ts`, см. «Тест-
-  сьют» ниже), не спавн-сьют — это и есть ключевое разделение F-1.
-- **4 новых `src/tools/*.ts`** (`get-token.ts`, `wallet-balances.ts`, `new-pairs.ts`,
-  `protocol-tvl.ts`) — тот же паттерн, что `ping.ts`: pure-хендлер (юнит-тестируем без
-  транспорта, возвращает `{ok:true,...}|{ok:false,reason}`, никогда не бросает) + `registerXTool`
-  (обвязка над SDK), которая на `{ok:false}` строит `{ isError: true, content: [{ type: 'text',
-text: <причина, без значений секретов> }] }` явно. **Исправлено (цикл 2, finding 1 — прежняя
-  формулировка здесь была устаревшей/неточной):** это НЕ потому, что автоматическое
-  `isError`-преобразование SDK покрывает только zod input-валидацию — установленный SDK
-  (`@modelcontextprotocol/sdk@1.29.0`) на самом деле оборачивает **весь** `tools/call`-хендлер
-  (input-валидацию, сам колбэк, И output-schema валидацию) в один try/catch и конвертирует
-  **любой** брошенный error в `isError: true` (проверено чтением установленного `server/mcp.js`).
-  Явная сборка `{isError:true,...}` сохранена намеренно: (a) `{ok:false,reason}`-контракт каждого
-  хендлера юнит-тестируем на pure-уровне без транспорта, (b) `reason` — осознанно выбранное
-  сообщение, а не generic `.message` брошенного error.
-- `src/env.ts` — 4 новых **опциональных** ключа (R-23): `COINGECKO_API_KEY`, `DUNE_API_KEY`,
-  `ONCHAIN_PG_URL` (`z.string().url().optional()` — WHATWG URL-парсинг принимает `postgres://`;
-  проверить на реальной строке подключения в Development, §11), `DATA_DIR`
-  (`z.string().optional()`). `EnvSchema.parse({})` продолжает не бросать (R-23).
-  **Пост-M1 фикс (2026-07-23, v2.2.1):** пятый опциональный ключ `COINGECKO_PRO_API_KEY` —
-  Pro-подписка CoinGecko это **отдельный контур** аутентификации (хост `pro-api.coingecko.com` +
-  заголовок `x-cg-pro-api-key`; pro-хост игнорирует demo-заголовок — подтверждено живым
-  пробником), а не «тот же ключ с большими лимитами»: формат ключей обоих тиров одинаков
-  (`CG-…`), поэтому контур объявляется тем, какая переменная задана (никогда не
-  угадывается по формату); при обеих заданных приоритет у Pro.
+- Type and technologies are unchanged (Node CLI, stdio, `@modelcontextprotocol/sdk`, zod, tsup +
+  tsx + vitest), plus a `workspace:*` dependency on `@onchain-intel/core`.
+- `createServer(deps: { env: Env; version: string; registry?: CapabilityRegistry })` — the
+  **registry is injectable** (defaulting to the real one assembled from `providers.config.ts`; tests
+  pass a fixture-backed implementation of the same `resolve()` interface). This is the only
+  mechanism for "MCP E2E without network" (R-21): the global `fetch` is never mocked; a different
+  implementation of the same contract is injected at the `createServer` boundary. The injection
+  works **in-process only** — it cannot cross the boundary of a spawned child process
+  (`e2e.stdio.test.ts` spawns `src/index.ts` through `tsx`, and that process has no way to receive
+  the caller's `registry` object). Hence the split between the spawn suite and the in-process suite
+  (below).
+- **Four M1 `src/tools/*.ts`** (`get-token.ts`, `wallet-balances.ts`, `new-pairs.ts`,
+  `protocol-tvl.ts`) follow the `ping.ts` pattern: a pure handler (unit-testable without a
+  transport, returning `{ok:true,...} | {ok:false,reason}`, never throwing) plus `registerXTool`
+  (the SDK wiring), which on `{ok:false}` explicitly builds
+  `{ isError: true, content: [{ type: 'text', text: <reason, no secret values> }] }`. The installed
+  SDK (`@modelcontextprotocol/sdk@1.29.0`) already wraps the **whole** `tools/call` handler — input
+  validation, the callback itself, and output-schema validation — in one try/catch and converts any
+  thrown error into `isError: true` (verified by reading the installed `server/mcp.js`). The
+  explicit construction is kept deliberately: (a) each handler's `{ok:false,reason}` contract is
+  unit-testable at the pure level with no transport, and (b) `reason` is a chosen message rather
+  than the generic `.message` of a thrown error.
+- `src/env.ts` — four optional keys (R-23): `COINGECKO_API_KEY`, `DUNE_API_KEY`, `ONCHAIN_PG_URL`
+  (`z.string().url().optional()` — WHATWG URL parsing accepts `postgres://`), and `DATA_DIR`
+  (`z.string().optional()`). `EnvSchema.parse({})` still does not throw (R-23). A fifth optional key,
+  `COINGECKO_PRO_API_KEY`, exists because a CoinGecko Pro subscription is a **separate**
+  authentication circuit (host `pro-api.coingecko.com` + header `x-cg-pro-api-key`; the pro host
+  ignores the demo header — confirmed by a live probe), not "the same key with higher limits". Key
+  formats are identical across tiers (`CG-…`), so the circuit is declared by which variable is set
+  and never guessed from the format; when both are set, Pro wins.
 
-#### Тест-сьют — расширения M1 (D11, R-21/R-22)
+#### Test suite
 
-- **`packages/core/test/`:** по одному `*.contract.test.ts` на адаптер, где есть живой/fixture/
-  mock путь — golden-нормализация «сырой ответ фикстуры → канонический объект» (D11);
-  `test/fixtures/<adapter>/*.json` — закоммичены (`coingecko`, `dexscreener`, `defillama`,
-  `rpc-evm`, `rpc-solana`, `platform-explorer` — реальные HTTP-фикстуры; `dash-platform` —
-  вручную собранная фикстура по форме addendum, см. §3.2 выше; `pg-history` — не HTTP-фикстура, а
-  мок pg-клиента с фиксированными строками; `dune` — **без** фикстуры/теста в M1, F-2/minor).
-  `registry.fallback.test.ts` — R-11: `dash-platform.isAvailable()` детерминированно `false` в M1
-  (не мок недоступности, а реальная M1-конфигурация, F-3) → способность отвечает через
-  `platform-explorer` — прогон настоящего, не симулированного fallback-пути. `cache.test.ts` —
-  hit/miss/TTL обоих уровней, включая `pg-history` (провайдер существует в `providers`-реестре —
-  FK не нарушается, F-2). `safe-fetch.test.ts` — SSRF-гейт (allowlist + редирект-цепочка).
-  `rate-limit.test.ts` — throttle. `chain-address.test.ts` — checksum/base58/невалидные адреса.
-- **`packages/core/scripts/record-fixture.mjs`** (R-22) — ручной dev-скрипт: один живой вызов
-  провайдера → сохраняет фикстуру **и** evidence (реальные поля/эндпоинт/дату записи, не
-  предположение) рядом в `test/fixtures/<adapter>/<name>.evidence.md`; **не входит в CI**.
-- **`packages/mcp-server/test/e2e.stdio.test.ts`** (spawn, **механизм не меняется** от M0) —
-  спавнит `src/index.ts` дочерним процессом через `tsx`, как в M0. Расширяется **только** до
-  `tools/list` === **5** tools (`onchain_ping` + 4 новых, проверка по имени) и продолжает гонять
-  `onchain_ping` end-to-end так же, как в M0. **Не вызывает 4 новых tool через этот транспорт**
-  (F-1, ревью цикл 1): инъекция `registry` в `createServer({registry})` — in-process-механизм,
-  недостижимый через границу спавненного дочернего процесса; вызов реального (не fixture-backed)
-  registry там означал бы живые сетевые вызовы из-под spawn — нарушение R-21.
-- **`packages/mcp-server/test/e2e.inprocess.test.ts`** (НОВЫЙ, F-1 fix) — не спавнит процесс:
-  использует SDK-шный `InMemoryTransport.createLinkedPair()` (часть `@modelcontextprotocol/sdk`,
-  новой зависимости не требует) + `Client` + `createServer({ env, version, registry:
-fixtureRegistry })` **в одном процессе теста**. `fixtureRegistry` — реализация того же
-  публичного контракта `CapabilityRegistry.resolve()`, собранная из `packages/core/test/
-fixtures/`. Гоняет все 4 новых tool целиком через MCP-протокол (input-валидация,
-  `structuredContent`, `_meta.cache`, `isError`-путь при недоступности способности) — **0
-  сетевых вызовов** (R-21), т.к. инъекция здесь физически возможна (нет границы процесса). Это и
-  есть фактический механизм «E2E расширен на 4 tool с mocked/fixture-backed registry» из скоупа
-  TASK-003 — терминология уточнена: не «stdio E2E» в буквальном смысле (spawn), а in-process
-  JSON-RPC-раунд-трип через `InMemoryTransport`.
-- **`scripts/smoke-dist.mjs`** — **решение архитектора: остаётся ping-only.** Его роль —
-  проверить, что _собранный_ `dist/index.js` вообще поднимается и говорит по wire-протоколу
-  (post-build слепая зона M0). Расширение его до реальных сетевых вызовов против живых провайдеров
-  вернуло бы именно ту сетевую зависимость CI, которую R-21 запрещает; `e2e.inprocess.test.ts`
-  (на `tsx`, не на `dist/`) уже покрывает поведение всех 4 tools против фикстур. Дублировать в
-  build-специфичном смоук-тесте не нужно.
+**796 tests** — `packages/core` 617, `packages/mcp-server` 179 (D11, R-21/R-22).
 
-### 3.3. Диаграмма компонентов
+- **`packages/core/test/`:** one `*.contract.test.ts` per adapter that has a live/fixture/mock path
+  — golden normalization from "raw fixture response" to "canonical object" (D11).
+  `test/fixtures/<adapter>/*.json` are committed: `coingecko`, `dexscreener`, `defillama`,
+  `rpc-evm`, `rpc-solana`, `platform-explorer` and `nansen` are real HTTP fixtures; `dash-platform`
+  is a hand-built fixture shaped after the addendum; `pg-history` is not an HTTP fixture but a
+  mocked pg client with fixed rows; `dune` has no fixture and no contract test.
+  `registry.fallback.test.ts` covers R-11: `dash-platform.isAvailable()` is deterministically
+  `false` (the real configuration, not a mocked unavailability), so the capability answers through
+  `platform-explorer` — a run of a genuine, not simulated, fallback path. `cache.test.ts` covers
+  hit/miss/TTL on both levels, including `pg-history` (the provider exists in the `providers`
+  registry, so the FK holds). `safe-fetch.test.ts` covers the SSRF gate (allowlist + redirect
+  chain), `rate-limit.test.ts` the throttle, `chain-address.test.ts` checksum/base58/invalid
+  addresses, and the chain-registry, coverage and nansen budget/reconciliation suites the TASK-006
+  and M2 surfaces.
+- **`packages/core/scripts/record-fixture.mjs`** (R-22) — a manual dev script: one live provider
+  call, saving both the fixture **and** the evidence (real fields/endpoint/date of recording, not an
+  assumption) next to it in `test/fixtures/<adapter>/<name>.evidence.md`. **Not part of CI.**
+- **`packages/mcp-server/test/e2e.stdio.test.ts`** (spawn; the mechanism is unchanged from M0) —
+  spawns `src/index.ts` as a child process through `tsx`. It asserts that `tools/list` contains
+  exactly **10** tools by name (`onchain_ping` + 4 M1 + 3 M2 + 2 TASK-006) and keeps running
+  `onchain_ping` end to end. It deliberately does **not** call the other tools over this transport:
+  the `registry` injection is in-process, and using the real registry inside a spawned process
+  would mean live network calls under CI — a violation of R-21.
+- **`packages/mcp-server/test/e2e.inprocess.test.ts`** — no process spawn: the SDK's
+  `InMemoryTransport.createLinkedPair()` (part of `@modelcontextprotocol/sdk`, no new dependency)
+  plus `Client` and `createServer({ env, version, registry: fixtureRegistry })` **in the test's own
+  process**. `fixtureRegistry` implements the same public `CapabilityRegistry.resolve()` contract,
+  assembled from `packages/core/test/fixtures/`. It exercises the M1 tools and the M2 paid tools
+  fully through the MCP protocol (input validation, `structuredContent`, `_meta.cache`,
+  `_meta.budget`, the `isError` path when a capability is unavailable) with **zero network calls**
+  (R-21), because the injection is physically possible with no process boundary. This — not the
+  spawn suite — is the actual "E2E extended to the tools with a fixture-backed registry".
+- **`scripts/smoke-dist.mjs`** stays ping-only. Its job is to prove that the _built_
+  `dist/index.js` starts at all and speaks the wire protocol (M0's post-build blind spot).
+  Extending it to real network calls against live providers would reintroduce exactly the CI network
+  dependency R-21 forbids, and `e2e.inprocess.test.ts` (running on `tsx`, not on `dist/`) already
+  covers tool behaviour against fixtures.
+
+### 3.3. Component diagram
 
 ```mermaid
 flowchart TB
   HOST["Claude Code — MCP host"]
   ENTRY["mcp-server/src/index.ts (bin)<br/>StdioServerTransport"]
   SRV["mcp-server/src/server.ts<br/>createServer({env,version,registry?})"]
-  ENV["mcp-server/src/env.ts<br/>EnvSchema + 4 новых опц. ключа"]
-  TOOLS["mcp-server/src/tools/*.ts<br/>ping + get-token + wallet-balances<br/>+ new-pairs + protocol-tvl"]
+  ENV["mcp-server/src/env.ts<br/>EnvSchema + optional keys"]
+  TOOLS["mcp-server/src/tools/*.ts<br/>ping + get-token + wallet-balances<br/>+ new-pairs + protocol-tvl + M2/TASK-006 tools"]
 
-  subgraph CORE["@onchain-intel/core (NEW)"]
+  subgraph CORE["@onchain-intel/core"]
     TYPES["types/* — Token/Wallet/Balance/Pool/OHLCV/Snapshot"]
-    ADDR["chain/address.ts — normalize/validate"]
-    REG["adapters/registry.ts + providers.config.ts (9 адаптеров)"]
-    ADAPT["adapters/{coingecko,dexscreener,defillama,rpc-evm,<br/>rpc-solana,platform-explorer} — live<br/>+ {dash-platform,dune} — interface/stub, no live fetch in M1 (F-3/minor)<br/>+ {pg-history} — opt. PG-backed (F-2)"]
-    CACHE["cache/* — lru + sqlite DATA_DIR"]
+    CHAIN["chain/* — registry (458 chains) + address + coverage"]
+    REG["adapters/registry.ts + providers.config.ts (10 adapters)"]
+    ADAPT["adapters/{coingecko,dexscreener,defillama,rpc-evm,<br/>rpc-solana,platform-explorer} — live<br/>+ {dash-platform,dune} — interface/stub, no live fetch<br/>+ {pg-history} — optional PG-backed<br/>+ {nansen} — paid, budget-gated inside fetch()"]
+    CACHE["cache/* — lru + sqlite in DATA_DIR + budget ledger"]
     NET["net/* — safeFetch + throttle"]
-    PGC["pg/read-client.ts (используется только pg-history)"]
+    PGC["pg/read-client.ts (used only by pg-history)"]
   end
 
-  TEST_SPAWN["mcp-server/test/e2e.stdio.test.ts<br/>SPAWN — tools/list===5 + ping only (F-1)"]
-  TEST_INPROC["mcp-server/test/e2e.inprocess.test.ts<br/>InMemoryTransport — 4 tools, fixture registry (F-1)"]
-  CORETEST["core/test/*.contract.test.ts<br/>golden-нормализация + фикстуры/моки"]
+  TEST_SPAWN["mcp-server/test/e2e.stdio.test.ts<br/>SPAWN — tools/list===10 + ping only"]
+  TEST_INPROC["mcp-server/test/e2e.inprocess.test.ts<br/>InMemoryTransport — all tools, fixture registry"]
+  CORETEST["core/test/*.contract.test.ts<br/>golden normalization + fixtures/mocks"]
 
   HOST -- "stdio, JSON-RPC" --> ENTRY
   ENTRY -- "server.connect(transport)" --> SRV
@@ -1374,18 +1412,18 @@ flowchart TB
   SRV -- "registerXTool(server)" --> TOOLS
   TOOLS -- "registry.resolve(cap,chain,args)" --> REG
   REG --> ADAPT --> NET
-  ADAPT --> ADDR
+  ADAPT --> CHAIN
   REG --> CACHE
   ADAPT -. "pg-history only" .-> PGC
   TOOLS -- "canonical result" --> TYPES
-  TEST_SPAWN -. "спавнит child process — не может инжектировать registry" .-> ENTRY
-  TEST_INPROC -. "инжектирует fixture registry, in-process" .-> SRV
-  CORETEST -. "бьёт по ADAPT напрямую, без транспорта" .-> ADAPT
+  TEST_SPAWN -. "spawns a child process — cannot inject a registry" .-> ENTRY
+  TEST_INPROC -. "injects a fixture registry, in-process" .-> SRV
+  CORETEST -. "hits ADAPT directly, no transport" .-> ADAPT
 
-  SEAM1["Точка расширения M2:<br/>Nansen-адаптер + budget-guard в CACHE"]
-  SEAM2["Точка расширения M3:<br/>onchain_watch_* + planner читает REG"]
-  SEAM3["Точка расширения M2/M3:<br/>adapters/* → собственный pnpm-пакет (шов уже есть)"]
-  SEAM4["Backlog (не блокирует M1, §11):<br/>живой gRPC-транспорт для dash-platform"]
+  SEAM1["Paid layer (M2, landed):<br/>nansen adapter + budget gate + usage ledger"]
+  SEAM2["M3 extension point:<br/>onchain_watch_* + planner reads REG"]
+  SEAM3["M2/M3 extension point:<br/>adapters/* → own pnpm package (the seam exists)"]
+  SEAM4["Backlog (§11):<br/>live gRPC transport for dash-platform"]
 
   REG -.-> SEAM1
   REG -.-> SEAM2

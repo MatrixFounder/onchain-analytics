@@ -274,7 +274,7 @@ export class NansenBudgetExceededError extends Error {
 }
 
 /**
- * Pure ceiling formula (system-architecture.md §3.2 "Формула потолка бакета" — the anchor-rebased
+ * Pure ceiling formula (system-architecture.md §3.2 "The bucket ceiling formula" — the anchor-rebased
  * fix for the naive, double-counting `min(creditsRemainingAtObserve, cap)` defect found on
  * review). Exported for direct unit testing (TC-UNIT-06 — asserting the number itself, not just
  * an indirect pass/fail outcome) in addition to being used internally by `ensureBudget()`.

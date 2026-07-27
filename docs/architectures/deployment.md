@@ -1,61 +1,85 @@
-# 10. Деплой
+# 10. Deployment
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 10.1. Окружения
+### 10.1. Environments
 
-Без изменений — только dev, локально, под Claude Code (M0/M1 не вводит staging/prod для этого
-пакета). PG read-only клиент **подключается** к уже существующей dev-VM Supabase-инсталляции
-(CLAUDE.n8n.md), но не разворачивает и не мигрирует её — read-only потребитель чужой БД.
+Dev only, local, under Claude Code — this package has no staging or prod. The read-only PG client
+**connects** to the dev-VM Supabase installation that already exists (CLAUDE.n8n.md); it neither
+provisions nor migrates it. The engine is a read-only consumer of someone else's database.
 
-### 10.2. CI/CD Pipeline
+### 10.2. CI/CD pipeline
 
-Порядок шагов CI (`.github/workflows/ci.yml`) расширяется охватом второго пакета через
-repo-wide/`pnpm -r`-скрипты **плюс один структурный шаг, добавленный по результату верификации
-003-8 (2026-07-23):** на свежем checkout `dist/` (gitignored) не существует, а `@onchain-intel/core`
-экспонируется потребителю только через `main`/`types` → `dist/*` — поэтому **до** `typecheck`/`test`
-обязателен `pnpm --filter @onchain-intel/core build` (иначе TS2307 / 7 из 9 mcp-сьютов не
-резолвят пакет; локально это маскировалось остаточным dist). Шаг идемпотентен (plain tsc) и
-сохраняет инвариант «mcp-server build — после test» (E2E спавнит tsx на src):
+The CI step order (`.github/workflows/ci.yml`) covers both packages through repo-wide `pnpm -r`
+scripts, plus one structural step: `pnpm --filter @onchain-intel/core build` runs **before**
+`typecheck` and `test`. `@onchain-intel/core` is exposed to consumers only through `main`/`types` →
+`dist/*`, and `dist/` is gitignored — on a clean checkout it does not exist, so `typecheck` fails
+with TS2307 and most mcp-server suites cannot resolve the package. The step is idempotent (plain
+`tsc`) and preserves the invariant that the **mcp-server build runs after test** (the stdio E2E
+spawns `tsx` on `src/`, never on `dist/`).
 
 ```
-checkout(SHA-pin) → corepack enable (pnpm) → setup-node@22 (кеш pnpm store)
+checkout(SHA-pin) → corepack enable (pnpm) → setup-node@22 (pnpm store cache)
   → pnpm install --frozen-lockfile
-  → pnpm lint            # repo-wide, теперь покрывает packages/core тоже
+  → pnpm lint            # repo-wide, covers packages/core too
   → pnpm format:check    # repo-wide
-  → pnpm --filter @onchain-intel/core build   # prerequisite: core dist для резолюции пакета (003-8)
-  → pnpm typecheck       # pnpm -r typecheck — core, затем mcp-server (топология)
-  → pnpm test            # pnpm -r test — core (contract+cache+SSRF+rate-limit тесты, все на фикстурах/моках)
-                          #                затем mcp-server (env/ping/e2e.stdio [spawn, 5-tool list+ping]/
-                          #                e2e.inprocess [InMemoryTransport, 4 tools, fixture registry] — F-1)
-  → pnpm build           # pnpm -r build — core (plain tsc) → mcp-server (tsup+tsc, как в M0)
-  → smoke:dist           # без изменений, ping-only (см. §3.2 обоснование)
+  → pnpm --filter @onchain-intel/core build   # prerequisite: core dist, so the package resolves
+  → pnpm typecheck       # pnpm -r typecheck — core, then mcp-server (topological)
+  → pnpm test            # pnpm -r test — core (contract + registry + coverage + cache + SSRF +
+                          #                rate-limit + budget-gate, all on fixtures/mocks), then
+                          #                mcp-server (env / ping / e2e.stdio [spawn, tools/list +
+                          #                ping] / e2e.inprocess [InMemoryTransport, fixture registry])
+  → pnpm build           # pnpm -r build — core (plain tsc) → mcp-server (tsup + tsc, as in M0)
+  → smoke:dist           # ping-only (rationale in §3.2)
 ```
 
-**Что меняется по сути:** фикстуры/моки (D11) делают весь новый тест-объём (9 адаптеров, из
-которых `dash-platform` — fixture-мок и `dune` — вообще без теста в M1, F-2/F-3/minor + registry +
-cache + SSRF + rate-limit + 4 tool'а через **два** E2E-сьюта, F-1) **сетево-независимым** — ни
-один новый секрет не появляется в CI (R-21: `DUNE_API_KEY`/`COINGECKO_API_KEY`/`ONCHAIN_PG_URL`
-не нужны тестам, только Development-скрипту `record-fixture.mjs`, который **вне** CI). Никакого
-сетевого вызова в `pnpm test` по-прежнему не должно происходить — тот же инвариант R-15/R-21 M0,
-теперь проверяемый на кратно большем объёме кода.
+Fixtures and mocks (D11) keep the entire test volume **network-independent**: 10 adapters, the
+chain registry and coverage matrix, the cache, the SSRF gate, rate limiting, the budget gate, and
+the tools exercised through **two** E2E suites. No secret is needed in CI (R-21:
+`DUNE_API_KEY` / `COINGECKO_API_KEY` / `ONCHAIN_PG_URL` / `NANSEN_API_KEY` are read only by the
+development script `record-fixture.mjs`, which runs **outside** CI). No network call may happen
+during `pnpm test` — the same R-15/R-21 invariant M0 established, now enforced over many times more
+code.
 
-### 10.3. Конфигурация
+### 10.3. Configuration
 
-`EnvSchema` (`mcp-server/src/env.ts`) — по-прежнему единственный источник конфигурации процесса;
-4 новых ключа **все опциональны** (R-23), пустой env остаётся валидным (UC-1). `providers.config.ts`
-(`packages/core`) — единственный источник маршрутизации/allowlist/rate-limit — смена приоритета
-провайдера или добавление нового хоста в allowlist — правка одного файла, не кода (R-4).
+`EnvSchema` (`mcp-server/src/env.ts`) is the single source of process configuration. Every key is
+**optional** (R-23): `EnvSchema.parse({})` succeeds, so an empty env — or no `.env` at all — is a
+valid configuration (UC-1), and an empty value (`KEY=`) behaves exactly like an unset key. The keys
+the server reads today:
 
-### 10.4. Инструкция по развёртыванию (dev)
+| Key                               | Purpose                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------------- |
+| `LOG_LEVEL`                       | `debug`/`info`/`warn`/`error`; reserved since M0 for stderr diagnostics                      |
+| `COINGECKO_API_KEY`               | CoinGecko Demo contour (`api.coingecko.com`, `x-cg-demo-api-key`)                            |
+| `COINGECKO_PRO_API_KEY`           | CoinGecko Pro contour (`pro-api.coingecko.com`, `x-cg-pro-api-key`); wins when both are set  |
+| `DUNE_API_KEY`                    | the `dune` adapter — an interface stub, so the key is unused even when set                   |
+| `ONCHAIN_PG_URL`                  | read-only Postgres DSN for `pg-history`, validated as a URL                                  |
+| `DATA_DIR`                        | cache directory override (default `~/.onchain-intel`, never cwd-relative)                    |
+| `NANSEN_API_KEY`                  | the only paid adapter                                                                        |
+| `NANSEN_DAILY_CREDIT_CAP`         | self-imposed daily ceiling: unset → derived, a positive integer, or `off`                    |
+| `NANSEN_VELOCITY_CREDITS_PER_MIN` | SEC-1 velocity brake, credits per 60 s window: unset → derived, a positive integer, or `off` |
+| `NANSEN_MAX_CALLS_PER_MIN`        | Q-3 call brake, calls per 60 s window: unset → 60 (fixed, not derived), an integer, or `off` |
+| `NANSEN_BUDGET_WARN_RATIO`        | stderr warn threshold as a fraction of the effective ceiling (default 0.8)                   |
 
-1. `git clone` → `pnpm install` в корне (workspaces поднимают оба пакета).
-2. `pnpm build` (`pnpm -r build`: `core` — plain `tsc`, `mcp-server` — tsup+tsc, топологический
-   порядок).
-3. `pnpm lint && pnpm typecheck && pnpm test` — всё зелёное без сети/секретов (UC-1, R-21).
-4. (Опционально) `.env` с `COINGECKO_API_KEY`/`COINGECKO_PRO_API_KEY`/`DUNE_API_KEY`/`ONCHAIN_PG_URL`/`DATA_DIR` — ни один
-   не обязателен; отсутствующие способности деградируют явно (UC-1 alt, R-24).
-5. Подключение к Claude Code как локальный stdio MCP-сервер — без изменений от M0 (`node
-packages/mcp-server/dist/index.js` или `tsx packages/mcp-server/src/index.ts`).
-6. Вызов любого из 5 tools → канонический ответ; повторный вызов с теми же нормализованными
-   аргументами в пределах TTL → `_meta.cache.status === 'hit'` (UC-3, exit-критерий ROADMAP).
+`0` is invalid on all three Nansen limits. On a money guard it is one typo away from silently
+removing the protection, and it ought to mean "spend nothing" rather than "spend without bound" —
+so the disabling value is the word `off`.
+
+`providers.config.ts` (`packages/core`) is the single source of routing, SSRF allowlist and rate
+limits: changing a provider's priority or adding a host to the allowlist edits one file, not code
+(R-4).
+
+### 10.4. Deployment instructions (dev)
+
+1. `git clone` → `pnpm install` at the repo root (workspaces bring up both packages).
+2. `pnpm build` (`pnpm -r build`: `core` — plain `tsc`, `mcp-server` — tsup + tsc, topological
+   order).
+3. `pnpm lint && pnpm typecheck && pnpm test` — all green with no network and no secrets (UC-1,
+   R-21).
+4. Optionally, a `.env` with any of the keys in §10.3 — none is required; capabilities without a
+   key degrade explicitly (UC-1 alt, R-24).
+5. Attach to Claude Code as a local stdio MCP server, unchanged since M0
+   (`node packages/mcp-server/dist/index.js` or `tsx packages/mcp-server/src/index.ts`).
+6. Call any of the 10 tools → a canonical response; a repeat call with the same normalized
+   arguments within the TTL → `_meta.cache.status === 'hit'` (UC-3, ROADMAP exit criterion).

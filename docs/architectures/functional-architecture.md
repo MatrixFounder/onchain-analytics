@@ -1,161 +1,170 @@
-# 2. Функциональная архитектура
+# 2. Functional architecture
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 2.1. Функциональные компоненты
+### 2.1. Functional components
 
-**Компонент: Chain Registry — NOW (TASK-006, R-48/R-49)**
+> **Use Case numbering is local to each TASK.** Every `UC-n` below is therefore qualified by the
+> TASK that owns it — `TASK-006 UC-1` and `TASK-003 UC-1` are different use cases.
 
-- **Назначение:** единственный источник фактов о сетях. Превращает сеть из **кода** (литерал в
-  пяти слоях) в **данные** (строка справочника) — тот же принцип, который DB-SCHEMA-CONCEPT §1
-  уже требует для активов и метрик.
-- **Функции:** `resolve(input) → ChainInfo` (slug/алиас/caip2 → canonical caip2, чистая функция
-  без сети, «did you mean» на промахе); `list(filter)` — питает `onchain_list_chains`;
-  `covered(capability, chain)` — матрица покрытия как **производная** от `routes` ×
-  `adapter.chainSupport()`, не второй справочник.
-- **Related Use Cases** (нумерация UC локальна для каждой TASK — здесь и ниже это **TASK-006**,
-  не M1/M2): TASK-006 UC-1 (резолв неизвестной ранее сети), UC-2 (discovery), UC-3 (мягкая
-  деградация), UC-4 (синхронизация оператором), UC-5 (оффлайн-гейт), UC-6 (алиасы → совместимость).
-- **Зависимости:** не зависит ни от чего внутри движка (чистые данные + чистые функции). От него
-  зависят: `Chain/Address Normalization`, `Provider Adapters`, все схемы MCP-инструментов.
-  Направление зависимости не переворачивается — реестр про адаптеры не знает.
+**Component: Chain Registry — NOW (TASK-006, R-48/R-49)**
 
-**Компонент: Chain/Address Normalization — NOW (M1, часть D5; расширен TASK-006 R-55)**
+- **Purpose:** the single source of facts about chains. It turns a chain from **code** (a literal
+  repeated across five layers) into **data** (a registry row) — the same principle
+  DB-SCHEMA-CONCEPT §1 already requires for assets and metrics.
+- **Functions:** `resolve(input) → ChainInfo` (slug/alias/caip2 → canonical caip2; a pure function,
+  no network, "did you mean" on a miss); `list(filter)` — feeds `onchain_list_chains`;
+  `covered(capability, chain)` — the coverage matrix as a **derivative** of `routes` ×
+  `adapter.chainSupport()`, not a second registry.
+- **Related use cases:** TASK-006 UC-1 (resolving a previously unknown chain), UC-2 (discovery),
+  UC-3 (soft degradation), UC-4 (operator-driven sync), UC-5 (offline gate), UC-6 (aliases →
+  backward compatibility).
+- **Dependencies:** depends on nothing inside the engine (pure data + pure functions).
+  `Chain/Address Normalization`, `Provider Adapters` and every MCP tool schema depend on it. The
+  direction never inverts — the registry knows nothing about adapters.
 
-- **Назначение:** единая точка входа для валидации и канонизации адресов/сетей, используемая и
-  MCP-tool input-схемами, и адаптерами при построении кеш-ключа — гарантирует «один и тот же адрес
-  в любом регистре ⇒ один и тот же кеш-ключ» (обязательное требование ревьюера TASK-003).
-- **Функции:** `ChainSchema` (canonical caip2) + `ChainInputSchema` (вход, резолвит алиасы) —
-  **две схемы вместо прежнего единого enum'а `ethereum | solana | dash`**, чтобы алиас не мог
-  просочиться в тело канонического объекта и оттуда в ключ кеша (§4.2.2);
-  `normalizeAddress(chain, raw)` / `isValidAddress(chain, raw)` — ветвление по
-  **`chainInfo.family`**, а не по имени сети: одна ветка `evm` обслуживает все EVM-сети.
-- **Related Use Cases:** TASK-006 UC-7 (валидация по семейству), UC-6 (совместимость кеш-ключа).
-- **Зависимости:** зависит от `Chain Registry`; используется `Provider Adapters` и MCP-tool
-  input-схемами (§5.1).
+**Component: Chain/Address Normalization — NOW (M1, part of D5; extended by TASK-006 R-55)**
 
-**Компонент: Provider Adapters + Capability Registry — NOW (M1, D4)**
+- **Purpose:** the single entry point for validating and canonicalizing addresses and chains, used
+  both by MCP tool input schemas and by adapters when building a cache key. It guarantees "the same
+  address in any case ⇒ the same cache key".
+- **Functions:** `ChainSchema` (canonical caip2) plus `ChainInputSchema` (tool input, resolves
+  aliases) — **two schemas rather than one `ethereum | solana | dash` enum**, so an alias cannot
+  seep into the body of a canonical object and from there into the cache key (§4.2.2);
+  `normalizeAddress(chain, raw)` / `isValidAddress(chain, raw)` branch on **`chainInfo.family`**,
+  not on a chain name — a single `evm` branch serves every EVM chain.
+- **Related use cases:** TASK-006 UC-7 (validation by family), UC-6 (cache-key compatibility).
+- **Dependencies:** depends on `Chain Registry`; used by `Provider Adapters` and by MCP tool input
+  schemas (§5.1).
 
-- **Назначение:** горячо-заменяемый доступ к внешним провайдерам за стабильным внутренним
-  интерфейсом (`id/capabilities()/costOf()/fetch()/normalize()`, D4 — включая поле `id`).
-- **Функции:** маршрутизация по способности **и сети** (`(capability, chain)` → упорядоченный
-  список адаптеров), приоритет free→paid, hot-swap fallback внутри одной способности (R-11,
-  доказательство — DAPI ⇄ platform-explorer), anti-corruption layer (провайдер-DTO не протекают
-  наружу — только через `normalize()` в канонический тип).
+**Component: Provider Adapters + Capability Registry — NOW (M1, D4)**
+
+- **Purpose:** hot-swappable access to external providers behind a stable internal interface
+  (`id/capabilities()/costOf()/fetch()/normalize()`, D4 — including the `id` field).
+- **Functions:** routing by capability **and chain** (`(capability, chain)` → an ordered list of
+  adapters), free→paid priority, hot-swap fallback within a single capability (R-11, demonstrated by
+  DAPI ⇄ platform-explorer), anti-corruption layer (provider DTOs never leak outward — only through
+  `normalize()` into a canonical type).
   - Input: `(capability: string, chain: Chain, args: object)`.
-  - Output: `{ result: CanonicalResult, source: string, cache: 'hit'|'miss' }` либо структурированная
-    ошибка недоступности (R-24).
-  - Related Use Cases: UC-2 (основной путь), UC-3 (кеш), UC-4 (hot-swap).
-- **Девять адаптеров M1** (детали — §3.2): `coingecko`, `dexscreener`, `defillama`, `dune`,
-  `rpc-evm`, `rpc-solana`, `dash-platform`, `platform-explorer`, `pg-history`. Реконсиляция после
-  ревью цикла 1: `dash-platform` (interface + fixture-контракт, живой транспорт — backlog, F-3) и
-  `dune` (interface/config-stub, живой запрос — M2, minor) зарегистрированы, но не имеют живого
-  сетевого пути в M1; `pg-history` — новый read-only PG-адаптер (F-2), закрывающий R-12 через тот
-  же Registry/`providers`-FK контур, что и остальные восемь.
-- **Зависимости:** зависит от Chain/Address Normalization, Cache, SSRF-гейта, Rate-limiter;
-  зависят от него — MCP tools.
+  - Output: `{ result: CanonicalResult, source: string, cache: 'hit'|'miss' }`, or a structured
+    unavailability error (R-24).
+  - Related use cases: TASK-003 UC-2 (main path), UC-3 (cache), UC-4 (hot swap).
+- **Ten registered adapters** (details in §3.2): `coingecko`, `dexscreener`, `defillama`, `dune`,
+  `rpc-evm`, `rpc-solana`, `dash-platform`, `platform-explorer`, `pg-history`, `nansen`. Three carry
+  a deliberately narrowed status: `dash-platform` is interface + fixture contract only, with no live
+  transport (the gRPC channel is a backlog item, §11); `dune` is an interface/config stub with no
+  live query; `pg-history` is optional and connects only when `ONCHAIN_PG_URL` is set. `nansen` is
+  the tenth and the only paid, budget-gated adapter (M2, TASK-005).
+- **Dependencies:** depends on Chain/Address Normalization, Cache, the SSRF gate and the rate
+  limiter; MCP tools depend on it.
 
-**Компонент: Normalization → canonical zod-схема — NOW (M1, D5)**
+**Component: Normalization → canonical zod schema — NOW (M1, D5)**
 
-- **Назначение:** единый словарь домена: `Token`, `Wallet`/`Balance`, `Pool`, `OHLCV` (типаж
-  зарезервирован, ни один M1-tool его пока не потребляет), `Snapshot` (персистентная форма —
-  DB-SCHEMA-CONCEPT.md, не используется кеш-БД M1 напрямую — это разные хранилища).
-- Провайдер-DTO **никогда** не покидают `normalize()` — все 4 MCP-tools видят только эти типы.
+- **Purpose:** one domain vocabulary: `Token`, `Wallet`/`Balance`, `Pool`, `OHLCV` (the type is
+  reserved; no tool consumes it yet), `Snapshot` (the persistent form — DB-SCHEMA-CONCEPT.md; not
+  used directly by the cache DB, these are different stores).
+- Provider DTOs **never** leave `normalize()` — every MCP tool sees only these types.
 
-**Компонент: Cache (двухуровневый) — NOW (M1, D6) / Credit-Budget guard — FUTURE (M2)**
+**Component: Cache (two-level) — NOW (M1, D6) + credit budget guard — NOW (M2)**
 
-- **Назначение:** `lru-cache` (hot, in-process) → `better-sqlite3` (persistent, `DATA_DIR`).
-  Ключ = `(provider, capability, argsHash)`; TTL по типу данных (§3.2 таблица). Budget-guard
-  (`usage`-таблица, дневной потолок) — **не строится в M1** (TASK.md §4), но схема кеш-БД
-  спроектирована так, чтобы `usage` FK-ился на тот же `providers`-реестр без миграции (R-14).
-- Hit/miss счётчики — видимы в двух местах (решение архитектора, обосновано в §5.2/§9.3): (1)
-  структурированная строка в **stderr**; (2) поле `_meta.cache` в ответе каждого из 4 tools —
-  не часть zod-валидируемого `structuredContent`, схема выхода не растёт.
+- **Purpose:** `lru-cache` (hot, in-process) → `better-sqlite3` (persistent, in `DATA_DIR`). Key =
+  `(provider, capability, argsHash)`; TTL by data type (§3.2 table). The budget guard (the `usage`
+  ledger and its daily credit ceiling) was out of scope for M1, and the cache DB schema was designed
+  so that `usage` could FK onto the same `providers` registry without a migration (R-14); M2 added
+  it exactly there.
+- Hit/miss counters are visible in two places (§5.2/§9.3): (1) a structured line on **stderr**;
+  (2) a `_meta.cache` field in every tool response — not part of the zod-validated
+  `structuredContent`, so the output schema does not grow.
 
-**Компонент: SSRF-гейт + Rate-limiter — NOW (M1)**
+**Component: SSRF gate + rate limiter — NOW (M1)**
 
-- **Назначение:** единственная точка исходящего сетевого доступа. `safeFetch()` проверяет
-  hostname запроса (и каждого редиректа) против allowlist **конкретного вызывающего адаптера**
-  (не глобального объединённого списка — компрометация/баг одного адаптера не даёт доступа к
-  хостам другого). Общий примитив `assertAllowedHost()` спроектирован transport-агностично (для
-  будущих неHTTP-транспортов вроде gRPC), но в M1 фактически используется только `safeFetch()` —
-  `dash-platform`'s gRPC-канал в M1 не создаётся (interface + fixture-контракт only, F-3, §3.2).
-- Rate-limiter — token-bucket per-provider, конфиг в `providers.config.ts`, in-memory (M1 —
-  один процесс, персистентность не нужна).
+- **Purpose:** the single point of outbound network access. `safeFetch()` checks the hostname of the
+  request, and of every redirect, against the allowlist of the **specific calling adapter** — not a
+  global merged list, so a bug in or compromise of one adapter grants no access to another
+  adapter's hosts. The shared `assertAllowedHost()` primitive is transport-agnostic by design (for
+  future non-HTTP transports such as gRPC), but only `safeFetch()` uses it today —
+  `dash-platform`'s gRPC channel is never created (interface + fixture contract only, §3.2).
+- The rate limiter is a per-provider token bucket configured in `providers.config.ts`, in-memory
+  (one process, so persistence buys nothing).
 
-**Компонент: `pg-history` — read-only Postgres адаптер истории — NOW (M1, опционально, R-12)**
+**Component: `pg-history` — read-only Postgres history adapter — NOW (M1, optional, R-12)**
 
-- **Назначение:** реализован **как обычный `ProviderAdapter`** (`id: 'pg-history'`), а не
-  бесхозный клиент сбоку — регистрируется в `providers`-реестре наравне с остальными восемью
-  (закрывает F-2: строка кеша с `provider='pg-history'` иначе нарушала бы FK `cache_entries.
-provider → providers(id)`). Ленивое (только когда задан `ONCHAIN_PG_URL` **и** вызвана
-  history-способность) SELECT-only подключение к схеме `onchain` (той же, что пишет n8n) для
-  истории `privacy.shielded_pool.history`/`platform.metrics.history`. Никакого write-пути в коде
-  движка (R-12, R-27). Не единственный источник истории — `platform-explorer` отдаёт **свою**
-  history через собственные REST-эндпоинты первым в маршруте (R-10, keyless, всегда доступен);
-  `pg-history` — второй по приоритету, доступен только при наличии DSN (детали маршрута — §3.2).
+- **Purpose:** implemented **as an ordinary `ProviderAdapter`** (`id: 'pg-history'`) rather than an
+  ownerless client on the side, so it registers in the `providers` registry alongside the other
+  nine — a cache row with `provider='pg-history'` would otherwise violate the FK
+  `cache_entries.provider → providers(id)`. It opens a lazy SELECT-only connection (only when
+  `ONCHAIN_PG_URL` is set **and** a history capability is called) to the `onchain` schema — the same
+  schema n8n writes — serving `privacy.shielded_pool.history` and `platform.metrics.history`. There
+  is no write path anywhere in the engine (R-12, R-27).
+- It is not the only history source: `platform-explorer` serves **its own** history over its REST
+  endpoints and comes first in the route (R-10, keyless, always available); `pg-history` is second
+  by priority and available only when a DSN is present (route details in §3.2).
 
-**Компонент: Планировщик / Snapshotter-Signals — n8n + Postgres, ПОСТОЯННО (не «до M3»)**
+**Component: Scheduler / Snapshotter-Signals — n8n + Postgres, permanently**
 
-- Не предмет M1 (TASK.md §4: планировщик — M3).
-- **Обновлено 2026-07-25 (решение владельца, ADR-001 D8/D9-дополнения).** Ранее этот раздел и
-  диаграмма ниже утверждали «до M3» и «M3: планировщик мигрирует в движок» — это **противоречило**
-  дополнению D8 от 2026-07-20, которым n8n уже был ПРИНЯТ для профиля «выделенный сервер».
-  Формулировка «поглощение отложено до M3» (решение по БД от 2026-07-22) постепенно затвердела в
-  утверждение «будет поглощено», хотя отсрочка вопроса — не ответ на него.
-- **Как есть на самом деле:** требование автономности анализа данных означает, что кроны и
-  push-уведомления не могут жить в MCP-сервере — тот существует ровно пока открыта сессия хоста.
-  Поэтому always-on контур (снапшоттер СЕЙЧАС + расписание правил и алерты в M3) остаётся на
-  n8n + Postgres, а движок остаётся pull-стороной и читает историю через `pg-history` read-only.
+- Not part of the engine, and not a temporary arrangement. Autonomous data analysis needs cron jobs
+  and push notifications, and neither can live in the MCP server — that process exists exactly as
+  long as a host session is open.
+- The always-on loop — the snapshotter now, rule scheduling and alerts at M3 — therefore stays on
+  n8n + Postgres permanently (owner decision 2026-07-25, ADR-001 D8/D9 addenda). The engine is the
+  pull side and reads history through `pg-history`, read-only. The interface n8n uses to call engine
+  capabilities at M3 is OQ-M3-1.
+- For the local/embedded profile the design keeps `croner` plus a durable job log (D8); it is not
+  built yet — the scheduler is M3 scope.
 
-**Компонент: MCP-сервер (`@onchain-intel/mcp-server`) — NOW (M0 ping) + NOW (M1: 4 новых tools)**
+**Component: MCP server (`@onchain-intel/mcp-server`) — NOW**
 
-- **NOW (M0, не меняется по контракту, R-20):** `onchain_ping`.
-- **NOW (M1):** `onchain_get_token`, `onchain_wallet_balances`, `onchain_new_pairs`,
-  `onchain_protocol_tvl` — zod in/out, registry-routed. **Пятого tool нет** (OQ-2 решение
-  архитектора, ниже): dash-platform/platform-explorer регистрируют способности в Capability
-  Registry и покрываются contract-тестами, но **не** получают отдельный MCP-tool в M1 — Platform
-  privacy-правила (M3) — первый реальный потребитель, ROADMAP называет ровно 4 tool для M1.
-- **FUTURE:** `onchain_smart_money_flows`, `onchain_entity_label`, `onchain_token_risk`,
-  `onchain_watch_add/list/remove` (M2+/M3, D3); Streamable HTTP транспорт (M6).
+- **Ten registered tools**, all zod in/out and registry-routed:
+  - `onchain_ping` — M0, contract unchanged (R-20).
+  - M1 read layer: `onchain_get_token`, `onchain_wallet_balances`, `onchain_new_pairs`,
+    `onchain_protocol_tvl`.
+  - M2 paid, Nansen-backed, budget-gated: `onchain_smart_money_flows`, `onchain_entity_label`,
+    `onchain_token_risk`.
+  - TASK-006 keyless, registry-backed: `onchain_list_chains` (discovery, zero network calls) and
+    `onchain_chain_tvl` (chain-level TVL, DeFiLlama-backed).
+- `dash-platform` and `platform-explorer` register capabilities in the Capability Registry and are
+  covered by contract tests, but neither gets a tool of its own — the Platform privacy rules (M3)
+  are the first real consumer.
+- **Not yet built:** `onchain_watch_add/list/remove` (M3, D3). The transport is local stdio;
+  Streamable HTTP is M6, behind the same transport abstraction (D3).
 
-**Связанные Use Cases (TASK.md §2):** UC-1 (пустой `.env`), UC-2 (4 tools на 2 сетях), UC-3
-(cache-hit метрики), UC-4 (hot-swap DAPI→platform-explorer), UC-5 (контрактные тесты без сети).
+**Related use cases (TASK-003, M1):** UC-1 (empty `.env`), UC-2 (four tools on two chains), UC-3
+(cache-hit metrics), UC-4 (hot swap DAPI→platform-explorer), UC-5 (contract tests with no network).
 
-### 2.2. Диаграмма функциональных компонентов
+### 2.2. Component diagram
 
 ```mermaid
 flowchart LR
-  subgraph SRC["Провайдеры данных — M1"]
+  subgraph SRC["Data providers"]
     CG[CoinGecko — live]
     DS[DexScreener — live]
     DL[DeFiLlama — live]
     RPCE["EVM RPC — publicnode/drpc, live"]
     RPCS["Solana RPC — mainnet-beta, live"]
-    PE["platform-explorer — REST, live<br/>единственный live Dash-источник M1"]
-    DAPI["Dash DAPI — gRPC<br/>interface+fixture only в M1<br/>живой транспорт — backlog, §11 (F-3)"]
-    DUNE["Dune Query API<br/>interface/config-stub в M1<br/>живой запрос — M2 (minor)"]
-    NAN["Nansen — M2+, платный"]
+    PE["platform-explorer — REST, live<br/>the only live Dash source"]
+    DAPI["Dash DAPI — gRPC<br/>interface + fixture only<br/>live transport — backlog, §11"]
+    DUNE["Dune Query API<br/>interface/config stub<br/>no live query"]
+    NAN["Nansen — live, paid, budget-gated (M2)"]
   end
 
-  subgraph ENGINE["onchain-intel: движок (packages/core + packages/mcp-server)"]
-    NORMCHAIN["chain/address normalize<br/>NOW M1"]
-    SSRF["SSRF host-allowlist gate<br/>NOW M1 (per-adapter allowlist)"]
-    RATE["per-provider rate-limit<br/>NOW M1"]
-    AD["Provider Adapters + Capability Registry<br/>NOW M1 (D4, id+capabilities+costOf+fetch+normalize)<br/>9 адаптеров зарегистрированы"]
-    NORM["normalize() → canonical zod<br/>NOW M1 (D5): Token/Wallet/Balance/Pool/OHLCV/Snapshot"]
-    CACHE["Cache: lru-cache + SQLite DATA_DIR<br/>NOW M1 (D6); budget-guard FUTURE M2"]
-    PGHIST["pg-history adapter (opt., R-12)<br/>NOW M1 — в Registry, не сбоку (F-2)"]
-    SCHED["croner + job-log — ТОЛЬКО локальный/embedded профиль<br/>для выделенного сервера расписание в n8n (D8, 2026-07-25)"]
-    MCP["MCP-сервер @onchain-intel/mcp-server<br/>onchain_ping (M0) +<br/>onchain_get_token/wallet_balances/new_pairs/protocol_tvl (M1)"]
+  subgraph ENGINE["onchain-intel: the engine (packages/core + packages/mcp-server)"]
+    NORMCHAIN["chain/address normalize"]
+    SSRF["SSRF host-allowlist gate<br/>per-adapter allowlist"]
+    RATE["per-provider rate limit"]
+    AD["Provider Adapters + Capability Registry<br/>D4: id+capabilities+costOf+fetch+normalize<br/>10 adapters registered"]
+    NORM["normalize() → canonical zod<br/>D5: Token/Wallet/Balance/Pool/OHLCV/Snapshot"]
+    CACHE["Cache: lru-cache + SQLite DATA_DIR (D6)<br/>+ budget guard: usage ledger, daily ceiling (M2)"]
+    PGHIST["pg-history adapter (optional, R-12)<br/>inside the Registry, not beside it"]
+    SCHED["croner + job log — local/embedded profile only<br/>on a dedicated server the schedule lives in n8n (D8)"]
+    MCP["MCP server @onchain-intel/mcp-server — 10 tools<br/>ping · get_token · wallet_balances · new_pairs · protocol_tvl<br/>list_chains · chain_tvl · smart_money_flows · entity_label · token_risk"]
   end
 
-  subgraph N8N["Автономный контур — n8n + Supabase Postgres, dev VM<br/>снапшоттер СЕЙЧАС; расписание правил + алерты M3 (решение 2026-07-25)"]
+  subgraph N8N["Autonomous loop — n8n + Supabase Postgres, dev VM<br/>snapshotter now; rule scheduling + alerts at M3"]
     WF["onchain-snapshotter / onchain-verify / onchain-error-alert"]
     PG[("Supabase Postgres, schema onchain")]
   end
 
-  CLIENT["Claude Code — MCP host (stdio) — NOW"]
+  CLIENT["Claude Code — MCP host (stdio)"]
 
   CG --> SSRF
   DS --> SSRF
@@ -163,17 +172,18 @@ flowchart LR
   RPCE --> SSRF
   RPCS --> SSRF
   PE --> SSRF
+  NAN --> SSRF
   SSRF --> RATE --> AD
-  DAPI -. "зарегистрирован, live-fetch в M1 нет (F-3)" .-> AD
-  DUNE -. "зарегистрирован, live-fetch в M1 нет (minor)" .-> AD
+  DAPI -. "registered, no live fetch" .-> AD
+  DUNE -. "registered, no live fetch" .-> AD
   NORMCHAIN --> AD
   AD --> NORM --> CACHE --> MCP
-  SCHED -. "локальный профиль" .-> AD
-  WF -. "M3: n8n вызывает способности движка (интерфейс — OQ-M3-1)" .-> AD
-  CLIENT <-- "stdio, JSON-RPC (NOW)" --> MCP
+  SCHED -. "local profile" .-> AD
+  WF -. "M3: n8n calls engine capabilities (interface — OQ-M3-1)" .-> AD
+  CLIENT <-- "stdio, JSON-RPC" --> MCP
 
-  DAPI -. "независимый вызов n8n, не через движок" .-> WF
-  PE -. "независимый вызов n8n, не через движок" .-> WF
+  DAPI -. "called by n8n directly, not through the engine" .-> WF
+  PE -. "called by n8n directly, not through the engine" .-> WF
   WF --> PG
-  PG -. "R-12: опц. read-only через pg-history (ONCHAIN_PG_URL)" .-> PGHIST --> AD
+  PG -. "R-12: optional read-only via pg-history (ONCHAIN_PG_URL)" .-> PGHIST --> AD
 ```

@@ -4,194 +4,201 @@
 
 ### 4.1. Entities Overview
 
-**Канонические типы (M1, `packages/core/src/types/*`)** — см. полные zod-схемы в §3.2. Кратко:
+**Canonical types (M1, `packages/core/src/types/*`)** — full zod schemas in §3.2. In brief:
 
 #### Entity: `Token`
 
-- **Описание:** метаданные + цена токена на конкретной сети/адресе.
-- **Ключевые атрибуты:** `chain`, `address` (нормализован), `symbol`, `name`, `decimals?`,
-  `priceUsd?`, `marketCapUsd?`, `source`, `fetchedAt`.
-- **Business rule:** `address` всегда прошёл `normalizeAddress(chain, raw)` до попадания в тип —
-  ни один адаптер не кладёт сырой ввод пользователя в канонический объект напрямую.
+- **Description:** token metadata and price for one chain/address.
+- **Key attributes:** `chain`, `address` (normalized), `symbol`, `name`, `decimals?`, `priceUsd?`,
+  `marketCapUsd?`, `source`, `fetchedAt`.
+- **Business rule:** `address` has always passed `normalizeAddress(chain, raw)` before it reaches
+  the type — no adapter puts raw user input into a canonical object.
 
 #### Entity: `Wallet` / `Balance`
 
-- **Описание:** список балансов кошелька на сети. `Balance` — элемент массива, различает
-  `assetType: 'native' | 'token'` — в M1 заполняется только `'native'` (§3.2 решение).
-- **Relationships:** `Wallet 1:N Balance` (встроенный массив, не отдельная таблица — M1 не
-  персистирует их вне кеша).
-- **Business rule:** `amountRaw` — точное целое **строкой** (DB-SCHEMA §1.7 конвенция: wei/lamports
-  превышают безопасные 2^53); `amountNum` — lossy-проекция, никогда не источник истины.
+- **Description:** a wallet's balances on a chain. `Balance` is an array element and distinguishes
+  `assetType: 'native' | 'token'`; in M1 only `'native'` is populated (§3.2).
+- **Relationships:** `Wallet 1:N Balance` — an embedded array, not a separate table: M1 does not
+  persist balances outside the cache.
+- **Business rule:** `amountRaw` is the exact integer **as a string** (DB-SCHEMA §1.7: wei/lamports
+  exceed the safe 2^53); `amountNum` is a lossy projection and never the source of truth.
 
 #### Entity: `Pool`
 
-- **Описание:** торговая пара (DEX) — используется `onchain_new_pairs`.
-- **Ключевые атрибуты:** `id`, `chain`, `dexId`, `baseTokenSymbol`/`quoteTokenSymbol`,
-  `pairAddress`, `createdAt?`, `liquidityUsd?`, `volume24hUsd?`, `source`, `fetchedAt`.
+- **Description:** a DEX trading pair — consumed by `onchain_new_pairs`.
+- **Key attributes:** `id`, `chain`, `dexId`, `baseTokenSymbol`/`quoteTokenSymbol`, `pairAddress`,
+  `createdAt?`, `liquidityUsd?`, `volume24hUsd?`, `source`, `fetchedAt`.
 
-#### Entity: `OHLCV` (зарезервирован, не потребляется в M1)
+#### Entity: `OHLCV` (reserved, not consumed in M1)
 
-- Поля — см. §3.2 схема. Существует для R-1 (тип должен существовать), первый потребитель — M1.5+.
+- Fields — see the §3.2 schema. The type exists because R-1 requires it to exist; the first consumer
+  is M1.5+.
 
-#### Entity: `Snapshot` (D5-дополнение, персистентная форма — DB-SCHEMA-CONCEPT §2)
+#### Entity: `Snapshot` (D5 addition, persistent form — DB-SCHEMA-CONCEPT §2)
 
-- Движок его **не пишет** (n8n пишет, TASK.md §1) и, по решению владельца 2026-07-25, **не начнёт**:
-  автономный контур остаётся на n8n + Postgres (ADR-001 D8-дополнение). Тип существует как
-  каноническая форма ЧТЕНИЯ той же `snapshots`-таблицы — её читает адаптер `pg-history` (R-12).
-  Ранее здесь стояло «для будущего M3 поглощения снапшоттера» — поглощение отменено.
-- **Маппинг имён на persistence-границе (minor, ревью цикл 1):** `SnapshotSchema` — camelCase
-  (`valueRaw`, `valueNum`); персистентная колонка DB-SCHEMA §2 — snake_case (`value_raw`,
-  `value_num`). `metric`/`asset`/`ts`/`source`/`height` совпадают буквально и не переименовываются.
-  Движок `snapshots` не пишет, поэтому маппинг нигде не реализован — но он понадобится на
-  **читающей** стороне, когда правила M3 начнут разбирать историю: явный (де)сериализатор именно
-  для `valueRaw↔value_raw`/`valueNum↔value_num`, не автоматический camelCase→snake_case по всем
-  полям. Зафиксировано заранее, чтобы M3 не открывал вопрос заново. (Формулировка «когда M3
-  поглощает снапшоттер» устарела — поглощение отменено 2026-07-25, направление маппинга сменилось
-  с записи на чтение, сам маппинг остался нужен.)
+- The engine **never writes** snapshots. The autonomous loop stays on n8n + Postgres permanently
+  (owner decision 2026-07-25, ADR-001 D8 addendum). The type exists as the canonical **read** form
+  of that same `snapshots` table — the form the `pg-history` adapter returns (R-12).
+- **Name mapping at the persistence boundary:** `SnapshotSchema` is camelCase (`valueRaw`,
+  `valueNum`); the persistent columns of DB-SCHEMA §2 are snake_case (`value_raw`, `value_num`).
+  `metric`/`asset`/`ts`/`source`/`height` match literally and are not renamed. Nothing implements
+  the mapping today because nothing on the engine side writes `snapshots`; it is needed on the
+  **reading** side once M3 rules start parsing history. It must be an explicit (de)serializer for
+  exactly `valueRaw↔value_raw`/`valueNum↔value_num`, not a blanket camelCase→snake_case over every
+  field. Recorded here so M3 does not have to reopen the question.
 
-#### Entity: `SmartMoneyFlow` (M2, TASK-005, D5-расширение, R-31)
+#### Entity: `SmartMoneyFlow` (M2, TASK-005, D5 extension, R-31)
 
-- **Описание:** net-flow «умных денег» по токену (несколько скользящих окон) + верхние
-  holder-адреса с метками — используется `onchain_smart_money_flows`. Композитный тип: строится
-  из ДВУХ Nansen-эндпоинтов (`POST /smart-money/netflow` → `SmartMoneyNetflowResponse.data[]`,
-  `POST /tgm/holders` → `TGMHoldersResponse.data[]`), объединённых в один `nansen.fetch()`-вызов
-  (§3.2) — не два отдельных canonical-типа.
-- **Ключевые атрибуты (поле-в-поле трассируется на `nansen-openapi-2026-07-23.json`'s
-  `SmartMoneyNetflow`/`TGMHolder` схемы, разведка этой архитектуры):** `chain`, `tokenAddress`
-  (нормализован через `normalizeAddress`), `tokenSymbol`, `netflow1hUsd`/`netflow24hUsd`/
-  `netflow7dUsd`/`netflow30dUsd` (`SmartMoneyNetflow.net_flow_{1h,24h,7d,30d}_usd` — **четыре**
-  скользящих окна, не одно генерическое `windowStart`/`windowEnd`: реальный ответ не даёт
-  произвольного окна, он даёт фиксированный набор; уточнение TASK.md R-31's иллюстративной
-  формулировки по живой эвиденции, не расхождение с ней — R-31 «netflowUsd» трактуется как
-  минимальная планка, `netflow24hUsd` её покрывает, остальные три — дополнительная точность),
-  `traderCount?`/`tokenAgeDays?`/`tokenSectors?[]` (`SmartMoneyNetflow.trader_count`/
-  `token_age_days`/`token_sectors`), `topHolders[]` (из `TGMHolder[]`: `{address, addressLabel?,
-tokenAmount?, valueUsd?, ownershipPercentage?}` — подмножество полей `TGMHolder`, не полный
-  DTO), `source`, `fetchedAt`.
-- **Business rule:** anti-corruption — Nansen DTO (`SmartMoneyNetflow`/`TGMHolder`, включая
-  обёртку `{data, pagination}`) не протекает наружу, тот же паттерн, что `Token`/`Pool` (§3.2).
-  Golden-тест на фикстуре (R-31 acceptance).
+- **Description:** smart-money net flow for a token over several rolling windows, plus the top
+  holder addresses with labels — consumed by `onchain_smart_money_flows`. A composite type: it is
+  built from TWO Nansen endpoints (`POST /smart-money/netflow` →
+  `SmartMoneyNetflowResponse.data[]`, `POST /tgm/holders` → `TGMHoldersResponse.data[]`) merged
+  inside a single `nansen.fetch()` call (§3.2) — not two separate canonical types.
+- **Key attributes** (traced field-by-field onto the `SmartMoneyNetflow`/`TGMHolder` schemas of
+  `nansen-openapi-2026-07-23.json`): `chain`, `tokenAddress` (normalized via `normalizeAddress`),
+  `tokenSymbol`, `netflow1hUsd`/`netflow24hUsd`/`netflow7dUsd`/`netflow30dUsd`
+  (`SmartMoneyNetflow.net_flow_{1h,24h,7d,30d}_usd`), `traderCount?`/`tokenAgeDays?`/
+  `tokenSectors?[]` (`SmartMoneyNetflow.trader_count`/`token_age_days`/`token_sectors`),
+  `topHolders[]` (from `TGMHolder[]`: `{address, addressLabel?, tokenAmount?, valueUsd?,
+ownershipPercentage?}` — a subset of `TGMHolder`'s fields, not the full DTO), `source`, `fetchedAt`.
+- **Four fixed windows, not one generic `windowStart`/`windowEnd`:** the live response does not
+  offer an arbitrary window, it offers a fixed set. R-31's `netflowUsd` is read as a floor —
+  `netflow24hUsd` satisfies it and the other three are extra precision.
+- **Business rule:** anti-corruption layer — the Nansen DTOs (`SmartMoneyNetflow`/`TGMHolder`,
+  including the `{data, pagination}` envelope) never leak outward, the same pattern as
+  `Token`/`Pool` (§3.2). Golden test on a fixture (R-31 acceptance).
 
-#### Entity: `EntityLabel` (M2, TASK-005, D5-расширение, R-32)
+#### Entity: `EntityLabel` (M2, TASK-005, D5 extension, R-32)
 
-- **Описание:** метка адреса/сущности (кошелёк, фонд, биржа, известный трейдер) — используется
-  `onchain_entity_label`. Источник зависит от tier'а вызова (§3.2 costOf()-таблица): дефолт —
-  `POST /search/general` → `GeneralSearchResponse.{tokens[], entities[]}`
-  (`TokenSearchResult`/`EntitySearchResult`); token-scoped обогащение — `TGMHolder.address_label`;
-  exhaustive-эскалация — `POST /profiler/address/labels` (форма ответа не эксплорится этой
-  архитектурой сверх известной по costOf()-таблице цены — Development-фаза фикстурирует её живым
-  вызовом при первом реальном использовании, R-44).
-- **Ключевые атрибуты:** `chain?` (опционален — `EntitySearchResult` НЕ несёт chain/address,
-  сущность может быть кросс-чейн: имя/tags без привязки к конкретному адресу; `TokenSearchResult`/
-  `TGMHolder`-производные результаты его несут), `address?` (по той же причине — опционален),
-  `name?`, `tags[]` (default `[]`, из `EntitySearchResult.tags`), `labels[]` (default `[]`, из
-  `TGMHolder.address_label`, обёрнутого в массив — **пустой массив — валидный результат**, «нет
-  меток», не ошибка, R-32), `premiumRequested: boolean` (явный флаг — `true` только когда вызов
-  прошёл через `exhaustive: true`-путь, R-42), `source`, `fetchedAt`.
-- **Business rule:** ни `chain`, ни `address` не обязательны одновременно (в отличие от `Token`/
-  `Wallet`) — единственный M2-тип, где это так, ввиду реальной формы `EntitySearchResult`. Golden-
-  тесты на фикстуре с ≥1 меткой И на фикстуре с 0 меток (R-32 acceptance).
+- **Description:** the label of an address or entity (wallet, fund, exchange, known trader) —
+  consumed by `onchain_entity_label`. The source depends on the call tier (§3.2 `costOf()` table):
+  the default tier is `POST /search/general` → `GeneralSearchResponse.{tokens[], entities[]}`
+  (`TokenSearchResult`/`EntitySearchResult`); token-scoped enrichment comes from
+  `TGMHolder.address_label`; the exhaustive escalation is `POST /profiler/address/labels` (its
+  response shape is fixtured from a live call on first real use, R-44).
+- **Key attributes:** `chain?` and `address?` are both optional — `EntitySearchResult` carries
+  neither, because an entity can be cross-chain (a name and tags with no particular address);
+  results derived from `TokenSearchResult`/`TGMHolder` do carry them. Plus `name?`, `tags[]`
+  (default `[]`, from `EntitySearchResult.tags`), `labels[]` (default `[]`, from
+  `TGMHolder.address_label` wrapped in an array — **an empty array is a valid result**, "no
+  labels", not an error, R-32), `premiumRequested: boolean` (an explicit flag — `true` only when
+  the call went through the `exhaustive: true` path, R-42), `source`, `fetchedAt`.
+- **Business rule:** neither `chain` nor `address` is mandatory (unlike `Token`/`Wallet`) — the only
+  M2 type where that holds, and it holds because of the real shape of `EntitySearchResult`. Golden
+  tests on a fixture with ≥1 label AND on a fixture with 0 labels (R-32 acceptance).
 
-#### Entity: `TokenRiskScore` (M2, TASK-005, D5-расширение, R-33)
+#### Entity: `TokenRiskScore` (M2, TASK-005, D5 extension, R-33)
 
-- **Описание:** risk/reward-индикаторы токена — используется `onchain_token_risk`. Композитный
-  тип: `POST /tgm/indicators` (`TGMIndicatorsResponse`) + `POST /tgm/token-information` (метаданные
-  токена), один `nansen.fetch()`-вызов.
-- **Ключевые атрибуты (трассируются на `TGMIndicatorsResponse`/`TGMIndicatorTokenInfo`/
-  `TGMIndicator` схемы):** `chain`, `address`, `marketCapUsd?`/`marketCapGroup?`/`isStablecoin?`
-  (`TGMIndicatorTokenInfo`), `riskIndicators[]`/`rewardIndicators[]` — **раздельные** массивы
-  (R-33 «не сплющено в один список»), каждый элемент `{indicatorType, score?, signal?,
-signalPercentile?, lastTriggerOn?}` (`TGMIndicator` — `score` качественный: risk →
-  low/medium/high, reward → bearish/neutral/bullish, по спеке; `signal`/`signalPercentile` —
-  `number`, НЕ строки, R-33 — это не wei-подобные ончейн-целые, безопасно для JS-`number`/`REAL`),
-  `source`, `fetchedAt`.
-- **Business rule:** anti-corruption, golden-тест на фикстуре (R-33 acceptance).
+- **Description:** risk/reward indicators for a token — consumed by `onchain_token_risk`. A
+  composite type: `POST /tgm/indicators` (`TGMIndicatorsResponse`) + `POST /tgm/token-information`
+  (token metadata), one `nansen.fetch()` call.
+- **Key attributes** (traced onto the `TGMIndicatorsResponse`/`TGMIndicatorTokenInfo`/`TGMIndicator`
+  schemas): `chain`, `address`, `marketCapUsd?`/`marketCapGroup?`/`isStablecoin?`
+  (`TGMIndicatorTokenInfo`), and `riskIndicators[]`/`rewardIndicators[]` as **separate** arrays
+  (R-33: not flattened into one list). Each element is `{indicatorType, score?, signal?,
+signalPercentile?, lastTriggerOn?}` (`TGMIndicator`), where `score` is qualitative per the spec —
+  risk → low/medium/high, reward → bearish/neutral/bullish — and `signal`/`signalPercentile` are
+  `number`, not strings (R-33: these are not wei-like on-chain integers, so a JS `number`/`REAL` is
+  safe). Plus `source`, `fetchedAt`.
+- **Business rule:** anti-corruption layer, golden test on a fixture (R-33 acceptance).
 
-#### Entity: `ChainInfo` (TASK-006, R-48) — **реестр сетей**
+#### Entity: `ChainInfo` (TASK-006, R-48) — **the chain registry**
 
-- **Описание:** описание одной сети целиком. Это **не** canonical-тип домена в смысле D5 (не
-  наблюдение, полученное от провайдера) — это **справочник**, по которому canonical-типы
-  интерпретируются. Отсюда и место хранения: **вендоренный артефакт сборки**, а не таблица БД
-  и не сетевой запрос (обоснование — §4.2.1 ниже).
-- **Ключевые атрибуты:**
+- **Description:** one chain, described in full. This is **not** a canonical domain type in the D5
+  sense (it is not an observation obtained from a provider) — it is the **registry** against which
+  canonical types are interpreted. Hence where it lives: a **vendored build artifact**, not a DB
+  table and not a network call (rationale — §4.2.1).
+- **Key attributes:**
 
-| Поле             | Тип                                                         | Назначение                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ---------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `caip2`          | `string` **PK**                                             | Канонический id в форме CAIP-2: `eip155:80094`, `solana:5eykt4Xhм…`. Единственное, что попадает в ключ кеша и в маршруты.                                                                                                                                                                                                                                                                                      |
-| `slug`           | `string` UNIQUE                                             | Человекочитаемый канонический slug (`berachain`) — то, что агент пишет в `chain` и что возвращает `onchain_list_chains`.                                                                                                                                                                                                                                                                                       |
-| `name`           | `string`                                                    | Отображаемое имя (`Berachain`).                                                                                                                                                                                                                                                                                                                                                                                |
-| `family`         | `'evm' \| 'svm' \| 'move' \| 'cosmos' \| 'utxo' \| 'other'` | Определяет **валидацию адреса** (R-55) и способность `rpc-evm` обслужить сеть.                                                                                                                                                                                                                                                                                                                                 |
-| `aliases`        | `string[]`                                                  | Все прочие принимаемые написания, включая **legacy `ethereum`/`solana`** (R-59a) и вендорские id. Уникальны глобально.                                                                                                                                                                                                                                                                                         |
-| `nativeSymbol`   | `string \| null`                                            | Символ **ГАЗОВОГО** токена (`BERA`, `XDAI`) — потребляется `pairs.new` (R-57a) и `wallet.balances.native` вместо хардкода. Не листинговый/governance-токен сети: `arbitrum` — это `ETH`, а не `ARB` (цикл 5, M-1). `null` ⇒ не знаем, и способность, которой он нужен, честно непокрыта.                                                                                                                       |
-| `nativeDecimals` | `number \| null`                                            | Знаки того же газового токена (цикл 5, H-3). `eth_getBalance` возвращает целое в минимальной единице — без десятичных его нечем подписать. 18 — конвенция EVM, но не правило: 29 сетей каталога EIP-155 используют другое, а захардкоженные 18 — неверный ответ, выглядящий верным. Для не-EVM берётся из курируемой таблицы генератора (`CURATED_NATIVE_DECIMALS`), потому что EIP-155 о них ничего не знает. |
-| `vendors`        | `Record<vendorId, string \| null>`                          | **Только именование:** как эта сеть называется у вендора. `defillama`→`"Berachain"`, `coingecko`→`"berachain"`, `dexscreener`→`"berachain"`. `null` = у вендора сети нет.                                                                                                                                                                                                                                      |
-| `rpcHosts`       | `string[] \| null`                                          | Курируемый SSRF-allowlist для этой сети (R-56a). `null` = `wallet.balances.native` честно непокрыт, см. §7.2.                                                                                                                                                                                                                                                                                                  |
-| `tvlUsdAtSync`   | `number \| null`                                            | TVL **на момент синхронизации реестра**, заведомо устаревший. Существует **исключительно** для фильтра/ранжирования в `onchain_list_chains` без сети.                                                                                                                                                                                                                                                          |
-| `deprecated`     | `boolean`                                                   | Сеть исчезла у вендоров, но строка сохранена (R-49f) — ссылки и ключи кеша не ломаются.                                                                                                                                                                                                                                                                                                                        |
+| Field            | Type                                                        | Purpose                                                                                                                                                                                    |
+| ---------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `caip2`          | `string` **PK**                                             | Canonical id in CAIP-2 form: `eip155:80094`, `solana:5eykt4Xh…`. The registry's stable primary key.                                                                                        |
+| `slug`           | `string` UNIQUE                                             | Human-readable canonical slug (`berachain`) — what an agent writes in `chain`, what `onchain_list_chains` returns, and what goes into the cache key (§4.2.2).                              |
+| `name`           | `string`                                                    | Display name (`Berachain`).                                                                                                                                                                |
+| `family`         | `'evm' \| 'svm' \| 'move' \| 'cosmos' \| 'utxo' \| 'other'` | Determines **address validation** (R-55) and whether `rpc-evm` can serve the chain.                                                                                                        |
+| `aliases`        | `string[]`                                                  | Every other accepted spelling, including the legacy `ethereum`/`solana` (R-59a) and vendor ids. Globally unique.                                                                           |
+| `nativeSymbol`   | `string \| null`                                            | Symbol of the **gas** token (`BERA`, `XDAI`) — consumed by `pairs.new` (R-57a) and `wallet.balances.native` instead of a hardcode.                                                         |
+| `nativeDecimals` | `number \| null`                                            | Decimals of that same gas token.                                                                                                                                                           |
+| `vendors`        | `Record<vendorId, string \| null>`                          | **Naming only:** what this chain is called at each vendor. `defillama`→`"Berachain"`, `coingecko`→`"berachain"`, `dexscreener`→`"berachain"`. `null` = the vendor does not have the chain. |
+| `rpcHosts`       | `string[] \| null`                                          | The curated SSRF allowlist for this chain (R-56a). `null` = `wallet.balances.native` is honestly uncovered, see §7.2.                                                                      |
+| `tvlUsdAtSync`   | `number \| null`                                            | TVL **as of the registry sync**, knowingly stale. Exists **solely** to filter and rank in `onchain_list_chains` without a network call.                                                    |
+| `deprecated`     | `boolean`                                                   | The chain disappeared from the vendors, but the row is kept (R-49f) — references and cache keys do not break.                                                                              |
 
-- **Relationships:** `ChainInfo 1:N` алиасы (встроенный массив). Ссылок на другие сущности нет —
-  наоборот, `Token`/`Wallet`/`Pool`/`SmartMoneyFlow` ссылаются на `ChainInfo.caip2` через своё
-  поле `chain`.
+The two native-token columns carry the failure they prevent:
 
-- **Business rules (каждое — тест, R-60c):**
-  1. `caip2` уникален; `slug` уникален; **множество всех `aliases` не пересекается ни с одним
-     `slug` и ни с одним другим `aliases`** — иначе резолв неоднозначен. Проверяется на старте.
-  2. **Алиас резолвится в `caip2` ДО построения ключа кеша.** Иначе `"ethereum"` и `"eip155:1"`
-     дадут две разные записи кеша для одного и того же запроса. Это не оптимизация, а
-     корректность (§4.2.2).
-  3. `tvlUsdAtSync` **никогда** не возвращается как ответ на вопрос «какой TVL» — для этого есть
-     `chain.tvl` (R-53). В выдаче `onchain_list_chains` поле называется
-     `tvlUsdAtRegistrySync`, чтобы спутать было нельзя.
-  4. `vendors` описывает **именование, а не покрытие.** Покрытие — производная величина
-     (§4.2.3), и смешивать их запрещено: иначе «Nansen не знает эту сеть» и «мы не проверяли
-     Nansen на этой сети» становятся неразличимы (R-58d).
+- `nativeSymbol` is the **gas** token, never the chain's listing/governance token: `arbitrum` is
+  `ETH`, not `ARB`. `null` means we do not know, and the capability that needs it is honestly
+  uncovered rather than silently wrong.
+- `nativeDecimals` is required because `eth_getBalance` returns an integer in the minimal unit —
+  with no decimals there is nothing to label it with. 18 is an EVM convention, not a rule: 29 chains
+  in the EIP-155 catalog use something else, and a hardcoded 18 is a wrong answer that looks right.
+  For non-EVM families the value comes from the generator's curated table
+  (`CURATED_NATIVE_DECIMALS`), because EIP-155 knows nothing about them.
 
-#### Entity: `CoverageProbe` (TASK-006, R-58) — зафиксированный факт проверки вендора
+- **Relationships:** `ChainInfo 1:N` aliases (embedded array). It references no other entity — the
+  reverse holds: `Token`/`Wallet`/`Pool`/`SmartMoneyFlow` reference a chain through their own
+  `chain` field.
 
-- **Описание:** результат живой пробы chain-покрытия вендора, чьё покрытие нельзя вывести из
-  публичного каталога. В MVP — ровно один потребитель: `nansen`.
-- **Ключевые атрибуты:** `vendorId`, `probedAt` (epoch-ms UTC), `chains: string[]` (caip2,
-  подтверждённые живой пробой), `creditsSpent`, `evidencePath` (файл в `raw/`).
-- **Business rule:** отсутствие пробы означает **`unverified`, а не `unsupported`** (R-58d).
-  Деградированный путь описан в §4.2.3.
+- **Business rules (each one is a test, R-60c):**
+  1. `caip2` is unique; `slug` is unique; **the set of all `aliases` intersects no `slug` and no
+     other `aliases`** — otherwise resolution is ambiguous. Checked at startup.
+  2. **An alias is resolved to the canonical chain BEFORE the cache key is built.** Otherwise
+     `"ethereum"` and `"eth"` produce two cache entries for one and the same request. This is not
+     an optimization, it is correctness (§4.2.2).
+  3. `tvlUsdAtSync` is **never** returned as the answer to "what is the TVL" — that is `chain.tvl`
+     (R-53). In the `onchain_list_chains` payload the field is named `tvlUsdAtRegistrySync`, so the
+     two cannot be confused.
+  4. `vendors` describes **naming, not coverage.** Coverage is a derived quantity (§4.2.3), and
+     mixing the two is forbidden: otherwise "Nansen does not have this chain" and "we never checked
+     Nansen on this chain" become indistinguishable (R-58d).
 
-### 4.2. Логическая модель — кеш-БД (`DATA_DIR/cache.sqlite3`)
+#### Entity: `CoverageProbe` (TASK-006, R-58) — a recorded fact about a vendor
 
-Полный DDL — §3.2 «Модуль `src/cache/*`». Кратко: `providers(id PK)` ← `cache_entries(provider
+- **Description:** the recorded result of establishing the chain coverage of a vendor whose coverage
+  cannot be derived from a public catalog. In the MVP there is exactly one consumer: `nansen`.
+- **Key attributes:** `vendorId`, `probedAt` (epoch-ms UTC), `chains: string[]` (the chains
+  confirmed by the evidence), `creditsSpent`, `evidencePath` (a file under `raw/`).
+- **Business rule:** the absence of a probe means **`unverified`, not `unsupported`** (R-58d). What
+  the engine actually gates on is described in §4.2.3.
+
+### 4.2. Logical model — the cache DB (`DATA_DIR/cache.sqlite3`)
+
+The full DDL is in §3.2, module `src/cache/*`. In brief: `providers(id PK)` ← `cache_entries(provider
 FK, capability, args_hash, value_json, created_at, expires_at, UNIQUE(provider,capability,
-args_hash))`. Портируемые типы (`TEXT`/`INTEGER`), epoch-ms `INTEGER`, app-generated `TEXT` ULID
-id, `PRAGMA foreign_keys=ON` — DB-SCHEMA-CONCEPT §1 применены буквально к новому контексту (кеш,
-не аналитический снапшот — см. апсерт-семантику §3.2, отличную от append-only `snapshots`). **Все
-девять `adapterRegistrations` (включая `pg-history` — F-2, ревью цикл 1) upsert-ятся в
-`providers` при старте** — ни один кеш-хит/промах не может сослаться на несуществующий
-`provider`, FK не нарушается ни для одного адаптера, зарегистрированного в `providers.config.ts`.
+args_hash))`. Portable types (`TEXT`/`INTEGER`), epoch-ms `INTEGER`, app-generated `TEXT` ULID ids,
+`PRAGMA foreign_keys=ON` — DB-SCHEMA-CONCEPT §1 applied literally to a new context (a cache, not an
+analytical snapshot: the upsert semantics in §3.2 differ from the append-only `snapshots`). **All ten
+`adapterRegistrations` (including `pg-history`) are upserted into `providers` at startup** — no cache
+hit or miss can reference a nonexistent `provider`, and the FK holds for every adapter registered in
+`providers.config.ts`.
 
-**M2-дополнение (TASK-005, R-34): `usage(provider FK, day, credits_used)`** — та же кеш-БД, тот же
-`providers`-реестр как FK, **без миграции** `providers`/`cache_entries` (форвард-компат комментарий
-в `cache/ddl.ts` был подготовлен уже в M1). Портируемые типы буквально (DB-SCHEMA-CONCEPT §1):
+**M2 addition (TASK-005, R-34): `usage(provider FK, day, credits_used)`** — the same cache DB, the
+same `providers` registry as the FK target, and **no migration** of `providers`/`cache_entries` (the
+forward-compatibility comment in `cache/ddl.ts` was already in place in M1). Portable types, taken
+literally (DB-SCHEMA-CONCEPT §1):
 
 ```sql
 CREATE TABLE IF NOT EXISTS usage (
   provider     TEXT NOT NULL REFERENCES providers(id),
   day          INTEGER NOT NULL,           -- epoch-ms UTC bucket start: floor(ts/86400000)*86400000
-  credits_used INTEGER NOT NULL DEFAULT 0, -- АДДИТИВНЫЙ счётчик — см. семантику upsert ниже
-  updated_at   INTEGER NOT NULL,           -- epoch-ms UTC последней записи (только для наблюдаемости)
+  credits_used INTEGER NOT NULL DEFAULT 0, -- ADDITIVE counter — see the upsert semantics below
+  updated_at   INTEGER NOT NULL,           -- epoch-ms UTC of the last write (observability only)
   PRIMARY KEY (provider, day)
 );
 ```
 
-**SEC-1 (2026-07-27): `usage_window(provider FK, window_start, credits_used)`** — тот же аддитивный
-счётчик, но с бакетом в 60 секунд вместо суток. Отдельная таблица, а не колонка `bucket_width` в
-`usage`: дневной счётчик обязан продолжать суммировать сутки, и совмещение двух ширин в одной
-колонке сделало бы каждый существующий SELECT неоднозначным и потребовало миграции. Добавлена как
-обычный `CREATE TABLE IF NOT EXISTS` к тому же реестру `providers` — не мигрирует ничего.
+**SEC-1 (2026-07-27): `usage_window(provider FK, window_start, credits_used)`** — the same additive
+counter with a 60-second bucket instead of a day. A separate table rather than a `bucket_width`
+column on `usage`: the daily counter must keep summing whole days, and carrying two widths in one
+column would make every existing SELECT ambiguous and force a migration. It ships as an ordinary
+`CREATE TABLE IF NOT EXISTS` against the same `providers` registry — it migrates nothing.
 
 ```sql
 CREATE TABLE IF NOT EXISTS usage_window (
   provider     TEXT NOT NULL REFERENCES providers(id),
   window_start INTEGER NOT NULL,           -- epoch-ms UTC: floor(ts/60000)*60000
-  credits_used INTEGER NOT NULL DEFAULT 0, -- тот же знаковый аддитивный upsert, тот же MAX(0, …)
-  calls_made   INTEGER NOT NULL DEFAULT 0, -- Q-3: аддитивный и МОНОТОННЫЙ — не возвращается
+  credits_used INTEGER NOT NULL DEFAULT 0, -- same signed additive upsert, same MAX(0, …)
+  calls_made   INTEGER NOT NULL DEFAULT 0, -- Q-3: additive and MONOTONIC — never given back
   updated_at   INTEGER NOT NULL,
   PRIMARY KEY (provider, window_start),
   CHECK (credits_used >= 0),
@@ -199,112 +206,113 @@ CREATE TABLE IF NOT EXISTS usage_window (
 );
 ```
 
-`calls_made` — **второй знаменатель** (Q-3). Гейт, считающий кредиты, не может отказать вызову
-ценой 0 кредитов: `used + 0 > ceiling` ложно всю жизнь бакета при любом потолке. Это не дефект
-потолка, а смысл его единицы измерения, поэтому лечится другой единицей, а не более строгим числом.
-Колонка на той же строке, а не вторая таблица: тот же провайдер, то же окно, та же транзакция и одно
-чтение вместо двух. Счётчик **монотонный** — сверка корректирует кредиты и никогда не число вызовов:
-обращение к вендору состоялось, и «возврат» позволил бы череде дешёвых-и-возвращённых вызовов пройти
-мимо лимита, ради которого он и заведён.
+`calls_made` is the **second denominator** (Q-3). A gate that counts credits cannot refuse a call
+that costs 0 credits: `used + 0 > ceiling` is false for the whole life of the bucket at any ceiling.
+That is not a defect of the ceiling, it is what its unit of measure means — so it is cured with a
+different unit, not with a stricter number. The column sits on the same row rather than in a second
+table: same provider, same window, same transaction, and one read instead of two. The counter is
+**monotonic** — reconciliation corrects credits and never the number of calls: the vendor was
+called, and "giving one back" would let a run of cheap-and-refunded calls slip past the very limit
+it exists to enforce.
 
-Колонка добавлена **после** того, как таблица уже отгрузилась, поэтому `CREATE TABLE IF NOT EXISTS`
-её не создаёт на существующем файле. `SqliteBudgetStore` проверяет `PRAGMA table_info` и при
-необходимости выполняет `ALTER TABLE … ADD COLUMN` (`USAGE_WINDOW_COLUMNS` в `cache/ddl.ts`) —
-идемпотентно на каждом открытии, аддитивно, без бэкфилла (`DEFAULT 0` верен по построению: строка
-окна, предшествующая колонке, по определению не содержит посчитанных вызовов). Ровно тот
-«механический, а не проектный» вид миграции, который требует DB-SCHEMA-CONCEPT §1.
+The column was added **after** the table had already shipped, so `CREATE TABLE IF NOT EXISTS` does
+not create it on an existing file. `SqliteBudgetStore` checks `PRAGMA table_info` and runs
+`ALTER TABLE … ADD COLUMN` when needed (`USAGE_WINDOW_COLUMNS` in `cache/ddl.ts`) — idempotent on
+every open, additive, with no backfill (`DEFAULT 0` is correct by construction: a window row that
+predates the column contains, by definition, no counted calls). This is exactly the "mechanical, not
+a project" kind of migration DB-SCHEMA-CONCEPT §1 demands.
 
-Читается и пишется **внутри той же транзакции**, что и дневная бронь (`checkAndReserve`): иначе два
-процесса, делящих один `cache.sqlite3` — поддерживаемая топология, несколько stdio-сессий на машину,
-— каждый прошёл бы свою проверку окна по устаревшему чтению. Строки старше часа удаляются
-оппортунистически в той же транзакции: читается всегда только ТЕКУЩЕЕ окно, остальное — хранение
-для разбора постфактум, а строка в минуту на провайдера навсегда — медленная утечка в `DATA_DIR`.
+It is read and written **inside the same transaction** as the daily reservation (`checkAndReserve`).
+Otherwise two processes sharing one `cache.sqlite3` — a supported topology, several stdio sessions
+on one machine — would each pass its own window check against a stale read. Rows older than an hour
+are deleted opportunistically in that same transaction: only the CURRENT window is ever read, the
+rest is retention for post-mortem analysis, and one row per minute per provider forever is a slow
+leak into `DATA_DIR`.
 
-- `day` — **`INTEGER` epoch-ms** (day-bucket start), не строковая дата — DB-SCHEMA §1.2/CLAUDE.md
-  канон буквально; несмотря на то что ADR-001 D6 называет колонку «day», буквальная строка-дата
-  противоречила бы канону — бакетируется тем же паттерном, что `ts_bucket` у n8n-снапшоттера.
-- `credits_used` — `INTEGER` (не `value_raw TEXT`-паттерн: это малый внутренний счётчик кредитов
-  движка в пределах безопасного JS-`number`, не canonical-наблюдение произвольной точности — не
-  `Snapshot`, поэтому `INTEGER` не противоречит канону, R-34).
-- **`PRIMARY KEY (provider, day)` — natural dedup key, ДВЕ фазы записи через ОДИН и тот же
-  аддитивный upsert** (не overwrite-upsert, каким `cache_entries.set()` пишет свою строку):
+- `day` is an **`INTEGER` epoch-ms** day-bucket start, not a string date — DB-SCHEMA §1.2 /
+  CLAUDE.md canon taken literally. ADR-001 D6 calls the column "day", but a literal date string
+  would contradict the canon; it is bucketed with the same pattern as the n8n snapshotter's
+  `ts_bucket`.
+- `credits_used` is an `INTEGER`, not the `value_raw TEXT` pattern: it is a small internal counter of
+  the engine's own credits, well inside a safe JS `number`, not a canonical observation of arbitrary
+  precision. It is not a `Snapshot`, so `INTEGER` does not contradict the canon (R-34).
+- **`PRIMARY KEY (provider, day)` is the natural dedup key, and TWO write phases go through ONE and
+  the same additive upsert** (not the overwrite-upsert with which `cache_entries.set()` writes its
+  row):
 
   ```sql
   INSERT INTO usage (provider, day, credits_used, updated_at)
   VALUES (@provider, @day, @delta, @now)
   ON CONFLICT (provider, day) DO UPDATE SET
-    -- MAX(0, …) — belt-and-braces (C-2 review): @delta ЗНАКОВАЯ (post-call reconciliation, §3.2,
-    -- пишет actual-reserved, может быть отрицательной) — но credits_used обязан оставаться
-    -- неотрицательным счётчиком по построению; без этого зажима любой пограничный/дефектный путь
-    -- (напр. bucket, ошибочно НЕ зафиксированный на момент резервации, §3.2 «dayBucketMs
-    -- фиксируется один раз») мог бы протолкнуть отрицательное число в новый день-бакет и нарушить
-    -- задокументированный «never-overwritten, только растёт или остаётся» инвариант этой колонки.
+    -- MAX(0, …) is belt-and-braces: @delta is SIGNED (post-call reconciliation, §3.2, writes
+    -- actual-reserved and may be negative) — but credits_used must remain a non-negative counter
+    -- by construction. Without this clamp any edge or defective path (e.g. a bucket mistakenly NOT
+    -- pinned at reservation time, §3.2 "dayBucketMs is pinned once") could push a negative number
+    -- into a fresh day bucket and break this column's documented "never overwritten, only grows or
+    -- stays" invariant.
     credits_used = MAX(0, credits_used + excluded.credits_used),
     updated_at = excluded.updated_at;
   ```
 
-  (a) pre-call **резервирование** — `@delta = costOf()` (точная цена, R-37); (b) post-call
-  **реконсиляция** — `@delta = actual − reserved` (подписанная дельта, может быть отрицательной,
-  R-38). Тот же самый SQL-паттерн для обеих фаз — не «замещающая» запись, иначе задвоился бы или
-  потерялся расход (§3.2 разбирает это подробно). **`day` в обеих фазах одного вызова — буквально
-  одно и то же значение** (`dayBucketMs`, зафиксированный на резервации, §3.2 «Атомарный
-  check+reserve») — реконсиляция никогда не пересчитывает бакет из текущего времени ответа, поэтому
-  ответ, пришедший после полуночи для вызова, зарезервированного до неё, всё равно попадает в
-  ИСХОДНЫЙ day-бакет, не в новый (C-2 review).
+  (a) the pre-call **reservation** — `@delta = costOf()` (the exact price, R-37); (b) the post-call
+  **reconciliation** — `@delta = actual − reserved` (a signed delta, possibly negative, R-38). The
+  same SQL pattern serves both phases; a replacing write would double-count or lose spend instead
+  (§3.2 works this through in detail). **`day` in both phases of one call is literally the same
+  value** (`dayBucketMs`, pinned at reservation, §3.2 "atomic check+reserve") — reconciliation never
+  recomputes the bucket from the response's arrival time, so a response that arrives after midnight
+  for a call reserved before it still lands in the ORIGINAL day bucket, not a new one.
 
-- `SqliteBudgetStore` (`cache/budget-store.ts`, реализует интерфейс `BudgetStore` — тот же паттерн
-  инъекции, что `CacheStore`/`SqliteCacheStore`, §3.2/§5.2 M1) открывает **собственное**
-  `better-sqlite3`-соединение на тот же файл (`cacheDbPath()`, переиспользует существующий
-  `cache/data-dir.ts`), выполняет `db.exec(CACHE_DDL)` идемпотентно (та же строка, включающая
-  теперь и `usage`) и **обязательно** переиздаёт `PRAGMA foreign_keys=ON` на ЭТОМ соединении —
-  прагма connection-scoped, не персистится в файле (DB-SCHEMA §1.6, R-34 явно требует «каждое»
-  соединение, не глобально) — тест `pragma_foreign_keys`/`sqlite_master`-запросом подтверждает это
+- `SqliteBudgetStore` (`cache/budget-store.ts`, implementing the `BudgetStore` interface — the same
+  injection pattern as `CacheStore`/`SqliteCacheStore`, §3.2/§5.2) opens its **own** `better-sqlite3`
+  connection to the same file (`cacheDbPath()`, reusing the existing `cache/data-dir.ts`), runs
+  `db.exec(CACHE_DDL)` idempotently (the same string, which now also carries `usage`), and
+  **necessarily** reissues `PRAGMA foreign_keys=ON` on THAT connection — the pragma is
+  connection-scoped and is not persisted in the file (DB-SCHEMA §1.6; R-34 explicitly requires
+  "every" connection, not a global). A `pragma_foreign_keys`/`sqlite_master` query test confirms it
   (R-34/R-35 acceptance).
 
-#### 4.2.1. Реестр сетей — артефакт сборки, а не таблица БД (TASK-006, R-48/R-60)
+#### 4.2.1. The chain registry is a build artifact, not a DB table (TASK-006, R-48/R-60)
 
-Реестр **не** попадает ни в кеш-БД, ни в Postgres, ни в сетевой запрос на старте. Он лежит в
-репозитории как один детерминированный файл, вендорится в сборку и грузится в память при старте.
-Три причины, каждая — жёсткое требование, а не вкус:
+The registry lands in neither the cache DB, nor Postgres, nor a network call at startup. It lives in
+the repository as one deterministic file, is vendored into the build, and is loaded into memory at
+startup. Three reasons, each a hard requirement rather than a taste:
 
-1. **Оффлайн-гейт (R-60a).** M1/M2 установили гейт «оффлайн-прогон = 0 сетевых вызовов». Реестр,
-   подтягиваемый по сети при старте, ломает его в тот же день.
-2. **Детерминизм CI.** Тест, чей результат зависит от того, что вендор отдал сегодня, — не тест.
-3. **Ревьюируемость.** Изменение множества сетей — это дифф в git с человеческим ревью (TASK-006 UC-4),
-   а не молчаливый сдвиг поведения продакшена. Особенно это касается `rpcHosts`: это
-   security-поверхность (§7.2), и она обязана меняться через коммит.
+1. **The offline gate (R-60a).** M1/M2 established the gate "an offline run makes 0 network calls".
+   A registry pulled over the network at startup breaks it the same day.
+2. **CI determinism.** A test whose result depends on what a vendor served today is not a test.
+3. **Reviewability.** Changing the set of chains is a git diff with a human reviewing it (TASK-006
+   UC-4), not a silent shift in production behavior. This matters most for `rpcHosts`: that is a
+   security surface (§7.2), and it must change through a commit.
 
-Следствие, зафиксированное явно: **свежесть реестра — обязанность оператора, а не рантайма.**
-Новая сеть, появившаяся у вендора, становится доступной после прогона генератора и коммита
-(TASK-006 UC-4), а не автоматически. Это осознанный размен: детерминизм и контроль security-поверхности
-против автоматической свежести.
+The consequence, stated explicitly: **registry freshness is the operator's duty, not the runtime's.**
+A new chain that appeared at a vendor becomes available after the generator runs and the result is
+committed (TASK-006 UC-4), not automatically. That is a deliberate trade: determinism and control
+over the security surface, against automatic freshness.
 
-**Загрузка (R-60c/d):** валидация схемы + инвариантов §4.1 выполняется **на старте**, не при
-первом запросе. Отсутствующий или невалидный реестр — громкое падение процесса. Деградация в
-пустой реестр **запрещена**: пустой реестр превратил бы каждый запрос в «unknown chain», то есть
-тихо сломал бы весь движок, выглядя при этом как корректная работа.
+**Loading (R-60c/d):** schema validation plus the §4.1 invariants run **at startup**, not on the
+first request. A missing or invalid registry is a loud process failure. Degrading to an empty
+registry is **forbidden**: an empty registry would turn every request into "unknown chain" — quietly
+breaking the entire engine while looking like correct operation.
 
-#### 4.2.2. Влияние на ключ кеша — разовая холодная инвалидация (OQ-3)
+#### 4.2.2. Effect on the cache key (OQ-3)
 
-Ключ кеша — `(provider, capability, sha256(normalizedArgs))` (M1, §3.2). `normalizedArgs`
-содержит `chain`. После этой задачи туда попадает **`caip2`**, а не строка, которую написал агент.
+The cache key is `(provider, capability, sha256(normalizedArgs))` (M1, §3.2), and `normalizedArgs`
+contains `chain`. What goes in there is the canonical **slug**, never the spelling the agent wrote.
 
-- **Требование корректности:** канонизация алиаса (`ethereum` → `eip155:1`) происходит **до**
-  хеширования. Без этого один и тот же запрос, написанный двумя способами, даёт два платных
-  вызова и две записи кеша — на платных маршрутах это прямой денежный дефект.
-- **Разовое следствие — ПРОГНОЗ, НЕ СБЫВШИЙСЯ (уточнено по факту реализации, задача 006-6):**
-  здесь ожидалась одна холодная сессия из-за смены содержимого ключа. Её **не произошло**.
-  Каноническим значением стал **слаг** (обоснование и отклонение по R-59d — `types/chain.ts`), а до
-  TASK-006 инструменты принимали ровно `ethereum`/`solana`, которые и есть их слаги. `args_hash`
-  существующих записей не изменился, кеш пережил выкат целиком. Требование §4.2.2 при этом
-  соблюдено полностью — алиас не достигает ключа, канонизация происходит в хендлере до
-  `deriveArgsHash`, что доказано сквозным тестом: `chain:'eth'` после `chain:'ethereum'` даёт
-  cache HIT без повторного запроса.
+- **Correctness requirement:** an alias is canonicalized (`eth` → `ethereum`) **before** hashing.
+  Without that, one and the same request written two ways produces two paid calls and two cache
+  entries — on a paid route that is a direct monetary defect. Canonicalization happens in the
+  handler, ahead of `deriveArgsHash`, and an end-to-end test proves it: `chain:'eth'` after
+  `chain:'ethereum'` is a cache HIT with no second upstream request.
+- **No cold invalidation happened.** The canonical value is the slug (the rationale, and the
+  rejection of CAIP-2 in this position, is recorded in `types/chain.ts` under R-59d), and before
+  TASK-006 the tools accepted exactly `ethereum`/`solana` — which are their own slugs. The
+  `args_hash` of existing rows therefore did not change and the cache survived the rollout intact.
 
-#### 4.2.3. Матрица покрытия — производная величина, не второй справочник (R-51a)
+#### 4.2.3. The coverage matrix is derived, not a second registry (R-51a)
 
-Покрытие пары (capability, chain) **нигде не хранится списком.** Оно вычисляется как композиция
-двух вещей, которые уже существуют:
+Coverage of a (capability, chain) pair is **stored nowhere as a list.** It is computed as a
+composition of two things that already exist:
 
 ```
 covered(capability, chain) :=
@@ -312,41 +320,59 @@ covered(capability, chain) :=
         adapter(adapterId).chainSupport(chainInfo) === true
 ```
 
-Каждый адаптер отвечает на вопрос про сеть сам — предикатом над `ChainInfo`, а не списком:
+Every adapter answers the question about a chain itself, with a predicate over `ChainInfo` rather
+than a list:
 
-| Адаптер                                              | `chainSupport(c)`                                              |
-| ---------------------------------------------------- | -------------------------------------------------------------- |
-| `defillama`                                          | `c.vendors.defillama !== null`                                 |
-| `coingecko`                                          | `c.vendors.coingecko !== null`                                 |
-| `dexscreener`                                        | `c.vendors.dexscreener !== null`                               |
-| `rpc-evm`                                            | `c.family === 'evm' && c.rpcHosts !== null`                    |
-| `rpc-solana`                                         | `c.caip2 === <solana mainnet caip2>`                           |
-| `nansen`                                             | `c.caip2 ∈ CoverageProbe('nansen').chains`                     |
-| `dash-platform` / `platform-explorer` / `pg-history` | `c.caip2 === <dash caip2>` (без изменений)                     |
-| `dune`                                               | без изменений — `isAvailable()` по-прежнему безусловно `false` |
+| Adapter                                              | `chainSupport(c)`                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| `defillama`                                          | `c.vendors.defillama !== null`                               |
+| `coingecko`                                          | `c.vendors.coingecko !== null`                               |
+| `dexscreener`                                        | `c.vendors.dexscreener !== null`                             |
+| `rpc-evm`                                            | `c.family === 'evm' && c.rpcHosts !== null`                  |
+| `rpc-solana`                                         | `c.caip2 === <solana mainnet caip2>`                         |
+| `nansen`                                             | per capability — see below                                   |
+| `dash-platform` / `platform-explorer` / `pg-history` | `c.caip2 === <dash caip2>`                                   |
+| `dune`                                               | unchanged — `isAvailable()` is still unconditionally `false` |
 
-**Почему предикат, а не колонка-список:** колонка потребовала бы поддерживать покрытие в двух
-местах (реестр + `capabilities()` адаптера) и рассинхронизировалась бы при первом же изменении.
-Предикат делает реестр единственным источником **фактов о сети**, а адаптер — единственным
-источником **фактов о себе**. Это тот же принцип, по которому §3.2 уже держит `providers.config.ts`
-декларативным, а решение о доступности — за `isAvailable()`.
+A deprecated chain is covered by nothing: `covered()` refuses it before consulting any adapter.
 
-**Деградированный путь `nansen` (R-58d):** если артефакт `CoverageProbe('nansen')` отсутствует,
-предикат откатывается на M2-множество (`ethereum`/`solana`), а `onchain_list_chains` помечает
-покрытие этой capability как `unverified` за пределами этого множества. Так мы не заявляем
-ложное покрытие и не отказываем ложно на паре, которая доказанно работала в M2.
+**Why a predicate and not a list column:** a column would mean maintaining coverage in two places
+(the registry plus the adapter's `capabilities()`) and the two would diverge on the first change. The
+predicate leaves the registry as the single source of **facts about a chain** and the adapter as the
+single source of **facts about itself**. This is the same principle by which §3.2 keeps
+`providers.config.ts` declarative while `isAvailable()` owns the availability decision.
 
-**Два разных отказа, которые нельзя сливать (R-51b):**
+**`nansen` coverage is per capability, and a composite capability is an intersection.** The recorded
+coverage comes from the committed vendor spec (`raw/nansen-openapi-2026-07-23.json`), which
+enumerates the chains per endpoint, plus a small live spot-check confirming the spec has not
+drifted — evidence at zero credits, which meets R-58a's intent more strictly than probing 25 chains
+live would. `smart-money.flows` issues two sub-calls (`/smart-money/netflow`, 17 chains, and
+`/tgm/holders`, 25), so its coverage is the **intersection**: a union would admit 8 chains where the
+first sub-call succeeds, the second is refused, and the credits for the first are already spent. On
+top of that the adapter requires the chain's family to have a real address validator — without one
+we cannot tell a valid `tokenAddress` from arbitrary text, cannot canonicalize it into a stable cache
+key, and cannot know how the vendor cases its address column, on a route that charges for every
+attempt. The cost of that condition is stated rather than absorbed silently: after it the covered
+counts are `smart-money.flows` 16, `entity.labels` 18 and `token.risk` 18 chains, dropping
+`bitcoin`, `near`, `sei`, `starknet`, `sui`, `ton` and `tron`. Each returns the moment its family
+gets a validator. One predicate serves all three readers of that answer — what the matrix
+advertises, what the transport will build a request for, and what the refusal message lists as
+available — because an adapter that answers the same question in two places eventually answers it
+two different ways.
 
-| Ситуация                                                        | Тип ошибки                                            | Смысл для агента                                      |
-| --------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------- |
-| Пара (capability, chain) не покрыта                             | `CapabilityNotCoveredOnChainError` (**новый**)        | «Здесь этого нет и не будет — посмотри альтернативы»  |
-| Пара покрыта, но провайдер недоступен (нет ключа, вендор лежит) | `CapabilityUnavailableError` (**существующий**, R-24) | «Могло бы работать — почини конфиг или повтори позже» |
+**Two different refusals that must not be merged (R-51b):**
 
-Слияние этих двух ошибок увело бы агента в бесконечный retry там, где повторять бессмысленно, и
-наоборот — заставило бы сдаться там, где достаточно добавить ключ.
+| Situation                                                                 | Error type                          | What it means to the agent                              |
+| ------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------- |
+| The (capability, chain) pair is not covered                               | `CapabilityNotCoveredOnChainError`  | "It is not here and will not be — look at alternatives" |
+| The pair is covered but the provider is unavailable (no key, vendor down) | `CapabilityUnavailableError` (R-24) | "This could work — fix the config or retry later"       |
 
-### 4.3. Диаграмма данных
+Merging the two would send the agent into an endless retry where retrying is pointless, and
+conversely make it give up where adding a key is enough. `CapabilityNotCoveredOnChainError` is
+raised from `validateArgs()`, i.e. **before** `ensureBudget()` — no credits are reserved to discover
+it.
+
+### 4.3. Data diagram
 
 ```mermaid
 erDiagram
@@ -362,39 +388,40 @@ erDiagram
   cache_entries {
     TEXT id PK "ULID app-generated"
     TEXT provider FK
-    TEXT capability "часть UNIQUE-ключа"
-    TEXT args_hash "часть UNIQUE-ключа, sha256(normalizedArgs), без секретов"
-    TEXT value_json "канонический результат"
+    TEXT capability "part of the UNIQUE key"
+    TEXT args_hash "part of the UNIQUE key, sha256(normalizedArgs), no secrets"
+    TEXT value_json "canonical result"
     INTEGER created_at "epoch-ms UTC"
     INTEGER expires_at "epoch-ms UTC = created_at + TTL(capability)"
   }
 
   usage {
-    TEXT provider FK "часть PK"
-    INTEGER day PK "epoch-ms day-bucket start, часть PK"
-    INTEGER credits_used "АДДИТИВНЫЙ — never overwritten"
-    INTEGER updated_at "epoch-ms UTC, только наблюдаемость"
+    TEXT provider FK "part of the PK"
+    INTEGER day PK "epoch-ms day-bucket start, part of the PK"
+    INTEGER credits_used "ADDITIVE — never overwritten"
+    INTEGER updated_at "epoch-ms UTC, observability only"
   }
 ```
 
-**TASK-006 не добавляет таблиц в эту ER-диаграмму.** Реестр сетей (`ChainInfo`) и `CoverageProbe`
-— артефакты сборки, живущие в памяти процесса и в git, а не строки БД (§4.2.1). Единственное их
-касание этой диаграммы косвенное: `cache_entries.args_hash` теперь считается от `caip2`, а не от
-строки, которую написал агент (§4.2.2). Схема таблиц не меняется — **миграции нет**.
+**TASK-006 adds no table to this diagram.** The chain registry (`ChainInfo`) and `CoverageProbe` are
+build artifacts living in process memory and in git, not DB rows (§4.2.1). Their only contact with
+this diagram is indirect: `cache_entries.args_hash` is computed from the canonical slug rather than
+from whatever string the agent wrote (§4.2.2). The table schema does not change — **there is no
+migration**.
 
-### 4.4. Миграции и версионирование
+### 4.4. Migrations and versioning
 
-**TASK-006 (эта задача):** изменений DDL **нет** — ни новой таблицы, ни изменённой колонки.
-Единственное миграционное событие — **разовая холодная инвалидация кеша** из-за смены содержимого
-`args_hash` (§4.2.2): существующие строки не удаляются и не переписываются, они просто перестают
-совпадать и истекают по штатному TTL. Отдельный migration-скрипт не пишется; событие объявляется в
-changelog. Версионирование реестра — сам файл под git, его «версия» — коммит; отдельного поля
-schema-version в v1 нет (YAGNI: единственный потребитель — этот же процесс той же сборки), но
-загрузчик обязан валидировать структуру на старте (R-60c), так что несовместимый файл падает
-громко, а не молча.
+**TASK-006:** no DDL change — no new table, no altered column — and no migration event. Existing
+cache rows kept matching, because the canonical value fed into `args_hash` was already what the old
+tools accepted (§4.2.2). The registry is versioned by being a file under git: its "version" is the
+commit. There is no schema-version field in v1 (YAGNI: the only consumer is this same process from
+the same build), but the loader must validate the structure at startup (R-60c), so an incompatible
+file fails loudly rather than silently.
 
-**M2 (реализовано этой архитектурой, TASK-005):** `usage(provider FK, day, credits_used,
-updated_at)` добавлена в ту же кеш-БД, `providers`/`cache_entries` не изменены (R-14/R-34
-acceptance) — механическая `CREATE TABLE IF NOT EXISTS`, не миграция существующих строк. Канонические
-типы версионируются по D5 (тип-версия — поле зарезервировано, но M1/M2 не вводят breaking-change
-механику — первая ревизия схем для всех шести canonical-типов, включая три новых M2).
+**M2 (TASK-005):** `usage(provider FK, day, credits_used, updated_at)` was added to the same cache
+DB; `providers`/`cache_entries` are unchanged (R-14/R-34 acceptance) — a mechanical
+`CREATE TABLE IF NOT EXISTS`, not a migration of existing rows. `usage_window` (SEC-1) arrived the
+same way, and its one additive `ALTER TABLE … ADD COLUMN` (`calls_made`) is described in §4.2.
+Canonical types are versioned per D5 — the type-version field is reserved, but M1/M2 introduce no
+breaking-change machinery: this is still the first revision of every canonical schema, the three M2
+additions included.

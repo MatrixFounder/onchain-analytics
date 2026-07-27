@@ -29,7 +29,7 @@ which is the only claim worth making.
 
 The matrix is **derived from the live registry**, not hand-written: for each chain the eval asks
 `onchain_list_chains` which capabilities that chain declares, and exercises exactly those. A chain or
-capability added later is covered automatically, and a chain the registry *stops* declaring stops
+capability added later is covered automatically, and a chain the registry _stops_ declaring stops
 being tested rather than failing noisily.
 
 **Free providers only** — DeFiLlama, CoinGecko, DexScreener, rpc-evm, rpc-solana. The three
@@ -38,17 +38,17 @@ run gets turned off, and a monitor that is off is worse than no monitor.
 
 ## Verdicts
 
-| | meaning |
-|---|---|
-| ✅ `ok` | every field the tool promises is present and usable |
-| ⚠️ `degraded` | the call succeeded but a promised field is missing/empty/implausible |
-| ❌ `error` | the call failed outright |
-| ⏳ `rate-limited` | the provider throttled us — **not tested**, not broken |
+|                   | meaning                                                                         |
+| ----------------- | ------------------------------------------------------------------------------- |
+| ✅ `ok`           | every field the tool promises is present and usable                             |
+| ⚠️ `degraded`     | the call succeeded but a promised field is missing/empty/implausible            |
+| ❌ `error`        | the call failed outright                                                        |
+| ⏳ `rate-limited` | the provider throttled us — **not tested**, not broken                          |
 | `·` `unsupported` | the registry does not declare this capability here — a pass, hidden from output |
-| `?` `no-probe` | no probe input curated — fix `probes.json`, not the code |
+| `?` `no-probe`    | no probe input curated — fix `probes.json`, not the code                        |
 
 `degraded` exists separately from `error` on purpose: it is the class that cost us four days. A
-provider that is *down* is loud and obvious; a provider that quietly stops sending a field returns
+provider that is _down_ is loud and obvious; a provider that quietly stops sending a field returns
 200 and looks perfectly healthy. Likewise `rate-limited` and `no-probe` are kept out of the failure
 count — an eval that scores its own missing test data as a provider defect is lying, and a report
 that cries wolf stops being read.
@@ -63,8 +63,8 @@ independent sources for the same fact:
 - **registry vs provider** — the registry declares capability C for chain X; the provider must
   actually serve it. A mismatch means the catalogue promises a tool that then errors for an agent.
 - **chain echo** — every response echoes the chain it answered for. If the echo differs from what
-  was asked, the adapter's slug→vendor-id mapping is wrong and the answer is valid data *about a
-  different chain*.
+  was asked, the adapter's slug→vendor-id mapping is wrong and the answer is valid data _about a
+  different chain_.
 - **native symbol** — the registry's `nativeSymbol` (DeFiLlama-synced) versus what the RPC adapter
   reports. POL-vs-MATIC style drift surfaces here first.
 
@@ -90,6 +90,7 @@ throttles unpredictably; that is why `rate-limited` is a verdict of its own and 
 failure count. Exit code was 0.
 
 The two `no-probe` rows are stable and worth knowing:
+
 - `bitcoin/token.price` — the registry declares the capability, but the tool needs a contract
   address and Bitcoin has none. The probe is not missing; the registry's claim is questionable.
 - `zcash/protocol.tvl` — no DeFiLlama protocol curated for it.

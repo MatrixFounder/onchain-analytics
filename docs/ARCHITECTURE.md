@@ -1,216 +1,181 @@
 # ARCHITECTURE — `onchain-intel`
 
-| Поле                 | Значение                                                                                                                                                                                                                                                                                                  |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Статус документа** | Living document — обновляется **на месте**, никогда не архивируется по задачам                                                                                                                                                                                                                            |
-| **Текущая задача**   | [TASK-006 `universal-chain-registry`](TASK.md) — ✅ **ВЫПОЛНЕН 2026-07-26**; предыдущие: M2 ✅ ([task-005](tasks/task-005-m2-alpha-paid.md)), M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)/[task-004](tasks/task-004-m1-docs-sync.md)), M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md)) |
-| **ADR**              | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20 (Sergey), решения D1–D12                                                                                                                                                                             |
-| **Схема данных**     | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable-конвенции, применены здесь к кеш-БД (M1) и `usage`-таблице (M2)                                                                                                                                                              |
-| **Roadmap**          | [ROADMAP.md](onchain-analytics/ROADMAP.md) — фазы M0–M6                                                                                                                                                                                                                                                   |
-| **Обновлено**        | 2026-07-27, **v4.2** (два цикла adversarial-ревью TASK-006 + закрытие всех оставшихся записей реестра: SEC-1, Q-3, RF-2) — тест-сьют **796**; полный чейнджлог версий: [architectures/version-history.md](architectures/version-history.md)                                                               |
-| **Формат**           | **Index-Mode** (skill `architecture-format-core`, 2026-07-23): тела разделов 2–7 и **9**–11 — в [docs/architectures/](architectures/); здесь — оглавление, однострочные резюме и малые разделы целиком. §9 вынесен 2026-07-26 (TASK-006), чтобы индекс вернулся к целевым ~200 строкам                    |
+| Field             | Value                                                                                                                                                                                                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Document type** | Living document — updated **in place**, never archived per task                                                                                                                                                                                                                     |
+| **Delivered**     | M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md)) · M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)) · M2 ✅ ([task-005](tasks/task-005-m2-alpha-paid.md)) · TASK-006 `universal-chain-registry` ✅ ([TASK.md](TASK.md)) — implemented 2026-07-26, hardened 2026-07-27 |
+| **ADR**           | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20, decisions D1–D12                                                                                                                                                              |
+| **Data schema**   | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable conventions, applied here to the cache DB and the `usage` ledger                                                                                                                                       |
+| **Roadmap**       | [ROADMAP.md](onchain-analytics/ROADMAP.md) — phases M0–M6                                                                                                                                                                                                                           |
+| **Updated**       | 2026-07-27, **v4.3** — test suite **796**. Full changelog: [architectures/version-history.md](architectures/version-history.md)                                                                                                                                                     |
+| **Format**        | **Index mode** (skill `architecture-format-core`): section bodies live in [docs/architectures/](architectures/); this file holds the table of contents, one-line summaries, and the sections small enough to keep inline                                                            |
 
 ---
 
-> This is a living INDEX. Section bodies live in `docs/architectures/`. Правки вносятся в
-> файл соответствующего раздела; однострочное резюме здесь поддерживается в синхроне
-> (architecture-format-core §After the Split). Нумерация разделов сохранена — текстовые
-> ссылки вида «§3.2» по-прежнему указывают на раздел 3 (system-architecture.md).
+> This is a living INDEX. Section bodies live in `docs/architectures/`. Edit the section file; keep
+> the one-line summary here in sync (`architecture-format-core` §After the Split). Section numbers
+> are stable — a cross-reference like "§3.2" still means chapter 3 (`system-architecture.md`).
 
-## Содержание
+## Contents
 
-| §   | Раздел                                                                            | Где            |
-| --- | --------------------------------------------------------------------------------- | -------------- |
-| 1   | [Задача (Task Description)](#1-задача-task-description)                           | ниже, целиком  |
-| 2   | [Функциональная архитектура](architectures/functional-architecture.md)            | отдельный файл |
-| 3   | [Системная архитектура](architectures/system-architecture.md)                     | отдельный файл |
-| 4   | [Data Model (Conceptual)](architectures/data-model.md)                            | отдельный файл |
-| 5   | [Интерфейсы](architectures/interfaces.md)                                         | отдельный файл |
-| 6   | [Технологический стек](architectures/technology-stack.md)                         | отдельный файл |
-| 7   | [Безопасность](architectures/security.md)                                         | отдельный файл |
-| 8   | [Масштабируемость и производительность](#8-масштабируемость-и-производительность) | ниже, целиком  |
-| 9   | [Надёжность и отказоустойчивость](architectures/reliability.md)                   | отдельный файл |
-| 10  | [Деплой](architectures/deployment.md)                                             | отдельный файл |
-| 11  | [Открытые вопросы](architectures/open-questions.md)                               | отдельный файл |
-| —   | [Приложение: M0-детали](#приложение-m0-детали-сохранённые-без-пересмотра)         | ниже, целиком  |
-| —   | [История версий (changelog)](architectures/version-history.md)                    | отдельный файл |
+| §   | Section                                                             | Location      |
+| --- | ------------------------------------------------------------------- | ------------- |
+| 1   | [Task description](#1-task-description)                             | inline        |
+| 2   | [Functional architecture](architectures/functional-architecture.md) | separate file |
+| 3   | [System architecture](architectures/system-architecture.md)         | separate file |
+| 4   | [Data model (conceptual)](architectures/data-model.md)              | separate file |
+| 5   | [Interfaces](architectures/interfaces.md)                           | separate file |
+| 6   | [Technology stack](architectures/technology-stack.md)               | separate file |
+| 7   | [Security](architectures/security.md)                               | separate file |
+| 8   | [Scalability and performance](#8-scalability-and-performance)       | inline        |
+| 9   | [Reliability and fault tolerance](architectures/reliability.md)     | separate file |
+| 10  | [Deployment](architectures/deployment.md)                           | separate file |
+| 11  | [Open questions](architectures/open-questions.md)                   | separate file |
+| —   | [Version history (changelog)](architectures/version-history.md)     | separate file |
 
-## 1. Задача (Task Description)
+## 1. Task description
 
-`onchain-intel` — движок ончейн-аналитики: провайдер-адаптеры (Nansen/Dune/CoinGecko/DexScreener/
-Bitquery/DAPI/…) → нормализация в канонический zod-типаж → кеш + credit-budget → snapshotter/
-signals → собственный агрегирующий MCP-сервер. Стек и 12 решений (D1–D12) зафиксированы и
-**Accepted** в ADR-001 — эта архитектура их не пересматривает, а конкретизирует **M1**
-([TASK-003](TASK.md), R-1…R-28): канонические zod-типы, Adapter + Capability Registry, девять
-адаптеров (CoinGecko/DexScreener/DeFiLlama/RPC-EVM/RPC-Solana — live; `dash-platform` — interface
+`onchain-intel` is an on-chain analytics engine: provider adapters (Nansen / Dune / CoinGecko /
+DexScreener / DeFiLlama / RPC / Dash DAPI / …) → normalization into canonical zod types → cache +
+credit budget → an aggregating MCP server of our own. The stack and its twelve decisions (D1–D12)
+are **Accepted** in ADR-001; this document does not revisit them, it makes them concrete.
 
-- fixture-контракт, живой gRPC-транспорт отложен в backlog; `platform-explorer` — единственный
-  live Dash-источник M1; `dune` — interface/config-stub, живой запрос отложен на M2; `pg-history` —
-  опциональный read-only PG-адаптер истории), двухуровневый кеш (D6), четыре MCP-tools
-  (`onchain_get_token`, `onchain_wallet_balances`, `onchain_new_pairs`, `onchain_protocol_tvl`),
-  SSRF-гейт, per-provider rate-limit.
+**What the engine is today** — ten provider adapters behind one hot-swappable interface, a chain
+registry of 458 networks, a two-level cache, an SSRF gate and per-provider rate limiting, a credit
+budget guard on the single paid provider, and ten workflow-oriented MCP tools served over local
+stdio.
 
-M0 (предыдущий срез — pnpm-монорепо, TS strict, `onchain_ping` на stdio, CI-гейт) **не
-пересматривается**; §3.2/§6.4/§10.2 этого документа сохраняют M0-детали там, где они остаются
-верны, и расширяют их под M1. Полная RTM M1 — в [TASK.md](TASK.md) §5 (R-1…R-28); трассировка
-exit-критериев ROADMAP §M1 — TASK.md §6.
+### 1.1. Delivered scope
 
-**Что уже существует и не является предметом этой архитектуры:** снапшоттер Dash Platform/ZEC —
-**n8n workflows + Supabase Postgres** в dev VM (`onchain-snapshotter`, `onchain-verify`,
-`onchain-error-alert`; см. `CLAUDE.n8n.md`). Он продолжает писать снапшоты **независимо** от
-движка до M3 (кикофф-решение пользователя, TASK.md §1, п.1) — движок в M1 **только читает** живые
-данные DAPI/platform-explorer напрямую (свой собственный, независимый вызов тех же источников, не
-через n8n) и **опционально** читает уже накопленную n8n-историю из Supabase read-only (R-12). Два
-пути не пересекаются в коде.
+- **M0** — pnpm monorepo, TypeScript strict, `onchain_ping` over stdio, CI gate.
+- **M1** — the read layer: canonical zod types, Adapter + Capability Registry, nine free adapters,
+  the two-level cache (D6), SSRF gate, per-provider rate limit, and four tools
+  (`onchain_get_token`, `onchain_wallet_balances`, `onchain_new_pairs`, `onchain_protocol_tvl`).
+  `dash-platform` ships as an interface + fixture contract (live gRPC transport is backlog) and
+  `platform-explorer` carries all real Dash traffic; `dune` is an interface/config stub.
+- **M2** — the first paid slice: the tenth adapter `nansen` over REST `api.nansen.ai`, three paid
+  capabilities with no free fallback (`smart-money.flows`, `entity.labels`, `token.risk`), three
+  canonical types, three tools, and the credit budget guard (`usage` ledger + `BudgetStore`).
+- **TASK-006** — chains stop being code. A network is a registry row: the canonical id is CAIP-2,
+  vendor ids are mapping columns, and coverage of a (capability, chain) pair is **derived** from
+  `routes × adapter.chainSupport()` rather than kept as a second catalogue. The `ethereum | solana`
+  literal that used to be duplicated across five layers is gone; both names remain valid aliases
+  indefinitely. Two free tools were added (`onchain_list_chains`, `onchain_chain_tvl`).
 
-**Кикофф-решения пользователя (2026-07-22), зафиксированные в TASK.md §1 и обязательные для этого
-дизайна:**
+### 1.2. Standing constraints
 
-1. Снапшоттер/история остаются за n8n до M3; `dash-platform` в M1 — строго READ-ONLY.
-2. Кеш (D6) — **двухуровневый, engine-local**: `lru-cache` (hot) + `better-sqlite3` (persistent) в
-   `DATA_DIR`, схема по DB-SCHEMA-CONCEPT §1. Кеш **не** живёт в Postgres.
-   > **Аннотация к ADR-001 D6 (не правка ADR):** дополнение D6 от 2026-07-20 («профиль деплоя
-   > выделенный сервер» → Postgres день-1 для кеша) описывает **другой** профиль деплоя
-   > (always-on планировщик на выделенном сервере). Движок `onchain-intel` в M1 — локальный stdio
-   > MCP-процесс под Claude Code, не тот профиль; поэтому для него в силе базовая ветка D6
-   > (SQLite+LRU). ADR не редактируется этой задачей — расхождение профилей документируется здесь.
-3. Весь блок M1 — один пайплайн-прогон; атомарную нарезку делает Planner.
+These are owner decisions, not architecture preferences. They bind every future change.
 
-**M2 ([TASK-005 `m2-alpha-paid`](tasks/task-005-m2-alpha-paid.md), R-29…R-47) — ✅ выполнен
-2026-07-25, коммит `4c51126`:** первый платный срез —
-десятый адаптер `nansen` (первый и единственный платный в реестре), три новые способности
-(`smart-money.flows`/`entity.labels`/`token.risk`, без free-fallback), три новых MCP-tool, три
-новых canonical zod-типа и credit-budget guard (`usage`-таблица + `BudgetStore`, D6). Кикофф-
-решения владельца 2026-07-23 (TASK.md §1, обязательны для этого дизайна): (1) budget-guard выводит
-лимиты **только** из живых `/account`/response-заголовков, никогда из хардкода — апгрейд плана
-`free→Pro` требует **ноль** правок кода; (2) интеграционная поверхность — REST `api.nansen.ai`, не
-официальный MCP-сервер Nansen; (3) Bitquery — вне скоупа (YAGNI). M1 **не переписывается** — все
-касания существующего кода аддитивны (новый адаптер, новые маршруты/`EnvSchema`-ключи, новая
-таблица в той же кеш-БД, `PAID_PROVIDER_IDS`) — полный список 6 файлов и обоснование каждого —
-system-architecture.md §3.2 (конец раздела). Ни `registry.ts`, ни `resolve-capability.ts`, ни один
-M1 tool/адаптер не редактируется. Детали — §3 (система/budget-gate), §4 (`usage` DDL + 3 типа), §5
-(3 tool контракта), §7 (секретная дисциплина ключа), §11 (OQ-1…OQ-5).
+1. **The autonomous loop stays on n8n + Postgres — permanently.** The snapshotter
+   (`onchain-snapshotter`, `onchain-verify`, `onchain-error-alert`; see `CLAUDE.n8n.md`) writes
+   Dash Platform / ZEC snapshots independently of the engine, and rule scheduling plus alerting
+   join it at M3. Cron jobs and push notifications cannot live in the MCP server, which exists only
+   while a host session is open. The engine is the pull side: it calls DAPI and platform-explorer
+   directly for live data, and reads accumulated history read-only through the `pg-history` adapter.
+   The two paths never meet in code.
+2. **The cache is two-level and engine-local:** `lru-cache` (hot) in front of `better-sqlite3`
+   (persistent) in `DATA_DIR`, laid out per DB-SCHEMA-CONCEPT §1. The cache never lives in Postgres.
+   > **Annotation to ADR-001 D6 (not an ADR edit):** the D6 addendum of 2026-07-20 ("dedicated
+   > server deployment profile" → Postgres from day one for the cache) describes a **different**
+   > profile — an always-on scheduler on a dedicated server. `onchain-intel` runs as a local stdio
+   > MCP process under Claude Code, so the base D6 branch (SQLite + LRU) applies to it.
+3. **`chain` is an open string plus `onchain_list_chains`, never a `z.enum`.** A closed enum over
+   458 networks costs roughly 8.7k schema tokens in every model request (measured), which is the
+   whole reason for the decision.
+4. **Uncovered pairs are served by the coverage matrix and soft degradation**, never by a false
+   promise of universality. There is no shared chain vocabulary between vendors — the live probe of
+   2026-07-26 measured 461 ≠ 461, with 235 matches on the explicit cross-reference key and 255 on
+   normalized names — so the canonical id has to be ours.
+5. **The engine never writes to the snapshotter's Postgres.** `pg-history` is SELECT-only, and the
+   database role it connects with should be SELECT-only server-side as well (§7).
 
-**TASK-006 (текущая задача — [`universal-chain-registry`](TASK.md), R-48…R-60):** движок перестаёт
-знать список сетей _кодом_. Сеть становится строкой справочника: канонический id — CAIP-2
-(`eip155:80094`), вендорские id — колонки маппинга. Литерал `ethereum|solana`, продублированный в
-пяти слоях (канонический тип, 18 маршрутов, приватные мапы 5 адаптеров, 7 схем инструментов,
-валидация адресов), заменяется одним реестром; покрытие пары (capability, chain) становится
-**производной** от `routes × adapter.chainSupport()`, а не вторым справочником. Два решения
-владельца 2026-07-26, обязательные для дизайна: (1) `chain` в схемах инструментов — **открытая
-строка + `onchain_list_chains`**, не `z.enum` (закрытый енум из 461 сети стоил бы ≈8.7k токенов
-схемы в каждом запросе к модели — измерено); (2) непокрытые пары обслуживаются **матрицей покрытия
-и мягкой деградацией**, а не ложным обещанием универсальности. Ключевой факт разведки, определивший
-дизайн: общего словаря сетей между вендорами **не существует** (461 ≠ 461; пересечение по явному
-ключу — 235, по именам — 255), поэтому канонический id обязан быть нашим. Провайдеров не
-добавляется; M1/M2 сохраняют поведение (`ethereum`/`solana` — бессрочные алиасы). Детали — §2
-(Chain Registry), §3 (модули + порядок гейтов), §4 (`ChainInfo`/`CoverageProbe` как артефакты
-сборки), §5 (2 новых tool), §7.2.1 (SSRF при мультичейн RPC), §11 (OQ-1…OQ-6).
+## 2. Functional architecture
 
-## 2. Функциональная архитектура
+Functional components — Chain Registry, chain/address normalization by address family, Provider
+Adapters + Capability Registry, canonicalization into zod types (D5), the two-level cache (D6),
+the SSRF gate and rate limiter, `pg-history`, and the MCP server — with the component diagram and
+the use cases. → [architectures/functional-architecture.md](architectures/functional-architecture.md)
 
-Функциональные компоненты M1 — chain/address-нормализация, Provider Adapters + Capability
-Registry (9 адаптеров), канонизация в zod-типы (D5), двухуровневый кеш (D6), SSRF-гейт +
-rate-limiter, `pg-history`, MCP-сервер (5 tools) — с mermaid-диаграммой и Use Cases UC-1…UC-5.
-**TASK-006:** новый компонент **Chain Registry** (сеть = данные, а не код) + нормализация адресов
-по `family` вместо имени сети.
-→ [architectures/functional-architecture.md](architectures/functional-architecture.md)
+## 3. System architecture
 
-## 3. Системная архитектура
+Two packages (`core` + `mcp-server`) and the detailed contracts of `@onchain-intel/core`: canonical
+zod types, `ProviderAdapter` / `CapabilityRegistry` (cache faults are best-effort), the chain
+registry and coverage modules, `providers.config.ts` (routes, allowlists, rate limits), the ten
+adapters and their input hardening, cache DDL + TTL table, the credit budget gate (ceiling formula
+anchored on `usageAtObserve`, atomic check-and-reserve, singleflight, post-call reconciliation, the
+velocity window), `safeFetch` / `throttle`, the read-only PG client, the test suite, and the
+component diagram. → [architectures/system-architecture.md](architectures/system-architecture.md)
 
-Архитектурный стиль (два пакета: `core` + `mcp-server`, решение OQ-3); детальные контракты
-`@onchain-intel/core` — zod-типы, `ProviderAdapter`/`CapabilityRegistry` (cache best-effort),
-`providers.config.ts` (маршруты, allowlist, rate-limits), сводка девяти адаптеров и их hardening,
-кеш-DDL + TTL-таблица, `safeFetch`/`throttle`, `pg/read-client`; расширение `mcp-server`
-(injectable registry), тест-сьют M1 (287) и диаграмма компонентов. **M2 (TASK-005):** десятый
-адаптер `nansen` (первый платный) — costOf()-cost-table generation, chain-scope (OQ-3), budget-gate
-placement внутри `fetch()` (OQ-2), account-state/ceiling-формула (OQ-1/OQ-5), атомарный
-check+reserve, singleflight, post-call reconciliation + 402/429/transport-failure resync.
-**TASK-006:** модули `chain/registry.ts` (+ данные отдельным JSON), `chain/coverage.ts`,
-dev-скрипт `scripts/sync-chain-registry.ts`; `ChainSchema`/`ChainInputSchema` вместо enum'а;
-`ProviderAdapter.chainSupport()` как предикат; удаление приватных вендорских мап из 5 адаптеров;
-порядок гейтов, ставящий проверку покрытия **выше** резервирования кредитов.
-→ [architectures/system-architecture.md](architectures/system-architecture.md)
+## 4. Data model (conceptual)
 
-## 4. Data Model (Conceptual)
-
-Канонические сущности (`Token`/`Wallet`/`Balance`/`Pool`/`OHLCV`/`Snapshot` + camelCase↔snake_case
-примечание) + **M2:** `SmartMoneyFlow`/`EntityLabel`/`TokenRiskScore` (D5-расширение), логическая
-модель кеш-БД (`providers` ← `cache_entries`, ← `usage` — DDL, аддитивный upsert), ER-диаграмма.
-**TASK-006:** `ChainInfo` + `CoverageProbe` — **артефакты сборки, не таблицы БД** (обоснование:
-оффлайн-гейт, детерминизм CI, ревьюируемость security-поверхности); DDL не меняется, единственное
-миграционное событие — разовая холодная инвалидация кеша из-за смены содержимого `args_hash`.
+Canonical entities (`Token`, `Wallet`/`Balance`, `Pool`, `OHLCV`, `Snapshot`, `SmartMoneyFlow`,
+`EntityLabel`, `TokenRiskScore`), plus `ChainInfo` and `CoverageProbe` as **build artifacts rather
+than tables** (offline gate, CI determinism, a reviewable security surface). The logical model of
+the cache DB — `providers` ← `cache_entries`, `usage`, `usage_window` — with the ER diagram, the
+coverage-matrix definition, and the two failure types that must never be merged.
 → [architectures/data-model.md](architectures/data-model.md)
 
-## 5. Интерфейсы
+## 5. Interfaces
 
-Контракты 5 MCP-tools (input/output, `.max()`-границы, `_meta.cache`, `token.price`-TTL решение) +
-**M2:** 3 новых платных tool (`onchain_smart_money_flows`/`onchain_entity_label`/
-`onchain_token_risk`, `_meta.budget`), публичный API `packages/core`, таблица интеграций
-провайдеров (10 строк) — источник SSRF-allowlist. **TASK-006:** 2 новых бесплатных tool
-(`onchain_list_chains`, `onchain_chain_tvl`) + сквозная замена литерала `z.enum(['ethereum',
-'solana'])` на `ChainInputSchema` в 7 существующих (≈8.7k токенов схемы сэкономлено на запрос).
-→ [architectures/interfaces.md](architectures/interfaces.md)
+Contracts for all ten MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
+`ChainInputSchema` contract shared by every chain-accepting tool, the public API of
+`packages/core`, and the provider integration table that is the source of the per-adapter SSRF
+allowlist. → [architectures/interfaces.md](architectures/interfaces.md)
 
-## 6. Технологический стек
+## 6. Technology stack
 
-Зависимости M1 с обоснованием (без `@grpc/*` — F-3), раскладка монорепо (полное дерево
-`packages/core`), ключевые поля `package.json`, pnpm-топология сборки. **M2 (TASK-005): ноль новых
-npm-зависимостей** (REST+JSON поверх уже имеющихся `fetch`/zod/`better-sqlite3`) — только новые
-файлы (`adapters/nansen/*`, `cache/budget-store.ts`, 3 tool-файла, dev-codegen скрипт).
+Dependencies with per-dependency justification, the monorepo layout, key `package.json` fields, and
+the pnpm build topology. Neither the paid slice nor the chain registry added an npm dependency.
 → [architectures/technology-stack.md](architectures/technology-stack.md)
 
-## 7. Безопасность
+## 7. Security
 
-Секреты (D10), кеш-ключ без env-значений (`canonicalize` + sha256), stdout-дисциплина, SSRF-гейт,
-rate-limit, PG SELECT-only + рекомендация server-side роли, supply chain / лицензии. **M2:**
-`NANSEN_API_KEY` — уже покрыт существующим `SENSITIVE_HEADER_RE` (без правок regex, R-45),
-budget-guard как второй, независимый от rate-limit защитный слой. **TASK-006 §7.2.1 —
-единственный нетривиальный риск задачи:** `rpcHosts` для мультичейн RPC остаются **курируемой**
-колонкой реестра; запрещён любой путь, в котором данные из сети влияют на SSRF-allowlist; сеть
-без `rpcHosts` честно непокрыта, а не падает в рантайме.
-→ [architectures/security.md](architectures/security.md)
+Secrets (D10), a cache key that provably excludes env values, stdout discipline, the SSRF gate
+including the curated `rpcHosts` column for multichain RPC — the one non-trivial risk in the chain
+work, since a gate whose allowlist is set by an untrusted source is not a gate — rate limiting plus
+the independent budget guard, PG SELECT-only, supply chain and licences, and the provenance manifest
+that pins live-recorded fixtures. → [architectures/security.md](architectures/security.md)
 
-## 8. Масштабируемость и производительность
+## 8. Scalability and performance
 
-Без изменений в стратегии от v1.1: M1 остаётся однопроцессным (`lru-cache`+SQLite, in-memory
-rate-limiter/registry) — абстракции (`CacheStore`, `ProviderAdapter`, `CapabilityRegistry`)
-спроектированы так, чтобы Redis/BullMQ/Postgres (M6, ADR-001 §Revisit) подменялись без
-переписывания вызывающего кода (тот же принцип, что D6/D7/D8). Ничего в M1 не вводит
-синглтон-состояние, которое пришлось бы откатывать при масштабировании — `CapabilityRegistry` и
-`SqliteCacheStore` — фабрики, не глобальные singletons модуля (тестируемость + будущая
-многоинстансность).
+The engine is single-process: `lru-cache` + SQLite, an in-memory rate limiter and registry. The
+abstractions (`CacheStore`, `BudgetStore`, `ProviderAdapter`, `CapabilityRegistry`) are shaped so
+that Redis / BullMQ / Postgres (M6, ADR-001 §Revisit) can be swapped in without rewriting calling
+code — the same principle as D6/D7/D8.
 
-## 9. Надёжность и отказоустойчивость
+Nothing introduces singleton state that would have to be unwound to scale out:
+`CapabilityRegistry`, `SqliteCacheStore`, `SqliteBudgetStore` and the chain registry are all
+factories, not module-level singletons. That keeps them testable today and multi-instance-capable
+later.
 
-Hot-swap fallback по маршруту (R-11) и явная недоступность (R-24) вместо молчаливого `undefined`;
-retry/circuit-breaker намеренно не вводятся (YAGNI); M2 — платные отказы (budget/402/429) идут той
-же нитью, что R-24, без нового механизма; наблюдаемость — stderr + `_meta.cache`/`_meta.budget`.
-**TASK-006:** непокрытая пара (capability, chain) — отдельный тип ошибки, не сливаемый с
-`CapabilityUnavailableError`; повреждённый реестр падает громко на старте, а не деградирует в
-пустой. → [architectures/reliability.md](architectures/reliability.md)
+The chain registry is the only large in-memory structure, and it is not a scaling concern: 458 rows
+are tens of kilobytes, indexed once at load into three maps, and resolved in O(1) on an exact match.
+The O(n) path exists only when building "did you mean" candidates for a miss.
 
-## 10. Деплой
+Two concurrency contracts are load-bearing and documented where they are implemented (§3.2):
+`throttle()` decides synchronously so concurrent callers cannot read the same pre-wait state, and
+`checkAndReserve()` runs its read-compare-write inside `BEGIN IMMEDIATE`, which makes the budget
+correct across the multiple stdio sessions that share one `cache.sqlite3`.
 
-Окружения (dev, Claude Code), порядок CI-шагов (core build **до** typecheck — верификация 003-8),
-конфигурация (`EnvSchema`, `providers.config.ts`), инструкция dev-развёртывания.
+## 9. Reliability and fault tolerance
+
+Hot-swap fallback along a route and explicit unavailability instead of a silent `undefined`; an
+uncovered (capability, chain) pair raised as its own error type; a corrupt registry failing loudly
+at startup; retry and circuit breakers deliberately absent; paid failures travelling the same
+thread as any other unavailability; observability through stderr plus `_meta`.
+→ [architectures/reliability.md](architectures/reliability.md)
+
+## 10. Deployment
+
+Environments (dev, under Claude Code), CI step order — `core` is built before typecheck and test
+because the package is consumed through `dist/` — configuration (`EnvSchema`,
+`providers.config.ts`), and the dev deployment instructions.
 → [architectures/deployment.md](architectures/deployment.md)
 
-## 11. Открытые вопросы
+## 11. Open questions
 
-Неблокирующие открытые пункты (DAPI gRPC — backlog; второй keyless Solana RPC; Dune query id;
-лицензия `dashpay/platform`), RESOLVED-отметки задач 003-4/5/6 и зафиксированные M2-дефолты
-адверсариальных циклов. **M2 (TASK-005) OQ-1…OQ-5 — все RESOLVED** в этой архитектуре (потолок-
-формула, gate-размещение, chain-scope, эскалация-дефолт, self-imposed cap). **TASK-006 OQ-1…OQ-5**
-— четыре RESOLVED дефолтом, **OQ-3 (холодная инвалидация кеша) требует подтверждения владельца**
-(не блокирует Planning); порождён **OQ-6** — периодичность синхронизации реестра (процессный).
+What is genuinely open: the live DAPI gRPC transport (backlog), a second keyless Solana RPC
+endpoint, the `dashpay/platform` licence check, ERC-20/SPL balances, who runs the registry sync and
+how often (OQ-6), and how n8n will call engine capabilities at M3 (OQ-M3-1, to be settled by an ADR
+at M3 kickoff). Everything else is recorded as resolved, with the reasoning that keeps it closed.
 → [architectures/open-questions.md](architectures/open-questions.md)
-
-## Приложение: M0-детали, сохранённые без пересмотра
-
-Полный текст M0-специфичных разделов (тест-сьют `packages/mcp-server/test/`, CI-hardening
-детали адверсариальных циклов 1–2, инструкция по `onchain_ping`) — не дублируется здесь построчно,
-т.к. §3.2/§10.2 этого документа уже включают актуальные ссылки на них там, где M1 их расширяет.
-Полная история M0-версии документа — `git log docs/ARCHITECTURE.md` (v1.1, коммит перед этим
-обновлением) и архивные task-файлы `docs/tasks/task-001-m0-discovery-skeleton.md` /
-`docs/tasks/task-002-m0-docs-sync.md`.

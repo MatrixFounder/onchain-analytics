@@ -1,37 +1,36 @@
-# 7. Безопасность
+# 7. Security
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 7.1. Аутентификация и авторизация
+### 7.1. Authentication and authorization
 
-Без изменений от v1.1 (N/A — локальный stdio-процесс, доверие через хост-процесс). PG read-only
-клиент (M1) не добавляет auth-периметр движку — авторизация происходит на стороне Postgres-роли
-(рекомендация ниже), движок лишь потребляет DSN.
+N/A for the engine itself — it is a local stdio process and trust is delegated to the host process.
+The optional read-only PG client adds no auth perimeter: authorization happens on the Postgres role
+(recommendation in §7.3), and the engine only consumes a DSN.
 
-### 7.2. Защита данных
+### 7.2. Data protection
 
-- Секреты — по-прежнему только `.env` (0600) + zod (D10); **4 новых опциональных ключа** (§3.2)
-  подчиняются тому же правилу: никогда не логируются, никогда не попадают в кеш-ключ.
-- **M2 (TASK-005, R-45): `NANSEN_API_KEY` — тот же контракт, шестой опциональный ключ.**
-  Заголовок `apiKey: <NANSEN_API_KEY>` уже покрыт существующим `SENSITIVE_HEADER_RE =
-/authorization|api-?key/i` в `net/safe-fetch.ts:83` (**без правок regex**, верифицировано чтением
-  кода при разведке этой архитектуры): `Headers`-API лишает имя заголовка регистра ДО сравнения
-  (`"apiKey"` → `"apikey"`), а `api-?key` матчит `"apikey"` (дефис — опционален) буквально — cross-
-  host редирект уже срезал бы этот заголовок так же, как `Authorization`/`x-cg-*-api-key`.
-  Development-фаза добавляет **regression-тест**, доказывающий это конкретно для `nansen`, не
-  правку самого regex (R-45 acceptance). Ключ читается адаптером внутри `fetch()` **после**
-  вычисления `args_hash` — тот же M1-инвариант, что и остальные 5 ключей (§7.2 продолжение ниже).
-  `NANSEN_DAILY_CREDIT_CAP` (OQ-5, §3.2/§11) — **не секрет**, обычное числовое конфиг-значение
-  (как `providers.config.ts`'s rate-limit числа), может безопасно попадать в stderr/`_meta` при
-  необходимости — контраст с самим API-ключом.
-- **Кеш-ключ явно исключает env-значения** (обязательное требование задачи) — `args_hash` в
-  `cache_entries` — это `sha256(hex)` от **нормализованных входных аргументов tool-вызова**
-  (`chain`, адрес, `protocolSlug`, `limit`, `tokenAddress`, `query`, `exhaustive`, …), полученных
-  **после** валидации zod-схемой и `normalizeAddress`. Ни `COINGECKO_API_KEY`/
-  `COINGECKO_PRO_API_KEY`, ни `DUNE_API_KEY`, ни `ONCHAIN_PG_URL`, ни (M2) `NANSEN_API_KEY` никогда
-  не входят в объект, который хешируется — они read-only читаются адаптером внутри `fetch()`, после
-  того как ключ уже вычислен из args (R-45 acceptance: два вызова с разными `NANSEN_API_KEY`, но
-  одинаковыми args → идентичный `args_hash`):
+- Secrets live only in `.env` (0600) with zod validation (D10). All six optional keys (§3.2) obey
+  the same rule: never logged, never part of a cache key.
+- `NANSEN_API_KEY` (M2, TASK-005, R-45) is the sixth optional key and follows the same contract. The
+  `apiKey: <NANSEN_API_KEY>` header is already covered by the existing
+  `SENSITIVE_HEADER_RE = /authorization|api-?key/i` in `net/safe-fetch.ts:83` — **no regex change is
+  needed**: the `Headers` API strips case from the header name before the comparison (`"apiKey"` →
+  `"apikey"`), and `api-?key` matches `"apikey"` literally because the hyphen is optional. A
+  cross-host redirect therefore drops this header exactly as it drops `Authorization` and
+  `x-cg-*-api-key`. A regression test pins that behaviour for `nansen` specifically (R-45
+  acceptance) instead of touching the regex. The key is read by the adapter inside `fetch()`
+  **after** `args_hash` has been computed — the same invariant as the other five keys.
+- `NANSEN_DAILY_CREDIT_CAP` (OQ-5, §3.2/§11) is **not** a secret: it is an ordinary numeric config
+  value, like the rate-limit numbers in `providers.config.ts`, and may safely appear in stderr or in
+  `_meta`. The API key itself never may.
+- **The cache key excludes env values by construction.** `args_hash` in `cache_entries` is
+  `sha256(hex)` over the **normalized arguments of the tool call** (`chain`, address,
+  `protocolSlug`, `limit`, `tokenAddress`, `query`, `exhaustive`, …) taken **after** zod validation
+  and `normalizeAddress`. Neither `COINGECKO_API_KEY`/`COINGECKO_PRO_API_KEY`, nor `DUNE_API_KEY`,
+  nor `ONCHAIN_PG_URL`, nor `NANSEN_API_KEY` ever enters the hashed object — adapters read them
+  read-only inside `fetch()`, after the key has already been derived from the args. Two calls with
+  different `NANSEN_API_KEY` and identical args produce an identical `args_hash` (R-45 acceptance):
 
   ```ts
   function canonicalize(value: unknown): unknown {
@@ -51,143 +50,143 @@
   }
 
   function deriveArgsHash(capability: string, args: Record<string, unknown>): string {
-    // args — ТОЛЬКО нормализованный tool-input (chain/address/limit/...), НИКОГДА process.env.
-    // canonicalize(): рекурсивно сортирует ключи ДО JSON.stringify (minor, ревью цикл 1) —
-    // иначе {chain,address} и {address,chain} (семантически один и тот же вход, разный порядок
-    // построения объекта) дают разные JSON-строки → разные хеши → ложный (spurious) cache miss.
+    // args — ONLY the normalized tool input (chain/address/limit/...), NEVER process.env.
+    // canonicalize() sorts keys recursively BEFORE JSON.stringify — otherwise {chain,address} and
+    // {address,chain} (semantically the same input, built in a different order) serialize to
+    // different JSON strings → different hashes → a spurious cache miss.
     return sha256Hex(JSON.stringify({ capability, args: canonicalize(args) }));
   }
   ```
 
-#### 7.2.1. Мультичейн RPC и SSRF-allowlist (TASK-006, R-56 — решение OQ-2)
+#### 7.2.1. Multichain RPC and the SSRF allowlist (TASK-006, R-56 — resolves TASK-006 OQ-2)
 
-Расширение множества сетей с 2 до 458 несёт **единственный** нетривиальный security-риск во всей
-задаче: `wallet.balances.native` требует RPC-endpoint **на каждую сеть**, а `chainid.network`
-отдаёт `rpc[]` для **2660** сетей. Наивная реализация — «взять хосты из вендорского каталога» —
-означала бы, что **список хостов, которым мы доверяем исходящие запросы, определяется третьей
-стороной по сети**. Это прямое разрушение SSRF-гейта (§7.3, R-25): гейт, чей allowlist задаёт
-недоверенный источник, не гейт.
+Growing the chain set from 2 to 458 carries the **only** non-trivial security risk in the whole
+task: `wallet.balances.native` needs an RPC endpoint **per chain**, and `chainid.network` publishes
+`rpc[]` for **2660** chains. The naive implementation — "take the hosts from the vendor catalog" —
+would mean that **the list of hosts we trust with outbound requests is decided by a third party over
+the network**. That destroys the SSRF gate outright (§7.3, R-25): a gate whose allowlist is set by
+an untrusted source is not a gate.
 
-**Принятое решение — три жёстких правила:**
+**The decision — five hard rules:**
 
-1. **`rpcHosts` — курируемая колонка реестра, а не импорт каталога (R-56a).** Генератор
-   (§3.2 `sync-chain-registry.ts`) **предлагает** кандидатов из `chainid.network`, но в реестр они
-   попадают только через ревью и коммит человека (TASK-006 UC-4). Это единственное поле реестра, для
-   которого автоматическое заполнение **запрещено** явно.
-2. **Allowlist остаётся статическим на всём протяжении рантайма (R-56c).** Ни один ответ вендора
-   не может расширить множество разрешённых хостов. Формулировка намеренно шире, чем «не брать
-   хосты из `chainid.network`»: запрещён любой путь, в котором данные из сети влияют на allowlist.
-3. **Сеть без `rpcHosts` — честно непокрыта, а не сломана (R-56b).** `rpcHosts: null` означает,
-   что `servesChain()` обоих RPC-адаптеров возвращает `false`, и матрица покрытия (§4.2.3) отдаёт
-   `CapabilityNotCoveredOnChainError` **до** какого-либо сетевого обращения. Альтернатива —
-   попытаться и упасть на таймауте — маскировала бы отсутствие конфигурации под сбой сети.
-4. **Форма записи проверяется при ЗАГРУЗКЕ, а не только её наличие** (vdd-multi цикл 6, security
-   M-1). До этого единственным автоматическим гейтом на колонке был `.min(1)` на строке, и через
-   него проходили `https://rpc.legit.org@evil.example` (userinfo: настоящий хост —
-   `evil.example`), `https://127.0.0.1:8545` и голый `evil.example` без схемы. Последний особенно
-   неприятен: как endpoint он недостижим (его отвергает `new URL` внутри `safeFetch`), поэтому ни
-   один тест его не трогал, — но в allowlist он **попадал**, то есть молча расширял множество
-   хостов, на которые разрешено идти по редиректу. Теперь `ChainInfoSchema` требует `https:`, без
-   userinfo и без IP-литерала, а негодная запись — **ошибка загрузки** того же класса, что
-   дублирующийся `caip2`. Плюс `hostOf()` в обоих адаптерах бросает вместо возврата исходной
-   строки: у контроля безопасности поведение по умолчанию на неразобранном вводе — «отбросить», а
-   не «довериться».
-5. **Оба RPC-адаптера, а не только EVM** (vdd-multi цикл 6, H-1). `rpc-evm` получил периметр
-   «эндпойнты и allowlist только из `rpcHosts` запрошенной сети» в цикле 5; его близнец
-   `rpc-solana` тогда остался с модульным `ENDPOINT` (Solana mainnet) и объявлял покрытие для
-   ЛЮБОЙ `svm`-сети с курированным хостом. Латентно при одной SVM-сети и гарантированно ломается
-   на второй — а вся суть TASK-006 в том, что добавление сети есть правка данных. Исправлено по
-   образцу EVM-близнеца; предикат `servesChain()` в обоих один и тот же для `chainSupport` и для
-   транспорта, чтобы реклама и исполнение не могли разойтись.
+1. **`rpcHosts` is a curated registry column, not a catalog import (R-56a).** The generator (§3.2,
+   `sync-chain-registry.ts`) **proposes** candidates from `chainid.network`, but they reach the
+   registry only through human review and a commit (TASK-006 UC-4). This is the one registry field
+   where automatic population is explicitly forbidden.
+2. **The allowlist stays static for the entire runtime (R-56c).** No vendor response can widen the
+   set of permitted hosts. The wording is deliberately broader than "do not take hosts from
+   `chainid.network`": any path in which data from the network influences the allowlist is
+   forbidden.
+3. **A chain without `rpcHosts` is honestly uncovered, not broken (R-56b).** `rpcHosts: null` makes
+   `servesChain()` return `false` in both RPC adapters, and the coverage matrix (§4.2.3) returns
+   `CapabilityNotCoveredOnChainError` **before** any network access. The alternative — try and fail
+   on a timeout — would disguise a missing configuration as a network failure.
+4. **The shape of an entry is validated at LOAD time, not just its presence.** A bare `.min(1)`
+   string check on the column lets through `https://rpc.legit.org@evil.example` (userinfo — the real
+   host is `evil.example`), `https://127.0.0.1:8545`, and a scheme-less `evil.example`. The last one
+   is the nastiest: as an endpoint it is unreachable (`new URL` inside `safeFetch` rejects it), so no
+   test ever touches it — yet it **does** land in the allowlist, silently widening the set of hosts a
+   redirect is allowed to reach. `ChainInfoSchema` therefore requires `https:`, no userinfo and no IP
+   literal, and a malformed entry is a **load error** of the same class as a duplicate `caip2`. On
+   top of that, `hostOf()` in both adapters throws instead of returning the input string: for a
+   security control, the default behaviour on unparsed input is "drop", not "trust".
+5. **Both RPC adapters, not just EVM.** Both `rpc-evm` and `rpc-solana` are confined to the same
+   perimeter — endpoints and allowlist come only from the requested chain's `rpcHosts`. A
+   module-level `ENDPOINT` constant (Solana mainnet) combined with advertised coverage for ANY `svm`
+   chain that has a curated host is latent with one SVM chain and guaranteed to break on the second,
+   and the entire point of TASK-006 is that adding a chain is a data edit. The `servesChain()`
+   predicate is the same one for `chainSupport` and for transport in both adapters, so advertising
+   and execution cannot drift apart.
 
-**Критерий включения сети в `rpcHosts` (дефолт OQ-2, подлежит подтверждению владельцем):** топ-N
-по TVL с **ручной** проверкой живости endpoint'а на этапе генерации. Обоснование выбора именно
-TVL-порога: топ-50 сетей покрывают 99.1% всего TVL (измерено, TASK §0) — то есть курирование
-десятков хостов, а не тысяч, даёт практически полный охват реального спроса. Остальные сети
-получают `rpcHosts: null` и остаются полностью функциональными для keyless-capability
-(`chain.tvl`, `token.price`, `token.metadata`, `pairs.new`), которым RPC не нужен.
+**Criterion for including a chain in `rpcHosts`** (TASK-006 OQ-2, in force — the 19 chains below
+were curated under it): top-N by TVL with a **manual** liveness check of the endpoint at generation
+time. The
+TVL threshold is the criterion because the top 50 chains cover 99.1% of all TVL (measured, TASK §0)
+— curating dozens of hosts rather than thousands gives practically complete coverage of real demand.
+Every other chain gets `rpcHosts: null` and stays fully functional for the keyless capabilities
+(`chain.tvl`, `token.price`, `token.metadata`, `pairs.new`), which need no RPC.
 
-**Фактически курированные сети (задача 006-8, проверка 2026-07-26).** 19 из 458: `ethereum`,
-`solana` (перенесены из M1 без изменений) + `arbitrum`, `avalanche`, `base`, `bsc`, `cronos`,
-`flare`, `gnosis`, `ink`, `katana`, `mantle`, `monad`, `op-mainnet`, `plasma`, `polygon`,
-`robinhood-chain`, `rootstock`, `x-layer`. Критерий — топ по TVL среди EVM-сетей, у которых
-`chainid.network` предлагает https-endpoint без API-ключа; каждый endpoint проверен вызовом
-`eth_chainId`, и в реестр попали **только** те, что вернули **ожидаемый** chain id.
+**Curated chains (task 006-8, verified 2026-07-26).** 19 of 458: `ethereum`, `solana` (carried over
+from M1 unchanged) plus `arbitrum`, `avalanche`, `base`, `bsc`, `cronos`, `flare`, `gnosis`, `ink`,
+`katana`, `mantle`, `monad`, `op-mainnet`, `plasma`, `polygon`, `robinhood-chain`, `rootstock`,
+`x-layer`. The criterion is top-by-TVL among the EVM chains for which `chainid.network` proposes an
+https endpoint that needs no API key; every endpoint was checked with an `eth_chainId` call, and
+**only** those that returned the **expected** chain id entered the registry.
 
-> **Отклонён вручную — и это иллюстрация того, зачем правило существует.** `hyperliquid-l1`
-> (chainId 999): единственный живой кандидат — `https://gwan-ssl.wandevs.org:46891/`, то есть домен
-> **Wanchain**. chainId 999 исторически заявляют обе сети, поэтому `eth_chainId` возвращает ровно
-> ожидаемое значение и **автоматическая проверка проходит**. Запросы балансов Hyperliquid уходили бы
-> в Wanchain. Машинная проверка отличает «ответил правильным chain id» от «является нужной сетью» —
-> нет; человек — да. Ровно поэтому автозаполнение этой колонки запрещено, а не просто нежелательно.
+> **Rejected by hand — and this is the illustration of why the rule exists.** `hyperliquid-l1`
+> (chainId 999): its only live candidate is `https://gwan-ssl.wandevs.org:46891/`, i.e. a **Wanchain**
+> domain. Both chains historically claim chainId 999, so `eth_chainId` returns exactly the expected
+> value and **the automated check passes**. Hyperliquid balance queries would go to Wanchain. A
+> machine check cannot tell "answered with the right chain id" from "is the chain we meant"; a human
+> can. That is precisely why automatic population of this column is forbidden rather than merely
+> discouraged.
 
-**Асимметрия покрытия — не дефект, а следствие честности.** После этой задачи `chain.tvl` будет
-доступен на сотнях сетей, а `wallet.balances.native` — на десятках. Матрица покрытия делает эту
-разницу **видимой** (`onchain_list_chains({capability})`), вместо того чтобы прятать её за
-единым обещанием «поддерживаем всё».
+**Coverage asymmetry is not a defect — it is a consequence of honesty.** `chain.tvl` is available on
+hundreds of chains, `wallet.balances.native` on dozens. The coverage matrix makes that difference
+**visible** (`onchain_list_chains({capability})`) instead of hiding it behind a single promise of
+"we support everything".
 
-**Что эта задача НЕ меняет в security-контуре:** `safeFetch()` остаётся единственной точкой
-исходящего HTTP; per-adapter allowlist остаётся per-adapter; проверка редиректов на каждом хопе,
-`SENSITIVE_HEADER_RE`, исключение env-значений из кеш-ключа — без изменений. Реестр добавляет
-**данные** в существующий механизм, не заменяет механизм.
+**What the chain registry does NOT change in the security perimeter:** `safeFetch()` remains the
+single outbound-HTTP point; the allowlist remains per-adapter; redirect checking on every hop,
+`SENSITIVE_HEADER_RE`, and the exclusion of env values from the cache key are unchanged. The
+registry adds **data** to the existing mechanism; it does not replace the mechanism.
 
-### 7.3. Защита от атак / поверхность
+### 7.3. Attack surface and hardening
 
-- **stdout-дисциплина** (M0-инвариант, не меняется) — по-прежнему в силе для всех 8 tools (5 M1 +
-  3 M2); `_meta` (включая новый `_meta.budget`, §5.1.2) и любой лог по-прежнему только через
-  MCP-протокольный ответ/stderr, не сырой stdout-вывод.
-- **SSRF-гейт (новое, R-25):** `safeFetch()` — единственная точка исходящего HTTP; allowlist —
-  **per-adapter** (не глобальный), редирект проверяется на каждом хопе (макс. 3), никогда не
-  доверяет `Location`-заголовку вслепую (§3.2/§5.3). `assertAllowedHost()` — тот же примитив,
-  transport-агностичный (задуман и для будущих неHTTP-транспортов вроде gRPC), но в M1 фактически
-  не задействован ни одним живым адаптером (`dash-platform`'s gRPC-канал не создаётся в M1, F-3) —
-  остаётся готовым для backlog-задачи живого DAPI-транспорта (§11), когда канал-level проверка
-  снова понадобится.
-- **Rate-limit (R-26):** token-bucket per-provider — защищает и провайдера (good citizen), и нас
-  (не сжигаем платный кредит быстрее, чем нужно). **M2 добавляет полноценный budget-guard** поверх
-  rate-limit'а — оба независимы и оба обязательны: rate-limit защищает от 429 вне зависимости от
-  цены запроса, budget-guard (§3.2/§4.2) защищает бюджет вне зависимости от скорости запросов
-  (429-`retry-after` и `X-Nansen-Credits-*` — два разных заголовка, два разных механизма).
-- **PG read-only (R-12):** движок пишет только `SELECT`-запросы (код-ревью гейт); **рекомендация
-  для оператора БД** — сама Postgres-роль, под которой подключается движок, должна быть
-  server-side SELECT-only (`GRANT SELECT ON SCHEMA onchain TO <role>`, без `INSERT/UPDATE/
-DELETE`), т.к. код-дисциплина — не защита от компрометации ключа/DSN; это defense-in-depth,
-  которую не может обеспечить сам движок.
-- **Supply chain / лицензии:** новые зависимости M1 — `@noble/hashes` (MIT), `bs58` (MIT), `pg`
-  (MIT), `better-sqlite3` (MIT), `lru-cache` (ISC), `ulid` (MIT) — все permissive, совместимы с
-  Apache-2.0 движка (D12). `@grpc/grpc-js`+`@grpc/proto-loader` (Apache-2.0) и вендоренный
-  `platform-v0.proto` (IDL-файл, не код; лицензия `dashpay/platform` — подлежит проверке перед
-  вендорингом, ожидание permissive) **не входят в M1** (F-3, ревью цикл 1) — приходят вместе с
-  отложенной backlog-задачей живого DAPI-транспорта (§11), не раньше.
-- `pnpm install --frozen-lockfile` в CI — без изменений.
+- **stdout discipline** (M0 invariant) holds for all 10 tools. `_meta` — including `_meta.budget`
+  (§5.1.2) — and every log line go through the MCP protocol response or stderr, never through raw
+  stdout.
+- **SSRF gate (R-25):** `safeFetch()` is the single outbound-HTTP point; the allowlist is
+  **per-adapter**, not a global union, so a bug in or compromise of one adapter grants no access to
+  another adapter's hosts. Redirects are checked on every hop (max 3) and the `Location` header is
+  never trusted blindly (§3.2/§5.3). `assertAllowedHost()` is the same primitive, transport-agnostic
+  by design (intended for future non-HTTP transports such as gRPC), but no live adapter exercises it
+  today — `dash-platform`'s gRPC channel is not created — so it stays ready for the backlog task of
+  a live DAPI transport (§11), when channel-level checking is needed again.
+- **Rate limit (R-26):** a per-provider token bucket protects both the provider (good citizen) and
+  us (we do not burn paid credit faster than necessary). The budget guard sits on top of the rate
+  limit; the two are independent and both mandatory. The rate limit protects against 429 regardless
+  of what a request costs; the budget guard (§3.2/§4.2) protects the budget regardless of how fast
+  requests arrive. `retry-after` on a 429 and `X-Nansen-Credits-*` are two different headers driving
+  two different mechanisms.
+- **PG read-only (R-12):** the engine issues `SELECT` only, enforced by a code-review gate. The
+  **recommendation for the DB operator** is that the Postgres role the engine connects as be
+  server-side SELECT-only (`GRANT SELECT ON SCHEMA onchain TO <role>`, no `INSERT/UPDATE/DELETE`) —
+  code discipline is not protection against a leaked key or DSN. This is defense in depth the engine
+  cannot provide for itself.
+- **Supply chain / licenses:** the M1 dependencies — `@noble/hashes` (MIT), `bs58` (MIT), `pg`
+  (MIT), `better-sqlite3` (MIT), `lru-cache` (ISC), `ulid` (MIT) — are all permissive and compatible
+  with the engine's Apache-2.0 (D12). `@grpc/grpc-js` + `@grpc/proto-loader` (Apache-2.0) and a
+  vendored `platform-v0.proto` (an IDL file, not code; the `dashpay/platform` license must be
+  checked before vendoring, expected permissive) are **not** dependencies today — they arrive with
+  the deferred backlog task of a live DAPI transport (§11), not before.
+- `pnpm install --frozen-lockfile` in CI.
 
-## Провенанс живьём записанных артефактов (RF-2, 2026-07-27)
+### 7.4. Provenance of live-recorded artifacts (RF-2)
 
-Golden-тест и девять фикстур Nansen — записанные вживую доказательства, за которые заплачено
-кредитами. Их молчаливая правка неотличима от «вендор изменил ответ», поэтому TASK-005 завела
-SHA-цепочку: хеш файла записывался вручную в шапку документа.
+The golden test and the nine Nansen fixtures are live-recorded evidence that was paid for in
+credits. A silent edit to them is indistinguishable from "the vendor changed its response", so their
+provenance is pinned by a manifest, a verifier and a pre-commit hook. A hash that a human is
+expected to remember to recompute with `shasum` and paste into a document header is not a gate:
+nothing can check that the human remembered, and the pasted hash describes a working tree rather
+than the commit.
 
-**Она не сработала, и не по небрежности.** Механизм требовал, чтобы человек вспомнил перезапустить
-`shasum` и вставить результат; проверить «человек вспомнил» нечем. Записанный хеш описывал рабочее
-дерево, после него легла незалогированная правка, и коммит уехал не совпадающим ни с чем.
+`docs/provenance.json` pins `path → sha256`; `scripts/verify-provenance.mjs` recomputes and compares
+from three sources, and the choice between them is the substance of the decision:
 
-Заменено на гейт. `docs/provenance.json` фиксирует `path → sha256`;
-`scripts/verify-provenance.mjs` пересчитывает и сверяет из трёх источников, и выбор между ними —
-существо решения:
+| Source     | Who runs it                        | Which gap it closes                                                                                  |
+| ---------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `worktree` | `pnpm test` (`provenance.test.ts`) | Catches an edit seconds after it happens, long before a commit                                       |
+| `index`    | `.githooks/pre-commit`             | Checks what is ACTUALLY being committed — a clean working tree says nothing about the staged content |
+| `head`     | manually                           | Post-hoc analysis                                                                                    |
 
-| Источник   | Кто запускает                      | Какую щель закрывает                                                                                   |
-| ---------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `worktree` | `pnpm test` (`provenance.test.ts`) | Ловит правку через секунды после неё, задолго до коммита                                               |
-| `index`    | `.githooks/pre-commit`             | Проверяет то, что РЕАЛЬНО коммитится — расхождением рабочего дерева и индекса и сломалось в первый раз |
-| `head`     | вручную                            | Разбор постфактум                                                                                      |
+`--update` is deliberately part of **no gate**: a check that silently rewrites the hash it has just
+declared wrong is worse than no check — every silent edit would become a green build. Re-pinning
+puts the edit and the new hash in the same diff.
 
-`--update` намеренно **не входит ни в один гейт**: проверка, молча переписывающая хеш, который
-только что признала неверным, хуже отсутствия проверки — каждая молчаливая правка становилась бы
-зелёной сборкой. Переоснование кладёт правку и новый хеш в один диф.
-
-**Граница гарантии.** Git-хуки локальны: `--no-verify` или клон без `git config core.hooksPath
-.githooks` обходят коммит-половину. Переживает это тест (обойдённый коммит краснеет на следующем
-прогоне у любого) и сам манифест, отсутствие которого в дифе, трогающем запиненный файл, видно
-рецензенту. Механизм делает пропуск **громким**, а не невозможным; локальными средствами
-невозможным его не сделать. Файлы перечислены явно, а не глобом: внесение нового живого артефакта
-в запиненный набор — тоже видимое решение.
+**The boundary of the guarantee.** Git hooks are local: `--no-verify`, or a clone without
+`git config core.hooksPath .githooks`, bypasses the commit half. What survives that is the test — a
+bypassed commit goes red on anyone's next run — and the manifest itself, whose absence from a diff
+touching a pinned file is visible to a reviewer. The mechanism makes a bypass **loud**, not
+impossible; by local means it cannot be made impossible. Files are listed explicitly rather than by
+glob: adding a new live artifact to the pinned set is also a visible decision.

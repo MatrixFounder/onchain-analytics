@@ -35,18 +35,25 @@ export const checks = {
   onchain_chain_tvl: {
     catches: 'DeFiLlama renaming a chain, or returning a chain row without its tvl field',
     run: (r) =>
-      [nonEmpty(r?.chain, 'chain'), nonEmpty(r?.name, 'name'), positive(r?.tvlUsd, 'tvlUsd'),
-       nonEmpty(r?.source, 'source')].filter(Boolean),
+      [
+        nonEmpty(r?.chain, 'chain'),
+        nonEmpty(r?.name, 'name'),
+        positive(r?.tvlUsd, 'tvlUsd'),
+        nonEmpty(r?.source, 'source'),
+      ].filter(Boolean),
   },
 
   onchain_protocol_tvl: {
     catches: 'a protocol slug going away, or chain-scoped TVL silently collapsing to the total',
     run: (r) => {
-      const problems = [nonEmpty(r?.protocol, 'protocol'), positive(r?.totalTvlUsd, 'totalTvlUsd')]
-        .filter(Boolean);
+      const problems = [
+        nonEmpty(r?.protocol, 'protocol'),
+        positive(r?.totalTvlUsd, 'totalTvlUsd'),
+      ].filter(Boolean);
       // chain-scoped TVL may legitimately be 0 (protocol not deployed there) but must be a number:
       // a missing field and a real zero mean opposite things and must not look alike.
-      if (num(r?.tvlUsd) === null) problems.push('tvlUsd is not a finite number — chain scope lost');
+      if (num(r?.tvlUsd) === null)
+        problems.push('tvlUsd is not a finite number — chain scope lost');
       return problems;
     },
   },
@@ -59,7 +66,8 @@ export const checks = {
       // token the provider claims to know.
       const price = positive(r?.priceUsd, 'priceUsd');
       if (price) problems.push(price);
-      if (r?.decimals !== undefined && num(r.decimals) === null) problems.push('decimals present but not numeric');
+      if (r?.decimals !== undefined && num(r.decimals) === null)
+        problems.push('decimals present but not numeric');
       return problems;
     },
   },
@@ -69,9 +77,12 @@ export const checks = {
     run: (r) => {
       const pairs = Array.isArray(r?.pairs) ? r.pairs : null;
       if (!pairs) return ['pairs is not an array — shape changed'];
-      if (pairs.length === 0) return ['pairs is empty — no new pairs at all is implausible for a live DEX chain'];
+      if (pairs.length === 0)
+        return ['pairs is empty — no new pairs at all is implausible for a live DEX chain'];
       const first = pairs[0];
-      return [nonEmpty(first?.pairAddress ?? first?.address, 'pairs[0].pairAddress')].filter(Boolean);
+      return [nonEmpty(first?.pairAddress ?? first?.address, 'pairs[0].pairAddress')].filter(
+        Boolean,
+      );
     },
   },
 
@@ -82,11 +93,14 @@ export const checks = {
       const balances = Array.isArray(r?.balances) ? r.balances : null;
       if (!balances) return ['balances is not an array — shape changed'];
       const native = balances.find((b) => b?.assetType === 'native');
-      if (!native) return ['no assetType="native" entry — the one thing this tool exists to return'];
+      if (!native)
+        return ['no assetType="native" entry — the one thing this tool exists to return'];
       const problems = [];
       if (typeof native.amountRaw !== 'string' || !/^\d+$/.test(native.amountRaw)) {
-        problems.push(`amountRaw is not an integer string (${JSON.stringify(native.amountRaw)}) — ` +
-                      'native balances exceed 2^53 and must stay strings (§1.7)');
+        problems.push(
+          `amountRaw is not an integer string (${JSON.stringify(native.amountRaw)}) — ` +
+            'native balances exceed 2^53 and must stay strings (§1.7)',
+        );
       }
       if (num(native.decimals) === null) problems.push('decimals missing or not numeric');
       const sym = nonEmpty(native.symbol, 'balances[native].symbol');
@@ -102,7 +116,9 @@ export const checks = {
       if (!chains) return ['chains is not an array'];
       if (chains.length === 0) return ['registry is empty'];
       const bad = chains.find((c) => !c?.slug || !Array.isArray(c?.capabilities));
-      return bad ? [`a chain row lacks slug/capabilities: ${JSON.stringify(bad).slice(0, 120)}`] : [];
+      return bad
+        ? [`a chain row lacks slug/capabilities: ${JSON.stringify(bad).slice(0, 120)}`]
+        : [];
     },
   },
 
@@ -129,8 +145,10 @@ export const crossChecks = {
    */
   registryVsProvider: (chain, capability, verdict) =>
     verdict === 'error'
-      ? [`registry declares ${capability} for ${chain}, but the provider call failed — ` +
-         'the catalogue and reality disagree']
+      ? [
+          `registry declares ${capability} for ${chain}, but the provider call failed — ` +
+            'the catalogue and reality disagree',
+        ]
       : [],
 
   /**

@@ -67,11 +67,15 @@ const CAPABILITY_TOOLS = [
 // ── minimal JSON-RPC-over-stdio client (no SDK dependency, matching scripts/ house style) ────────
 function startServer() {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'onchain-intel-eval-'));
-  const child = spawn(process.execPath, ['--import', 'tsx', path.join(packageRoot, 'src/index.ts')], {
-    cwd: packageRoot,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, DATA_DIR: dataDir, LOG_LEVEL: 'error' },
-  });
+  const child = spawn(
+    process.execPath,
+    ['--import', 'tsx', path.join(packageRoot, 'src/index.ts')],
+    {
+      cwd: packageRoot,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, DATA_DIR: dataDir, LOG_LEVEL: 'error' },
+    },
+  );
 
   let buffer = '';
   const pending = new Map();
@@ -146,13 +150,18 @@ async function callToolOnce(server, name, args) {
   try {
     const res = await server.send('tools/call', { name, arguments: args });
     const ms = Date.now() - started;
-    if (res.error) return { verdict: 'error', ms, problems: [`JSON-RPC error: ${res.error.message}`] };
+    if (res.error)
+      return { verdict: 'error', ms, problems: [`JSON-RPC error: ${res.error.message}`] };
     if (res.result?.isError) {
-      const text = res.result?.content?.map((c) => c.text).join(' ').slice(0, 200);
+      const text = res.result?.content
+        ?.map((c) => c.text)
+        .join(' ')
+        .slice(0, 200);
       return { verdict: 'error', ms, problems: [`tool reported error: ${text}`] };
     }
     const structured = res.result?.structuredContent;
-    if (structured === undefined) return { verdict: 'degraded', ms, problems: ['no structuredContent'] };
+    if (structured === undefined)
+      return { verdict: 'degraded', ms, problems: ['no structuredContent'] };
     const g = grade(name, structured);
     return { ...g, ms, structured };
   } catch (err) {
@@ -202,7 +211,9 @@ async function main() {
     if (registry.size === 0) throw new Error('registry returned no chains — cannot build a matrix');
 
     const selected = process.env.ONCHAIN_EVAL_CHAINS
-      ? process.env.ONCHAIN_EVAL_CHAINS.split(',').map((s) => s.trim()).filter(Boolean)
+      ? process.env.ONCHAIN_EVAL_CHAINS.split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
       : Object.keys(probes.chains);
 
     for (const chain of selected) {
@@ -214,7 +225,8 @@ async function main() {
       const declared = registry.get(chain);
       if (!declared) {
         record(chain, '—', '—', {
-          verdict: 'error', ms: 0,
+          verdict: 'error',
+          ms: 0,
           problems: ['probes.json lists a chain the live registry does not know'],
         });
         continue;
@@ -224,7 +236,8 @@ async function main() {
       for (const { capability, tool, args } of CAPABILITY_TOOLS) {
         if (!declared.includes(capability)) {
           record(chain, capability, tool, {
-            verdict: 'unsupported', ms: 0,
+            verdict: 'unsupported',
+            ms: 0,
             problems: [`registry does not declare ${capability} for ${chain}`],
           });
           continue;
@@ -232,7 +245,8 @@ async function main() {
         const built = args(chain, probe);
         if (!built) {
           record(chain, capability, tool, {
-            verdict: 'no-probe', ms: 0,
+            verdict: 'no-probe',
+            ms: 0,
             problems: [`no probe input curated for ${capability} on ${chain}`],
           });
           continue;
@@ -249,8 +263,12 @@ async function main() {
             : []),
         ];
         const merged = cross.length
-          ? { ...outcome, verdict: outcome.verdict === 'ok' ? 'degraded' : outcome.verdict,
-              problems: [...outcome.problems, ...cross], cross: true }
+          ? {
+              ...outcome,
+              verdict: outcome.verdict === 'ok' ? 'degraded' : outcome.verdict,
+              problems: [...outcome.problems, ...cross],
+              cross: true,
+            }
           : outcome;
         record(chain, capability, tool, merged);
         await sleep(tool === 'onchain_get_token' ? COINGECKO_THROTTLE_MS : THROTTLE_MS);
@@ -265,34 +283,54 @@ async function main() {
 
 // ── report ───────────────────────────────────────────────────────────────────────────────────────
 function report(results, stderrLines) {
-  const ICON = { ok: '✅', degraded: '⚠️ ', error: '❌', unsupported: '·', 'no-probe': '?', 'rate-limited': '⏳' };
+  const ICON = {
+    ok: '✅',
+    degraded: '⚠️ ',
+    error: '❌',
+    unsupported: '·',
+    'no-probe': '?',
+    'rate-limited': '⏳',
+  };
   const counts = results.reduce((a, r) => ((a[r.verdict] = (a[r.verdict] ?? 0) + 1), a), {});
 
   console.log('\nonchain-intel — live eval, free providers only\n');
   const w = (s, n) => String(s).padEnd(n);
   console.log(`  ${w('chain', 12)} ${w('capability', 24)} ${w('', 3)} ${w('ms', 6)} detail`);
-  console.log(`  ${'-'.repeat(12)} ${'-'.repeat(24)} ${'-'.repeat(3)} ${'-'.repeat(6)} ${'-'.repeat(40)}`);
+  console.log(
+    `  ${'-'.repeat(12)} ${'-'.repeat(24)} ${'-'.repeat(3)} ${'-'.repeat(6)} ${'-'.repeat(40)}`,
+  );
   for (const r of results) {
     // `unsupported` is expected and abundant — it is the registry correctly saying "not here".
     // Printing every one of them would bury the two verdicts that need a human.
     if (r.verdict === 'unsupported') continue;
-    const detail = r.verdict === 'ok' ? ''
-      : r.problems.join('; ').slice(0, 90);
-    console.log(`  ${w(r.chain, 12)} ${w(r.capability, 24)} ${w(ICON[r.verdict], 3)} ${w(r.ms, 6)} ${detail}`);
+    const detail = r.verdict === 'ok' ? '' : r.problems.join('; ').slice(0, 90);
+    console.log(
+      `  ${w(r.chain, 12)} ${w(r.capability, 24)} ${w(ICON[r.verdict], 3)} ${w(r.ms, 6)} ${detail}`,
+    );
   }
 
   const unsupported = results.filter((r) => r.verdict === 'unsupported').length;
-  console.log('\n  ' + Object.entries(counts).map(([k, v]) => `${ICON[k] ?? ''}${k}: ${v}`).join('   '));
-  console.log(`  (${unsupported} unsupported rows hidden — the registry declining a capability is a pass, not a gap)`);
+  console.log(
+    '\n  ' +
+      Object.entries(counts)
+        .map(([k, v]) => `${ICON[k] ?? ''}${k}: ${v}`)
+        .join('   '),
+  );
+  console.log(
+    `  (${unsupported} unsupported rows hidden — the registry declining a capability is a pass, not a gap)`,
+  );
 
   const failures = results.filter((r) => r.verdict === 'error' || r.verdict === 'degraded');
   if (failures.length) {
     console.log('\n  Needs attention:');
-    for (const f of failures) console.log(`   ${ICON[f.verdict]} ${f.chain}/${f.capability}: ${f.problems.join('; ')}`);
+    for (const f of failures)
+      console.log(`   ${ICON[f.verdict]} ${f.chain}/${f.capability}: ${f.problems.join('; ')}`);
   }
   const throttled = results.filter((r) => r.verdict === 'rate-limited');
   if (throttled.length) {
-    console.log('\n  Not tested — provider rate-limited us (raise ONCHAIN_EVAL_CG_THROTTLE_MS or rerun):');
+    console.log(
+      '\n  Not tested — provider rate-limited us (raise ONCHAIN_EVAL_CG_THROTTLE_MS or rerun):',
+    );
     for (const t of throttled) console.log(`   ⏳ ${t.chain}/${t.capability}`);
   }
   const noProbe = results.filter((r) => r.verdict === 'no-probe');
@@ -306,8 +344,10 @@ function report(results, stderrLines) {
   }
 
   if (process.env.ONCHAIN_EVAL_JSON) {
-    writeFileSync(process.env.ONCHAIN_EVAL_JSON,
-      JSON.stringify({ ranAt: new Date().toISOString(), counts, results }, null, 2));
+    writeFileSync(
+      process.env.ONCHAIN_EVAL_JSON,
+      JSON.stringify({ ranAt: new Date().toISOString(), counts, results }, null, 2),
+    );
     console.log(`\n  JSON artifact → ${process.env.ONCHAIN_EVAL_JSON}`);
   }
   process.exitCode = failures.length ? 1 : 0;
