@@ -13,7 +13,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-OUT_DIR="$SCRIPT_DIR/exported"
+# OUT_DIR is overridable so you can snapshot ANOTHER instance without clobbering the repo's own
+# exports. Pointing N8N_URL at prod while OUT_DIR defaults here would overwrite the tracked dev
+# JSON with prod's current (possibly older) workflows — a silent way to lose the thing you were
+# about to deploy. Take a prod rollback snapshot with:
+#   OUT_DIR=/tmp/prod-before N8N_URL=<prod> N8N_API_KEY=<prod-key> ./n8n-workflows/export.sh
+OUT_DIR="${OUT_DIR:-$SCRIPT_DIR/exported}"
 MCP_JSON="$REPO_ROOT/.mcp.json"
 
 N8N_URL="${N8N_URL:-http://ubuntu-linux-2404.local:5678}"
