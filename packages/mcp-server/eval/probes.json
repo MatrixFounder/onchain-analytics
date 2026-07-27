@@ -1,0 +1,112 @@
+{
+  "$comment": [
+    "Probe inputs for the live eval, as DATA — adding a chain here is a config edit, never a code change.",
+    "Only the FREE (keyless) capability surface is covered: chain.tvl, protocol.tvl, token.price/metadata,",
+    "pairs.new, wallet.balances.native. Nansen-backed tools (entity.labels, smart-money.flows, token.risk)",
+    "are excluded on purpose — they spend credits.",
+    "",
+    "A field left absent means 'no probe curated' → that case is reported as `no-probe`, never as a failure.",
+    "That distinction matters: an eval that scores its own missing test data as a provider defect is lying.",
+    "",
+    "wallet: the EVM zero address is used deliberately as a universal probe. It is valid on every EVM chain,",
+    "needs no per-chain curation, and cannot rot. The check asserts a well-formed balance with the right",
+    "symbol/decimals — NOT balance > 0 — because zero is a legitimate answer and asserting otherwise would",
+    "make the eval fail on a correct response.",
+    "",
+    "token: a curated contract per chain. An earlier design discovered the address live from pairs.new",
+    "instead; the real payload settled it — new_pairs returns baseTokenSymbol and never a contract address,",
+    "so that chain does not exist. Cross-provider agreement is checked a different way (see checks.mjs",
+    "crossChecks): registry-vs-provider, chain echo, and registry nativeSymbol vs what the RPC reports.",
+    "",
+    "Slugs and addresses here are VERIFIED AGAINST THE LIVE PROVIDERS, not recalled: a wrong one shows up",
+    "as a provider error and would blame the server for a defect in the test data."
+  ],
+  "chains": {
+    "ethereum": {
+      "family": "evm",
+      "why": "reference EVM: the only profile with every free capability at once",
+      "token": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "tokenNote": "WETH",
+      "wallet": "0x0000000000000000000000000000000000000000",
+      "protocolSlug": "aave"
+    },
+    "solana": {
+      "family": "svm",
+      "why": "the only non-EVM family with wallet balances — a different adapter (rpc-solana)",
+      "token": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "tokenNote": "USDC",
+      "wallet": "11111111111111111111111111111111",
+      "walletNote": "System Program — always exists, balance may be 0",
+      "protocolSlug": "raydium"
+    },
+    "base": {
+      "family": "evm",
+      "token": "0x4200000000000000000000000000000000000006",
+      "tokenNote": "WETH (OP-stack predeploy)",
+      "wallet": "0x0000000000000000000000000000000000000000",
+      "protocolSlug": "aave"
+    },
+    "arbitrum": {
+      "family": "evm",
+      "token": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "tokenNote": "WETH",
+      "wallet": "0x0000000000000000000000000000000000000000",
+      "protocolSlug": "aave"
+    },
+    "polygon": {
+      "family": "evm",
+      "why": "non-ETH native symbol (POL) — catches symbol/decimals assumptions",
+      "token": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+      "tokenNote": "WMATIC/WPOL",
+      "wallet": "0x0000000000000000000000000000000000000000",
+      "protocolSlug": "aave"
+    },
+    "bsc": {
+      "family": "evm",
+      "token": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+      "tokenNote": "WBNB",
+      "wallet": "0x0000000000000000000000000000000000000000",
+      "protocolSlug": "pancakeswap"
+    },
+    "avalanche": {
+      "family": "evm",
+      "token": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+      "tokenNote": "WAVAX",
+      "wallet": "0x0000000000000000000000000000000000000000",
+      "protocolSlug": "aave"
+    },
+    "berachain": {
+      "family": "evm",
+      "why": "serves pairs.new/pool.info WITHOUT the Nansen capabilities — a profile ethereum/solana hide",
+      "wallet": "0x0000000000000000000000000000000000000000",
+      "protocolSlug": "kodiak",
+      "token": "0x6969696969696969696969696969696969696969",
+      "tokenNote": "WBERA"
+    },
+    "gnosis": {
+      "family": "evm",
+      "why": "wallet balances but no pairs.new and no paid capabilities — the plain long-tail EVM profile",
+      "token": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
+      "tokenNote": "WXDAI",
+      "wallet": "0x0000000000000000000000000000000000000000",
+      "protocolSlug": "aave"
+    },
+    "tron": {
+      "family": "other",
+      "why": "non-EVM, non-SVM: token+tvl only, NO wallet balances — the case that must report `unsupported`",
+      "protocolSlug": "justlend",
+      "token": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      "tokenNote": "USDT TRC20 — non-EVM address format, which is the point of probing it"
+    },
+    "bitcoin": {
+      "family": "other",
+      "why": "minimal non-EVM profile; no token contracts at all",
+      "protocolSlug": "babylon-protocol",
+      "protocolNote": "verified live 2026-07-27; the slug is NOT 'babylon'"
+    },
+    "zcash": {
+      "family": "other",
+      "why": "this project's privacy focus; the narrowest profile in the registry — chain.tvl + protocol.tvl only"
+    }
+  }
+}

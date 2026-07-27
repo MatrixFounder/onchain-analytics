@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "smoke:dist": "node scripts/smoke-dist.mjs"
+    "smoke:dist": "node scripts/smoke-dist.mjs",
+    "eval": "node eval/run.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
