@@ -41,7 +41,10 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
   name (`$('Normalize Input').first().json.field` or `$('Set Parameters').item.json.ChatID`). One node
   owns the input+config contract → to change the target chat/message, edit the Set node, **never** the
   Telegram node. **Non-secret config only** (a chat id is fine in a node param; a bot token stays in
-  Credentials — see the secrets rule). Exemplars: `onchain-error-alert` → **Normalize Input** (payload
+  Credentials — see the secrets rule). **Not-secret is not the same as publishable:** a chat id
+  identifies a real person, so `export.sh` scrubs every `ChatID` to `0` on the way out and
+  `CHAT_ID=<id> ./n8n-workflows/import.sh` puts each instance's own value back. Scrub at export, not
+  by hand — export re-reads the live instance and would undo a manual edit on the next run. Exemplars: `onchain-error-alert` → **Normalize Input** (payload
   map + `ChatID`); `onchain-verify` → **Set Parameters** (config-only, holds `ChatID`); external
   `TranscribeWorker` → **Normalize Input**.
 - Code-node normalization honors the schema canon (DB-SCHEMA §1/§8): `value_raw` as a **string**
@@ -121,11 +124,59 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
 - Choose deliberately: `onError: continueRegularOutput` makes a node's error flow on as data (keeps
   the workflow alive) — good for partial results, **bad when you want a loud alert**. For
   loud-fail-and-notify use `retryOnFail` + default stop → an **Error Trigger** workflow.
+- **A vanished vendor field should self-heal when it can be derived EXACTLY** (L-2, 2026-07-27).
+  `poolBalance` disappeared from platform-explorer and 70 hours were lost. `Normalize` now prefers the
+  vendor field and derives `totalShieldedIn − totalShieldedOut` when it is absent. Non-negotiables:
+  **BigInt, never Number** (credits are exact integers; `Number` loses precision past 2^53 — that is
+  the whole reason `value_raw` is TEXT); **refuse rather than guess** (non-integer, signed, or
+  negative result → route to `dropped` and fail, because a fallback that always yields something is a
+  fabrication engine); and write under **`source='derived'`, registered in `metrics.source_priority`
+  first** (§1.6/§1.8) with formula + inputs in `raw_json`, never under the vendor's name. **Healed is
+  not hidden:** `onchain-verify` names derived metrics daily and counts them against `ok`, so closing
+  the data gap does not close the obligation to chase the vendor or retire the metric.
+- **A diagnostic nobody reads is not a diagnostic** (L-2, 2026-07-27). The snapshotter's `Normalize`
+  collected skipped metrics into a `dropped` array that no downstream node consumed, and only threw
+  when *every* source was empty — so losing 1 metric of 11 looked exactly like a clean run for four
+  days. If a Code node computes a health signal, wire a **reader** for it. Our pattern: a terminal
+  `Check dropped` Code node that throws with the names, reaching Telegram via `errorWorkflow`.
+- **"After X" needs an edge, not a canvas position.** With `executionOrder: v1` the relative order of
+  parallel branches follows node geometry. When a gate must observe completed side effects, **chain
+  it** (`Normalize → Write → Upsert → Check`) rather than fanning it out beside them, and set
+  `alwaysOutputData: true` on the upstream nodes so an empty result can't silently skip the gate.
+- **Telegram: set `parse_mode` explicitly and escape the text** (L-4, 2026-07-27). Unset →
+  n8n applies its own default and Telegram parses entities; our metric ids are **snake_case**, and a
+  lone `_` opens an italic that never closes → `400 can't parse entities` and **no message at all**.
+  Both our Telegram nodes now send `parse_mode: HTML` and escape `& < >` (`&` first) in the node that
+  owns the message contract (`Format report` / `Normalize Input`), cap interpolated error text at
+  1500 chars, and truncate **after** escaping while stripping a severed `&am` at the cut. Use
+  `split().join()` rather than `replaceAll()` in Set-node expressions — on the alert path, "almost
+  certainly supported" is the wrong confidence level.
+- **Verify the delivery layer, not just the data layer** (L-4). L-2 and L-3 were both checked against
+  live SQL, real payloads and read-back wiring — and both were correct there while being undeliverable.
+  A monitoring change is proven by the message **arriving**, never by the query returning right rows.
+- **Per-metric thresholds live in the DB, not in the query** (L-3, 2026-07-27). One hardcoded "stale
+  if older than 2h" in `onchain-verify` was applied to daily close-date aggregates, which are *never*
+  younger than 2h — the report was permanently ⚠️, its ✅ branch unreachable, and a real gap moved a
+  counter 2→3 unseen. Thresholds belong in `onchain.metrics.max_staleness_ms`; a NULL bound is
+  reported as a defect so a new metric can't arrive unmonitored. **And name the offenders** — an alert
+  that prints a count can be neither acted on nor distinguished from its own background noise.
 - `retryOnFail` **multiplies blocking time**: a node can block up to `maxTries × timeout` — budget
   timeouts/liveness with that, not `timeout` alone.
 - Secrets **never** in data flow / node params / Set nodes — credential system only. If a workflow's
   nodes render a secret, set `settings.saveDataSuccessExecution` **and** `saveDataErrorExecution` to
   `"none"` (else the rendered value lands in execution history).
+
+**Executing a workflow from an agent**
+- `mcp__n8n-mcp__n8n_test_workflow` only drives **webhook / form / chat** triggers; our `onchain-*`
+  workflows are Schedule-triggered, so it cannot run them. `mcp__n8n-builtin__execute_workflow` can
+  (Schedule / Webhook / Form / Chat / **Manual**) — but **not Error Trigger**, so `onchain-error-alert`
+  is unreachable this way by design; prove its expressions with a throwaway Manual-trigger probe
+  instead (create → run → **delete**), which is also the only way to exercise them without
+  manufacturing a failure in a production workflow.
+- **"Workflow is not available in MCP" is a plain setting, not a UI-only toggle:**
+  `settings.availableInMCP: true`. Set it with `n8n_update_partial_workflow` → `updateSettings`
+  (pass the whole settings object; new workflows are created without it). Don't ask the operator to
+  click through the UI for this.
 
 **Export / re-import (hard-won)**
 - `export.sh` writes each workflow to `exported/<name>.json` — **keyed on workflow NAME, not id**. Two

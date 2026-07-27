@@ -61,22 +61,34 @@ def existing_map(url, key):
     return m
 
 
-def prepare(wf, cred_ids, error_wf_id):
-    """Strip volatile fields, whitelist settings, relink node credentials by name + errorWorkflow."""
+def prepare(wf, cred_ids, error_wf_id, chat_id=None):
+    """Strip volatile fields, whitelist settings, relink node credentials by name + errorWorkflow,
+    and fill the scrubbed ChatID. export.sh scrubs the alert target to 0 so a personal chat id never
+    reaches git; this puts the target back for THIS instance. Left at 0, the first Telegram send
+    fails — loudly, which is the point: the alternative is alerts silently landing in whichever chat
+    the exporting environment happened to use."""
     c = copy.deepcopy(wf)
     for k in META_KEYS:
         c.pop(k, None)
     c["settings"] = {k: v for k, v in (c.get("settings") or {}).items() if k in ALLOWED_SETTINGS}
-    relinked = 0
+    relinked, chats = 0, 0
     for n in c.get("nodes", []):
         for _type, cred in (n.get("credentials") or {}).items():
             pid = cred_ids.get(cred.get("name"))
             if pid:
                 cred["id"] = pid           # keep the name, swap the dangling id for the prod one
                 relinked += 1
+        for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []):
+            if a.get("name") == "ChatID":
+                if chat_id is not None:
+                    a["value"] = chat_id
+                    chats += 1
+                elif a.get("value") in (0, "0"):
+                    print(f"    WARNING: {c.get('name')} imports with ChatID=0 — Telegram sends will "
+                          f"fail until it is set (pass CHAT_ID=<id>)")
     if error_wf_id and c["settings"].get("errorWorkflow"):
         c["settings"]["errorWorkflow"] = error_wf_id
-    return c, relinked
+    return c, relinked, chats
 
 
 def activate(url, key, wid):
@@ -96,9 +108,17 @@ def main():
     ap.add_argument("--pg-cred-id", required=True, help='prod "Supabase DB" credential id')
     ap.add_argument("--tg-cred-id", required=True, help='prod "Onchain bot" credential id')
     ap.add_argument("--dry-run", default="0")
+    ap.add_argument("--chat-id", default="", help="Telegram chat id for THIS instance; export.sh "
+                                                  "scrubs it to 0 so it never reaches git")
     a = ap.parse_args()
     dry = a.dry_run == "1"
     cred_ids = {"Supabase DB": a.pg_cred_id, "Onchain bot": a.tg_cred_id}
+    chat_id = None
+    if a.chat_id:
+        try:
+            chat_id = int(a.chat_id)
+        except ValueError:
+            sys.exit(f"--chat-id must be an integer, got {a.chat_id!r}")
 
     files = sorted(f for f in os.listdir(a.exported_dir) if f.endswith(".json"))
     files.sort(key=lambda f: (ERROR_WF_NAME not in f, f))  # error-alert first (errorWorkflow target)
@@ -115,13 +135,14 @@ def main():
         with open(os.path.join(a.exported_dir, fn)) as fh:
             raw = json.load(fh)
         name = raw.get("name", fn[:-5])
-        body, relinked = prepare(raw, cred_ids, error_wf_id)
+        body, relinked, chats = prepare(raw, cred_ids, error_wf_id, chat_id)
         eid = existing.get(name)
         action = "update" if eid else "create"
         ew = f"errorWorkflow→{error_wf_id or '(new)'}" if body["settings"].get("errorWorkflow") else "no-errWF"
+        ch = f"; ChatID set x{chats}" if chats else ""
 
         if dry:
-            print(f"  [DRY] would {action.upper()}: {name}  (creds relinked: {relinked}; {ew})")
+            print(f"  [DRY] would {action.upper()}: {name}  (creds relinked: {relinked}; {ew}{ch})")
             if name == ERROR_WF_NAME:
                 error_wf_id = final_error_id = eid or "(new error-alert id)"
             continue
@@ -132,7 +153,7 @@ def main():
                 r = api(f"{a.url}/api/v1/workflows", a.api_key, "POST", body)
             wid = r["id"]
             stats[action + "d" if action == "create" else "updated"] += 1
-            print(f"  {action.upper()}D: {name} (id {wid}; creds {relinked}; {ew})")
+            print(f"  {action.upper()}D: {name} (id {wid}; creds {relinked}; {ew}{ch})")
             if name == ERROR_WF_NAME:
                 error_wf_id = final_error_id = wid   # schedules imported next relink to this
             if activate(a.url, a.api_key, wid):

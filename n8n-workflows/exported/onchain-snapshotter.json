@@ -5,17 +5,17 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## onchain-snapshotter (hourly)\nSchedule -> PE status + PE shielded (platform-explorer) -> ZecHub shielded/total -> Zcash tip (blockchair) -> Normalize -> 2 writes.\n\nTWO CLOCKS (DB-SCHEMA S1/S8):\n- dash-platform (8 metrics): hourly state, ts=fetch, height=PE block -> Write snapshots (INSERT ... ON CONFLICT DO NOTHING).\n- zec_block_height (blockchair): hourly chain-tip, ts=block time, height=the height -> Write snapshots.\n- zec supply (ZecHub, 2 metrics): DAILY date-keyed aggregate, ts=close-date UTC midnight, height NULL, revisable -> Upsert zec supply (DO UPDATE).\n\nvalue_raw = EXACT string; base64-bound $1 param (no SQLi). Owner: onchain-intel.",
-        "height": 324,
-        "width": 648
+        "content": "## onchain-snapshotter (hourly)\nSchedule → PE status + PE shielded (platform-explorer) → ZecHub shielded/total → Zcash tip (blockchair) → Normalize → **Write snapshots → Upsert zec supply → Check dropped**.\n\nTWO CLOCKS (DB-SCHEMA §1/§8):\n- dash-platform (8 metrics): hourly state, ts=fetch, height=PE block → Write snapshots (INSERT … ON CONFLICT DO NOTHING).\n- zec_block_height (blockchair): hourly chain-tip, ts=block time, height=the height → Write snapshots.\n- zec supply (ZecHub, 2 metrics): DAILY date-keyed aggregate, ts=close-date UTC midnight, height NULL, revisable → Upsert zec supply (DO UPDATE).\n\n**SELF-HEALING (L-2).** platform-explorer dropped the `poolBalance` field on 2026-07-23 and 70 hours were lost before anyone noticed. Now `Normalize` prefers the vendor field and, when it is absent, derives `shielded_pool_balance_credits = totalShieldedIn − totalShieldedOut` — an identity that held byte-exact on 130 of 130 buckets ever observed. **BigInt, never Number:** credits are exact integers (DB-SCHEMA §1.7). The row is written under **source='derived'** (registered in metrics.source_priority) with its formula and inputs in `raw_json`, so the journal never claims the vendor said something it did not. If the inputs cannot support an EXACT derivation the value is refused, not guessed.\n\n**Healed ≠ hidden.** `Check dropped` still fails the run for anything with no exact fallback, and `onchain-verify` names every derived metric daily — closing the data gap does not close the obligation to chase the vendor or retire the metric.\n\nWriters are CHAINED, not fanned out, so \"the gate runs after both writes\" is an ordering guarantee; both carry alwaysOutputData so an empty result cannot skip it.\n\nvalue_raw = EXACT string; base64-bound $1 param (no SQLi); node refs insert-safe `$('Normalize')`. Owner: onchain-intel.",
+        "height": 684,
+        "width": 928
       },
       "id": "sticky_overview",
       "name": "Overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -48,
-        -320
+        0,
+        -704
       ]
     },
     {
@@ -111,14 +111,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// onchain-snapshotter — normalize sources into snapshot rows. TWO CLOCKS (DB-SCHEMA §1/§8):\n//  dash-platform (platform-explorer): hourly state, ts=fetch, height=PE block   -> APPEND (DO NOTHING)\n//  zec_block_height (blockchair):      hourly chain-tip, ts=block time, height=height -> APPEND\n//  zec supply (ZecHub):                DAILY date-keyed aggregate, ts=close-date UTC midnight,\n//                                      height NULL, revisable intraday                 -> UPSERT\nconst fetchTs = Date.now();\nconst hourBucket = (t) => Math.floor(t / 3600000) * 3600000;\n\nconst status = $('PE status').first().json || {};\nconst shielded = $('PE shielded').first().json || {};\n\n// blockchair /zcash/stats is application/json -> parsed; tolerate node failure (continueRegularOutput).\nlet bc = {};\ntry { bc = (($('Zcash tip').first().json) || {}).data || {}; } catch (e) { bc = {}; }\n\n// ZecHub is served text/plain -> unparsed under json.data; parse + take the newest close element.\nfunction zecLast(nodeName) {\n  const j = $(nodeName).first().json;\n  let arr = j;\n  if (j && typeof j.data === 'string') { try { arr = JSON.parse(j.data); } catch (e) { return null; } }\n  else if (j && Array.isArray(j.data)) arr = j.data;\n  if (!Array.isArray(arr)) return null;\n  return arr.length ? arr[arr.length - 1] : null;\n}\nconst zs = zecLast('ZecHub shielded');\nconst zt = zecLast('ZecHub total');\n\n// close 'MM/DD/YYYY' -> epoch-ms UTC midnight of that date (the datum's true day).\nfunction closeToTs(close) {\n  if (typeof close !== 'string') return null;\n  const p = close.split('/');\n  if (p.length !== 3) return null;\n  const mm = Number(p[0]), dd = Number(p[1]), yy = Number(p[2]);\n  if (!Number.isFinite(mm) || !Number.isFinite(dd) || !Number.isFinite(yy)) return null;\n  return Date.UTC(yy, mm - 1, dd);\n}\n// blockchair 'YYYY-MM-DD HH:MM:SS' (UTC) -> epoch-ms.\nfunction bcTimeToTs(t) {\n  if (typeof t !== 'string') return null;\n  const ms = Date.parse(t.replace(' ', 'T') + 'Z');\n  return Number.isFinite(ms) ? ms : null;\n}\n\nconst peHeight = (status && status.api && status.api.block && Number.isFinite(status.api.block.height)) ? status.api.block.height : null;\n\nconst append = [];   // DO NOTHING (immutable hourly observations)\nconst upsert = [];   // DO UPDATE (daily aggregate, converges to ZecHub's latest value)\nconst dropped = [];\n\nfunction mkRow(source, asset, metric, valueRaw, valueNum, height, ts, raw) {\n  // Guard: never coerce undefined/null into the string 'undefined' for NOT NULL value_raw.\n  if (valueRaw === undefined || valueRaw === null) { dropped.push(metric); return null; }\n  if (!Number.isFinite(ts)) { dropped.push(metric + ':bad-ts'); return null; }\n  const n = (valueNum === null || valueNum === undefined || Number.isNaN(Number(valueNum))) ? null : Number(valueNum);\n  return {\n    ts, ts_bucket: hourBucket(ts), source, asset, metric,\n    value_raw: String(valueRaw),\n    value_num: n,\n    height: (height === null || height === undefined) ? null : height,\n    raw_json: raw === undefined ? null : JSON.stringify(raw),\n    created_at: fetchTs,\n  };\n}\nfunction pushAppend() { const r = mkRow.apply(null, arguments); if (r) append.push(r); }\nfunction pushUpsert() { const r = mkRow.apply(null, arguments); if (r) upsert.push(r); }\n\n// dash-platform <- platform-explorer /status (hourly, fetch-time ts, PE block height)\npushAppend('platform-explorer', 'dash-platform', 'identities_total', status.identitiesCount, status.identitiesCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'documents_total', status.documentsCount, status.documentsCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'data_contracts_total', status.dataContractsCount, status.dataContractsCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'platform_total_credits', status.totalCredits, status.totalCredits, peHeight, fetchTs, status);\n// dash-platform <- platform-explorer /transactions/shielded/statistic\npushAppend('platform-explorer', 'dash-platform', 'shielded_pool_balance_credits', shielded.poolBalance, shielded.poolBalance, peHeight, fetchTs, shielded);\npushAppend('platform-explorer', 'dash-platform', 'shielded_total_in_credits', shielded.totalShieldedIn, shielded.totalShieldedIn, peHeight, fetchTs, shielded);\npushAppend('platform-explorer', 'dash-platform', 'shielded_total_out_credits', shielded.totalShieldedOut, shielded.totalShieldedOut, peHeight, fetchTs, shielded);\npushAppend('platform-explorer', 'dash-platform', 'shielded_transitions_total', shielded.transitionsCount, shielded.transitionsCount, peHeight, fetchTs, shielded);\n\n// zec chain-tip height <- blockchair (hourly, block-time ts, height = the height itself; coherent)\nif (bc && Number.isFinite(bc.best_block_height)) {\n  const bcTs = bcTimeToTs(bc.best_block_time) || fetchTs;\n  pushAppend('blockchair', 'zec', 'zec_block_height', bc.best_block_height, bc.best_block_height, bc.best_block_height, bcTs,\n             { best_block_height: bc.best_block_height, best_block_time: bc.best_block_time, best_block_hash: bc.best_block_hash });\n} else { dropped.push('zec_block_height:no-source'); }\n\n// zec supply <- ZecHub latest close (DAILY: ts = close date UTC midnight; height NULL; UPSERT)\nif (zs && zs.supply !== undefined && zs.supply !== null) {\n  const t = closeToTs(zs.close);\n  if (t !== null) pushUpsert('zechub', 'zec', 'zec_shielded_supply', zs.supply, zs.supply, null, t, zs);\n  else dropped.push('zec_shielded_supply:bad-close');\n}\nif (zt && zt.supply !== undefined && zt.supply !== null) {\n  const t = closeToTs(zt.close);\n  if (t !== null) pushUpsert('zechub', 'zec', 'zec_total_supply', zt.supply, zt.supply, null, t, zt);\n  else dropped.push('zec_total_supply:bad-close');\n}\n\nif (append.length === 0 && upsert.length === 0) {\n  throw new Error('onchain-snapshotter: no rows produced (all sources empty)');\n}\nconst enc = (arr) => Buffer.from(JSON.stringify(arr), 'utf8').toString('base64');\nreturn [{ json: { count_append: append.length, count_upsert: upsert.length, dropped, append_b64: enc(append), upsert_b64: enc(upsert) } }];\n"
+        "jsCode": "// onchain-snapshotter — normalize sources into snapshot rows. TWO CLOCKS (DB-SCHEMA §1/§8):\n//  dash-platform (platform-explorer): hourly state, ts=fetch, height=PE block   -> APPEND (DO NOTHING)\n//  zec_block_height (blockchair):      hourly chain-tip, ts=block time, height=height -> APPEND\n//  zec supply (ZecHub):                DAILY date-keyed aggregate, ts=close-date UTC midnight,\n//                                      height NULL, revisable intraday                 -> UPSERT\nconst fetchTs = Date.now();\nconst hourBucket = (t) => Math.floor(t / 3600000) * 3600000;\n\nconst status = $('PE status').first().json || {};\nconst shielded = $('PE shielded').first().json || {};\n\n// blockchair /zcash/stats is application/json -> parsed; tolerate node failure (continueRegularOutput).\nlet bc = {};\ntry { bc = (($('Zcash tip').first().json) || {}).data || {}; } catch (e) { bc = {}; }\n\n// ZecHub is served text/plain -> unparsed under json.data; parse + take the newest close element.\nfunction zecLast(nodeName) {\n  const j = $(nodeName).first().json;\n  let arr = j;\n  if (j && typeof j.data === 'string') { try { arr = JSON.parse(j.data); } catch (e) { return null; } }\n  else if (j && Array.isArray(j.data)) arr = j.data;\n  if (!Array.isArray(arr)) return null;\n  return arr.length ? arr[arr.length - 1] : null;\n}\nconst zs = zecLast('ZecHub shielded');\nconst zt = zecLast('ZecHub total');\n\n// close 'MM/DD/YYYY' -> epoch-ms UTC midnight of that date (the datum's true day).\nfunction closeToTs(close) {\n  if (typeof close !== 'string') return null;\n  const p = close.split('/');\n  if (p.length !== 3) return null;\n  const mm = Number(p[0]), dd = Number(p[1]), yy = Number(p[2]);\n  if (!Number.isFinite(mm) || !Number.isFinite(dd) || !Number.isFinite(yy)) return null;\n  return Date.UTC(yy, mm - 1, dd);\n}\n// blockchair 'YYYY-MM-DD HH:MM:SS' (UTC) -> epoch-ms.\nfunction bcTimeToTs(t) {\n  if (typeof t !== 'string') return null;\n  const ms = Date.parse(t.replace(' ', 'T') + 'Z');\n  return Number.isFinite(ms) ? ms : null;\n}\n\nconst peHeight = (status && status.api && status.api.block && Number.isFinite(status.api.block.height)) ? status.api.block.height : null;\n\nconst append = [];   // DO NOTHING (immutable hourly observations)\nconst upsert = [];   // DO UPDATE (daily aggregate, converges to ZecHub's latest value)\nconst dropped = [];      // no value AND no fallback -> a real hole; Check dropped fails the run\nconst substituted = []; // value recovered by a documented fallback -> healed, but still reported\n\nfunction mkRow(source, asset, metric, valueRaw, valueNum, height, ts, raw) {\n  // Guard: never coerce undefined/null into the string 'undefined' for NOT NULL value_raw.\n  if (valueRaw === undefined || valueRaw === null) { dropped.push(metric); return null; }\n  if (!Number.isFinite(ts)) { dropped.push(metric + ':bad-ts'); return null; }\n  const n = (valueNum === null || valueNum === undefined || Number.isNaN(Number(valueNum))) ? null : Number(valueNum);\n  return {\n    ts, ts_bucket: hourBucket(ts), source, asset, metric,\n    value_raw: String(valueRaw),\n    value_num: n,\n    height: (height === null || height === undefined) ? null : height,\n    raw_json: raw === undefined ? null : JSON.stringify(raw),\n    created_at: fetchTs,\n  };\n}\nfunction pushAppend() { const r = mkRow.apply(null, arguments); if (r) append.push(r); }\nfunction pushUpsert() { const r = mkRow.apply(null, arguments); if (r) upsert.push(r); }\n\n// Exact integer difference for the derived-fallback path (L-2). BigInt, never Number: credits are\n// exact integers and the canon forbids parsing them to a JS number (DB-SCHEMA §1.7) — value_raw must\n// stay the exact string. Returns null whenever the inputs cannot support an EXACT derivation, which\n// routes the metric to `dropped` and fails the run rather than inventing a plausible number.\nfunction exactDiff(aRaw, bRaw) {\n  if (aRaw === undefined || aRaw === null || bRaw === undefined || bRaw === null) return null;\n  const a = String(aRaw).trim(), b = String(bRaw).trim();\n  if (!/^\\d+$/.test(a) || !/^\\d+$/.test(b)) return null; // floats, signs, garbage -> refuse\n  const d = BigInt(a) - BigInt(b);\n  if (d < 0n) return null;                               // a negative pool balance is nonsense\n  return d.toString();\n}\n\n// dash-platform <- platform-explorer /status (hourly, fetch-time ts, PE block height)\npushAppend('platform-explorer', 'dash-platform', 'identities_total', status.identitiesCount, status.identitiesCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'documents_total', status.documentsCount, status.documentsCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'data_contracts_total', status.dataContractsCount, status.dataContractsCount, peHeight, fetchTs, status);\npushAppend('platform-explorer', 'dash-platform', 'platform_total_credits', status.totalCredits, status.totalCredits, peHeight, fetchTs, status);\n// dash-platform <- platform-explorer /transactions/shielded/statistic\n// shielded pool balance: the vendor's own field first, an exact derivation when it is absent.\n// poolBalance == totalShieldedIn - totalShieldedOut — an identity that held byte-exact on 130 of\n// 130 buckets ever observed. The derived row is written under source 'derived' (registered in\n// metrics.source_priority) carrying its formula and inputs in raw_json, so the journal never claims\n// the vendor reported a value it did not. Self-healing closes the DATA gap; onchain-verify still\n// names the substitution daily, so it does not close the obligation to chase the vendor.\nif (shielded.poolBalance !== undefined && shielded.poolBalance !== null) {\n  pushAppend('platform-explorer', 'dash-platform', 'shielded_pool_balance_credits', shielded.poolBalance, shielded.poolBalance, peHeight, fetchTs, shielded);\n} else {\n  const pb = exactDiff(shielded.totalShieldedIn, shielded.totalShieldedOut);\n  if (pb !== null) {\n    substituted.push('shielded_pool_balance_credits');\n    pushAppend('derived', 'dash-platform', 'shielded_pool_balance_credits', pb, Number(pb), peHeight, fetchTs,\n               { derived: true,\n                 formula: 'shielded_total_in_credits - shielded_total_out_credits',\n                 inputs: { shielded_total_in_credits: String(shielded.totalShieldedIn),\n                           shielded_total_out_credits: String(shielded.totalShieldedOut) },\n                 reason: 'vendor field poolBalance absent from payload',\n                 issue: 'L-2' });\n  } else {\n    // Neither the field nor usable inputs -> a genuine hole. mkRow records it in `dropped`.\n    pushAppend('platform-explorer', 'dash-platform', 'shielded_pool_balance_credits', shielded.poolBalance, shielded.poolBalance, peHeight, fetchTs, shielded);\n  }\n}\npushAppend('platform-explorer', 'dash-platform', 'shielded_total_in_credits', shielded.totalShieldedIn, shielded.totalShieldedIn, peHeight, fetchTs, shielded);\npushAppend('platform-explorer', 'dash-platform', 'shielded_total_out_credits', shielded.totalShieldedOut, shielded.totalShieldedOut, peHeight, fetchTs, shielded);\npushAppend('platform-explorer', 'dash-platform', 'shielded_transitions_total', shielded.transitionsCount, shielded.transitionsCount, peHeight, fetchTs, shielded);\n\n// zec chain-tip height <- blockchair (hourly, block-time ts, height = the height itself; coherent)\nif (bc && Number.isFinite(bc.best_block_height)) {\n  const bcTs = bcTimeToTs(bc.best_block_time) || fetchTs;\n  pushAppend('blockchair', 'zec', 'zec_block_height', bc.best_block_height, bc.best_block_height, bc.best_block_height, bcTs,\n             { best_block_height: bc.best_block_height, best_block_time: bc.best_block_time, best_block_hash: bc.best_block_hash });\n} else { dropped.push('zec_block_height:no-source'); }\n\n// zec supply <- ZecHub latest close (DAILY: ts = close date UTC midnight; height NULL; UPSERT)\nif (zs && zs.supply !== undefined && zs.supply !== null) {\n  const t = closeToTs(zs.close);\n  if (t !== null) pushUpsert('zechub', 'zec', 'zec_shielded_supply', zs.supply, zs.supply, null, t, zs);\n  else dropped.push('zec_shielded_supply:bad-close');\n}\nif (zt && zt.supply !== undefined && zt.supply !== null) {\n  const t = closeToTs(zt.close);\n  if (t !== null) pushUpsert('zechub', 'zec', 'zec_total_supply', zt.supply, zt.supply, null, t, zt);\n  else dropped.push('zec_total_supply:bad-close');\n}\n\nif (append.length === 0 && upsert.length === 0) {\n  throw new Error('onchain-snapshotter: no rows produced (all sources empty)');\n}\nconst enc = (arr) => Buffer.from(JSON.stringify(arr), 'utf8').toString('base64');\nreturn [{ json: { count_append: append.length, count_upsert: upsert.length, dropped, substituted, append_b64: enc(append), upsert_b64: enc(upsert) } }];\n"
       },
       "id": "normalize",
       "name": "Normalize",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1300,
+        1312,
         0
       ]
     },
@@ -127,7 +127,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO onchain.snapshots (ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at)\nSELECT ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at\nFROM jsonb_to_recordset(convert_from(decode($1, 'base64'), 'utf8')::jsonb)\n  AS x(ts bigint, ts_bucket bigint, source text, asset text, metric text, value_raw text, value_num double precision, height bigint, raw_json text, created_at bigint)\nON CONFLICT (source, asset, metric, ts_bucket) DO NOTHING;",
         "options": {
-          "queryReplacement": "={{ $json.append_b64 }}"
+          "queryReplacement": "={{ $('Normalize').first().json.append_b64 }}"
         }
       },
       "id": "pg_write",
@@ -135,46 +135,38 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1540,
+        1552,
         -80
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
           "id": "cxLk68mkh5BMWchQ",
           "name": "Supabase DB"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
+      "parameters": {
+        "url": "https://api.blockchair.com/zcash/stats",
+        "options": {}
+      },
       "id": "http_zec_tip",
       "name": "Zcash tip",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1090,
+        1104,
         0
       ],
-      "parameters": {
-        "url": "https://api.blockchair.com/zcash/stats",
-        "options": {}
-      },
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
       "executeOnce": true,
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
     },
     {
-      "id": "pg_upsert_zec",
-      "name": "Upsert zec supply",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        1540,
-        120
-      ],
       "parameters": {
         "operation": "executeQuery",
         "query": "INSERT INTO onchain.snapshots (ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at)\nSELECT ts, ts_bucket, source, asset, metric, value_raw, value_num, height, raw_json, created_at\nFROM jsonb_to_recordset(convert_from(decode($1, 'base64'), 'utf8')::jsonb)\n  AS x(ts bigint, ts_bucket bigint, source text, asset text, metric text, value_raw text, value_num double precision, height bigint, raw_json text, created_at bigint)\nON CONFLICT (source, asset, metric, ts_bucket) DO UPDATE\n  SET value_raw = EXCLUDED.value_raw, value_num = EXCLUDED.value_num, raw_json = EXCLUDED.raw_json, created_at = EXCLUDED.created_at;",
@@ -182,12 +174,34 @@
           "queryReplacement": "={{ $('Normalize').first().json.upsert_b64 }}"
         }
       },
+      "id": "pg_upsert_zec",
+      "name": "Upsert zec supply",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        -80
+      ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
           "id": "cxLk68mkh5BMWchQ",
           "name": "Supabase DB"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// onchain-snapshotter — the drop gate (L-2).\n// Normalize's mkRow() refuses to coerce a missing vendor field into the NOT NULL value_raw column.\n// That array used to have NO READER: losing 1 metric of 11 was indistinguishable from a clean run,\n// and platform-explorer silently removing `poolBalance` went unnoticed for four days.\n//\n// TWO OUTCOMES, deliberately different:\n//   dropped     — no value and no usable fallback. A real hole. Fails the execution by name, which\n//                 reaches Telegram through the errorWorkflow (onchain-error-alert).\n//   substituted — the vendor field was missing but the value was derived EXACTLY from other fields\n//                 already in the same payload. The data gap is healed, so failing every hour would\n//                 be noise; it is surfaced instead by source='derived' on the row itself and named\n//                 daily by onchain-verify. Healed is not the same as fine, and not the same as hidden.\n//\n// This node runs AFTER both writers, so rows that DID arrive are already committed either way.\nconst n = $('Normalize').first().json;\nconst dropped = Array.isArray(n.dropped) ? n.dropped : [];\nconst substituted = Array.isArray(n.substituted) ? n.substituted : [];\n\nif (dropped.length) {\n  throw new Error(\n    'onchain-snapshotter: ' + dropped.length + ' metric(s) missing from their source with no exact'\n    + ' fallback, NOT written: ' + dropped.join(', ')\n    + ' — rows that did arrive WERE written (' + n.count_append + ' append + ' + n.count_upsert\n    + ' upsert' + (substituted.length ? ', ' + substituted.length + ' derived' : '') + ').'\n    + ' Inspect the vendor payload shape, then either fix the mapping or retire the metric'\n    + ' from onchain.metrics.'\n  );\n}\n\nreturn [{ json: { ok: true, count_append: n.count_append, count_upsert: n.count_upsert, dropped: 0, substituted } }];"
+      },
+      "id": "1a680754-56dd-4d83-8670-73edc3c28b9d",
+      "name": "Check dropped",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1984,
+        -80
+      ]
     }
   ],
   "connections": {
@@ -253,11 +267,6 @@
             "node": "Write snapshots",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Upsert zec supply",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -272,6 +281,28 @@
           }
         ]
       ]
+    },
+    "Write snapshots": {
+      "main": [
+        [
+          {
+            "node": "Upsert zec supply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert zec supply": {
+      "main": [
+        [
+          {
+            "node": "Check dropped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -281,7 +312,8 @@
     "saveDataSuccessExecution": "none",
     "saveManualExecutions": false,
     "binaryMode": "separate",
-    "errorWorkflow": "WapVxU2SneMiNNyM"
+    "errorWorkflow": "WapVxU2SneMiNNyM",
+    "availableInMCP": true
   },
   "nodeGroups": [],
   "sourceWorkflowId": null

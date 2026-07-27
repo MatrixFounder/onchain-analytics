@@ -66,3 +66,7 @@ coverage/
 *.sqlite3
 *-wal
 *-shm
+
+# Python bytecode (import_with_relink.py is imported directly by tests/harnesses)
+__pycache__/
+*.py[cod]

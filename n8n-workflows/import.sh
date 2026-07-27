@@ -13,6 +13,10 @@
 #   PROD_PG_CRED_ID   prod "Supabase DB" (postgres) credential id
 #   PROD_TG_CRED_ID   prod "Onchain bot"  (telegram) credential id
 # Optional: DRY_RUN=1 (preview, POST/PUT nothing).
+#           CHAT_ID   Telegram chat id for THIS instance. export.sh scrubs the alert target to 0 so a
+#                     personal chat id never lands in git — without CHAT_ID the workflows import with
+#                     ChatID=0 and every Telegram send fails until it is set in the Set node. That is
+#                     deliberate: a loud failure beats alerts silently going to another environment.
 #
 # First run against any instance: DRY_RUN=1 and eyeball the plan.
 set -euo pipefail
@@ -27,4 +31,5 @@ exec python3 "$SCRIPT_DIR/import_with_relink.py" \
   --url "$N8N_URL" --api-key "$N8N_API_KEY" \
   --exported-dir "$SCRIPT_DIR/exported" \
   --pg-cred-id "$PROD_PG_CRED_ID" --tg-cred-id "$PROD_TG_CRED_ID" \
+  --chat-id "${CHAT_ID:-}" \
   --dry-run "${DRY_RUN:-0}"

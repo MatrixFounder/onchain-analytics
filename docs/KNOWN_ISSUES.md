@@ -91,6 +91,9 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 ## logic
 
 - **L-1** [a paid Nansen call whose result `normalize()` rejects is never cached, so every retry pays again](issues/l-1-nansen-no-negative-caching-paid-call-discarded-on-empty-result.md) — severity `SEV-2`, status `fixed`, opened 2026-07-25
+- **L-2** [the snapshotter drops a metric silently: `dropped[]` is computed and then discarded](issues/l-2-snapshotter-drops-a-metric-silently-dropped-array-never-leaves-the-node.md) — severity `SEV-3`, status `fixed`, opened 2026-07-27
+- **L-3** [`onchain-verify`'s staleness detector is permanently red by construction, and names no metric](issues/l-3-verify-staleness-detector-is-permanently-red-and-names-no-metric.md) — severity `SEV-2`, status `fixed`, opened 2026-07-27
+- **L-4** [Telegram entity parsing 400s on snake_case metric names, so the alert is never delivered](issues/l-4-telegram-entity-parsing-400s-on-snake-case-metric-names-no-alert-delivered.md) — severity `SEV-2`, status `fixed`, opened 2026-07-27
 
 ## security
 

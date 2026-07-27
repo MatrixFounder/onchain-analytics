@@ -26,7 +26,15 @@ if [[ -z "$N8N_API_KEY" && -f "$MCP_JSON" ]]; then
 fi
 [[ -n "$N8N_API_KEY" ]] || { echo "Error: N8N_API_KEY not set (env or .mcp.json)" >&2; exit 1; }
 
-# Drop instance-specific / volatile fields so exports are portable and diff-clean.
+# Drop instance-specific / volatile fields so exports are portable and diff-clean, and SCRUB the
+# alert target. A Telegram chat id identifies a real person; it is not a secret (so it stays a plain
+# node param, per the secrets rule) but it has no business in git. Scrubbing here rather than by
+# hand is the only version that holds: export.sh re-reads the live instance, so any manual edit to
+# the JSON would be undone by the next export.
+#
+# Sentinel is 0, deliberately: an import that forgets to set the real chat FAILS LOUDLY at the first
+# send instead of quietly delivering another environment's alerts into the dev chat. Restore it with
+# CHAT_ID=<id> ./n8n-workflows/import.sh, or by editing the Set node after import.
 STRIP='
 import json, sys
 wf = json.load(sys.stdin)
@@ -34,6 +42,15 @@ for k in ("id", "updatedAt", "createdAt", "versionId", "triggerCount", "shared",
           "isArchived", "tags", "meta", "pinData", "staticData", "activeVersionId",
           "versionCounter", "activeVersion"):
     wf.pop(k, None)
+
+scrubbed = 0
+for n in wf.get("nodes", []):
+    for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []):
+        if a.get("name") == "ChatID" and a.get("value") not in (0, "0", None):
+            a["value"] = 0
+            scrubbed += 1
+if scrubbed:
+    print("    scrubbed ChatID x%d (set it on import)" % scrubbed, file=sys.stderr)
 print(json.dumps(wf, indent=2, ensure_ascii=False))
 '
 

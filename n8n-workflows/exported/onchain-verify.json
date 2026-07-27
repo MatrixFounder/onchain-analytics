@@ -5,17 +5,17 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## onchain-verify (daily)\nHealth check on onchain.snapshots → Telegram report (chat 207209924).\nChecks: freshness (max(ts) < 2h stale per metric), orphans=0, metrics seen vs registered, row/bucket counts. Owner: onchain-intel.",
-        "height": 232,
-        "width": 552
+        "content": "## onchain-verify (daily)\nHealth check on onchain.snapshots → Telegram report. Target chat lives in **Set Parameters** (edit there, never in the Telegram node).\n\nChecks, each judged PER METRIC and each NAMING its offenders:\n- **stale** — max(ts) older than that metric's `onchain.metrics.max_staleness_ms` (migration 003). Two clocks: hourly observations 2h, ZecHub daily close-date aggregates 72h. One global 2h threshold was L-3 — it made the daily metrics permanently stale, pinned the report to ⚠️, and hid a real 4-day gap.\n- **never written** — registered in `metrics` but zero rows (the check the old `metrics_seen != metrics_registered` actually was).\n- **unbounded** — a registry row with NULL `max_staleness_ms`, i.e. an unmonitored metric. Adding metric #12 without a bound is itself reported, so this cannot silently regress.\n- **orphans** — snapshot rows whose asset/metric is missing from the registries (must be 0).\n\nOwner: onchain-intel.",
+        "height": 364,
+        "width": 664
       },
       "id": "sticky",
       "name": "Overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -48,
-        -256
+        0,
+        -384
       ]
     },
     {
@@ -41,7 +41,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH latest AS (\n  SELECT metric, max(ts) AS max_ts FROM onchain.snapshots GROUP BY metric\n)\nSELECT\n  (SELECT count(*) FROM onchain.snapshots) AS total_rows,\n  (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots) AS buckets,\n  (SELECT count(*) FROM onchain.metrics) AS metrics_registered,\n  (SELECT count(*) FROM latest) AS metrics_seen,\n  (SELECT count(*) FROM latest WHERE max_ts < (extract(epoch from now())*1000)::bigint - 7200000) AS stale_metrics,\n  (SELECT count(*) FROM onchain.snapshots s LEFT JOIN onchain.assets a ON s.asset=a.id LEFT JOIN onchain.metrics m ON s.metric=m.id WHERE a.id IS NULL OR m.id IS NULL) AS orphans,\n  (SELECT to_char(to_timestamp(max(ts)/1000) AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI') FROM onchain.snapshots) AS latest_ts_utc;",
+        "query": "-- Staleness is judged per metric on the metric's OWN clock, from onchain.metrics.max_staleness_ms\n-- (migration 003). One hardcoded 2h threshold was L-3: daily close-date aggregates can never be\n-- younger than 2h, so stale_metrics had a permanent floor and the OK branch was unreachable.\n-- A registry row with NULL max_staleness_ms is reported as a defect, not treated as fine.\n-- `derived` reports metrics the snapshotter had to COMPUTE because the vendor stopped sending the\n-- field: self-healing keeps the series unbroken, and this line keeps that from becoming silent.\nWITH judged AS (\n  SELECT m.id AS metric,\n         m.max_staleness_ms,\n         (SELECT max(s.ts) FROM onchain.snapshots s WHERE s.metric = m.id) AS max_ts,\n         (extract(epoch from now())*1000)::bigint AS now_ms\n    FROM onchain.metrics m\n), flags AS (\n  SELECT metric, max_ts, max_staleness_ms, now_ms,\n         (max_ts IS NULL) AS never_seen,\n         (max_staleness_ms IS NULL) AS unbounded,\n         (max_ts IS NOT NULL AND max_staleness_ms IS NOT NULL\n            AND max_ts < now_ms - max_staleness_ms) AS is_stale\n    FROM judged\n), derived AS (\n  SELECT metric, count(*) AS n\n    FROM onchain.snapshots\n   WHERE source = 'derived'\n     AND ts > (extract(epoch from now())*1000)::bigint - 86400000\n   GROUP BY metric\n)\nSELECT\n  (SELECT count(*) FROM onchain.snapshots) AS total_rows,\n  (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots) AS buckets,\n  (SELECT count(*) FROM onchain.metrics) AS metrics_registered,\n  (SELECT count(*) FROM flags WHERE NOT never_seen) AS metrics_seen,\n  (SELECT count(*) FROM flags WHERE is_stale) AS stale_metrics,\n  (SELECT coalesce(string_agg(metric || ' (' || round((now_ms - max_ts)/3600000.0)::text\n                              || 'h > ' || round(max_staleness_ms/3600000.0)::text || 'h)',\n                              ', ' ORDER BY max_ts), '')\n     FROM flags WHERE is_stale) AS stale_names,\n  (SELECT count(*) FROM flags WHERE never_seen) AS never_seen_metrics,\n  (SELECT coalesce(string_agg(metric, ', ' ORDER BY metric), '')\n     FROM flags WHERE never_seen) AS never_seen_names,\n  (SELECT count(*) FROM flags WHERE unbounded) AS unbounded_metrics,\n  (SELECT coalesce(string_agg(metric, ', ' ORDER BY metric), '')\n     FROM flags WHERE unbounded) AS unbounded_names,\n  (SELECT count(*) FROM derived) AS derived_metrics,\n  (SELECT coalesce(string_agg(metric || ' (' || n || ' rows/24h)', ', ' ORDER BY metric), '')\n     FROM derived) AS derived_names,\n  (SELECT count(*) FROM onchain.snapshots s\n     LEFT JOIN onchain.assets a ON s.asset = a.id\n     LEFT JOIN onchain.metrics m ON s.metric = m.id\n    WHERE a.id IS NULL OR m.id IS NULL) AS orphans,\n  (SELECT to_char(to_timestamp(max(ts)/1000) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI')\n     FROM onchain.snapshots) AS latest_ts_utc;",
         "options": {}
       },
       "id": "verify",
@@ -61,7 +61,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const r = $('Verify query').first().json;\nconst num = (x) => Number(x);\nconst ok = num(r.stale_metrics) === 0 && num(r.orphans) === 0 && num(r.metrics_seen) === num(r.metrics_registered);\nconst emoji = ok ? '✅' : '⚠️';\nconst text = emoji + ' onchain-verify (daily)\\n'\n  + 'rows: ' + r.total_rows + ' · buckets: ' + r.buckets + '\\n'\n  + 'metrics seen: ' + r.metrics_seen + '/' + r.metrics_registered + '\\n'\n  + 'stale (>2h): ' + r.stale_metrics + ' · orphans: ' + r.orphans + '\\n'\n  + 'latest: ' + r.latest_ts_utc + ' UTC';\nreturn [{ json: { ok, text } }];"
+        "jsCode": "// onchain-verify — render the daily health report.\n// Judged per metric on the metric's OWN clock (onchain.metrics.max_staleness_ms, migration 003).\n// Every failing check NAMES its metrics: a bare count cannot be acted on, and could not be told\n// apart from the permanent floor the old one-threshold-for-everything check produced (L-3).\nconst r = $('Verify query').first().json;\nconst num = (x) => Number(x || 0);\n\nconst stale = num(r.stale_metrics);\nconst never = num(r.never_seen_metrics);\nconst unbounded = num(r.unbounded_metrics);\nconst orphans = num(r.orphans);\n// A derived metric is HEALED, not healthy: the series has no gap, but a vendor stopped sending a\n// field and someone must either chase that or retire the metric. Unlike L-3's permanent floor this\n// is a real, closable condition, so it belongs in `ok` rather than being reported as background.\nconst derived = num(r.derived_metrics);\nconst ok = stale === 0 && never === 0 && unbounded === 0 && orphans === 0 && derived === 0;\n\nconst lines = [\n  (ok ? '✅' : '⚠️') + ' onchain-verify (daily)',\n  'rows: ' + r.total_rows + ' · buckets: ' + r.buckets,\n  'metrics: ' + r.metrics_seen + '/' + r.metrics_registered + ' seen',\n  'latest: ' + r.latest_ts_utc + ' UTC',\n];\nif (stale) lines.push('⏳ stale (age > registry bound): ' + r.stale_names);\nif (never) lines.push('👻 registered but never written: ' + r.never_seen_names);\nif (unbounded) lines.push('❓ no max_staleness_ms in registry: ' + r.unbounded_names);\nif (derived) lines.push('🧮 derived — vendor field missing, value computed: ' + r.derived_names);\nif (orphans) lines.push('🔗 orphan rows (asset/metric not in registry): ' + orphans);\n\n// L-4: the Report node sends with parse_mode=HTML, so this text MUST be HTML-escaped. Metric ids\n// are snake_case and every '_' is an italic delimiter under Telegram's Markdown modes — naming the\n// offenders (the whole point of L-3) is what made an unescaped message a guaranteed 400\n// \"can't parse entities\". '&' first, or it would double-escape the entities produced after it.\nconst esc = (s) => String(s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\nlet text = esc(lines.join('\\n'));\n\n// Telegram hard-caps a message at 4096 chars and the name lists are DB-derived, so bound them.\n// Truncate AFTER escaping, then drop a half-written entity at the cut — a trailing '&am' would\n// itself be an unparseable entity, i.e. the exact failure this guard exists to avoid.\nif (text.length > 3500) {\n  text = text.slice(0, 3500).replace(/&[a-z]{0,5}$/i, '') + '\\n… truncated';\n}\n\nreturn [{ json: { ok, text } }];"
       },
       "id": "fmt",
       "name": "Format report",
@@ -75,9 +75,10 @@
     {
       "parameters": {
         "chatId": "={{ $('Set Parameters').item.json.ChatID }}",
-        "text": "={{ $json.text }}",
+        "text": "={{ $('Format report').first().json.text }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "id": "tg",
@@ -103,7 +104,7 @@
             {
               "id": "621d8739-33ef-46e6-8b54-9b4ce95c52ca",
               "name": "ChatID",
-              "value": 207209924,
+              "value": 0,
               "type": "number"
             }
           ]
@@ -170,7 +171,8 @@
     "executionOrder": "v1",
     "timezone": "UTC",
     "errorWorkflow": "WapVxU2SneMiNNyM",
-    "binaryMode": "separate"
+    "binaryMode": "separate",
+    "availableInMCP": true
   },
   "nodeGroups": [],
   "sourceWorkflowId": null
