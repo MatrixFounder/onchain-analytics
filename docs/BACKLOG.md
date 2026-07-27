@@ -67,13 +67,11 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 
 <!-- feedback:discovered-issues -->
 
-- **WI-2** [Пересмотреть пин typescript ^6.0.3](backlog/wi-2-typescript-pin-revisit-when-tsup-supports-ts7-dts.md) — effort `M`, opened 2026-07-22, перемерено 2026-07-28
-
-> Единственная открытая запись. Разобрана на две половины: сборка в один шаг по-прежнему заблокирована
-> (виновник — `rollup-plugin-dts@6.1.1`, а не tsup), а сам пин уже ничем не обоснован — оба пакета
-> компилируются чисто под TS 7.0.2. Осталось решение владельца, не ожидание апстрима.
+_Открытых записей нет._
 
 ## Закрытые
+
+- **WI-2** [Пересмотреть пин typescript ^6.0.3](backlog/wi-2-typescript-pin-revisit-when-tsup-supports-ts7-dts.md) — opened 2026-07-22, **done 2026-07-28**: пин держит `typescript-eslint` (peer `<6.1.0`), а не tsup; диапазон сужен `^6.0.3` → `~6.0.3` по границе peer, триггер пересмотра переписан
 
 - **WI-10** [mcp-server тесты резолвят `@onchain-intel/core` в `dist`, поэтому правки в `src` невидимы до `pnpm build`](backlog/wi-10-mcp-server-tests-resolve-core-to-dist.md) — opened 2026-07-27, **done 2026-07-28**: `vitest.config.ts` алиасит core на `src` + guard-тест по стек-фрейму; `assertCoreDistFresh()` закрывает spawn-половину
 - **WI-9** [«Один коммит на задачу» не оговаривает задачи с пересекающимися файлами](backlog/wi-9-one-commit-per-task-vs-overlapping-files.md) — opened 2026-07-26, **done 2026-07-28**: `skill-planning-format` §4.1 — планировщик выбирает заранее

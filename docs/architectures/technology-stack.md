@@ -193,7 +193,8 @@ onchain-analytics/
     "@types/node": "^22.20.1",
     "@types/pg": "^8.20.0",
     "tsx": "^4.23.1",
-    "typescript": "^6.0.3", // same pin as mcp-server — one TS6 line across the workspace
+    "typescript": "~6.0.3", // same pin as mcp-server — one TS6 line across the workspace;
+    // tilde, so the range cannot exceed typescript-eslint's peer <6.1.0
     "vitest": "^4.1.10",
   },
 }
