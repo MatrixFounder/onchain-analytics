@@ -87,6 +87,60 @@ export const DAILY_CAP_OFF = 'off';
 export type DailyCreditCapConfig = number | typeof DAILY_CAP_OFF | undefined;
 
 /**
+ * Width of the velocity window (SEC-1). One minute: short enough that a runaway loop is stopped
+ * while a human could still be reading the first response, long enough that a burst of legitimate
+ * interactive calls is not chopped up.
+ *
+ * **Tumbling, not sliding** — stated plainly rather than implied. A tumbling window admits up to
+ * 2× the ceiling across a boundary (full allowance at :59, full allowance again at :01). A sliding
+ * window would need per-call history instead of one counter, and the guard's job is to buy a human
+ * time to notice, which a 2× worst case does not undermine. If that ever stops being true, the
+ * shape to reach for is a second, wider window — not a rewrite of this one.
+ */
+export const VELOCITY_WINDOW_MS = 60_000;
+
+/**
+ * The daily allowance is divided by this to get one window's allowance (SEC-1). 20 means a full
+ * day's budget takes at least ~20 minutes of sustained spending to exhaust — the difference between
+ * "an operator sees it happening" and "an operator sees it happened".
+ */
+const VELOCITY_DIVISOR = 20;
+
+/**
+ * Floor under the derived velocity limit — the price of the DEAREST single call in the system
+ * (`entity.labels` at its `exhaustive` tier, 100cr).
+ *
+ * Load-bearing, not a comfort margin: a velocity limit below the cost of one call would make that
+ * capability structurally impossible rather than merely rate-limited, which is a worse failure than
+ * the one this guard prevents. Where the floor exceeds what the daily cap would allow, the daily
+ * cap binds first anyway — the two guards compose, and the tighter one wins.
+ */
+const VELOCITY_FLOOR = 100;
+
+/**
+ * Credits one window may hold, derived from whatever ceiling is actually in force (SEC-1).
+ *
+ * Derived rather than absolute, for the same reason `deriveDailyCap` is: owner decision #1 —
+ * `free` and `Pro` must both work with zero code change, and any fixed number is paralysis on one
+ * and a no-op on the other.
+ */
+export function deriveVelocityCap(effectiveCeiling: number): number {
+  if (!Number.isFinite(effectiveCeiling)) return VELOCITY_FLOOR;
+  return Math.max(VELOCITY_FLOOR, Math.floor(effectiveCeiling / VELOCITY_DIVISOR));
+}
+
+/** Sentinel switching the velocity guard off, mirroring `DAILY_CAP_OFF` exactly — a word, never
+ * `0`, because on a money guard `0` should mean "spend nothing". */
+export const VELOCITY_OFF = 'off';
+export type VelocityCapConfig = number | typeof VELOCITY_OFF | undefined;
+
+/** Epoch-ms UTC start of the velocity window `ts` falls in — the same flooring discipline as
+ * `dayBucketMs`, just a different width (DB-SCHEMA-CONCEPT §1.2: no `Date` objects, no local time). */
+export function velocityWindowMs(ts: number): number {
+  return Math.floor(ts / VELOCITY_WINDOW_MS) * VELOCITY_WINDOW_MS;
+}
+
+/**
  * Resolves the configured value into the cap to pin for a bucket (Q-2):
  * - `'off'` → `undefined` — no self-imposed ceiling; the vendor remainder alone bounds spend
  * - a number → that explicit operator-chosen ceiling
@@ -144,6 +198,9 @@ export interface NansenBudgetGateDeps {
   budgetStore: BudgetStore;
   accountState: NansenAccountState;
   dailyCreditCap?: DailyCreditCapConfig;
+  /** Credits per `VELOCITY_WINDOW_MS` (SEC-1). Unset ⇒ derived from the ceiling in force;
+   * `VELOCITY_OFF` ⇒ no rate brake, leaving only the daily ceiling. */
+  velocityCap?: VelocityCapConfig;
   budgetWarnRatio?: number;
   now?: () => number;
   fetchImpl?: typeof fetch;
@@ -158,6 +215,11 @@ export interface NansenBudgetGateDeps {
 export interface NansenBudgetReservation {
   reservedTotal: number;
   bucket: number;
+  /** The velocity window this reservation was written into, or `undefined` when the guard is off.
+   * Threaded through for the SAME reason as `bucket` (SEC-1): reconciliation must refund into the
+   * window that actually spent, not into whichever window is current when the call returns — a
+   * call outliving its window would otherwise hand the next one free headroom. */
+  window?: number;
 }
 
 /**
@@ -407,8 +469,39 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
     const capNow = capInForce(deps.dailyCreditCap, snapshot);
     const effectiveCeiling = effectiveCeilingFor(snapshot, capNow);
 
-    const result = await deps.budgetStore.checkAndReserve('nansen', bucket, cost, effectiveCeiling);
+    // SEC-1 — the rate brake, resolved here and enforced INSIDE the same reservation transaction.
+    // `undefined` when switched off, which is the only way to get the pre-SEC-1 behaviour back.
+    const velocityCeiling =
+      deps.velocityCap === VELOCITY_OFF
+        ? undefined
+        : typeof deps.velocityCap === 'number'
+          ? deps.velocityCap
+          : deriveVelocityCap(effectiveCeiling);
+    const window = velocityWindowMs(now());
+
+    const result = await deps.budgetStore.checkAndReserve(
+      'nansen',
+      bucket,
+      cost,
+      effectiveCeiling,
+      velocityCeiling === undefined
+        ? undefined
+        : { windowStartMs: window, ceiling: velocityCeiling },
+    );
     if (!result.ok) {
+      // The velocity refusal must be distinguishable from the daily one (SEC-1): they call for
+      // opposite responses — wait out the window versus raise a ceiling — and an operator who
+      // cannot tell them apart will "fix" the wrong one. `BudgetStore` already labels its own
+      // reason; this branch keeps that label and adds the actionable half.
+      if (result.reason.startsWith('velocity limit reached')) {
+        const capOrigin = typeof deps.velocityCap === 'number' ? 'configured' : 'derived';
+        throw new NansenBudgetExceededError(
+          `velocity limit (${capOrigin}): ${velocityCeiling} credits per ${VELOCITY_WINDOW_MS / 1000}s, ` +
+            `need ${cost} — the DAILY budget is not exhausted; retry after the window rolls over, ` +
+            `or set NANSEN_VELOCITY_CREDITS_PER_MIN to raise it, or ${VELOCITY_OFF} to disable it. ` +
+            `(${result.reason})`,
+        );
+      }
       const vendorCeiling = snapshot.usageAtObserve + snapshot.creditsRemainingAtObserve;
       const bindingIsVendor = effectiveCeiling === vendorCeiling;
       // Name WHICH ceiling refused, and — when it is the self-imposed one — whether that number was
@@ -448,7 +541,8 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
       }
     }
 
-    return { reservedTotal: cost, bucket };
+    // `window` only when the guard is on — reconciliation refunds into THIS window or none.
+    return { reservedTotal: cost, bucket, ...(velocityCeiling === undefined ? {} : { window }) };
   }
 
   return { ensureBudget };

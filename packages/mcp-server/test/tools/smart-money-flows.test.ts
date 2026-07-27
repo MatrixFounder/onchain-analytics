@@ -53,6 +53,7 @@ function fakeBudgetStore(overrides: Partial<BudgetStore> = {}): BudgetStore {
     checkAndReserve: async () => ({ ok: true }),
     recordDelta: async () => undefined,
     getUsage: async () => 10,
+    getWindowUsage: async () => 0,
     ...overrides,
   };
 }

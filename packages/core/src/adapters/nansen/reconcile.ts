@@ -16,6 +16,11 @@ export interface ReconcileDeps {
   subResponses: NansenEndpointResult[];
   reservedTotal: number;
   bucket: number;
+  /** The velocity window the RESERVATION was written into (SEC-1), passed straight through from
+   * `ensureBudget()` — never recomputed from a fresh clock here. A call that outlives its window
+   * would otherwise refund into a window that never spent, which is the one way a rate brake can
+   * hand a runaway loop extra headroom. `undefined` when the guard is off. */
+  window?: number;
   budgetStore: BudgetStore;
   accountState: NansenAccountState;
 }
@@ -63,7 +68,7 @@ const MIN_PLAUSIBLE_ACTUAL_CEILING = 200;
  * rather than silently trusting a run of unexamined full-refund responses.
  */
 export async function reconcile(deps: ReconcileDeps): Promise<void> {
-  const { subResponses, reservedTotal, bucket, budgetStore, accountState } = deps;
+  const { subResponses, reservedTotal, bucket, window, budgetStore, accountState } = deps;
 
   let actualTotal = 0;
   let everyHeaderParsed = true;
@@ -118,5 +123,9 @@ export async function reconcile(deps: ReconcileDeps): Promise<void> {
     }
   }
 
-  await budgetStore.recordDelta('nansen', bucket, delta);
+  // The 4th argument is OMITTED, never passed as an explicit `undefined`, when the velocity guard
+  // is off: the call is then byte-identical to the pre-SEC-1 one, so nothing that observes this
+  // call has to learn about a parameter that does not apply.
+  if (window === undefined) await budgetStore.recordDelta('nansen', bucket, delta);
+  else await budgetStore.recordDelta('nansen', bucket, delta, window);
 }

@@ -46,6 +46,9 @@ function createProductionNansenAdapter(env: Env, budgetStore: BudgetStore): Prov
   return createNansenAdapter({
     env: toProcessEnv(env),
     budgetStore,
+    ...(env.NANSEN_VELOCITY_CREDITS_PER_MIN !== undefined
+      ? { velocityCap: env.NANSEN_VELOCITY_CREDITS_PER_MIN }
+      : {}),
     ...(env.NANSEN_DAILY_CREDIT_CAP !== undefined
       ? { dailyCreditCap: env.NANSEN_DAILY_CREDIT_CAP }
       : {}),

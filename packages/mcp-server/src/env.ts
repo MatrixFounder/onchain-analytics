@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DAILY_CAP_OFF } from '@onchain-intel/core';
+import { DAILY_CAP_OFF, VELOCITY_OFF } from '@onchain-intel/core';
 
 /**
  * Wraps an optional zod schema so an empty string is treated identically to the key being unset
@@ -64,6 +64,12 @@ export const EnvSchema = z.object({
   NANSEN_DAILY_CREDIT_CAP: emptyAsUndefined(
     z.union([z.literal(DAILY_CAP_OFF), z.coerce.number().int().positive()]).optional(),
   ),
+  // SEC-1 — the rate brake in front of the daily ceiling. Same shape as the daily cap for the same
+  // reasons: `'off'` as a WORD (never `0`, which on a money guard should mean "spend nothing"), and
+  // a positive integer otherwise. Unset ⇒ derived from the ceiling in force (`deriveVelocityCap`).
+  NANSEN_VELOCITY_CREDITS_PER_MIN: emptyAsUndefined(
+    z.union([z.literal(VELOCITY_OFF), z.coerce.number().int().positive()]).optional(),
+  ),
   NANSEN_BUDGET_WARN_RATIO: emptyAsUndefined(z.coerce.number().min(0).max(1).optional()),
 });
 
@@ -84,8 +90,14 @@ export type Env = z.infer<typeof EnvSchema>;
  * remaining field's runtime VALUE is untouched.
  */
 export function toProcessEnv(env: Env): NodeJS.ProcessEnv {
-  const { NANSEN_DAILY_CREDIT_CAP, NANSEN_BUDGET_WARN_RATIO, ...rest } = env;
+  const {
+    NANSEN_DAILY_CREDIT_CAP,
+    NANSEN_VELOCITY_CREDITS_PER_MIN,
+    NANSEN_BUDGET_WARN_RATIO,
+    ...rest
+  } = env;
   void NANSEN_DAILY_CREDIT_CAP;
+  void NANSEN_VELOCITY_CREDITS_PER_MIN;
   void NANSEN_BUDGET_WARN_RATIO;
   return rest;
 }

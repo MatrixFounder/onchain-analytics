@@ -77,4 +77,29 @@ CREATE TABLE IF NOT EXISTS usage (
   -- nothing. Portable across SQLite and Postgres (DB-SCHEMA-CONCEPT §1) — a plain column CHECK.
   CHECK (credits_used >= 0)
 );
+
+-- SEC-1: the SAME additive counter as \`usage\`, bucketed by a SHORT window instead of a UTC day.
+--
+-- The daily cap is a damage ceiling, not a brake: nothing bounded the RATE, so a runaway agent loop
+-- (the per-provider throttle sustains ~5 paid calls/second ≈ 50 credits/second) could spend a whole
+-- day's authorized budget in under a minute. That is not an over-spend — the ceiling still held —
+-- but it removes any chance for a human to notice and intervene, which for an operator is
+-- indistinguishable from a leak.
+--
+-- A SEPARATE table rather than a \`bucket_width\` column on \`usage\`: the day counter must keep summing
+-- a whole day, and overloading \`usage.day\` with two bucket widths would make every existing
+-- SELECT ambiguous and require a migration. This is a plain additive \`CREATE TABLE IF NOT EXISTS\`
+-- against the same \`providers\` registry — no migration of anything (DB-SCHEMA-CONCEPT §1: portable
+-- types, epoch-ms UTC integers, app-side logic only).
+--
+-- Rows are disposable: the guard only ever reads the CURRENT window, so anything older is dead
+-- weight kept solely for after-the-fact inspection. \`SqliteBudgetStore\` prunes them opportunistically.
+CREATE TABLE IF NOT EXISTS usage_window (
+  provider     TEXT NOT NULL REFERENCES providers(id),
+  window_start INTEGER NOT NULL,           -- epoch-ms UTC bucket start: floor(ts/width)*width
+  credits_used INTEGER NOT NULL DEFAULT 0, -- ADDITIVE, same signed-delta discipline as usage
+  updated_at   INTEGER NOT NULL,           -- epoch-ms UTC of the last write
+  PRIMARY KEY (provider, window_start),
+  CHECK (credits_used >= 0)
+);
 `;

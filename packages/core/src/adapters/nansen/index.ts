@@ -12,7 +12,12 @@ import { hasAddressValidator, normalizeAddress } from '../../chain/address.js';
 import { deriveArgsHash } from '../../net/args-hash.js';
 import type { Throttle } from '../../net/rate-limit.js';
 import { createNansenAccountState } from './account-state.js';
-import { createNansenBudgetGate, type DailyCreditCapConfig } from './budget-gate.js';
+import {
+  createNansenBudgetGate,
+  type DailyCreditCapConfig,
+  type NansenBudgetReservation,
+  type VelocityCapConfig,
+} from './budget-gate.js';
 import { costOf as costOfEndpoints } from './cost-of.js';
 import {
   postProfilerAddressLabels,
@@ -75,6 +80,9 @@ export interface NansenAdapterDeps {
   env?: NodeJS.ProcessEnv;
   budgetStore?: BudgetStore;
   dailyCreditCap?: DailyCreditCapConfig;
+  /** Credits per velocity window (SEC-1) — the rate brake in front of the daily ceiling. Unset ⇒
+   * derived; `'off'` ⇒ disabled. */
+  velocityCap?: VelocityCapConfig;
   budgetWarnRatio?: number;
   now?: () => number;
   fetchImpl?: typeof fetch;
@@ -522,6 +530,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
         budgetStore,
         accountState,
         ...(deps.dailyCreditCap !== undefined ? { dailyCreditCap: deps.dailyCreditCap } : {}),
+        ...(deps.velocityCap !== undefined ? { velocityCap: deps.velocityCap } : {}),
         ...(deps.budgetWarnRatio !== undefined ? { budgetWarnRatio: deps.budgetWarnRatio } : {}),
         now,
         fetchImpl: deps.fetchImpl ?? fetch,
@@ -626,7 +635,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
         // from "ensureBudget() itself refused before committing anything" (nothing to reconcile,
         // rethrow as-is — a `NansenBudgetExceededError` refusal must never mark `accountState`
         // unreconciled, TC-INT-02 in `mcp-server`'s own degradation suite depends on this).
-        let reservation: { reservedTotal: number; bucket: number } | undefined;
+        let reservation: NansenBudgetReservation | undefined;
         // Guards against DOUBLE-APPLYING the signed delta (cycle-2 review L-1). The catch below
         // cannot otherwise distinguish "reconcile never ran" from "reconcile ran, COMMITTED, and
         // then threw". With `SqliteBudgetStore` that second case is unreachable (`recordDelta` is a
@@ -647,6 +656,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
               subResponses,
               reservedTotal: reservation.reservedTotal,
               bucket: reservation.bucket,
+              ...(reservation.window === undefined ? {} : { window: reservation.window }),
               budgetStore,
               accountState,
             });
@@ -703,6 +713,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
                 subResponses,
                 reservedTotal: reservation.reservedTotal,
                 bucket: reservation.bucket,
+                ...(reservation.window === undefined ? {} : { window: reservation.window }),
                 budgetStore,
                 accountState,
               });

@@ -211,7 +211,11 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
         tokenAddress: '0xabc',
         premium_labels: true,
       }),
-    ).resolves.toEqual({ reservedTotal: 150, bucket: BUCKET });
+      // CHANGED EXPECTATION (SEC-1): the reservation now also names the VELOCITY window it was
+      // written into, so reconciliation can refund into that window rather than whichever one is
+      // current when the call returns. `expect.any(Number)` rather than a literal — the window is a
+      // function of the same injected clock the bucket is, and pinning it twice adds nothing.
+    ).resolves.toEqual({ reservedTotal: 150, bucket: BUCKET, window: expect.any(Number) });
     expect(proAttempt.fetchSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -232,7 +236,11 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
     const result = await gate.ensureBudget('entity.labels', { tokenAddress: '0xabc' }); // 5cr
 
     expect(fetchSpy).toHaveBeenCalledTimes(1); // the forced resync
-    expect(result).toEqual({ reservedTotal: 5, bucket: BUCKET });
+    // CHANGED EXPECTATION (SEC-1): the reservation now also names the VELOCITY window it was
+    // written into, so reconciliation can refund into that window rather than whichever one is
+    // current when the call returns. `expect.any(Number)` rather than a literal — the window is a
+    // function of the same injected clock the bucket is, and pinning it twice adds nothing.
+    expect(result).toEqual({ reservedTotal: 5, bucket: BUCKET, window: expect.any(Number) });
     expect(accountState.get()).toMatchObject({ usageAtObserve: 71, creditsRemainingAtObserve: 29 });
     expect(accountState.isUnreconciled()).toBe(false); // cleared by the successful resync
   });
@@ -405,7 +413,11 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
       usageAtObserve: 10,
       creditsRemainingAtObserve: 100,
     });
-    expect(result).toEqual({ reservedTotal: 6, bucket: BUCKET });
+    // CHANGED EXPECTATION (SEC-1): the reservation now also names the VELOCITY window it was
+    // written into, so reconciliation can refund into that window rather than whichever one is
+    // current when the call returns. `expect.any(Number)` rather than a literal — the window is a
+    // function of the same injected clock the bucket is, and pinning it twice adds nothing.
+    expect(result).toEqual({ reservedTotal: 6, bucket: BUCKET, window: expect.any(Number) });
     // Final usage reflects BOTH the racing +5 and this reservation's own +6 — checkAndReserve()
     // itself always reads the CURRENT counter fresh, so the race is never lost, only kept OUT of
     // the anchor `usageAtObserve` rebases against.

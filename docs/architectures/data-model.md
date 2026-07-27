@@ -179,6 +179,29 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 ```
 
+**SEC-1 (2026-07-27): `usage_window(provider FK, window_start, credits_used)`** — тот же аддитивный
+счётчик, но с бакетом в 60 секунд вместо суток. Отдельная таблица, а не колонка `bucket_width` в
+`usage`: дневной счётчик обязан продолжать суммировать сутки, и совмещение двух ширин в одной
+колонке сделало бы каждый существующий SELECT неоднозначным и потребовало миграции. Добавлена как
+обычный `CREATE TABLE IF NOT EXISTS` к тому же реестру `providers` — не мигрирует ничего.
+
+```sql
+CREATE TABLE IF NOT EXISTS usage_window (
+  provider     TEXT NOT NULL REFERENCES providers(id),
+  window_start INTEGER NOT NULL,           -- epoch-ms UTC: floor(ts/60000)*60000
+  credits_used INTEGER NOT NULL DEFAULT 0, -- тот же знаковый аддитивный upsert, тот же MAX(0, …)
+  updated_at   INTEGER NOT NULL,
+  PRIMARY KEY (provider, window_start),
+  CHECK (credits_used >= 0)
+);
+```
+
+Читается и пишется **внутри той же транзакции**, что и дневная бронь (`checkAndReserve`): иначе два
+процесса, делящих один `cache.sqlite3` — поддерживаемая топология, несколько stdio-сессий на машину,
+— каждый прошёл бы свою проверку окна по устаревшему чтению. Строки старше часа удаляются
+оппортунистически в той же транзакции: читается всегда только ТЕКУЩЕЕ окно, остальное — хранение
+для разбора постфактум, а строка в минуту на провайдера навсегда — медленная утечка в `DATA_DIR`.
+
 - `day` — **`INTEGER` epoch-ms** (day-bucket start), не строковая дата — DB-SCHEMA §1.2/CLAUDE.md
   канон буквально; несмотря на то что ADR-001 D6 называет колонку «day», буквальная строка-дата
   противоречила бы канону — бакетируется тем же паттерном, что `ts_bucket` у n8n-снапшоттера.

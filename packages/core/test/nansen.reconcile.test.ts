@@ -298,7 +298,10 @@ describe('fetch() composition — transport-failure/402 resync path (task 005-5,
     // reconcile() DID run from the catch, with subResponses=[netflow(5cr)] against reservedTotal
     // 10 -> delta -5 (refunds the unspent holders leg): 10 (reservation) - 5 (refund) = 5.
     expect(recordDeltaSpy).toHaveBeenCalledTimes(1);
-    expect(recordDeltaSpy).toHaveBeenCalledWith('nansen', BUCKET, -5);
+    // CHANGED EXPECTATION (SEC-1): the refund now also lands in the velocity window the
+    // RESERVATION used — passed through from `ensureBudget`, never recomputed here, so a call that
+    // outlives its window cannot credit a window that never spent.
+    expect(recordDeltaSpy).toHaveBeenCalledWith('nansen', BUCKET, -5, expect.any(Number));
     expect(await budgetStore.getUsage('nansen', BUCKET)).toBe(5);
 
     // The forced resync (markUnreconciled -> next ensureBudget() entry) is proven by a SECOND
@@ -394,7 +397,10 @@ describe('fetch() composition — transport-failure/402 resync path (task 005-5,
       NansenPaymentRequiredError,
     );
     expect(recordDeltaSpy).toHaveBeenCalledTimes(1);
-    expect(recordDeltaSpy).toHaveBeenCalledWith('nansen', BUCKET, -5);
+    // CHANGED EXPECTATION (SEC-1): the refund now also lands in the velocity window the
+    // RESERVATION used — passed through from `ensureBudget`, never recomputed here, so a call that
+    // outlives its window cannot credit a window that never spent.
+    expect(recordDeltaSpy).toHaveBeenCalledWith('nansen', BUCKET, -5, expect.any(Number));
     expect(await budgetStore.getUsage('nansen', BUCKET)).toBe(5);
 
     // A second attempt still 402s on holders (same fixture) — but it must have taken its OWN fresh
@@ -515,6 +521,7 @@ describe('fetch() — OQ-2 structural non-bypassability (code review round 2, ta
         recorded.push(d);
       },
       getUsage: async () => 0,
+      getWindowUsage: async () => 0,
     };
     let unreconciled = false;
     const accountState = {
@@ -552,6 +559,7 @@ describe('fetch() — OQ-2 structural non-bypassability (code review round 2, ta
         recorded.push(d);
       },
       getUsage: async () => 0,
+      getWindowUsage: async () => 0,
     };
     const accountState = {
       get: () => undefined,

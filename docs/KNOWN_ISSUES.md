@@ -94,7 +94,7 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 
 ## security
 
-- **SEC-1** [the daily credit cap bounds damage per day, not per minute: there is no velocity guard](issues/sec-1-nansen-daily-cap-does-not-bound-a-burst-no-velocity-guard.md) — severity `SEV-2`, status `open`, opened 2026-07-25
+- **SEC-1** [the daily credit cap bounds damage per day, not per minute: there is no velocity guard](issues/sec-1-nansen-daily-cap-does-not-bound-a-burst-no-velocity-guard.md) — severity `SEV-2`, status `fixed`, opened 2026-07-25
 
 ## quality
 

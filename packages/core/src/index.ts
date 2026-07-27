@@ -92,10 +92,17 @@ export { NotImplementedInM1Error } from './adapters/not-implemented-error.js';
 export { createNansenAdapter, type NansenAdapterDeps } from './adapters/nansen/index.js';
 // Q-2: the self-imposed daily-ceiling contract. `DAILY_CAP_OFF` is the disable sentinel EnvSchema
 // validates against; `deriveDailyCap` is exported so the default is testable as a number.
+// SEC-1: the velocity brake alongside it — same sentinel shape, same "derived default is testable
+// as a number" reason for exporting the derivation.
 export {
   DAILY_CAP_OFF,
   deriveDailyCap,
+  VELOCITY_OFF,
+  VELOCITY_WINDOW_MS,
+  deriveVelocityCap,
+  velocityWindowMs,
   type DailyCreditCapConfig,
+  type VelocityCapConfig,
 } from './adapters/nansen/budget-gate.js';
 
 export { createCacheStore } from './cache/two-level-store.js';

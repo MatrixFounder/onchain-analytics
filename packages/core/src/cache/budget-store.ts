@@ -19,6 +19,21 @@ import { adapterRegistrations } from '../providers.config.js';
  * See that class's `checkAndReserve` docstring for the atomicity contract this signature must
  * preserve.
  */
+/**
+ * The SECOND, rate-denominated limit `checkAndReserve` may enforce (SEC-1) — a bucket start and a
+ * ceiling, exactly like the daily pair, just with a much shorter bucket width.
+ *
+ * `BudgetStore` stays provider-agnostic and policy-free: it does not know the window width, how the
+ * ceiling was derived, or that any of this is about credits per minute. The caller computes both
+ * numbers; this interface only compares them — the same discipline `ceiling` already follows.
+ */
+export interface VelocityLimit {
+  /** Epoch-ms UTC start of the window this cost falls in. */
+  readonly windowStartMs: number;
+  /** Credits this window may hold in total. */
+  readonly ceiling: number;
+}
+
 export interface BudgetStore {
   /**
    * Atomically compares `usage.credits_used(provider, dayBucketMs) + cost` against `ceiling` and,
@@ -29,21 +44,41 @@ export interface BudgetStore {
    * `ceiling` is always the caller's already-computed `effectiveCeiling` (system-architecture.md
    * §3.2 "Формула потолка бакета") — `BudgetStore` itself knows nothing about anchors/
    * `usageAtObserve`/`NansenAccountSnapshot`; it only ever compares two plain numbers.
+   *
+   * **`velocity`, when supplied, is checked and reserved IN THE SAME TRANSACTION** (SEC-1). That is
+   * the whole point and not an implementation detail: two processes sharing `cache.sqlite3` — a
+   * supported topology, several stdio sessions per machine — would otherwise each pass their own
+   * window check against a stale read and both spend. Either BOTH limits fit and BOTH counters are
+   * written, or neither is touched.
    */
   checkAndReserve(
     provider: string,
     dayBucketMs: number,
     cost: number,
     ceiling: number,
+    velocity?: VelocityLimit,
   ): Promise<{ ok: true } | { ok: false; reason: string }>;
   /**
    * Unconditional additive write of a SIGNED delta (pre-call reservation uses a positive `cost`;
    * post-call reconciliation uses `actual - reserved`, which may be negative). Never gates —
    * callers that need a ceiling check use `checkAndReserve` first.
+   *
+   * `windowStartMs` mirrors the delta into the velocity counter. It must be the window the
+   * RESERVATION was made in, never the window that happens to be current at reconcile time (SEC-1):
+   * a call outliving its window would otherwise refund credits into a window that never spent them,
+   * handing a runaway loop free headroom in the very next window.
    */
-  recordDelta(provider: string, dayBucketMs: number, signedDelta: number): Promise<void>;
+  recordDelta(
+    provider: string,
+    dayBucketMs: number,
+    signedDelta: number,
+    windowStartMs?: number,
+  ): Promise<void>;
   /** Read-only — the current accumulated `credits_used` for `(provider, dayBucketMs)`. */
   getUsage(provider: string, dayBucketMs: number): Promise<number>;
+  /** Read-only — the accumulated `credits_used` for `(provider, windowStartMs)`. Observability and
+   * tests; the gate itself never needs it (the check lives inside the reservation transaction). */
+  getWindowUsage(provider: string, windowStartMs: number): Promise<number>;
 }
 
 /** Constructor options for `SqliteBudgetStore` (task 005-2). */
@@ -58,6 +93,14 @@ export interface SqliteBudgetStoreOptions {
 interface UsageRow {
   credits_used: number;
 }
+
+/**
+ * How far back `usage_window` rows are kept (SEC-1). Only the CURRENT window is ever read, so this
+ * is retention for after-the-fact inspection, not for the guard. An hour is enough to see what a
+ * burst looked like while keeping the table from growing a row per minute forever — the kind of
+ * slow leak in a state directory nobody notices until it matters.
+ */
+const WINDOW_RETENTION_MS = 3_600_000;
 
 /**
  * `better-sqlite3`-backed `BudgetStore` (task 005-2, R-34/R-35, data-model.md §4.2). Opens its OWN
@@ -92,6 +135,9 @@ export class SqliteBudgetStore implements BudgetStore {
   private readonly db: Database.Database;
   private readonly selectUsageStmt: Database.Statement;
   private readonly upsertUsageStmt: Database.Statement;
+  private readonly selectWindowStmt: Database.Statement;
+  private readonly upsertWindowStmt: Database.Statement;
+  private readonly pruneWindowStmt: Database.Statement;
 
   constructor(options: SqliteBudgetStoreOptions = {}) {
     const dbPath = options.dbPath ?? cacheDbPath();
@@ -118,6 +164,27 @@ export class SqliteBudgetStore implements BudgetStore {
 
       this.selectUsageStmt = this.db.prepare(
         `SELECT credits_used FROM usage WHERE provider = ? AND day = ?`,
+      );
+      this.selectWindowStmt = this.db.prepare(
+        `SELECT credits_used FROM usage_window WHERE provider = ? AND window_start = ?`,
+      );
+      // Same additive-upsert shape as `usage`, and for the same reasons — see the long note on
+      // `upsertUsageStmt` below for why the DO UPDATE branch binds `@delta` rather than
+      // `excluded.credits_used` (clamping the VALUES expression would make the update branch
+      // unable to subtract, silently breaking every reconciliation refund).
+      this.upsertWindowStmt = this.db.prepare(
+        `INSERT INTO usage_window (provider, window_start, credits_used, updated_at)
+         VALUES (@provider, @window, MAX(0, @delta), @now)
+         ON CONFLICT (provider, window_start) DO UPDATE SET
+           credits_used = MAX(0, credits_used + @delta),
+           updated_at = @now`,
+      );
+      // Windows are 60s-ish and only the CURRENT one is ever read, so old rows are pure dead
+      // weight. Pruned opportunistically inside the reservation transaction (bounded, indexed by
+      // the primary key) rather than by a scheduled job — a credit ledger that grows a row per
+      // minute per provider forever is a slow leak nobody would notice.
+      this.pruneWindowStmt = this.db.prepare(
+        `DELETE FROM usage_window WHERE provider = @provider AND window_start < @cutoff`,
       );
       // The SAME additive-upsert SQL serves BOTH write paths (checkAndReserve's reservation branch
       // and recordDelta) — data-model.md §4.2's literal statement, `@delta` is a signed integer.
@@ -181,6 +248,7 @@ export class SqliteBudgetStore implements BudgetStore {
     dayBucketMs: number,
     cost: number,
     ceiling: number,
+    velocity?: VelocityLimit,
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
     const now = Date.now();
     const attempt = this.db.transaction((): { ok: true } | { ok: false; reason: string } => {
@@ -225,6 +293,50 @@ export class SqliteBudgetStore implements BudgetStore {
         };
       }
 
+      // SEC-1 — the velocity check, INSIDE this same transaction and BEFORE either write. The
+      // reason string names the window explicitly, because from the outside a rate refusal and a
+      // daily refusal are otherwise indistinguishable, and they call for opposite operator
+      // responses: wait a minute versus raise a ceiling.
+      if (velocity !== undefined) {
+        const windowRow = this.selectWindowStmt.get(provider, velocity.windowStartMs) as
+          UsageRow | undefined;
+        const windowUsed = windowRow?.credits_used ?? 0;
+        // Fail closed on an undecidable comparison, exactly as the daily check above does and for
+        // the same reason: `>` answers `false` for `NaN`, and `false` here means "approved".
+        if (typeof windowUsed !== 'number' || !Number.isFinite(windowUsed)) {
+          return {
+            ok: false,
+            reason: `velocity check failed closed for provider=${provider}: window ledger value is not a finite number (used ${String(windowUsed)})`,
+          };
+        }
+        if (Number.isNaN(velocity.ceiling)) {
+          return {
+            ok: false,
+            reason: `velocity check failed closed for provider=${provider}: undecidable comparison (need ${cost}, window used ${windowUsed})`,
+          };
+        }
+        if (windowUsed + cost > velocity.ceiling) {
+          return {
+            ok: false,
+            reason:
+              `velocity limit reached for provider=${provider}: need ${cost}, used ${windowUsed} ` +
+              `of ${velocity.ceiling} in the current window (window starts ${velocity.windowStartMs})`,
+          };
+        }
+        this.upsertWindowStmt.run({
+          provider,
+          window: velocity.windowStartMs,
+          delta: cost,
+          now,
+        });
+        // Opportunistic prune of windows that can never be read again. Inside the transaction so
+        // it inherits the same lock rather than racing it; bounded by the primary-key index.
+        this.pruneWindowStmt.run({
+          provider,
+          cutoff: velocity.windowStartMs - WINDOW_RETENTION_MS,
+        });
+      }
+
       this.upsertUsageStmt.run({ provider, day: dayBucketMs, delta: cost, now });
       return { ok: true };
     });
@@ -232,12 +344,38 @@ export class SqliteBudgetStore implements BudgetStore {
     return attempt.immediate();
   }
 
-  async recordDelta(provider: string, dayBucketMs: number, signedDelta: number): Promise<void> {
-    this.upsertUsageStmt.run({ provider, day: dayBucketMs, delta: signedDelta, now: Date.now() });
+  async recordDelta(
+    provider: string,
+    dayBucketMs: number,
+    signedDelta: number,
+    windowStartMs?: number,
+  ): Promise<void> {
+    const now = Date.now();
+    // Both counters move together or the velocity guard drifts tighter than configured: a refund
+    // (`actual - reserved` is negative when a call cost less than its reservation, or failed
+    // outright) that reached only the daily ledger would leave the window still holding credits
+    // nobody spent. Written in one transaction so a crash between them cannot leave them disagreeing.
+    const write = this.db.transaction(() => {
+      this.upsertUsageStmt.run({ provider, day: dayBucketMs, delta: signedDelta, now });
+      if (windowStartMs !== undefined) {
+        this.upsertWindowStmt.run({
+          provider,
+          window: windowStartMs,
+          delta: signedDelta,
+          now,
+        });
+      }
+    });
+    write.immediate();
   }
 
   async getUsage(provider: string, dayBucketMs: number): Promise<number> {
     const row = this.selectUsageStmt.get(provider, dayBucketMs) as UsageRow | undefined;
+    return row?.credits_used ?? 0;
+  }
+
+  async getWindowUsage(provider: string, windowStartMs: number): Promise<number> {
+    const row = this.selectWindowStmt.get(provider, windowStartMs) as UsageRow | undefined;
     return row?.credits_used ?? 0;
   }
 

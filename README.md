@@ -100,16 +100,17 @@ cp .env.example .env && chmod 600 .env
 **Every key is optional.** An empty `.env` starts a working server. Keys are read inside the call
 that needs them, never at module load, never logged, and never part of a cache key.
 
-| Key                        | Needed for                           | Default                              |
-| -------------------------- | ------------------------------------ | ------------------------------------ |
-| `NANSEN_API_KEY`           | the 3 paid tools                     | unset → those tools return `isError` |
-| `NANSEN_DAILY_CREDIT_CAP`  | self-imposed spend ceiling           | derived, see below                   |
-| `NANSEN_BUDGET_WARN_RATIO` | stderr warning threshold             | `0.8`                                |
-| `COINGECKO_API_KEY`        | higher CoinGecko limits (demo tier)  | keyless works                        |
-| `COINGECKO_PRO_API_KEY`    | CoinGecko Pro host                   | —                                    |
-| `ONCHAIN_PG_URL`           | historical snapshots (read-only DSN) | history falls back to a free source  |
-| `DATA_DIR`                 | cache + budget ledger location       | `~/.onchain-intel`                   |
-| `LOG_LEVEL`                | reserved, no effect yet              | —                                    |
+| Key                               | Needed for                           | Default                              |
+| --------------------------------- | ------------------------------------ | ------------------------------------ |
+| `NANSEN_API_KEY`                  | the 3 paid tools                     | unset → those tools return `isError` |
+| `NANSEN_DAILY_CREDIT_CAP`         | self-imposed spend ceiling           | derived, see below                   |
+| `NANSEN_VELOCITY_CREDITS_PER_MIN` | spend-rate brake                     | derived, see below                   |
+| `NANSEN_BUDGET_WARN_RATIO`        | stderr warning threshold             | `0.8`                                |
+| `COINGECKO_API_KEY`               | higher CoinGecko limits (demo tier)  | keyless works                        |
+| `COINGECKO_PRO_API_KEY`           | CoinGecko Pro host                   | —                                    |
+| `ONCHAIN_PG_URL`                  | historical snapshots (read-only DSN) | history falls back to a free source  |
+| `DATA_DIR`                        | cache + budget ledger location       | `~/.onchain-intel`                   |
+| `LOG_LEVEL`                       | reserved, no effect yet              | —                                    |
 
 `DUNE_API_KEY` is reserved: the adapter is a stub and reports unavailable even when the key is set.
 
@@ -442,12 +443,39 @@ A refusal is loud and names which bound stopped it:
 nansen budget gate refused: self-imposed cap (derived): need 10, allows 30 …
 ```
 
-### What the cap does not do
+### `NANSEN_VELOCITY_CREDITS_PER_MIN` — the rate brake
 
-It bounds spend **per day, not per second**. The throttle permits roughly 50 credits/second, so a
-large cap can be consumed in under a minute by a runaway loop. A complementary velocity limit is
-[tracked as SEC-1](docs/issues/sec-1-nansen-daily-cap-does-not-bound-a-burst-no-velocity-guard.md)
-and is **not** implemented.
+The daily cap bounds spend **per day**, which is a damage ceiling, not a brake: the throttle
+permits roughly 50 credits/second, so a large cap could be consumed in under a minute by a runaway
+loop — the ceiling held, but nobody got a chance to notice. A second limit bounds the **rate**
+([SEC-1](docs/issues/sec-1-nansen-daily-cap-does-not-bound-a-burst-no-velocity-guard.md), fixed).
+
+| Value              | Behaviour                                                          |
+| ------------------ | ------------------------------------------------------------------ |
+| unset (default)    | derived: `max(100, ceiling-in-force / 20)` credits per 60s window  |
+| a positive integer | your explicit per-minute allowance                                 |
+| `off`              | no rate brake — only the daily ceiling and the vendor balance bind |
+
+The divisor of 20 means a full day's budget takes at least ~20 minutes of sustained spending to
+exhaust. The floor of 100 is the price of the dearest single call (`entity.labels` at its
+`exhaustive` tier) — a limit below one call's cost would make that capability impossible rather
+than rate-limited. Where the floor exceeds what the daily cap allows, the daily cap binds first:
+the two guards compose, and the tighter one wins.
+
+Checked and reserved **inside the same transaction** as the daily reservation, against a
+`usage_window` table in `DATA_DIR` — so two Claude Code sessions sharing one machine cannot each
+pass their own window check, and a process restart does not reset it.
+
+The refusal says which limit stopped you, because the two call for opposite responses:
+
+```
+nansen budget gate refused: velocity limit (derived): 125 credits per 60s, need 10 —
+the DAILY budget is not exhausted; retry after the window rolls over, or set
+NANSEN_VELOCITY_CREDITS_PER_MIN to raise it, or off to disable it.
+```
+
+**Known limitation:** the window is tumbling, not sliding, so a burst straddling a boundary can
+reach 2× the allowance. That does not undermine the goal of buying a human time to notice.
 
 ---
 
