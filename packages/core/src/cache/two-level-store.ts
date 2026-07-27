@@ -14,6 +14,10 @@ export interface CreateCacheStoreOptions {
   providers?: AdapterRegistration[];
   /** Hot-layer entry cap, forwarded to `LruHotLayer`. */
   maxHotEntries?: number;
+  /** Hot-layer byte budget (SERIALIZED bytes), forwarded to `LruHotLayer` (WI-11). The entry cap
+   * above bounds a flood of small values; this bounds a handful of large ones, and only the second
+   * one holds when a capability starts returning arrays. */
+  maxHotBytes?: number;
 }
 
 /**
@@ -107,5 +111,5 @@ export function createCacheStore(options: CreateCacheStoreOptions = {}): CacheSt
     dbPath: options.dbPath,
     providers: options.providers ?? adapterRegistrations,
   });
-  return new TwoLevelStore(persistent, new LruHotLayer(options.maxHotEntries));
+  return new TwoLevelStore(persistent, new LruHotLayer(options.maxHotEntries, options.maxHotBytes));
 }

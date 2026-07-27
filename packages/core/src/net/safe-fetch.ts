@@ -31,11 +31,22 @@ const MAX_REDIRECTS = 3;
  * adapter-specific config); no adapter currently overrides it. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
 
-/** Default response-size cap in bytes, enforced via the `Content-Length` response header when
- * present (adversarial cycle 1, finding B2). **Documented limitation:** this checks the
- * ADVERTISED `Content-Length` before the body is read — a response with NO `Content-Length`
- * header (e.g. chunked transfer-encoding) is not currently capped mid-stream; a true streaming
- * byte-counter is future hardening (out of this fix's scope), not silently claimed as done here. */
+/**
+ * Default response-size cap in bytes (adversarial cycle 1, finding B2; made real in TASK-007 task
+ * 007-3, R-65 — item (1) of the R-47 carry-over).
+ *
+ * Enforced by BOTH mechanisms, in this order:
+ *
+ * 1. the advertised `Content-Length`, checked before the body is read at all — the cheapest
+ *    possible rejection, and the only one that costs no transfer;
+ * 2. a STREAMING byte counter over `response.body` when no `Content-Length` is advertised.
+ *
+ * Until task 007-3 only (1) existed, and the header's absence meant the cap silently did not apply.
+ * That is not an exotic case: `api.llama.fi` — a host this engine talks to on three capabilities —
+ * serves every response over HTTP/2 with no `Content-Length` at all (measured 2026-07-27), so the
+ * cap was inert exactly where the traffic was about to grow. An unbounded chunked response could be
+ * buffered into memory and from there into the cache.
+ */
 export const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10MB
 
 /** Per-call overrides for `safeFetch` (adversarial cycle 1, fix B) — both optional, both default
@@ -141,15 +152,115 @@ function raceWithTimeout(
   });
 }
 
-/** Rejects with `SafeFetchResponseTooLargeError` BEFORE the caller ever reads the body, when the
- * response advertises a `Content-Length` over `maxBytes`. A response with no `Content-Length`
- * header is not checked here (see `DEFAULT_MAX_RESPONSE_BYTES`'s docstring). */
+/**
+ * Cheap EARLY REJECTION on the advertised `Content-Length` — nothing more.
+ *
+ * It deliberately does not report "this response is bounded", because a header cannot establish
+ * that (adversarial cycle 3, corroborated independently by the security and performance critics).
+ * The previous version returned `true` here and the caller then SKIPPED the streaming counter, so
+ * the only real enforcement was disabled by the very input it was meant to distrust:
+ *
+ * - `Content-Length: abc` / `-1` → `Number()` gives `NaN`/negative, the `> maxBytes` test is false,
+ *   the header path reported "bounded" and nothing counted the bytes;
+ * - `Content-Encoding: gzip|br` → the header counts COMPRESSED bytes while the cap is enforced on
+ *   DECODED bytes (undici decodes before `response.body`), so a ~8× compressible JSON body passed a
+ *   2MB cap at 250KB advertised and expanded unbounded after `.json()` — a decompression bomb;
+ * - `Content-Length` alongside `Transfer-Encoding: chunked`, where the header is not the framing.
+ *
+ * The caller now always installs the counter, so this is purely an optimisation: it refuses an
+ * over-cap response before a single body byte is transferred.
+ */
 function assertResponseSizeWithinCap(response: Response, url: string, maxBytes: number): void {
   const contentLength = response.headers.get('content-length');
   if (contentLength === null) return;
   const size = Number(contentLength);
   if (Number.isFinite(size) && size > maxBytes) {
     throw new SafeFetchResponseTooLargeError(url, size, maxBytes);
+  }
+}
+
+/**
+ * Wraps `response` so reading its body can never yield more than `maxBytes` (TASK-007 task 007-3,
+ * R-65). Used ONLY when the response advertises no `Content-Length` — otherwise the header check
+ * above has already bounded the transfer more cheaply.
+ *
+ * The counter runs on the stream rather than after `.text()`/`.json()` for the reason the cap
+ * exists at all: measuring a body you have already buffered tells you how much memory you already
+ * spent. On overflow the upstream reader is **cancelled**, which closes the connection instead of
+ * politely continuing to receive a payload we have decided to refuse.
+ *
+ * Status, statusText and headers are carried over verbatim, so every existing caller — `response.ok`,
+ * `response.status`, the redirect handling below — behaves identically.
+ *
+ * The error surfaces where the body is READ (inside the calling adapter's `fetch()`), not where
+ * `safeFetch` returns. That placement is correct rather than incidental: `CapabilityRegistry`
+ * classifies a throw from `adapter.fetch()` as "this adapter could not answer right now, try the
+ * next one" and — deliberately — does NOT negative-cache it. An oversized response is a transport
+ * condition, not the deterministic `normalize()` verdict that negative caching exists for.
+ */
+function capResponseStream(response: Response, url: string, maxBytes: number): Response {
+  const body = response.body;
+  if (body === null) return response;
+
+  const reader = body.getReader();
+  let seen = 0;
+  const capped = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      // A chunk that is not a typed array would make `seen` NaN, and `NaN > maxBytes` is false
+      // FOREVER — the counter would go inert for the rest of the response (cycle 3, security L-4).
+      // Unreachable through real undici bodies; reachable through an injected `fetchImpl`, which is
+      // how every test in this repo drives this code.
+      const chunkBytes = (value as Partial<Uint8Array> | undefined)?.byteLength;
+      if (typeof chunkBytes !== 'number' || !Number.isFinite(chunkBytes)) {
+        controller.error(
+          new Error(
+            `safeFetch: non-binary chunk from ${url} (${typeof value}) — refusing to count`,
+          ),
+        );
+        void reader.cancel().catch(() => undefined);
+        return;
+      }
+      seen += chunkBytes;
+      if (seen > maxBytes) {
+        // ERROR FIRST, then cancel (cycle 3, security L-2). The previous order awaited the cancel
+        // before constructing the error, so a rejecting or hanging `cancel()` replaced the typed
+        // `SafeFetchResponseTooLargeError` with something no caller's `instanceof` handles — or
+        // stalled the report entirely. `controller.error` is synchronous and does not resume the
+        // transfer, so reporting first costs nothing and cannot be lost.
+        controller.error(new SafeFetchResponseTooLargeError(url, seen, maxBytes));
+        void reader.cancel().catch(() => undefined);
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel(reason) {
+      // RETURNED, not discarded: a caller cancelling the wrapper must be able to await the upstream
+      // teardown. `.catch()` because an unhandled rejection here would take down a long-lived stdio
+      // server on Node's default `--unhandled-rejections=throw` (cycle 3, security L-1).
+      return reader.cancel(reason).catch(() => undefined);
+    },
+  });
+
+  // `new Response` re-imposes constructor validation the original response never faced: a status
+  // outside 200-599 throws `RangeError`, an odd `statusText` throws `TypeError` (cycle 3, security
+  // L-3). undici builds its internal response without those checks, so a hostile upstream sending
+  // `HTTP/1.1 999` would turn `safeFetch` into an untyped throw AND leak the reader taken above.
+  // Fall back to the unwrapped response rather than inventing a failure — the header check has
+  // already run, and an exotic status is a diagnostics problem, not a size one.
+  try {
+    return new Response(capped, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  } catch {
+    void reader.cancel().catch(() => undefined);
+    return response;
   }
 }
 
@@ -163,7 +274,10 @@ function assertResponseSizeWithinCap(response: Response, url: string, maxBytes: 
  * - Every hop races against `AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)` —
  *   rejects with a typed `SafeFetchTimeoutError` instead of hanging forever on a dead/slow host.
  * - Every response's advertised `Content-Length` is checked against
- *   `options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES` BEFORE the caller reads the body.
+ *   `options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES` BEFORE the caller reads the body, and
+ *   — since TASK-007 task 007-3 (R-65) — a response that advertises NO `Content-Length` is bounded
+ *   by a streaming byte counter instead, cancelling the upstream reader on overflow. The cap is
+ *   therefore real on chunked/HTTP-2 responses, which is the common case rather than the exotic one.
  * - A redirect `Location` resolving to a non-`https:` target is rejected outright.
  * - A redirect `Location` resolving to a DIFFERENT hostname than the current hop strips
  *   `Authorization`/`*-api-key`-style headers from the request before following it — a same-host
@@ -216,12 +330,23 @@ export async function safeFetch(
       timeoutMs,
     );
 
+    // Early rejection only — never a licence to skip the counter (see the function's docstring).
     assertResponseSizeWithinCap(response, currentUrl, maxResponseBytes);
 
     const location = isRedirectStatus(response.status) ? response.headers.get('location') : null;
     if (location === null) {
-      return response;
+      // ALWAYS wrapped (cycle 3, security H-1 / performance H-2). The previous version skipped the
+      // counter whenever a `Content-Length` was present and within the cap, which let an
+      // untrustworthy or compressed header disable the only real enforcement. Wrapping costs ~10µs
+      // and no byte copies (chunk references are passed through), which is the correct price for a
+      // cap that actually holds.
+      return capResponseStream(response, currentUrl, maxResponseBytes);
     }
+
+    // A redirect hop's body is never read by anyone — so RELEASE it (cycle 3, security L-6 /
+    // performance M-8). Merely dropping the reference keeps the connection out of undici's pool
+    // until the socket is destroyed or the abort signal fires, up to MAX_REDIRECTS times per call.
+    void response.body?.cancel().catch(() => undefined);
 
     if (redirectsFollowed >= MAX_REDIRECTS) {
       throw new Error(`safeFetch: exceeded ${MAX_REDIRECTS} redirects following ${url}`);

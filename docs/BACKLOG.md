@@ -4,16 +4,75 @@
 Крупные фазы живут в [ROADMAP](onchain-analytics/ROADMAP.md); сюда попадают
 инженерные улучшения и полировка, не тянущие на roadmap-строку.
 
+Дефекты идут **не сюда**, а в [KNOWN_ISSUES.md](KNOWN_ISSUES.md) + `docs/issues/`. Разница та же,
+что в `run-feedback`: **defect** — воспроизводимое неверное поведение; **work-item** — улучшение или
+сигнал без сломанного контракта.
+
+---
+
+## Правила / Conventions
+
+> Этот файл — **индекс**, как и `KNOWN_ISSUES.md`. Тело каждой записи лежит в
+> [`docs/backlog/`](backlog/), здесь только строка-указатель. Правило появилось после того, как одна
+> запись выросла до **7 849 символов** в одном буллете списка — её нельзя было ни прочитать, ни
+> отдиффать, ни закрыть по частям.
+
+**Файл записи** — `docs/backlog/wi-N-краткий-слаг.md`, YAML-frontmatter, затем H1 и тело:
+
+```yaml
+---
+id: WI-11 # WI-<n>, сквозная нумерация, следующий = max+1
+type: work-item # всегда этот литерал
+status: open # open · done · dropped
+opened_at: 2026-07-28 # ISO-дата первой записи
+slug: wi-11-hot-lru-bounded-by-entry-count # = имя файла без .md
+effort: S # S · M · L (опционально)
+value: 'одной строкой, что это даёт' # опционально
+source: TASK-007 adversarial cycle 3 # опционально: откуда пришло
+# resolved_at / resolved_by — только при status: done
+---
+```
+
+**Строка индекса** (новые сверху; ID по возрастанию даты заведения):
+
+```
+- **WI-N** [заголовок](backlog/slug.md) — effort `S`, opened YYYY-MM-DD
+```
+
+Закрытая запись **сохраняет файл** и переезжает в раздел «Закрытые» с `resolved_at`/`resolved_by`.
+Ничего не удаляется: закрытая запись — это ответ на вопрос, который кто-то ещё задаст.
+
+> ### ⚠️ Про `run_feedback.py file --as work-item`
+>
+> Скрипт дописывает **весь текст тела одним буллетом** сразу после якоря
+> `<!-- feedback:discovered-issues -->`. Для work-item'а в три предложения это нормально; для отчёта
+> — нет, и именно так появилась запись на 7 849 символов. **Поэтому:** после filing'а разнеси тело в
+> `docs/backlog/<slug>.md` и оставь здесь строку-указатель. Якорь трогать нельзя — на него завязаны
+> `file` и `doctor`.
+
+---
+
 ## Discovered issues / work-items
 
 <!-- feedback:discovered-issues -->
-- **PLAN §0.5 «один коммит на задачу» не оговаривает задачи с пересекающимися файлами (2026-07-26)** — Конвенция взята из плана TASK-006 и в общем случае верна, но на этой задаче оказалась неисполнимой постфактум. Задачи 006-1…006-10 правят один и тот же `packages/core/src/chain/registry.data.json`: 006-1 создаёт стаб на 3 сети, 006-2 генерирует боевые 458, 006-8 курирует `rpcHosts`, 006-9 заполняет `vendors.nansen`. То же и с `registry.ts` (006-1 создаёт, 006-2 разделяет на `registry-core.ts` + обёртку). Разложить это на десять коммитов постфактум можно только механически — и тогда каждый промежуточный коммит не проходит тесты, то есть история перестаёт быть бисектируемой, что и есть главная ценность гранулярных коммитов. Пришлось сделать один связный коммит и назвать отклонение в его теле. **Что стоит поменять:** оговорка в `skill-planning-format` (и/или в шаблоне PLAN §0.5) — конвенция «коммит на задачу» применима, когда задачи **файлово независимы**. Иначе у планировщика два честных варианта, и он должен выбрать один ЗАРАНЕЕ, а не разработчик постфактум: (а) объявить группу задач одним коммитом прямо в плане (например «006-1…006-2 — один коммит: общий артефакт данных»), либо (б) развести файлы между задачами так, чтобы пересечения не было (например, генератор пишет в отдельный файл, который подключается одной строкой). Побочная польза варианта (б) — он вынуждает заметить связность на этапе планирования, а не на этапе коммита. **Не делать:** не разбивать такие задачи на коммиты ради формального соблюдения — красная история хуже одного большого честного коммита; и не убирать конвенцию целиком — на файлово независимых задачах она работает и уже окупилась в M1/M2. · Effort: S · Value: M
-- **Split markUnreconciled's two causes so a degrade cooldown can't break UC-6 (2026-07-24)** — Both critics (cycle-1 F-6, cycle-2 R-4) proposed rate-limiting the degrade-triggered `/account` resync, since a persistent degrade adds an extra round trip per call and cycle 1's throttle raise made that loop ~10x faster. Implemented as a minimum-interval cooldown → **broke three tests encoding UC-6's contract**: after a `402` or transport failure, the *next* gate entry must resync, because that resync is the authoritative correction of our local ledger against the vendor's statement. A cooldown trades a money-correctness property for an availability nicety. Reverted; rationale documented on `needsResync()` and filed as `docs/issues/q-1-*.md` (`status: by-design`). **Better formulation, noted by cycle 3 and never evaluated:** `markUnreconciled()` collapses two different causes into one flag — (a) 402/transport failure, where the vendor has told us the ledger is wrong and the next-call resync is mandatory, and (b) `reconcile()`'s header-degrade branch, which carries no such statement and is the only cause that can persist indefinitely (i.e. the actual storm driver). A cooldown applied to (b) alone would preserve all three UC-6 tests. Worth doing if request pressure ever becomes real.
-- **Check test dependencies before acting on a 'remove dead code' finding (2026-07-24)** — Cycle-2 finding L-2 recommended deleting an unreachable `premium_labels` 150cr pricing branch in `cost-of.ts` (the transport never sent the flag, so price and request could drift). Implementing "delete it" broke the **R-37-mandated 150-vs-100 refusal test** — the test that closes ROADMAP §M2 exit criterion #2 ("budget-guard реально режет при достижении лимита (тест)"). The supposedly dead code was load-bearing as the fixture for a *required* behaviour. The correct resolution was the critic's other stated option: make the transport forward the flag so price and request genuinely agree, preserving the acceptance test. **Guidance worth recording:** before acting on a "remove dead/unreachable code" finding, check whether a test depends on it — particularly an acceptance test tied to a milestone exit criterion. A grep for the symbol across `test/` is enough.
-- **Orchestrator-applied fixes need their own review pass (2026-07-24)** — Adversarial cycles 2 and 3 found defects introduced **by the previous cycle's fixes** — and both were applied by the orchestrator directly, outside the developer→code-reviewer loop: - **zod `.max()` caps enforced only at `Schema.parse`.** The cap was correct (bounding attacker-authored vendor text reaching the model), but a parse throw happens *after* the paid call, with nothing cached — so the agent's retry paid again. It converted "an attacker can write a long token name" into "an attacker can drain credits", strictly worse than the original problem. Correct mechanism: truncate in the mapper, keep the schema cap as an unreachable backstop. - **Key redaction written truncate-then-redact.** `stringifyTruncated(body).split(key)` slices to 500 chars first, so a key straddling the boundary left an unredacted prefix — and whoever influences the body length picks where the boundary falls. **Lesson to encode:** a fix applied outside the dev→review loop still needs its own review pass. The multi-cycle adversarial structure is what caught both, so the 3-cycle cap is load-bearing rather than ceremony. Consider an explicit rule in `vdd-enhanced.md`: orchestrator-applied fixes are re-reviewed in the next cycle and named as such in the brief (which is what happened here, and is why they were caught).
-- **Subagent stall resilience: incremental-write + resume guidance for long agent tasks (2026-07-24)** — Five subagent runs in the M2 pipeline died with `Response stalled mid-stream` or the 600s watchdog. The worst case (the architect) burned **263k tokens** researching and stalled immediately *before* its first write — saving nothing at all. **What worked, and is worth making standing guidance rather than rediscovering per run:** 1. **Resume via `SendMessage`, not a fresh spawn.** The agent's research context survives, so the retry costs a fraction of the original. 2. **Instruct incremental writing explicitly**: "one Edit per tool call, never batch; after each group run its narrow test, then continue." A stall then costs one file, not the session. 3. **Give a priority order** so a partial run still lands the highest-value work ("if you only finish one thing, finish X"). Proposed: fold points 2–3 into `System/Agents/04_architect_prompt.md` and `08_developer_prompt.md` as a standing "long-task resilience" section, and point 1 into the orchestrator's failure-handling guidance.
-- **Triage M1 adversarial cycle-3 unverified candidates (10 MINOR + 4 bikeshed) (2026-07-23)** — Cycle-3 verification fleet was quota-starved (32/36 verify agents failed on session limit), so these critic candidates carry NO adversarial verdicts. The one claimed MAJOR (get_token served priceUsd under 3600s token.metadata TTL; token.price 60s route dead) was orchestrator-verified and FIXED (commit 8a602cc). Remaining unverified MINORs: new-pairs absent-vs-explicit-limit cache-key split; rpc-solana isError for >9M SOL wallets (MAX_SAFE_INTEGER); protocolSlug unbounded length; chunked-response size cap gap in safeFetch; pg Pool construction outside DSN-sanitizing catch; no singleflight coalescing; sqlite handle leak if constructor throws post-open; stderr backlog if host never drains; rate-limit refund untested; isAvailable-throw aborts route walk (1 verdict: refuted as bikeshed). Bikeshed: 3 handlers use .parse vs protocol-tvl safeParse; canonical string fields unbounded; defillama fixture breadth (~47 unused chains); rpc error messages JSON.stringify whole envelope. Triage each: fix-in-M2 / accept / reject. Full critic text: journal of workflow run wf_9d5da612-ce4.
-  **Triaged 2026-07-23 (user-authorized fix round):** ✅ fixed (6): new-pairs cache-key default-limit; protocolSlug .max(128); pg Pool construction sanitized; sqlite handle closed on constructor throw; rpc error messages truncated to 500 chars; rate-limit saturation-refund test. → M2 (3): singleflight coalescing (fits budget-guard — paid-call dedup), chunked-response size cap (stream counting), solana >9M SOL exact lamports (needs raw-text JSON parse). Accepted as documented (5): isAvailable-throw route-walk (refuted — unreachable today), stderr-drain backlog (host drains), .parse-vs-safeParse consistency (adapters pre-validate), canonical string .max bounds (10MB cap bounds it), defillama fixture breadth (proves slice fidelity). RF-1 fixed the same round (ledger flipped).
-- **Formatter-gate broadening needs a blast-radius guard (2026-07-22)** — During the M0 adversarial fix round, a repo-wide `prettier --write .` reformatted 34 unrelated curated/generated files (SoT docs, n8n exports, reference dialogs); the orchestrator reverted and scoped .prettierignore after the fact. Process guard to adopt: any directive that broadens a formatter/linter gate must run the CHECK first, review the file list, extend ignore rules for curated/generated content, and only then write.
-- **Revisit typescript pin ^6.0.3 when tsup supports TS7 dts (2026-07-22)** — tsup 8.5.1 dts pipeline breaks under typescript@7 (native API TypeError) AND emits TS5101 (baseUrl deprecated) under TS6 — M0 ships TS ^6.0.3 with two-step build (tsup dts:false + tsc --emitDeclarationOnly -p tsconfig.build.json). When tsup (or its dts successor) supports TS7, re-evaluate the pin and collapse the build back to one step. Error signatures documented in packages/mcp-server/.AGENTS.md.
-- **[R-47] carry-over M1-hardening — deferred at TASK-005 (M2) acceptance (2026-07-24)** — Optional (Should), explicitly non-gating for M2's exit criteria (TASK.md R-47 row, PLAN.md §2 Step 9). Two items, both still unimplemented as of task 005-8's acceptance verification: (1) `safeFetch` (`packages/core/src/net/safe-fetch.ts`) still only checks `Content-Length` before reading the body — a chunked/no-Content-Length response bypasses the `maxResponseBytes` cap entirely (needs a streaming byte-counter over `response.body`, `reader.cancel()` on overflow, same `SafeFetchResponseTooLargeError`). (2) `rpc-solana` (`packages/core/src/adapters/rpc-solana/index.ts`) still parses the lamports balance via `JSON.parse` into a `number` — a wallet balance above `Number.MAX_SAFE_INTEGER` (~9.007M SOL) throws instead of preserving the exact on-chain value as a raw-text-extracted string (`amountRaw`, DB-SCHEMA-CONCEPT §1 canon). Full spec + acceptance tests: `docs/tasks/task-005-9-optional-carryover-hardening.md` (kept in `docs/tasks/`, not archived, per its own acceptance note — pick up opportunistically when there's slack, not gating any future milestone's acceptance either).
+
+- **WI-15** [Цена `MAX_DAYS` в контексте модели](backlog/wi-15-max-days-context-cost-and-includeseries-key.md) — effort `S`, opened 2026-07-28 · **решает владелец** (второй ключ кэша закрыт 2026-07-28)
+- **WI-10** [mcp-server тесты резолвят `@onchain-intel/core` в `dist`, поэтому правки в `src` невидимы до `pnpm build`](backlog/wi-10-mcp-server-tests-resolve-core-to-dist.md) — effort `S`, opened 2026-07-27
+- **WI-9** [«Один коммит на задачу» не оговаривает задачи с пересекающимися файлами](backlog/wi-9-one-commit-per-task-vs-overlapping-files.md) — effort `S`, opened 2026-07-26
+- **WI-8** [R-47 carry-over: `rpc-solana` теряет точность на балансе выше 2^53](backlog/wi-8-r47-carryover-rpc-solana-exact-lamports.md) — opened 2026-07-24
+- **WI-7** [Устойчивость субагентов к обрыву: инкрементальная запись и resume](backlog/wi-7-subagent-stall-resilience.md) — opened 2026-07-24
+- **WI-6** [Правки, применённые оркестратором, нуждаются в собственном ревью](backlog/wi-6-orchestrator-applied-fixes-need-their-own-review-pass.md) — opened 2026-07-24
+- **WI-5** [Проверять зависимости тестов, прежде чем удалять «мёртвый код»](backlog/wi-5-check-test-deps-before-removing-dead-code.md) — opened 2026-07-24
+- **WI-4** [Развести две причины `markUnreconciled`, чтобы cooldown не ломал UC-6](backlog/wi-4-split-markunreconciled-two-causes.md) — opened 2026-07-24
+- **WI-3** [Триаж непроверенных кандидатов цикла 3 M1 (10 MINOR + 4 bikeshed)](backlog/wi-3-triage-m1-cycle3-unverified-candidates.md) — opened 2026-07-23
+- **WI-2** [Пересмотреть пин typescript ^6.0.3, когда tsup научится TS7 dts](backlog/wi-2-typescript-pin-revisit-when-tsup-supports-ts7-dts.md) — opened 2026-07-22
+- **WI-1** [Расширение гейта форматтера требует проверки блэст-радиуса](backlog/wi-1-formatter-gate-blast-radius-guard.md) — opened 2026-07-22
+
+## Закрытые
+
+- **WI-17** [Тест-долг: четыре теста зелены по неверной причине](backlog/wi-17-test-quality-debt-green-for-the-wrong-reason.md) — opened 2026-07-28, **done 2026-07-28**: T-1 переписан, T-2 переименован, T-4 усилен, D-2 закрыт записью фикстуры
+- **WI-14** [Переразбор на каждое окно и zod на попаданиях в кэш](backlog/wi-14-per-window-reparse-and-zod-on-cache-hits.md) — opened 2026-07-28, **dropped 2026-07-28**: замерено — 112 мкс и 232 мкс против оценок 0.4–0.8 мс и 1–3 мс; правка не окупается
+- **WI-13** [В кэш кладётся 74% документа, которые мы контрактно не читаем](backlog/wi-13-project-document-before-caching.md) — opened 2026-07-28, **done 2026-07-28**: документ проецируется на семь читаемых полей до кэширования
+- **WI-12** [Вытеснение незавершённых записей ломает singleflight на широких прогонах](backlog/wi-12-in-flight-eviction-breaks-singleflight.md) — opened 2026-07-28, **done 2026-07-28**: флаг `settled`, вытесняются только завершённые записи
+- **WI-11** [Горячий LRU ограничен числом записей, а записи выросли ~в 475 раз](backlog/wi-11-hot-lru-bounded-by-entry-count.md) — opened 2026-07-28, **done 2026-07-28**: второй бюджет в 16 МБ сериализованных байт + `ttlAutopurge`
+- **WI-16** [Сверить эхо-поле `chain` у вендора по всем покрытым сетям](backlog/wi-16-defillama-chain-echo-probe.md) — opened 2026-07-28, **done 2026-07-28**: зонд по 274 сетям, 0 расхождений, evidence запиннена в provenance

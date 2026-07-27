@@ -1,0 +1,2761 @@
+{
+  "$comment": "TASK-007 backlog item 6 — live verification that DeFiLlama's `chain` echo field equals the `vendors.defillama` name we send, for EVERY chain the adapter's coverage predicate admits. Before this, the echo assumption rested on two chains. Keyless, read-only, 0 credits. `mismatches` is the load-bearing field: any entry there is a chain that normalize() would refuse permanently while the error class tells the agent to retry.",
+  "probedAt": "2026-07-28",
+  "endpoint": "https://api.llama.fi/overview/dexs/{vendorName}?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true",
+  "auth": "none (keyless)",
+  "concurrency": 8,
+  "elapsedSeconds": 75.5,
+  "chainsProbed": 274,
+  "mismatchCount": 0,
+  "mismatches": [],
+  "echoMatchedButNoVolumeCount": 5,
+  "echoMatchedButNoVolume": [
+    "bchyper",
+    "bsquared",
+    "camp-network",
+    "doge",
+    "zigchain"
+  ],
+  "results": [
+    {
+      "slug": "0g",
+      "requested": "0G",
+      "httpStatus": 200,
+      "echo": "0G",
+      "match": true,
+      "total24h": 69305.82,
+      "totalAllTime": 24940999.56,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "abstract",
+      "requested": "Abstract",
+      "httpStatus": 200,
+      "echo": "Abstract",
+      "match": true,
+      "total24h": 850181,
+      "totalAllTime": 3930567774,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "acala",
+      "requested": "Acala",
+      "httpStatus": 200,
+      "echo": "Acala",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 149967797,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "adi",
+      "requested": "ADI",
+      "httpStatus": 200,
+      "echo": "ADI",
+      "match": true,
+      "total24h": 59307,
+      "totalAllTime": 137887526,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "alephium",
+      "requested": "Alephium",
+      "httpStatus": 200,
+      "echo": "Alephium",
+      "match": true,
+      "total24h": 4.62,
+      "totalAllTime": 23740145.19,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "algorand",
+      "requested": "Algorand",
+      "httpStatus": 200,
+      "echo": "Algorand",
+      "match": true,
+      "total24h": 186458,
+      "totalAllTime": 5486485749,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "althea",
+      "requested": "Althea",
+      "httpStatus": 200,
+      "echo": "Althea",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 3772,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "ancient8",
+      "requested": "Ancient8",
+      "httpStatus": 200,
+      "echo": "Ancient8",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 30255,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "apechain",
+      "requested": "ApeChain",
+      "httpStatus": 200,
+      "echo": "ApeChain",
+      "match": true,
+      "total24h": 140533.79,
+      "totalAllTime": 325239355.78999996,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "aptos",
+      "requested": "Aptos",
+      "httpStatus": 200,
+      "echo": "Aptos",
+      "match": true,
+      "total24h": 18668611,
+      "totalAllTime": 55073231736.28,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "arbitrum",
+      "requested": "Arbitrum",
+      "httpStatus": 200,
+      "echo": "Arbitrum",
+      "match": true,
+      "total24h": 94484183.14,
+      "totalAllTime": 735144464630.0498,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "arbitrum-nova",
+      "requested": "Arbitrum Nova",
+      "httpStatus": 200,
+      "echo": "Arbitrum Nova",
+      "match": true,
+      "total24h": 550,
+      "totalAllTime": 38231153,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "artela",
+      "requested": "Artela",
+      "httpStatus": 200,
+      "echo": "Artela",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 54051,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "asset-chain",
+      "requested": "Asset Chain",
+      "httpStatus": 200,
+      "echo": "Asset Chain",
+      "match": true,
+      "total24h": 20437,
+      "totalAllTime": 10427390,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "astar",
+      "requested": "Astar",
+      "httpStatus": 200,
+      "echo": "Astar",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 4751342.13,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "astar-zkevm",
+      "requested": "Astar zkEVM",
+      "httpStatus": 200,
+      "echo": "Astar zkEVM",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 1822558,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "aurora",
+      "requested": "Aurora",
+      "httpStatus": 200,
+      "echo": "Aurora",
+      "match": true,
+      "total24h": 55837.75,
+      "totalAllTime": 523582830.66,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "avalanche",
+      "requested": "Avalanche",
+      "httpStatus": 200,
+      "echo": "Avalanche",
+      "match": true,
+      "total24h": 60734640.54,
+      "totalAllTime": 305144804104.20996,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "base",
+      "requested": "Base",
+      "httpStatus": 200,
+      "echo": "Base",
+      "match": true,
+      "total24h": 538784346.4,
+      "totalAllTime": 800723943075.5801,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bchyper",
+      "requested": "BCHyper",
+      "httpStatus": 200,
+      "echo": "BCHyper",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 0,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "berachain",
+      "requested": "Berachain",
+      "httpStatus": 200,
+      "echo": "Berachain",
+      "match": true,
+      "total24h": 511089.85,
+      "totalAllTime": 11912346184.39,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bifrost",
+      "requested": "Bifrost",
+      "httpStatus": 200,
+      "echo": "Bifrost",
+      "match": true,
+      "total24h": 68,
+      "totalAllTime": 37062628,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bifrost-network",
+      "requested": "Bifrost Network",
+      "httpStatus": 200,
+      "echo": "Bifrost Network",
+      "match": true,
+      "total24h": 2432,
+      "totalAllTime": 3361951,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bitcoin",
+      "requested": "Bitcoin",
+      "httpStatus": 200,
+      "echo": "Bitcoin",
+      "match": true,
+      "total24h": 285675,
+      "totalAllTime": 2182600815,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bitcoincash",
+      "requested": "Bitcoincash",
+      "httpStatus": 200,
+      "echo": "Bitcoincash",
+      "match": true,
+      "total24h": 6151,
+      "totalAllTime": 20766461,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bitgert",
+      "requested": "Bitgert",
+      "httpStatus": 200,
+      "echo": "Bitgert",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 20624349,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bitlayer",
+      "requested": "Bitlayer",
+      "httpStatus": 200,
+      "echo": "Bitlayer",
+      "match": true,
+      "total24h": 23,
+      "totalAllTime": 68425097,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bitrock",
+      "requested": "Bitrock",
+      "httpStatus": 200,
+      "echo": "Bitrock",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 466272,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bittorrent",
+      "requested": "Bittorrent",
+      "httpStatus": 200,
+      "echo": "Bittorrent",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 8672670,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "blast",
+      "requested": "Blast",
+      "httpStatus": 200,
+      "echo": "Blast",
+      "match": true,
+      "total24h": 22280.13,
+      "totalAllTime": 135482634149.24,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bob",
+      "requested": "BOB",
+      "httpStatus": 200,
+      "echo": "BOB",
+      "match": true,
+      "total24h": 9699,
+      "totalAllTime": 1760477978.98,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "boba",
+      "requested": "Boba",
+      "httpStatus": 200,
+      "echo": "Boba",
+      "match": true,
+      "total24h": 16569.58,
+      "totalAllTime": 1245657869.8,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "botanix",
+      "requested": "Botanix",
+      "httpStatus": 200,
+      "echo": "Botanix",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 3526851,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bsc",
+      "requested": "BSC",
+      "httpStatus": 200,
+      "echo": "BSC",
+      "match": true,
+      "total24h": 1568778945.2,
+      "totalAllTime": 2303116228016.2905,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "bsquared",
+      "requested": "BSquared",
+      "httpStatus": 200,
+      "echo": "BSquared",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 0,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "callisto",
+      "requested": "Callisto",
+      "httpStatus": 200,
+      "echo": "Callisto",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 97893480,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "camp-network",
+      "requested": "Camp Network",
+      "httpStatus": 200,
+      "echo": "Camp Network",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 0,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "canto",
+      "requested": "Canto",
+      "httpStatus": 200,
+      "echo": "Canto",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 8373060077,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "canton",
+      "requested": "Canton",
+      "httpStatus": 200,
+      "echo": "Canton",
+      "match": true,
+      "total24h": 5726862,
+      "totalAllTime": 161684723,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "capx-chain",
+      "requested": "Capx Chain",
+      "httpStatus": 200,
+      "echo": "Capx Chain",
+      "match": true,
+      "total24h": 201301,
+      "totalAllTime": 6124361,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "carbon",
+      "requested": "Carbon",
+      "httpStatus": 200,
+      "echo": "Carbon",
+      "match": true,
+      "total24h": 3.97,
+      "totalAllTime": 156573556.97,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "cardano",
+      "requested": "Cardano",
+      "httpStatus": 200,
+      "echo": "Cardano",
+      "match": true,
+      "total24h": 1321343,
+      "totalAllTime": 6320429248,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "celo",
+      "requested": "Celo",
+      "httpStatus": 200,
+      "echo": "Celo",
+      "match": true,
+      "total24h": 700196.25,
+      "totalAllTime": 37660840124.899994,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "chainflip",
+      "requested": "Chainflip",
+      "httpStatus": 200,
+      "echo": "Chainflip",
+      "match": true,
+      "total24h": 6112003,
+      "totalAllTime": 8631209445,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "chiliz",
+      "requested": "Chiliz",
+      "httpStatus": 200,
+      "echo": "Chiliz",
+      "match": true,
+      "total24h": 166547.36,
+      "totalAllTime": 213603628.69,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "chromia",
+      "requested": "Chromia",
+      "httpStatus": 200,
+      "echo": "Chromia",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 4251881,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "citrea",
+      "requested": "Citrea",
+      "httpStatus": 200,
+      "echo": "Citrea",
+      "match": true,
+      "total24h": 23948,
+      "totalAllTime": 57167127,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "clv",
+      "requested": "CLV",
+      "httpStatus": 200,
+      "echo": "CLV",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 96285,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "concordium",
+      "requested": "Concordium",
+      "httpStatus": 200,
+      "echo": "Concordium",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 1469482,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "conflux",
+      "requested": "Conflux",
+      "httpStatus": 200,
+      "echo": "Conflux",
+      "match": true,
+      "total24h": 10480,
+      "totalAllTime": 917373776,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "core",
+      "requested": "CORE",
+      "httpStatus": 200,
+      "echo": "CORE",
+      "match": true,
+      "total24h": 2082.51,
+      "totalAllTime": 1276566877.84,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "corn",
+      "requested": "Corn",
+      "httpStatus": 200,
+      "echo": "Corn",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 78273306,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "coti",
+      "requested": "Coti",
+      "httpStatus": 200,
+      "echo": "Coti",
+      "match": true,
+      "total24h": 517,
+      "totalAllTime": 2163493,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "cronos",
+      "requested": "Cronos",
+      "httpStatus": 200,
+      "echo": "Cronos",
+      "match": true,
+      "total24h": 918198.18,
+      "totalAllTime": 15777687370.140001,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "cronos-zkevm",
+      "requested": "Cronos zkEVM",
+      "httpStatus": 200,
+      "echo": "Cronos zkEVM",
+      "match": true,
+      "total24h": 5581,
+      "totalAllTime": 226150092,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "cube",
+      "requested": "Cube",
+      "httpStatus": 200,
+      "echo": "Cube",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 120526714,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "data-network",
+      "requested": "Data Network",
+      "httpStatus": 200,
+      "echo": "Data Network",
+      "match": true,
+      "total24h": 1225.65,
+      "totalAllTime": 589783571.65,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "dchain",
+      "requested": "DChain",
+      "httpStatus": 200,
+      "echo": "DChain",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 379392,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "defichain",
+      "requested": "DefiChain",
+      "httpStatus": 200,
+      "echo": "DefiChain",
+      "match": true,
+      "total24h": 691,
+      "totalAllTime": 2391183195,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "defichain-evm",
+      "requested": "DeFiChain EVM",
+      "httpStatus": 200,
+      "echo": "DeFiChain EVM",
+      "match": true,
+      "total24h": 41.46,
+      "totalAllTime": 6709694.59,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "defiverse",
+      "requested": "DeFiVerse",
+      "httpStatus": 200,
+      "echo": "DeFiVerse",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 3977644,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "dexalot",
+      "requested": "Dexalot",
+      "httpStatus": 200,
+      "echo": "Dexalot",
+      "match": true,
+      "total24h": 14206093,
+      "totalAllTime": 25818010150,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "doge",
+      "requested": "Doge",
+      "httpStatus": 200,
+      "echo": "Doge",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 0,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "dogechain",
+      "requested": "Dogechain",
+      "httpStatus": 200,
+      "echo": "Dogechain",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 75176737,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "doma",
+      "requested": "Doma",
+      "httpStatus": 200,
+      "echo": "Doma",
+      "match": true,
+      "total24h": 2999542,
+      "totalAllTime": 236629235,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "eclipse",
+      "requested": "Eclipse",
+      "httpStatus": 200,
+      "echo": "Eclipse",
+      "match": true,
+      "total24h": 20553,
+      "totalAllTime": 1582976626,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "eden",
+      "requested": "Eden",
+      "httpStatus": 200,
+      "echo": "Eden",
+      "match": true,
+      "total24h": 2130,
+      "totalAllTime": 21955,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "edu-chain",
+      "requested": "EDU Chain",
+      "httpStatus": 200,
+      "echo": "EDU Chain",
+      "match": true,
+      "total24h": 21,
+      "totalAllTime": 156762600,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "elastos",
+      "requested": "Elastos",
+      "httpStatus": 200,
+      "echo": "Elastos",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 125277569,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "elys",
+      "requested": "Elys",
+      "httpStatus": 200,
+      "echo": "Elys",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 65912596,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "endurance",
+      "requested": "Endurance",
+      "httpStatus": 200,
+      "echo": "Endurance",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 117063,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "energi",
+      "requested": "Energi",
+      "httpStatus": 200,
+      "echo": "Energi",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 599919811,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "energyweb",
+      "requested": "EnergyWeb",
+      "httpStatus": 200,
+      "echo": "EnergyWeb",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 5658396,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "eni",
+      "requested": "ENI",
+      "httpStatus": 200,
+      "echo": "ENI",
+      "match": true,
+      "total24h": 358097,
+      "totalAllTime": 332911410,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "enuls",
+      "requested": "ENULS",
+      "httpStatus": 200,
+      "echo": "ENULS",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 4325559,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "eos-evm",
+      "requested": "EOS EVM",
+      "httpStatus": 200,
+      "echo": "EOS EVM",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 47053275,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "ergo",
+      "requested": "Ergo",
+      "httpStatus": 200,
+      "echo": "Ergo",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 8755798,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "ethereum",
+      "requested": "Ethereum",
+      "httpStatus": 200,
+      "echo": "Ethereum",
+      "match": true,
+      "total24h": 500558261.63,
+      "totalAllTime": 3983183028995.8296,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "etherlink",
+      "requested": "Etherlink",
+      "httpStatus": 200,
+      "echo": "Etherlink",
+      "match": true,
+      "total24h": 51653.67,
+      "totalAllTime": 814791078.1500001,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "evmos",
+      "requested": "Evmos",
+      "httpStatus": 200,
+      "echo": "Evmos",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 86713254,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "fantom",
+      "requested": "Fantom",
+      "httpStatus": 200,
+      "echo": "Fantom",
+      "match": true,
+      "total24h": 7463.669999999999,
+      "totalAllTime": 105082523741.28003,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "filecoin",
+      "requested": "Filecoin",
+      "httpStatus": 200,
+      "echo": "Filecoin",
+      "match": true,
+      "total24h": 68819,
+      "totalAllTime": 134781494,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "findora",
+      "requested": "Findora",
+      "httpStatus": 200,
+      "echo": "Findora",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 8360593,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "flare",
+      "requested": "Flare",
+      "httpStatus": 200,
+      "echo": "Flare",
+      "match": true,
+      "total24h": 3223802,
+      "totalAllTime": 3874922910.51,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "flow",
+      "requested": "Flow",
+      "httpStatus": 200,
+      "echo": "Flow",
+      "match": true,
+      "total24h": 53044,
+      "totalAllTime": 828184133,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "fluent",
+      "requested": "Fluent",
+      "httpStatus": 200,
+      "echo": "Fluent",
+      "match": true,
+      "total24h": 163916,
+      "totalAllTime": 20405909,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "fogo",
+      "requested": "Fogo",
+      "httpStatus": 200,
+      "echo": "Fogo",
+      "match": true,
+      "total24h": 3643,
+      "totalAllTime": 312407978,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "form-network",
+      "requested": "Form Network",
+      "httpStatus": 200,
+      "echo": "Form Network",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 144073,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "fraxtal",
+      "requested": "Fraxtal",
+      "httpStatus": 200,
+      "echo": "Fraxtal",
+      "match": true,
+      "total24h": 138361,
+      "totalAllTime": 917455324.29,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "fuel-ignition",
+      "requested": "Fuel Ignition",
+      "httpStatus": 200,
+      "echo": "Fuel Ignition",
+      "match": true,
+      "total24h": 126238,
+      "totalAllTime": 2286316783,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "functionx",
+      "requested": "FunctionX",
+      "httpStatus": 200,
+      "echo": "FunctionX",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 193892445,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "fuse",
+      "requested": "Fuse",
+      "httpStatus": 200,
+      "echo": "Fuse",
+      "match": true,
+      "total24h": 128.26000000000002,
+      "totalAllTime": 124564383.86000001,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "fusion",
+      "requested": "Fusion",
+      "httpStatus": 200,
+      "echo": "Fusion",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 1168832128,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "gala",
+      "requested": "Gala",
+      "httpStatus": 200,
+      "echo": "Gala",
+      "match": true,
+      "total24h": 1961087,
+      "totalAllTime": 659809860,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "gatelayer",
+      "requested": "GateLayer",
+      "httpStatus": 200,
+      "echo": "GateLayer",
+      "match": true,
+      "total24h": 19192,
+      "totalAllTime": 33529935.14,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "gnosis",
+      "requested": "Gnosis",
+      "httpStatus": 200,
+      "echo": "Gnosis",
+      "match": true,
+      "total24h": 2449022.46,
+      "totalAllTime": 8486231445.45,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "goat",
+      "requested": "GOAT",
+      "httpStatus": 200,
+      "echo": "GOAT",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 111101002,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "godwoken",
+      "requested": "Godwoken",
+      "httpStatus": 200,
+      "echo": "Godwoken",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 702348815,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "godwokenv1",
+      "requested": "GodwokenV1",
+      "httpStatus": 200,
+      "echo": "GodwokenV1",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 163026853,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "gravity-by-galxe",
+      "requested": "Gravity by Galxe",
+      "httpStatus": 200,
+      "echo": "Gravity by Galxe",
+      "match": true,
+      "total24h": 733,
+      "totalAllTime": 31344456,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "harmony",
+      "requested": "Harmony",
+      "httpStatus": 200,
+      "echo": "Harmony",
+      "match": true,
+      "total24h": 39.879999999999995,
+      "totalAllTime": 12704168682.179998,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "haven1",
+      "requested": "Haven1",
+      "httpStatus": 200,
+      "echo": "Haven1",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 8802684,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "heco",
+      "requested": "Heco",
+      "httpStatus": 200,
+      "echo": "Heco",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 10150828984,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "hedera",
+      "requested": "Hedera",
+      "httpStatus": 200,
+      "echo": "Hedera",
+      "match": true,
+      "total24h": 848343,
+      "totalAllTime": 6650046907,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "hela",
+      "requested": "HeLa",
+      "httpStatus": 200,
+      "echo": "HeLa",
+      "match": true,
+      "total24h": 50,
+      "totalAllTime": 1015196,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "hemi",
+      "requested": "Hemi",
+      "httpStatus": 200,
+      "echo": "Hemi",
+      "match": true,
+      "total24h": 76336,
+      "totalAllTime": 467717844,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "horizen-eon",
+      "requested": "Horizen EON",
+      "httpStatus": 200,
+      "echo": "Horizen EON",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 78752547,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "hydra",
+      "requested": "Hydra",
+      "httpStatus": 200,
+      "echo": "Hydra",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 26427177,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "hydration",
+      "requested": "Hydration",
+      "httpStatus": 200,
+      "echo": "Hydration",
+      "match": true,
+      "total24h": 906024,
+      "totalAllTime": 4601047198,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "hyperliquid-l1",
+      "requested": "Hyperliquid L1",
+      "httpStatus": 200,
+      "echo": "Hyperliquid L1",
+      "match": true,
+      "total24h": 104119743.29,
+      "totalAllTime": 232555857686.91,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "icon",
+      "requested": "Icon",
+      "httpStatus": 200,
+      "echo": "Icon",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 227443191,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "icp",
+      "requested": "ICP",
+      "httpStatus": 200,
+      "echo": "ICP",
+      "match": true,
+      "total24h": 119807,
+      "totalAllTime": 812051468,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "igra",
+      "requested": "Igra",
+      "httpStatus": 200,
+      "echo": "Igra",
+      "match": true,
+      "total24h": 24421,
+      "totalAllTime": 2407150,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "immutable-zkevm",
+      "requested": "Immutable zkEVM",
+      "httpStatus": 200,
+      "echo": "Immutable zkEVM",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 95578890,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "initia",
+      "requested": "Initia",
+      "httpStatus": 200,
+      "echo": "Initia",
+      "match": true,
+      "total24h": 26913,
+      "totalAllTime": 399458411,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "injective",
+      "requested": "Injective",
+      "httpStatus": 200,
+      "echo": "Injective",
+      "match": true,
+      "total24h": 189866,
+      "totalAllTime": 9106544002,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "ink",
+      "requested": "Ink",
+      "httpStatus": 200,
+      "echo": "Ink",
+      "match": true,
+      "total24h": 789929.09,
+      "totalAllTime": 1832740859.47,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "iota-evm",
+      "requested": "IOTA EVM",
+      "httpStatus": 200,
+      "echo": "IOTA EVM",
+      "match": true,
+      "total24h": 34533.43,
+      "totalAllTime": 386485592.7,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "iotex",
+      "requested": "IoTeX",
+      "httpStatus": 200,
+      "echo": "IoTeX",
+      "match": true,
+      "total24h": 269.73,
+      "totalAllTime": 731759264.64,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "jbc",
+      "requested": "JBC",
+      "httpStatus": 200,
+      "echo": "JBC",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 1210883,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "juno",
+      "requested": "Juno",
+      "httpStatus": 200,
+      "echo": "Juno",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 1340401376,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "kaia",
+      "requested": "Kaia",
+      "httpStatus": 200,
+      "echo": "Kaia",
+      "match": true,
+      "total24h": 98430.77,
+      "totalAllTime": 8650691697.77,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "kardia",
+      "requested": "Kardia",
+      "httpStatus": 200,
+      "echo": "Kardia",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 9210421,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "karura",
+      "requested": "Karura",
+      "httpStatus": 200,
+      "echo": "Karura",
+      "match": true,
+      "total24h": 101,
+      "totalAllTime": 78298560,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "kasplex",
+      "requested": "Kasplex",
+      "httpStatus": 200,
+      "echo": "Kasplex",
+      "match": true,
+      "total24h": 107560,
+      "totalAllTime": 11704313.32,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "katana",
+      "requested": "Katana",
+      "httpStatus": 200,
+      "echo": "Katana",
+      "match": true,
+      "total24h": 318928,
+      "totalAllTime": 5414266961,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "kava",
+      "requested": "Kava",
+      "httpStatus": 200,
+      "echo": "Kava",
+      "match": true,
+      "total24h": 7179,
+      "totalAllTime": 1728556297,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "kcc",
+      "requested": "KCC",
+      "httpStatus": 200,
+      "echo": "KCC",
+      "match": true,
+      "total24h": 11525,
+      "totalAllTime": 1607945868,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "kub",
+      "requested": "KUB",
+      "httpStatus": 200,
+      "echo": "KUB",
+      "match": true,
+      "total24h": 10484,
+      "totalAllTime": 52574,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "lens",
+      "requested": "Lens",
+      "httpStatus": 200,
+      "echo": "Lens",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 7956030,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "lightlink",
+      "requested": "LightLink",
+      "httpStatus": 200,
+      "echo": "LightLink",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 11783261,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "linea",
+      "requested": "Linea",
+      "httpStatus": 200,
+      "echo": "Linea",
+      "match": true,
+      "total24h": 1581084.4400000002,
+      "totalAllTime": 24254502403.579998,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "lisk",
+      "requested": "Lisk",
+      "httpStatus": 200,
+      "echo": "Lisk",
+      "match": true,
+      "total24h": 10786.69,
+      "totalAllTime": 283714297.12,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "litecoin",
+      "requested": "Litecoin",
+      "httpStatus": 200,
+      "echo": "Litecoin",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 60897,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "lukso",
+      "requested": "LUKSO",
+      "httpStatus": 200,
+      "echo": "LUKSO",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 65,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "manta",
+      "requested": "Manta",
+      "httpStatus": 200,
+      "echo": "Manta",
+      "match": true,
+      "total24h": 2691.21,
+      "totalAllTime": 1323602090.44,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "mantle",
+      "requested": "Mantle",
+      "httpStatus": 200,
+      "echo": "Mantle",
+      "match": true,
+      "total24h": 15367367.5,
+      "totalAllTime": 25856183431.89,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "map-protocol",
+      "requested": "MAP Protocol",
+      "httpStatus": 200,
+      "echo": "MAP Protocol",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 89657482,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "massa",
+      "requested": "Massa",
+      "httpStatus": 200,
+      "echo": "Massa",
+      "match": true,
+      "total24h": 183,
+      "totalAllTime": 33887528,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "mayachain",
+      "requested": "Mayachain",
+      "httpStatus": 200,
+      "echo": "Mayachain",
+      "match": true,
+      "total24h": 25361,
+      "totalAllTime": 146716553,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "meer",
+      "requested": "MEER",
+      "httpStatus": 200,
+      "echo": "MEER",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 140295559,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "megaeth",
+      "requested": "MegaETH",
+      "httpStatus": 200,
+      "echo": "MegaETH",
+      "match": true,
+      "total24h": 451471,
+      "totalAllTime": 778286174.9699999,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "merlin",
+      "requested": "Merlin",
+      "httpStatus": 200,
+      "echo": "Merlin",
+      "match": true,
+      "total24h": 1241,
+      "totalAllTime": 1270872209.62,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "meter",
+      "requested": "Meter",
+      "httpStatus": 200,
+      "echo": "Meter",
+      "match": true,
+      "total24h": 7353,
+      "totalAllTime": 79840261.12,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "metis",
+      "requested": "Metis",
+      "httpStatus": 200,
+      "echo": "Metis",
+      "match": true,
+      "total24h": 10706.689999999999,
+      "totalAllTime": 6665261199.78,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "mezo",
+      "requested": "Mezo",
+      "httpStatus": 200,
+      "echo": "Mezo",
+      "match": true,
+      "total24h": 66952,
+      "totalAllTime": 19685243,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "milkomeda-c1",
+      "requested": "Milkomeda C1",
+      "httpStatus": 200,
+      "echo": "Milkomeda C1",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 73988281,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "mint",
+      "requested": "Mint",
+      "httpStatus": 200,
+      "echo": "Mint",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 82604144,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "mixin",
+      "requested": "Mixin",
+      "httpStatus": 200,
+      "echo": "Mixin",
+      "match": true,
+      "total24h": 53976,
+      "totalAllTime": 1282519324,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "mode",
+      "requested": "Mode",
+      "httpStatus": 200,
+      "echo": "Mode",
+      "match": true,
+      "total24h": 6983.23,
+      "totalAllTime": 2323687182.4900002,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "monad",
+      "requested": "Monad",
+      "httpStatus": 200,
+      "echo": "Monad",
+      "match": true,
+      "total24h": 17771646.759999998,
+      "totalAllTime": 15097789306.04,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "moonbeam",
+      "requested": "Moonbeam",
+      "httpStatus": 200,
+      "echo": "Moonbeam",
+      "match": true,
+      "total24h": 64568.55,
+      "totalAllTime": 3494859756.0399995,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "moonriver",
+      "requested": "Moonriver",
+      "httpStatus": 200,
+      "echo": "Moonriver",
+      "match": true,
+      "total24h": 14999.28,
+      "totalAllTime": 4262197848.4199996,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "morph",
+      "requested": "Morph",
+      "httpStatus": 200,
+      "echo": "Morph",
+      "match": true,
+      "total24h": 152487,
+      "totalAllTime": 311345990,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "movement",
+      "requested": "Movement",
+      "httpStatus": 200,
+      "echo": "Movement",
+      "match": true,
+      "total24h": 34958,
+      "totalAllTime": 1922872024,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "multiversx",
+      "requested": "MultiversX",
+      "httpStatus": 200,
+      "echo": "MultiversX",
+      "match": true,
+      "total24h": 124237,
+      "totalAllTime": 2641600929,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "near",
+      "requested": "Near",
+      "httpStatus": 200,
+      "echo": "Near",
+      "match": true,
+      "total24h": 66755286,
+      "totalAllTime": 47212594113,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "neo",
+      "requested": "NEO",
+      "httpStatus": 200,
+      "echo": "NEO",
+      "match": true,
+      "total24h": 10106,
+      "totalAllTime": 1650871935,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "neon",
+      "requested": "Neon",
+      "httpStatus": 200,
+      "echo": "Neon",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 3430011,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "neutron",
+      "requested": "Neutron",
+      "httpStatus": 200,
+      "echo": "Neutron",
+      "match": true,
+      "total24h": 8539,
+      "totalAllTime": 1772197808,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "nibiru",
+      "requested": "Nibiru",
+      "httpStatus": 200,
+      "echo": "Nibiru",
+      "match": true,
+      "total24h": 42925,
+      "totalAllTime": 6034750,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "oasis-sapphire",
+      "requested": "Oasis Sapphire",
+      "httpStatus": 200,
+      "echo": "Oasis Sapphire",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 1783150,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "oasys",
+      "requested": "Oasys",
+      "httpStatus": 200,
+      "echo": "Oasys",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 73823653,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "obyte",
+      "requested": "Obyte",
+      "httpStatus": 200,
+      "echo": "Obyte",
+      "match": true,
+      "total24h": 1589,
+      "totalAllTime": 8263654,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "oktchain",
+      "requested": "OKTChain",
+      "httpStatus": 200,
+      "echo": "OKTChain",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 3425717047,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "omax",
+      "requested": "Omax",
+      "httpStatus": 200,
+      "echo": "Omax",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 394731,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "ontologyevm",
+      "requested": "OntologyEVM",
+      "httpStatus": 200,
+      "echo": "OntologyEVM",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 3794224,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "onus",
+      "requested": "Onus",
+      "httpStatus": 200,
+      "echo": "Onus",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 7732662,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "op-mainnet",
+      "requested": "OP Mainnet",
+      "httpStatus": 200,
+      "echo": "OP Mainnet",
+      "match": true,
+      "total24h": 17353511,
+      "totalAllTime": 93200782125.87001,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "opbnb",
+      "requested": "opBNB",
+      "httpStatus": 200,
+      "echo": "opBNB",
+      "match": true,
+      "total24h": 17484,
+      "totalAllTime": 989498247,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "oraichain",
+      "requested": "Oraichain",
+      "httpStatus": 200,
+      "echo": "Oraichain",
+      "match": true,
+      "total24h": 2124,
+      "totalAllTime": 482223176,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "osmosis",
+      "requested": "Osmosis",
+      "httpStatus": 200,
+      "echo": "Osmosis",
+      "match": true,
+      "total24h": 798360,
+      "totalAllTime": 41559154358,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "peaq",
+      "requested": "Peaq",
+      "httpStatus": 200,
+      "echo": "Peaq",
+      "match": true,
+      "total24h": 42615,
+      "totalAllTime": 71059447,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "penumbra",
+      "requested": "Penumbra",
+      "httpStatus": 200,
+      "echo": "Penumbra",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 1885580,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "persistence-one",
+      "requested": "Persistence One",
+      "httpStatus": 200,
+      "echo": "Persistence One",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 38556202,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "planq",
+      "requested": "Planq",
+      "httpStatus": 200,
+      "echo": "Planq",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 201301,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "plasma",
+      "requested": "Plasma",
+      "httpStatus": 200,
+      "echo": "Plasma",
+      "match": true,
+      "total24h": 1161658.83,
+      "totalAllTime": 7162062889.28,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "plume",
+      "requested": "Plume",
+      "httpStatus": 200,
+      "echo": "Plume",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 12355788,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "plume-mainnet",
+      "requested": "Plume Mainnet",
+      "httpStatus": 200,
+      "echo": "Plume Mainnet",
+      "match": true,
+      "total24h": 39124.25,
+      "totalAllTime": 278071348.25,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "polkadex",
+      "requested": "Polkadex",
+      "httpStatus": 200,
+      "echo": "Polkadex",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 20367795,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "polygon",
+      "requested": "Polygon",
+      "httpStatus": 200,
+      "echo": "Polygon",
+      "match": true,
+      "total24h": 145844294.22,
+      "totalAllTime": 344949015390.95,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "polygon-zkevm",
+      "requested": "Polygon zkEVM",
+      "httpStatus": 200,
+      "echo": "Polygon zkEVM",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 859910552,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "provenance",
+      "requested": "Provenance",
+      "httpStatus": 200,
+      "echo": "Provenance",
+      "match": true,
+      "total24h": 1335519,
+      "totalAllTime": 2206983958,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "pulsechain",
+      "requested": "PulseChain",
+      "httpStatus": 200,
+      "echo": "PulseChain",
+      "match": true,
+      "total24h": 6347065,
+      "totalAllTime": 21057507932,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "qie",
+      "requested": "QIE",
+      "httpStatus": 200,
+      "echo": "QIE",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 83872,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "quai",
+      "requested": "Quai",
+      "httpStatus": 200,
+      "echo": "Quai",
+      "match": true,
+      "total24h": 72,
+      "totalAllTime": 14107,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "radix",
+      "requested": "Radix",
+      "httpStatus": 200,
+      "echo": "Radix",
+      "match": true,
+      "total24h": 19071,
+      "totalAllTime": 383461776,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "rangers",
+      "requested": "Rangers",
+      "httpStatus": 200,
+      "echo": "Rangers",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 35966294,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "rari",
+      "requested": "Rari",
+      "httpStatus": 200,
+      "echo": "Rari",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 2376850,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "re-al",
+      "requested": "re.al",
+      "httpStatus": 200,
+      "echo": "re.al",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 117331172,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "redstone",
+      "requested": "Redstone",
+      "httpStatus": 200,
+      "echo": "Redstone",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 141612,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "reyachain",
+      "requested": "ReyaChain",
+      "httpStatus": 200,
+      "echo": "ReyaChain",
+      "match": true,
+      "total24h": 7.16,
+      "totalAllTime": 56445.16,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "robinhood-chain",
+      "requested": "Robinhood Chain",
+      "httpStatus": 200,
+      "echo": "Robinhood Chain",
+      "match": true,
+      "total24h": 417035772.55,
+      "totalAllTime": 11929036200.48,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "rollux",
+      "requested": "Rollux",
+      "httpStatus": 200,
+      "echo": "Rollux",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 22098976,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "ronin",
+      "requested": "Ronin",
+      "httpStatus": 200,
+      "echo": "Ronin",
+      "match": true,
+      "total24h": 136322,
+      "totalAllTime": 14451014843,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "rootstock",
+      "requested": "Rootstock",
+      "httpStatus": 200,
+      "echo": "Rootstock",
+      "match": true,
+      "total24h": 1701517,
+      "totalAllTime": 704473846,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "saga",
+      "requested": "Saga",
+      "httpStatus": 200,
+      "echo": "Saga",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 2062968413,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "satoshivm",
+      "requested": "SatoshiVM",
+      "httpStatus": 200,
+      "echo": "SatoshiVM",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 305398,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "scroll",
+      "requested": "Scroll",
+      "httpStatus": 200,
+      "echo": "Scroll",
+      "match": true,
+      "total24h": 49218.7,
+      "totalAllTime": 8631316052.07,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "sei",
+      "requested": "Sei",
+      "httpStatus": 200,
+      "echo": "Sei",
+      "match": true,
+      "total24h": 7566260,
+      "totalAllTime": 15283925639.53,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "shape",
+      "requested": "Shape",
+      "httpStatus": 200,
+      "echo": "Shape",
+      "match": true,
+      "total24h": 973,
+      "totalAllTime": 1686586,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "shibarium",
+      "requested": "Shibarium",
+      "httpStatus": 200,
+      "echo": "Shibarium",
+      "match": true,
+      "total24h": 2.62,
+      "totalAllTime": 2658384.8200000003,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "shido",
+      "requested": "Shido",
+      "httpStatus": 200,
+      "echo": "Shido",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 8660083,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "shimmerevm",
+      "requested": "ShimmerEVM",
+      "httpStatus": 200,
+      "echo": "ShimmerEVM",
+      "match": true,
+      "total24h": 156.67,
+      "totalAllTime": 86033399.74,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "smartbch",
+      "requested": "smartBCH",
+      "httpStatus": 200,
+      "echo": "smartBCH",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 247846007,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "solana",
+      "requested": "Solana",
+      "httpStatus": 200,
+      "echo": "Solana",
+      "match": true,
+      "total24h": 1198930517.6,
+      "totalAllTime": 2983666092633.89,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "somnia",
+      "requested": "Somnia",
+      "httpStatus": 200,
+      "echo": "Somnia",
+      "match": true,
+      "total24h": 841598.8,
+      "totalAllTime": 123038150.57,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "soneium",
+      "requested": "Soneium",
+      "httpStatus": 200,
+      "echo": "Soneium",
+      "match": true,
+      "total24h": 551704.78,
+      "totalAllTime": 1702124583.63,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "songbird",
+      "requested": "Songbird",
+      "httpStatus": 200,
+      "echo": "Songbird",
+      "match": true,
+      "total24h": 1053.35,
+      "totalAllTime": 1704267.01,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "sonic",
+      "requested": "Sonic",
+      "httpStatus": 200,
+      "echo": "Sonic",
+      "match": true,
+      "total24h": 517915.95,
+      "totalAllTime": 25719004762.61,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "soon-network",
+      "requested": "Soon Network",
+      "httpStatus": 200,
+      "echo": "Soon Network",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 15319,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "soonbase",
+      "requested": "soonBase",
+      "httpStatus": 200,
+      "echo": "soonBase",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 13901,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "sophon",
+      "requested": "Sophon",
+      "httpStatus": 200,
+      "echo": "Sophon",
+      "match": true,
+      "total24h": 2123,
+      "totalAllTime": 243437510,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "sora",
+      "requested": "Sora",
+      "httpStatus": 200,
+      "echo": "Sora",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 284067100,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "stable",
+      "requested": "Stable",
+      "httpStatus": 200,
+      "echo": "Stable",
+      "match": true,
+      "total24h": 163637,
+      "totalAllTime": 9738547,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "stacks",
+      "requested": "Stacks",
+      "httpStatus": 200,
+      "echo": "Stacks",
+      "match": true,
+      "total24h": 109282,
+      "totalAllTime": 1531875515,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "starknet",
+      "requested": "Starknet",
+      "httpStatus": 200,
+      "echo": "Starknet",
+      "match": true,
+      "total24h": 2524227,
+      "totalAllTime": 13510746948,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "stellar",
+      "requested": "Stellar",
+      "httpStatus": 200,
+      "echo": "Stellar",
+      "match": true,
+      "total24h": 514472,
+      "totalAllTime": 2230140266,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "step",
+      "requested": "Step",
+      "httpStatus": 200,
+      "echo": "Step",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 97446543,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "sui",
+      "requested": "Sui",
+      "httpStatus": 200,
+      "echo": "Sui",
+      "match": true,
+      "total24h": 15271993.44,
+      "totalAllTime": 203021768315.44,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "superposition",
+      "requested": "Superposition",
+      "httpStatus": 200,
+      "echo": "Superposition",
+      "match": true,
+      "total24h": 1261,
+      "totalAllTime": 29394,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "superseed",
+      "requested": "Superseed",
+      "httpStatus": 200,
+      "echo": "Superseed",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 399383,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "supra",
+      "requested": "Supra",
+      "httpStatus": 200,
+      "echo": "Supra",
+      "match": true,
+      "total24h": 3.25,
+      "totalAllTime": 12864384.47,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "svmbnb",
+      "requested": "svmBNB",
+      "httpStatus": 200,
+      "echo": "svmBNB",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 1078,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "swellchain",
+      "requested": "Swellchain",
+      "httpStatus": 200,
+      "echo": "Swellchain",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 93231732,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "sx-network",
+      "requested": "SX Network",
+      "httpStatus": 200,
+      "echo": "SX Network",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 23673470,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "sx-rollup",
+      "requested": "SX Rollup",
+      "httpStatus": 200,
+      "echo": "SX Rollup",
+      "match": true,
+      "total24h": 2557971,
+      "totalAllTime": 887748407,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "syscoin",
+      "requested": "Syscoin",
+      "httpStatus": 200,
+      "echo": "Syscoin",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 31335064,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "tac",
+      "requested": "TAC",
+      "httpStatus": 200,
+      "echo": "TAC",
+      "match": true,
+      "total24h": 66,
+      "totalAllTime": 14485418,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "taiko",
+      "requested": "Taiko",
+      "httpStatus": 200,
+      "echo": "Taiko",
+      "match": true,
+      "total24h": 79050.16,
+      "totalAllTime": 197547778.52,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "taraxa",
+      "requested": "Taraxa",
+      "httpStatus": 200,
+      "echo": "Taraxa",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 17035498,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "telos",
+      "requested": "Telos",
+      "httpStatus": 200,
+      "echo": "Telos",
+      "match": true,
+      "total24h": 51,
+      "totalAllTime": 103162117,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "tempo",
+      "requested": "Tempo",
+      "httpStatus": 200,
+      "echo": "Tempo",
+      "match": true,
+      "total24h": 12095.45,
+      "totalAllTime": 15722741.09,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "terra-classic",
+      "requested": "Terra Classic",
+      "httpStatus": 200,
+      "echo": "Terra Classic",
+      "match": true,
+      "total24h": 2123,
+      "totalAllTime": 63249613870,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "terra2",
+      "requested": "Terra2",
+      "httpStatus": 200,
+      "echo": "Terra2",
+      "match": true,
+      "total24h": 35677,
+      "totalAllTime": 608848930,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "tezos",
+      "requested": "Tezos",
+      "httpStatus": 200,
+      "echo": "Tezos",
+      "match": true,
+      "total24h": 245,
+      "totalAllTime": 746251203,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "thorchain",
+      "requested": "Thorchain",
+      "httpStatus": 200,
+      "echo": "Thorchain",
+      "match": true,
+      "total24h": 13202624,
+      "totalAllTime": 126857355825,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "thundercore",
+      "requested": "ThunderCore",
+      "httpStatus": 200,
+      "echo": "ThunderCore",
+      "match": true,
+      "total24h": 2729,
+      "totalAllTime": 32110211.48,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "tombchain",
+      "requested": "Tombchain",
+      "httpStatus": 200,
+      "echo": "Tombchain",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 71332445,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "ton",
+      "requested": "TON",
+      "httpStatus": 200,
+      "echo": "TON",
+      "match": true,
+      "total24h": 3766527.71,
+      "totalAllTime": 12669677929.65,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "tron",
+      "requested": "Tron",
+      "httpStatus": 200,
+      "echo": "Tron",
+      "match": true,
+      "total24h": 16403741,
+      "totalAllTime": 152533881005,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "ultron",
+      "requested": "Ultron",
+      "httpStatus": 200,
+      "echo": "Ultron",
+      "match": true,
+      "total24h": 249,
+      "totalAllTime": 250265784,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "unichain",
+      "requested": "Unichain",
+      "httpStatus": 200,
+      "echo": "Unichain",
+      "match": true,
+      "total24h": 3064923,
+      "totalAllTime": 76659308191,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "unit-zero",
+      "requested": "Unit Zero",
+      "httpStatus": 200,
+      "echo": "Unit Zero",
+      "match": true,
+      "total24h": 30,
+      "totalAllTime": 46112460,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "vana",
+      "requested": "Vana",
+      "httpStatus": 200,
+      "echo": "Vana",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 146855370,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "vara",
+      "requested": "Vara",
+      "httpStatus": 200,
+      "echo": "Vara",
+      "match": true,
+      "total24h": 15413,
+      "totalAllTime": 171371,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "vaulta",
+      "requested": "Vaulta",
+      "httpStatus": 200,
+      "echo": "Vaulta",
+      "match": true,
+      "total24h": 74235,
+      "totalAllTime": 7398512967,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "vechain",
+      "requested": "VeChain",
+      "httpStatus": 200,
+      "echo": "VeChain",
+      "match": true,
+      "total24h": 4868,
+      "totalAllTime": 45051132,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "velas",
+      "requested": "Velas",
+      "httpStatus": 200,
+      "echo": "Velas",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 955064115,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "venom",
+      "requested": "Venom",
+      "httpStatus": 200,
+      "echo": "Venom",
+      "match": true,
+      "total24h": 8347,
+      "totalAllTime": 224791679,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "verus",
+      "requested": "Verus",
+      "httpStatus": 200,
+      "echo": "Verus",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 116802153,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "viction",
+      "requested": "Viction",
+      "httpStatus": 200,
+      "echo": "Viction",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 100287948,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "vinuchain",
+      "requested": "VinuChain",
+      "httpStatus": 200,
+      "echo": "VinuChain",
+      "match": true,
+      "total24h": 51.16,
+      "totalAllTime": 201011.4,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "vision",
+      "requested": "Vision",
+      "httpStatus": 200,
+      "echo": "Vision",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 136479167,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "w-chain",
+      "requested": "W Chain",
+      "httpStatus": 200,
+      "echo": "W Chain",
+      "match": true,
+      "total24h": 288,
+      "totalAllTime": 151183,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "wanchain",
+      "requested": "Wanchain",
+      "httpStatus": 200,
+      "echo": "Wanchain",
+      "match": true,
+      "total24h": 17030,
+      "totalAllTime": 178620635,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "waves",
+      "requested": "Waves",
+      "httpStatus": 200,
+      "echo": "Waves",
+      "match": true,
+      "total24h": 7285,
+      "totalAllTime": 21012555,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "wax",
+      "requested": "Wax",
+      "httpStatus": 200,
+      "echo": "Wax",
+      "match": true,
+      "total24h": 94,
+      "totalAllTime": 3698165,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "wemix3-0",
+      "requested": "WEMIX3.0",
+      "httpStatus": 200,
+      "echo": "WEMIX3.0",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 1759509983,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "winr",
+      "requested": "WINR",
+      "httpStatus": 200,
+      "echo": "WINR",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 47079006,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "world-chain",
+      "requested": "World Chain",
+      "httpStatus": 200,
+      "echo": "World Chain",
+      "match": true,
+      "total24h": 242067.17,
+      "totalAllTime": 718077846.51,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "x-layer",
+      "requested": "X Layer",
+      "httpStatus": 200,
+      "echo": "X Layer",
+      "match": true,
+      "total24h": 120728114,
+      "totalAllTime": 3775544360,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "xdc",
+      "requested": "XDC",
+      "httpStatus": 200,
+      "echo": "XDC",
+      "match": true,
+      "total24h": 229002,
+      "totalAllTime": 581377248,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "xpr-network",
+      "requested": "XPR Network",
+      "httpStatus": 200,
+      "echo": "XPR Network",
+      "match": true,
+      "total24h": 1732351,
+      "totalAllTime": 563236197,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "xrpl",
+      "requested": "XRPL",
+      "httpStatus": 200,
+      "echo": "XRPL",
+      "match": true,
+      "total24h": 2152857,
+      "totalAllTime": 2958275212,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "xrpl-evm",
+      "requested": "XRPL EVM",
+      "httpStatus": 200,
+      "echo": "XRPL EVM",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 95440,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "zero-network",
+      "requested": "Zero Network",
+      "httpStatus": 200,
+      "echo": "Zero Network",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 42918193,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "zetachain",
+      "requested": "ZetaChain",
+      "httpStatus": 200,
+      "echo": "ZetaChain",
+      "match": true,
+      "total24h": 148.36,
+      "totalAllTime": 85467285.97999999,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "zigchain",
+      "requested": "ZIGChain",
+      "httpStatus": 200,
+      "echo": "ZIGChain",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 0,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "zilliqa",
+      "requested": "Zilliqa",
+      "httpStatus": 200,
+      "echo": "Zilliqa",
+      "match": true,
+      "total24h": 0,
+      "totalAllTime": 37586408,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "zircuit",
+      "requested": "Zircuit",
+      "httpStatus": 200,
+      "echo": "Zircuit",
+      "match": true,
+      "total24h": 0.02,
+      "totalAllTime": 168257182.12,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "zksync-era",
+      "requested": "ZKsync Era",
+      "httpStatus": 200,
+      "echo": "ZKsync Era",
+      "match": true,
+      "total24h": 265190.05,
+      "totalAllTime": 33655846958.420002,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "zksync-lite",
+      "requested": "ZKsync Lite",
+      "httpStatus": 200,
+      "echo": "ZKsync Lite",
+      "match": true,
+      "total24h": null,
+      "totalAllTime": 457098071,
+      "allChainsCount": 287
+    },
+    {
+      "slug": "zora",
+      "requested": "Zora",
+      "httpStatus": 200,
+      "echo": "Zora",
+      "match": true,
+      "total24h": 65.24,
+      "totalAllTime": 17118897.97,
+      "allChainsCount": 287
+    }
+  ]
+}

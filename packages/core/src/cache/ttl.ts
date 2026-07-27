@@ -13,6 +13,15 @@ const TTL_SECONDS: Readonly<Record<string, number>> = {
   // cadence — a chain's total TVL does not move meaningfully faster than a protocol's, so it gets
   // the same 300s bucket as `protocol.tvl` rather than a separately invented number.
   'chain.tvl': 300,
+  // TASK-007 (task 007-1, R-64). The vendor's own step for this dataset is ONE DAY
+  // (`totalDataChart` is `[[unix_ts, usd], …]` with an exact 86400s stride — measured over 2825
+  // points, 2824 of them exactly one day apart), so a TTL shorter than a day cannot buy a fresher
+  // number. It can only buy a second identical 250KB download.
+  //
+  // The row is mandatory, not polish: without it this capability falls through to
+  // `DEFAULT_TTL_SECONDS = 300` below — a constant whose own docstring says it should not be hit.
+  // That exact accident already happened once, to all three of M2's PAID capabilities.
+  'dex.volume.history': 3600,
   'privacy.shielded_pool': 3600,
   'platform.identities': 3600,
   'platform.contracts': 3600,

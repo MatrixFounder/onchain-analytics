@@ -1,5 +1,5 @@
 {
-  "$comment": "RF-2 \u2014 provenance manifest. Each entry pins the sha256 of a file whose silent edit would invalidate a recorded, live-verified assertion. Verified by scripts/verify-provenance.mjs on every test run (working tree) and by .githooks/pre-commit (index). Re-baseline ONLY with --update, in the same commit as the change, so a reviewer sees both halves.",
+  "$comment": "RF-2 — provenance manifest. Each entry pins the sha256 of a file whose silent edit would invalidate a recorded, live-verified assertion. Verified by scripts/verify-provenance.mjs on every test run (working tree) and by .githooks/pre-commit (index). Re-baseline ONLY with --update, in the same commit as the change, so a reviewer sees both halves.",
   "files": {
     "packages/core/test/nansen.contract.test.ts": {
       "sha256": "8652a140ac52d4bc528de2ec552e3eaba3e2dd0ae94b1e0194b6339295eb9d6c",
@@ -40,6 +40,26 @@
     "packages/core/test/fixtures/nansen/tgm-token-information.json": {
       "sha256": "c990f52e2b5315326b78a51d664b952cb753c6957a5f4cf4a41b1f5532d716e6",
       "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "docs/onchain-analytics/raw/defillama-dexs-allchains-2026-07-27.json": {
+      "sha256": "f3280dcab2997b11a16cc5fde95352d5fea7ec3208dfa076b2abffffe91ff7e1",
+      "note": "TASK-007 task 007-2 — the vendor's own DEX-volume chain list, live-recorded keyless. src/adapters/defillama/dex-chains.ts is GENERATED from it, so this file decides which chains the engine advertises dex.volume.history on. The generator test compares the committed module against a regeneration from this evidence — editing BOTH would pass that check, which is precisely the gap this pin closes."
+    },
+    "packages/core/test/fixtures/defillama/dexs-ethereum.json": {
+      "sha256": "41bdc7b50d05b7fb2d25a0ca76bd2fc1b6c09da9e90eef191caafcbba8365a67",
+      "note": "TASK-007 task 007-4 — live-recorded vendor response (trimmed to 120 daily points, protocols[] dropped). The gapless-92-point acceptance test rests on it; a silent edit would be indistinguishable from the vendor changing its answer."
+    },
+    "packages/core/test/fixtures/defillama/dexs-empty-chain.json": {
+      "sha256": "ae7f1e430c266e4c72b4381d279fa1943c602ba907fd07f0af7cb174139af090",
+      "note": "TASK-007 task 007-4 — live-recorded HTTP 200 zero-volume shape (narrower key set, change_1d null). It is the EVIDENCE that a missing aggregate must normalize to null rather than 0; hand-editing it would turn a measured vendor behaviour into an assumption."
+    },
+    "docs/onchain-analytics/raw/defillama-dex-echo-probe-2026-07-28.json": {
+      "sha256": "0c2ebb9ab0534b594bc9a09454ae9c0a6ed1ff9b2405b4a4e64024fcecc2f6d9",
+      "note": "TASK-007 backlog item 6 — live keyless verification that DeFiLlama's `chain` echo equals the `vendors.defillama` name we send, for all 274 covered chains. It is the evidence that normalizeDexVolume's identity guard cannot misfire on a covered chain, and (incidentally) the first measured proof that a COVERED chain can return `total24h: null` — the justification for nullable aggregates, which until now cited a chain that is not covered."
+    },
+    "packages/core/test/fixtures/defillama/dexs-ethereum-no-chart.json": {
+      "sha256": "aa10a0e1f2b50ab47409c766c06b03bb02280fd6c60bf1b2020b17050294d09a",
+      "note": "TASK-007 / WI-17 (D-2) — live-recorded response for the includeSeries:false mode (excludeTotalDataChart=true), 2026-07-28. It answers a question that was previously a guess: the vendor KEEPS `totalDataChart` and sets it to an empty array rather than omitting it or sending null. That is what decides window/points/gapDays in that mode, so a silent edit here would rewrite a measured vendor behaviour into an assumption."
     }
   }
 }

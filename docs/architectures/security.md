@@ -143,6 +143,23 @@ registry adds **data** to the existing mechanism; it does not replace the mechan
   by design (intended for future non-HTTP transports such as gRPC), but no live adapter exercises it
   today — `dash-platform`'s gRPC channel is not created — so it stays ready for the backlog task of
   a live DAPI transport (§11), when channel-level checking is needed again.
+- **Response-size cap (R-65, TASK-007):** `safeFetch()` bounds **every** response body against
+  `maxResponseBytes` (default 10 MB) by counting bytes off the stream, cancelling the upstream reader
+  and throwing `SafeFetchResponseTooLargeError` the moment the cap is crossed. The advertised
+  `Content-Length` is used **only as a cheap early rejection** — never as grounds to skip the
+  counter. This closes item (1) of the R-47 carry-over.
+
+  Both halves of that sentence were learned the hard way. Until TASK-007 the cap read the header and
+  returned early when it was absent, which is the common case rather than the exotic one:
+  `api.llama.fi` serves every response over HTTP/2 with **no `Content-Length` at all** (measured
+  2026-07-27), so the cap was inert on a host the engine was about to send more traffic to. The first
+  fix then trusted the header when it _was_ present — and the security and performance critics found
+  independently (adversarial cycle 3) that this let the header, the one input a size cap exists to
+  distrust, switch the enforcement off: `Content-Length: abc` or `-1` fails the `> maxBytes` test and
+  reported "bounded"; a `Content-Encoding: gzip` response advertises **compressed** bytes while the
+  cap is enforced on **decoded** ones, making an ~8×-compressible JSON body a decompression bomb that
+  passes a 2 MB cap at 250 KB advertised. Always wrapping costs ~10 µs and no byte copies.
+
 - **Rate limit (R-26):** a per-provider token bucket protects both the provider (good citizen) and
   us (we do not burn paid credit faster than necessary). The budget guard sits on top of the rate
   limit; the two are independent and both mandatory. The rate limit protects against 429 regardless

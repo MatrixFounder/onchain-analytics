@@ -79,9 +79,10 @@ describe('defillama adapter (contract, R-7)', () => {
   // CHANGED EXPECTATION (task 006-5, R-54): `capabilities()` no longer carries a `chains` literal.
   // The chain dimension is the coverage matrix's job (§4.2.3) — a second list here could only
   // drift from it. What the adapter answers about chains now goes through `chainSupport()`.
-  it('capabilities() declares protocol.tvl and chain.tvl without a hardcoded chain list', () => {
+  // CHANGED EXPECTATION (TASK-007 task 007-1, R-61): a third capability on the same adapter.
+  it('capabilities() declares all three capabilities without a hardcoded chain list', () => {
     const caps = adapter.capabilities();
-    expect(caps.map((c) => c.id)).toEqual(['protocol.tvl', 'chain.tvl']);
+    expect(caps.map((c) => c.id)).toEqual(['protocol.tvl', 'chain.tvl', 'dex.volume.history']);
     for (const cap of caps) expect(cap.chains).toBeUndefined();
   });
 
@@ -174,7 +175,34 @@ describe('defillama adapter (contract, R-7)', () => {
 
   it('costOf() is free (0 credits) and isAvailable() is always ok (keyless)', () => {
     expect(adapter.costOf('protocol.tvl', {})).toEqual({ credits: 0 });
+    expect(adapter.costOf('dex.volume.history', {})).toEqual({ credits: 0 });
     expect(adapter.isAvailable?.()).toEqual({ ok: true });
+  });
+
+  // TASK-007 task 007-1 (R-61) — the capability is declared and routed. Two CHANGED EXPECTATIONS
+  // since: task 007-2 (R-63) replaced the flat `false` with the real vendor list, and tasks
+  // 007-4/007-5 replaced the `NotImplemented` throws with the transport and normalizer. What
+  // belongs HERE is only the adapter-level surface; coverage lives in
+  // `defillama-dex-coverage.test.ts` and behaviour in `defillama-dex-volume.test.ts`.
+  describe('dex.volume.history — adapter surface (task 007-1)', () => {
+    it('chainSupport() is capability-aware, not one answer for the whole adapter', () => {
+      const ethereum = CHAINS.resolve('ethereum');
+      expect(adapter.chainSupport?.(ethereum, 'chain.tvl')).toBe(true);
+      expect(adapter.chainSupport?.(ethereum, 'dex.volume.history')).toBe(true);
+      // A chain the vendor names for TVL but not for DEX volume answers differently per capability.
+      const tvlOnly = CHAINS.list().find(
+        (c) =>
+          adapter.chainSupport?.(c, 'chain.tvl') === true &&
+          adapter.chainSupport?.(c, 'dex.volume.history') === false,
+      );
+      expect(tvlOnly, 'the registry must contain at least one TVL-only chain').toBeDefined();
+    });
+
+    it('normalize() refuses a fetch result that carries no validated args', () => {
+      // Reachable only by calling the adapter out of band — `fetch()` always attaches them. Loud
+      // rather than silent, because the alternative is normalizing against an invented window.
+      expect(() => adapter.normalize('dex.volume.history', {})).toThrow(/no validated args/);
+    });
   });
 
   it('fetch() builds the documented protocol endpoint through safeFetch (no real network)', async () => {

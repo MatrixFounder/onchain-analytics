@@ -1,14 +1,14 @@
 # ARCHITECTURE — `onchain-intel`
 
-| Field             | Value                                                                                                                                                                                                                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Document type** | Living document — updated **in place**, never archived per task                                                                                                                                                                                                                     |
-| **Delivered**     | M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md)) · M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)) · M2 ✅ ([task-005](tasks/task-005-m2-alpha-paid.md)) · TASK-006 `universal-chain-registry` ✅ ([TASK.md](TASK.md)) — implemented 2026-07-26, hardened 2026-07-27 |
-| **ADR**           | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20, decisions D1–D12                                                                                                                                                              |
-| **Data schema**   | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable conventions, applied here to the cache DB and the `usage` ledger                                                                                                                                       |
-| **Roadmap**       | [ROADMAP.md](onchain-analytics/ROADMAP.md) — phases M0–M6                                                                                                                                                                                                                           |
-| **Updated**       | 2026-07-27, **v4.3** — test suite **796**. Full changelog: [architectures/version-history.md](architectures/version-history.md)                                                                                                                                                     |
-| **Format**        | **Index mode** (skill `architecture-format-core`): section bodies live in [docs/architectures/](architectures/); this file holds the table of contents, one-line summaries, and the sections small enough to keep inline                                                            |
+| Field             | Value                                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Document type** | Living document — updated **in place**, never archived per task                                                                                                                                                                                                                                                                                   |
+| **Delivered**     | M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md)) · M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)) · M2 ✅ ([task-005](tasks/task-005-m2-alpha-paid.md)) · TASK-006 `universal-chain-registry` ✅ ([task-006](tasks/task-006-universal-chain-registry.md)) · TASK-007 `defillama-dex-volumes` ✅ ([TASK.md](TASK.md)) — 2026-07-27 |
+| **ADR**           | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20, decisions D1–D12                                                                                                                                                                                                                            |
+| **Data schema**   | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable conventions, applied here to the cache DB and the `usage` ledger                                                                                                                                                                                                     |
+| **Roadmap**       | [ROADMAP.md](onchain-analytics/ROADMAP.md) — phases M0–M6                                                                                                                                                                                                                                                                                         |
+| **Updated**       | 2026-07-27, **v4.4** — test suite **911** (core 713 + mcp-server 198). Full changelog: [architectures/version-history.md](architectures/version-history.md)                                                                                                                                                                                       |
+| **Format**        | **Index mode** (skill `architecture-format-core`): section bodies live in [docs/architectures/](architectures/); this file holds the table of contents, one-line summaries, and the sections small enough to keep inline                                                                                                                          |
 
 ---
 
@@ -46,7 +46,7 @@ are **Accepted** in ADR-001; this document does not revisit them, it makes them 
 
 **What the engine is today** — ten provider adapters behind one hot-swappable interface, a chain
 registry of 458 networks, a two-level cache, an SSRF gate and per-provider rate limiting, a credit
-budget guard on the single paid provider, and ten workflow-oriented MCP tools served over local
+budget guard on the single paid provider, and eleven workflow-oriented MCP tools served over local
 stdio.
 
 ### 1.1. Delivered scope
@@ -65,6 +65,11 @@ stdio.
   `routes × adapter.chainSupport()` rather than kept as a second catalogue. The `ethereum | solana`
   literal that used to be duplicated across five layers is gone; both names remain valid aliases
   indefinitely. Two free tools were added (`onchain_list_chains`, `onchain_chain_tvl`).
+- **TASK-007** — the free DEX-volume tier: `dex.volume.history` on the existing keyless `defillama`
+  adapter, one tool (`onchain_dex_volume`), and coverage derived from the vendor's own DEX chain
+  list rather than from `vendors.defillama` — which covers 458 chains for TVL but only 274 for
+  volume. `safeFetch`'s response-size cap became real for responses with no `Content-Length`
+  (R-47(1)), because the host this tier talks to sends none.
 
 ### 1.2. Standing constraints
 

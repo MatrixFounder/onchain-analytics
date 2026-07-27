@@ -35,6 +35,55 @@ describe('onchain_list_chains', () => {
     }
   });
 
+  /**
+   * TASK-007 task 007-7 (R-72, AC-4) — the new capability must be visible exactly where it is
+   * served and invisible where it is not. This is the system-level counterpart to
+   * `defillama-dex-coverage.test.ts` in core: there the ADAPTER answers, here the matrix an agent
+   * actually reads does.
+   */
+  describe('dex.volume.history visibility (task 007-7)', () => {
+    it('is served on strictly FEWER chains than chain.tvl is', () => {
+      const dex = listChainsHandler({ capability: 'dex.volume.history', limit: 200 }, ctx());
+      const tvl = listChainsHandler({ capability: 'chain.tvl', limit: 200 }, ctx());
+
+      // A RELATION, not a literal count: this survives a registry sync and vendor drift, whereas
+      // `toBe(274)` would break on the next sync and be "fixed" by editing the number — at which
+      // point it checks nothing. Restoring the naive `vendors.defillama != null` predicate makes
+      // these two equal, which is exactly the over-claim this task exists to prevent.
+      expect(dex.total).toBeGreaterThan(0);
+      expect(dex.total).toBeLessThan(tvl.total);
+    });
+
+    it('lists the capability on a served chain and omits it on a TVL-only one', () => {
+      const c = ctx();
+      const ethereum = listChainsHandler({ query: 'ethereum', limit: 200 }, c).chains.find(
+        (row) => row.slug === 'ethereum',
+      );
+      expect(ethereum?.capabilities).toContain('dex.volume.history');
+
+      const zcash = listChainsHandler({ query: 'zcash', limit: 200 }, c).chains.find(
+        (row) => row.slug === 'zcash',
+      );
+      // The vendor names this chain for TVL and not for DEX volume — so one row, two answers.
+      expect(zcash?.capabilities).toContain('chain.tvl');
+      expect(zcash?.capabilities).not.toContain('dex.volume.history');
+    });
+
+    it('answers the capability filter with zero network calls', () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+        throw new Error('network call from a discovery tool');
+      });
+      try {
+        expect(
+          listChainsHandler({ capability: 'dex.volume.history', limit: 200 }, ctx()).total,
+        ).toBeGreaterThan(0);
+        expect(fetchSpy).not.toHaveBeenCalled();
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+  });
+
   it('truncates by default and reports the untruncated total (R-52c)', () => {
     // Without `total`, a truncated page is indistinguishable from "that is all there is" — the
     // agent would conclude the engine supports 50 chains. And an untruncated default would make

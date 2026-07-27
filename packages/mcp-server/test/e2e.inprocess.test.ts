@@ -109,12 +109,27 @@ const dexscreenerFixtureFetch = async (input: FetchUrlInput): Promise<Response> 
   throw new Error(`fixture fetchImpl: no dexscreener route for ${url}`);
 };
 
+/** TASK-007 task 007-7: how many times the DEX-volume endpoint was actually hit. Counted here
+ * rather than inside a test so the miss→hit assertion can prove ONE upstream request served two
+ * tool calls — which is the whole claim `_meta.cache` makes. */
+let dexVolumeFetchCount = 0;
+
 const defillamaFixtureFetch = async (input: FetchUrlInput): Promise<Response> => {
   const url = urlOf(input);
   if (url.includes('/protocol/uniswap'))
     return jsonResponse(loadFixtureRaw('defillama', 'uniswap'));
   if (url.includes('/protocol/raydium'))
     return jsonResponse(loadFixtureRaw('defillama', 'raydium'));
+  // TASK-007: the DEX-volume document. Unlike the two above, this fixture is the WHOLE recorded
+  // vendor body (there is no `raw` envelope) — it is what the adapter's HTTP step receives.
+  if (url.includes('/overview/dexs/')) {
+    dexVolumeFetchCount += 1;
+    return jsonResponse(
+      JSON.parse(
+        readFileSync(path.join(coreFixturesRoot, 'defillama', 'dexs-ethereum.json'), 'utf8'),
+      ) as unknown,
+    );
+  }
   throw new Error(`fixture fetchImpl: no defillama route for ${url}`);
 };
 
@@ -363,6 +378,109 @@ describe('4 new MCP tools — in-process E2E (InMemoryTransport, fixture-backed 
         { timeout: CALL_TIMEOUT_MS },
       )) as CallToolResult;
       expect(result.isError).toBe(true);
+    },
+    CALL_TIMEOUT_MS,
+  );
+});
+
+/**
+ * TASK-007 task 007-7 (R-72, AC-3/AC-6) — `onchain_dex_volume` end to end: the REAL registry, the
+ * REAL two-level cache, the REAL adapter, and a fixture `fetchImpl`. What this proves that the
+ * unit tests cannot: the coverage matrix, the gate and the cache agree with each other.
+ */
+describe('onchain_dex_volume (TASK-007) — in-process E2E (real cache, fixture fetchImpl, 0 network)', () => {
+  let tempDir: string;
+  let client: Client;
+  let close: () => Promise<void>;
+
+  beforeAll(async () => {
+    tempDir = mkdtempSync(path.join(tmpdir(), 'onchain-intel-e2e-dexvol-'));
+    const cache = createCacheStore({ dbPath: path.join(tempDir, 'cache.sqlite3') });
+    const registry = new CapabilityRegistry(routes, buildFixtureAdapters(), cache);
+    dexVolumeFetchCount = 0;
+    ({ client, close } = await connectLinked(registry));
+  }, CONNECT_TIMEOUT_MS);
+
+  afterAll(async () => {
+    await close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it(
+    'is listed among the server tools',
+    async () => {
+      const { tools } = await client.listTools(undefined, { timeout: CALL_TIMEOUT_MS });
+      expect(tools.map((tool) => tool.name)).toContain('onchain_dex_volume');
+    },
+    CALL_TIMEOUT_MS,
+  );
+
+  it(
+    'answers miss then hit, serving BOTH calls from one upstream request (AC-3)',
+    async () => {
+      const before = dexVolumeFetchCount;
+      const args = { chain: 'ethereum', days: 30 };
+      const first = (await client.callTool(
+        { name: 'onchain_dex_volume', arguments: args },
+        undefined,
+        {
+          timeout: CALL_TIMEOUT_MS,
+        },
+      )) as CallToolResult;
+      const second = (await client.callTool(
+        { name: 'onchain_dex_volume', arguments: args },
+        undefined,
+        {
+          timeout: CALL_TIMEOUT_MS,
+        },
+      )) as CallToolResult;
+
+      expect(first.isError).toBeFalsy();
+      expect(cacheMetaOf(first).status).toBe('miss');
+      expect(cacheMetaOf(first).provider).toBe('defillama');
+      expect(cacheMetaOf(second).status).toBe('hit');
+      expect(typeof cacheMetaOf(second).ageMs).toBe('number');
+      // `ageMs` is omitted on a miss rather than coerced to 0 — there is no age to report yet.
+      expect('ageMs' in cacheMetaOf(first)).toBe(false);
+      expect(dexVolumeFetchCount - before).toBe(1);
+    },
+    CALL_TIMEOUT_MS,
+  );
+
+  it(
+    'refuses an uncovered chain WITHOUT any upstream request, naming what is available (AC-6)',
+    async () => {
+      const before = dexVolumeFetchCount;
+      const result = (await client.callTool(
+        { name: 'onchain_dex_volume', arguments: { chain: 'zcash' } },
+        undefined,
+        { timeout: CALL_TIMEOUT_MS },
+      )) as CallToolResult;
+
+      expect(result.isError).toBe(true);
+      const text = JSON.stringify(result.content);
+      expect(text).toMatch(/dex\.volume\.history/);
+      expect(text).toMatch(/zcash/);
+      // A refusal that still paid for a round trip is not a gate.
+      expect(dexVolumeFetchCount).toBe(before);
+      // And the refusal must stay bounded — an error meant to save the caller a wasted call must
+      // not dump 274 slugs into the model's context.
+      expect(text.length).toBeLessThan(1200);
+    },
+    CALL_TIMEOUT_MS,
+  );
+
+  it(
+    'rejects a window outside the schema bounds at the protocol boundary',
+    async () => {
+      const before = dexVolumeFetchCount;
+      const result = (await client.callTool(
+        { name: 'onchain_dex_volume', arguments: { chain: 'ethereum', days: 5000 } },
+        undefined,
+        { timeout: CALL_TIMEOUT_MS },
+      )) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect(dexVolumeFetchCount).toBe(before);
     },
     CALL_TIMEOUT_MS,
   );

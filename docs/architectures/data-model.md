@@ -323,9 +323,9 @@ covered(capability, chain) :=
 Every adapter answers the question about a chain itself, with a predicate over `ChainInfo` rather
 than a list:
 
-| Adapter                                              | `chainSupport(c)`                                            |
+| Adapter                                              | `chainSupport(c, capability)`                                |
 | ---------------------------------------------------- | ------------------------------------------------------------ |
-| `defillama`                                          | `c.vendors.defillama !== null`                               |
+| `defillama`                                          | per capability — see below                                   |
 | `coingecko`                                          | `c.vendors.coingecko !== null`                               |
 | `dexscreener`                                        | `c.vendors.dexscreener !== null`                             |
 | `rpc-evm`                                            | `c.family === 'evm' && c.rpcHosts !== null`                  |
@@ -341,6 +341,28 @@ A deprecated chain is covered by nothing: `covered()` refuses it before consulti
 predicate leaves the registry as the single source of **facts about a chain** and the adapter as the
 single source of **facts about itself**. This is the same principle by which §3.2 keeps
 `providers.config.ts` declarative while `isAvailable()` owns the availability decision.
+
+**`defillama` coverage is per capability too, and for a measured reason (TASK-007, R-63).** The
+`vendors.defillama` column was populated from the vendor's **TVL** catalog (`/v2/chains`), so it is
+non-null for **all 458** registry chains. The vendor's **DEX-volume** dataset is a different and much
+smaller set: `allChains` in a live `/overview/dexs/{chain}` response lists **287** chains, of which
+**274** exist in our registry. Reusing the TVL predicate for `dex.volume.history` would therefore
+advertise the capability on **184 chains that have no such data** — the exact defect class TASK-006's
+review recorded as H-1 (coverage widened, transport not). So:
+
+| capability                  | predicate                                                            | chains |
+| --------------------------- | -------------------------------------------------------------------- | ------ |
+| `protocol.tvl`, `chain.tvl` | `c.vendors.defillama !== null`                                       | 458    |
+| `dex.volume.history`        | `c.vendors.defillama ∈ DEFILLAMA_DEX_CHAINS` (generated vendor list) | 274    |
+
+`DEFILLAMA_DEX_CHAINS` is a **generated, committed build artifact**, produced by
+`scripts/gen-defillama-dex-chains.ts` from a recorded raw response under
+`docs/onchain-analytics/raw/` — the same doctrine, and the same emit-time token guard, as
+`gen-nansen-coverage.ts`: read the evidence we already hold, emit code, review the diff. It is not
+fetched at startup, for the three reasons the chain registry itself is a build artifact (§4.2.1):
+the offline-run gate, CI determinism, and reviewability. The 13 chains the vendor serves that our
+registry does not know are recorded in the raw evidence and covered by nothing — an honest gap beats
+a phantom row.
 
 **`nansen` coverage is per capability, and a composite capability is an intersection.** The recorded
 coverage comes from the committed vendor spec (`raw/nansen-openapi-2026-07-23.json`), which

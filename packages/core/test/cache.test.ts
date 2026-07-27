@@ -48,12 +48,23 @@ describe('ttlFor (R-13/R-14: TTL by capability, ARCHITECTURE.md §3.2 table)', (
     ['platform.documents', 3600],
     ['platform.credits', 3600],
     ['token.holders', 3600],
+    // TASK-007 task 007-1 (R-64): the vendor's own step for this dataset is one day.
+    ['dex.volume.history', 3600],
   ])('%s -> %i seconds', (capability, seconds) => {
     expect(ttlFor(capability)).toBe(seconds);
   });
 
   it('falls back to a documented default for a capability not in the explicit table', () => {
     expect(ttlFor('totally.unmapped.capability')).toBeGreaterThan(0);
+  });
+
+  // A SECOND, independent assertion for TASK-007's row, and deliberately not folded into the table
+  // above (R-64b). The table checks the VALUE; this checks that the row EXISTS AT ALL. Deleting the
+  // row would leave `ttlFor` answering 300 from `DEFAULT_TTL_SECONDS` — a constant whose docstring
+  // says it should not be hit — and the table's `.toBe(3600)` is the only thing that would notice.
+  // If someone ever "fixes" that failure by changing 3600 to 300, this test still fails and says why.
+  it('dex.volume.history has an EXPLICIT row, not the silent default (R-64)', () => {
+    expect(ttlFor('dex.volume.history')).not.toBe(ttlFor('totally.unmapped.capability'));
   });
 });
 
@@ -258,6 +269,69 @@ describe('LruHotLayer (R-13: hot layer, TTL built into set())', () => {
     const hot = new LruHotLayer();
     hot.set('coingecko', 'token.price', 'h', { priceUsd: 1 }, 0);
     expect(hot.get('coingecko', 'token.price', 'h')).toBeUndefined();
+  });
+
+  /**
+   * WI-11 — the hot layer is bounded by BYTES, not only by entry count.
+   *
+   * `max: 500` was sized when the biggest cached value was ~200 B, so the implied ceiling was
+   * ~100 KB. TASK-007's `dex.volume.history` result at `days: 1825` is ~95 KB, which moved that
+   * ceiling to ~47.5 MB **without one line changing in `lru.ts`**. These tests exist so the next
+   * capability that returns an array cannot move it again unnoticed.
+   */
+  describe('byte budget (WI-11)', () => {
+    /** ~1 KB serialized, cheap to reason about in the assertions below. */
+    const kb = (n: number): { pad: string } => ({ pad: 'x'.repeat(n * 1024 - 12) });
+
+    it('evicts by total BYTES even when the entry count is nowhere near the cap', () => {
+      // 100 entry slots, but only 8 KB of budget: the count cap can never be what bounds this.
+      const hot = new LruHotLayer(100, 8 * 1024);
+      for (let i = 0; i < 6; i += 1) {
+        hot.set('defillama', 'dex.volume.history', `k${i}`, kb(2), 60_000);
+      }
+      const survivors = Array.from({ length: 6 }, (_, i) =>
+        hot.get('defillama', 'dex.volume.history', `k${i}`),
+      ).filter(Boolean).length;
+
+      // 6 × ~2 KB against an 8 KB budget cannot all be resident.
+      expect(survivors).toBeLessThan(6);
+      expect(survivors).toBeGreaterThan(0);
+      // ...and the most recent write is the one kept — this is still an LRU.
+      expect(hot.get('defillama', 'dex.volume.history', 'k5')).toBeDefined();
+    });
+
+    it('declines a single value larger than the whole budget instead of throwing', () => {
+      // The Registry treats cache writes as best-effort, so an outsized value must degrade to
+      // "not hot-cached" — never to an exception on the write path.
+      const hot = new LruHotLayer(100, 4 * 1024);
+      expect(() =>
+        hot.set('defillama', 'dex.volume.history', 'huge', kb(64), 60_000),
+      ).not.toThrow();
+      expect(hot.get('defillama', 'dex.volume.history', 'huge')).toBeUndefined();
+
+      // ...and the layer still works afterwards.
+      hot.set('coingecko', 'token.price', 'small', { priceUsd: 1 }, 60_000);
+      expect(hot.get('coingecko', 'token.price', 'small')?.value).toEqual({ priceUsd: 1 });
+    });
+
+    it('declines an unserializable value rather than crashing the write path', () => {
+      const circular: Record<string, unknown> = {};
+      circular['self'] = circular;
+      const hot = new LruHotLayer(100, 1024 * 1024);
+      expect(() => hot.set('x', 'y', 'z', circular, 60_000)).not.toThrow();
+      expect(hot.get('x', 'y', 'z')).toBeUndefined();
+    });
+
+    it('keeps a realistic dex.volume.history payload well inside the default budget', () => {
+      // The concrete regression: 1825 daily points is the largest value this cache holds today.
+      const series = Array.from({ length: 1825 }, (_, i) => ({
+        ts: 1_700_000_000_000 + i * 86_400_000,
+        volumeUsd: 1_234_567_890.12,
+      }));
+      const hot = new LruHotLayer();
+      hot.set('defillama', 'dex.volume.history', 'eth-1825', { series }, 60_000);
+      expect(hot.get('defillama', 'dex.volume.history', 'eth-1825')).toBeDefined();
+    });
   });
 });
 

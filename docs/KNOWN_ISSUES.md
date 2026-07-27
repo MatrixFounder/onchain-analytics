@@ -87,6 +87,7 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 
 - **RF-1** [task-001-3 acceptance snippets not runnable (pnpm 11 '--' forwarding; macOS lacks timeout)](issues/rf-1-task-001-3-acceptance-snippets-not-runnable-pnpm-11-forwarding-macos-lacks-timeout.md) — severity `SEV-4`, status `fixed`, opened 2026-07-22
 - **RF-2** [M2's own evidence records describe an earlier tree than the one that shipped](issues/rf-2-m2-evidence-records-drifted-from-the-shipped-commit.md) — severity `SEV-3`, status `fixed`, opened 2026-07-25
+- **RF-3** [pnpm lint and format:check were left red on main by two merged commits, blocking the next task's regression exit](issues/rf-3-pnpm-lint-and-format-check-were-left-red-on-main-by-two-merged-commits-blocking-the-next-task-s-regression-exit.md) — severity `SEV-3`, status `fixed`, opened 2026-07-27
 
 ## logic
 
@@ -105,3 +106,4 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 - **Q-2** [`NANSEN_DAILY_CREDIT_CAP` is optional with no default, so a stock install has no self-imposed ceiling](issues/q-2-nansen-daily-credit-cap-has-no-default.md) — severity `SEV-3`, status `fixed`, opened 2026-07-24
 - **Q-3** [the 0-credit `entity.labels` query tier is structurally unrefusable by a credit-denominated gate](issues/q-3-nansen-zero-credit-entity-labels-tier-is-unrefusable-by-the-gate.md) — severity `SEV-3`, status `fixed`, opened 2026-07-25
 - **Q-4** [`token.risk` pays 1cr per call for `/tgm/token-information`, whose body is never read](issues/q-4-nansen-token-information-subcall-paid-but-never-consumed.md) — severity `SEV-3`, status `fixed`, opened 2026-07-25
+- **Q-5** [a literal NUL byte in registry-core.ts makes every repo-wide grep gate skip the SSRF-allowlist module silently](issues/q-5-a-literal-nul-byte-in-registry-core-ts-makes-every-repo-wide-grep-gate-skip-the-ssrf-allowlist-module-silently.md) — severity `SEV-2`, status `fixed`, opened 2026-07-27

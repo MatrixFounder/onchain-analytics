@@ -70,7 +70,11 @@ export {
   createDexscreenerAdapter,
   type DexscreenerAdapterDeps,
 } from './adapters/dexscreener/index.js';
-export { createDefillamaAdapter, type DefillamaAdapterDeps } from './adapters/defillama/index.js';
+export {
+  createDefillamaAdapter,
+  type DefillamaAdapterDeps,
+  type DexVolumeResult,
+} from './adapters/defillama/index.js';
 
 // Batch B live/stub adapters (task 003-5, R-8..R-12) — same factory convention as batch A above.
 export { createRpcEvmAdapter, type RpcEvmAdapterDeps } from './adapters/rpc-evm/index.js';

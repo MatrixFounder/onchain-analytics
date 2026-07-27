@@ -470,7 +470,12 @@ export const adapterRegistrations: AdapterRegistration[] = [
   {
     id: 'defillama',
     hosts: ['api.llama.fi'],
-    rateLimit: { capacity: 5, refillPerSec: 1 },
+    // Raised from the M1 placeholder {capacity: 5, refillPerSec: 1} in TASK-007 (R-66). That value
+    // was OUR brake, not the vendor's: the vendor publishes no numeric limit at all, and a live
+    // cache-busted probe took 40 CONCURRENT origin requests with 40/40 HTTP 200 and zero 429s. At
+    // 5/1 a ten-chain sweep — the DoD this capability was built against — spent ~5s asleep in our
+    // own limiter, and a wide sweep would cross the 30s MAX_WAIT_MS fairness cap and start throwing.
+    rateLimit: { capacity: 10, refillPerSec: 5 },
     requiresEnv: [],
   },
   // interface/config stub — isAvailable() returns false unconditionally (see below):
@@ -523,17 +528,17 @@ Dune credits) and can be tuned by editing the config, with no change on the call
 
 **The nine M1 adapters — summary:**
 
-| id                  | Capabilities                                                | Transport                                                          | Key                                                                                                                    | Note                                                                                                                                      |
-| ------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `coingecko`         | `token.price`, `token.metadata`                             | REST (`fetch`), `/coins/{platform}/contract/{address}`             | optional `COINGECKO_API_KEY` (demo; free works without) / `COINGECKO_PRO_API_KEY` (Pro circuit: pro host + pro header) | R-5, **live**                                                                                                                             |
-| `dexscreener`       | `pairs.new`, `pool.info`                                    | REST (`fetch`)                                                     | none (keyless)                                                                                                         | R-6 Must requires both; `pool.info` has no tool consumer yet; exact endpoint confirmed when the fixture is recorded (R-22), §11; **live** |
-| `defillama`         | `protocol.tvl`                                              | REST (`fetch`), `/protocol/{slug}`, slice `chainTvls[chain]`       | none (keyless)                                                                                                         | R-7, **live**                                                                                                                             |
-| `dune`              | `token.holders` (Should, no tool consumer)                  | REST Query API — **not implemented** (interface/config stub)       | `DUNE_API_KEY` (free tier), but `isAvailable()` is unconditionally `false`                                             | R-8, decision below                                                                                                                       |
-| `rpc-evm`           | `wallet.balances.native` (EVM)                              | JSON-RPC `eth_getBalance` (`fetch`)                                | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                       |
-| `rpc-solana`        | `wallet.balances.native` (Solana)                           | JSON-RPC `getBalance` (`fetch`)                                    | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                       |
-| `dash-platform`     | `privacy.shielded_pool`, `platform.*`                       | **gRPC** — **not implemented** (interface + fixture contract only) | none (keyless), but unreachable                                                                                        | R-9 via a mock; see below                                                                                                                 |
-| `platform-explorer` | the same (fallback) + `*.history`                           | REST (`fetch`)                                                     | none (keyless)                                                                                                         | R-10/R-11, **the only live Dash source**                                                                                                  |
-| `pg-history`        | `privacy.shielded_pool.history`, `platform.metrics.history` | Postgres wire (SELECT-only)                                        | `ONCHAIN_PG_URL` (optional)                                                                                            | R-12, **live, optional**                                                                                                                  |
+| id                  | Capabilities                                                | Transport                                                                  | Key                                                                                                                    | Note                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `coingecko`         | `token.price`, `token.metadata`                             | REST (`fetch`), `/coins/{platform}/contract/{address}`                     | optional `COINGECKO_API_KEY` (demo; free works without) / `COINGECKO_PRO_API_KEY` (Pro circuit: pro host + pro header) | R-5, **live**                                                                                                                             |
+| `dexscreener`       | `pairs.new`, `pool.info`                                    | REST (`fetch`)                                                             | none (keyless)                                                                                                         | R-6 Must requires both; `pool.info` has no tool consumer yet; exact endpoint confirmed when the fixture is recorded (R-22), §11; **live** |
+| `defillama`         | `protocol.tvl`, `chain.tvl`, `dex.volume.history`           | REST (`fetch`), `/protocol/{slug}`, `/v2/chains`, `/overview/dexs/{chain}` | none (keyless)                                                                                                         | R-7, R-53, **R-61 (TASK-007)**, **live**                                                                                                  |
+| `dune`              | `token.holders` (Should, no tool consumer)                  | REST Query API — **not implemented** (interface/config stub)               | `DUNE_API_KEY` (free tier), but `isAvailable()` is unconditionally `false`                                             | R-8, decision below                                                                                                                       |
+| `rpc-evm`           | `wallet.balances.native` (EVM)                              | JSON-RPC `eth_getBalance` (`fetch`)                                        | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                       |
+| `rpc-solana`        | `wallet.balances.native` (Solana)                           | JSON-RPC `getBalance` (`fetch`)                                            | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                       |
+| `dash-platform`     | `privacy.shielded_pool`, `platform.*`                       | **gRPC** — **not implemented** (interface + fixture contract only)         | none (keyless), but unreachable                                                                                        | R-9 via a mock; see below                                                                                                                 |
+| `platform-explorer` | the same (fallback) + `*.history`                           | REST (`fetch`)                                                             | none (keyless)                                                                                                         | R-10/R-11, **the only live Dash source**                                                                                                  |
+| `pg-history`        | `privacy.shielded_pool.history`, `platform.metrics.history` | Postgres wire (SELECT-only)                                                | `ONCHAIN_PG_URL` (optional)                                                                                            | R-12, **live, optional**                                                                                                                  |
 
 **Input/response hardening per adapter — never trust a raw vendor response.**
 
@@ -552,6 +557,28 @@ Dune credits) and can be tuned by editing the config, with no change on the call
 - `defillama.normalize()`: rejects non-finite/negative `tvlUsd`/`totalTvlUsd` **before** it reaches
   the cache; otherwise `onchain_protocol_tvl`'s own `.nonnegative()` schema would meet an already
   cached broken value.
+- `defillama.normalize('dex.volume.history')` (TASK-007, R-68): **verifies the response's own `chain`
+  echo field against the vendor name that was requested**, and refuses the response otherwise. This
+  is not defensive decoration — it is forced by measured vendor behaviour: `/overview/dexs/{chain}`
+  is name-tolerant (`op-mainnet`, `optimism` and `OP Mainnet` all return the same document), an
+  unknown chain answers **HTTP 500**, not 404, and a chain outside the vendor's own `allChains` list
+  answers **HTTP 200 with zeros and a narrower key set** (`litecoin`, probed 2026-07-27). Without the
+  echo check, "the vendor served a different chain than we asked for" and "this chain has no volume"
+  are the same observation. The same normalize step rejects non-finite/negative volumes and
+  non-integer timestamps before the cache write, and passes **no vendor free text through at all**:
+  the document carries 151 protocol cards with `name`/`category`/`methodology`/`logo`, which are
+  third-party-editable strings, and none of them reach the tool output.
+
+  **That last rule holds on the ERROR path too, which is where it was first broken** (adversarial
+  cycle 3). A `normalize()` throw becomes `tried[].reason` inside `CapabilityUnavailableError` and
+  from there the tool's `isError` text — i.e. it lands in the model's context, and because
+  `normalize()` failures are negative-cached it is replayed for the whole negative TTL with no
+  further network traffic. The first version interpolated the vendor's value verbatim into three
+  such messages, bounded only by the 2 MB body cap. Vendor values are now **described, never
+  echoed** (`string(length=N)`, `array(length=N)`, or the number itself — a number cannot carry
+  instructions), which is the discipline `stringifyTruncated` and `UnknownChainError` already
+  encoded elsewhere in this codebase.
+
 - Both RPC adapters truncate error messages through the shared
   `src/adapters/stringify-truncated.ts` (500 characters + `…[truncated]`), so a raw JSON-RPC
   envelope cannot land in `Error.message` in full, up to `safeFetch`'s 10MB cap.
@@ -1088,15 +1115,27 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
   (DB-SCHEMA §1.10).
 - **TTL by data type** (ADR-001 D6 ranges, made concrete for the M1 capabilities):
 
-  | Capability                            | TTL   | Rationale                                                              |
-  | ------------------------------------- | ----- | ---------------------------------------------------------------------- |
-  | `token.price`                         | 60s   | D6: price 15–60s                                                       |
-  | `token.metadata`                      | 3600s | name/symbol/decimals barely change                                     |
-  | `wallet.balances.native`              | 60s   | D6: balances 1–5 min, lower bound — a balance changes with every tx    |
-  | `pairs.new`                           | 30s   | freshness is the point of "new"                                        |
-  | `protocol.tvl`                        | 300s  | D6: TVL 5–30 min, lower bound                                          |
-  | `privacy.shielded_pool`, `platform.*` | 3600s | no point polling faster than the existing snapshotter's hourly cadence |
-  | `token.holders` (dune)                | 3600s | credit-metered, low volatility                                         |
+  | Capability                            | TTL   | Rationale                                                                                                               |
+  | ------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
+  | `token.price`                         | 60s   | D6: price 15–60s                                                                                                        |
+  | `token.metadata`                      | 3600s | name/symbol/decimals barely change                                                                                      |
+  | `wallet.balances.native`              | 60s   | D6: balances 1–5 min, lower bound — a balance changes with every tx                                                     |
+  | `pairs.new`                           | 30s   | freshness is the point of "new"                                                                                         |
+  | `protocol.tvl`                        | 300s  | D6: TVL 5–30 min, lower bound                                                                                           |
+  | `dex.volume.history`                  | 3600s | the vendor's own step is **one day** — a shorter TTL cannot buy a newer number, only a second identical download (R-64) |
+  | `privacy.shielded_pool`, `platform.*` | 3600s | no point polling faster than the existing snapshotter's hourly cadence                                                  |
+  | `token.holders` (dune)                | 3600s | credit-metered, low volatility                                                                                          |
+
+- **Hot layer bounded by BYTES, not only by entry count (WI-11).** `LruHotLayer`'s `max: 500` was
+  sized when the largest cached value was a ~200 B `ProtocolTvlResult`, so the implied ceiling was
+  ~100 KB. TASK-007's `dex.volume.history` result at `days: 1825` is ~95 KB, which moved that ceiling
+  to ~47.5 MB **without one line changing in `lru.ts`** — a bound that holds only while nobody caches
+  anything large. The layer now carries a second, independent `maxSize` budget of **16 MB of
+  SERIALIZED bytes** (retained heap for object-heavy JSON runs ~1.6–2.2× that, so ~26–35 MB — the
+  ratio is named rather than folded into one misleading number), plus `ttlAutopurge` so an expired
+  entry does not sit resident until something happens to touch it. A value larger than the whole
+  budget is simply not hot-cached: the persistent layer still has it, and the write path — which the
+  Registry treats as best-effort — never throws.
 
 - **Hit/miss counters** (`src/cache/stats.ts`) — a `Map<capability, { hit: number; miss: number }>`
   in process, incremented inside `TwoLevelStore.get()` (not by editing `registry.ts` — the same

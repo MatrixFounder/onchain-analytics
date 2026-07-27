@@ -31,6 +31,11 @@ export const routes: CapabilityRoute[] = [
   // TASK-006 (task 006-7, R-53): TVL of a CHAIN, not a protocol — a different endpoint
   // (`/v2/chains`) and a different output contract, hence a separate capability.
   { capability: 'chain.tvl', adapterIds: ['defillama'] },
+  // TASK-007 (task 007-1, R-61): daily DEX volume of a chain — `/overview/dexs/{chain}`, keyless
+  // and free. A third capability on the SAME adapter, and a separate one for the same reason
+  // `chain.tvl` is separate from `protocol.tvl`: different endpoint, different output contract,
+  // and — measured — a different chain set (274 vs 458, see the adapter's `chainSupport`).
+  { capability: 'dex.volume.history', adapterIds: ['defillama'] },
   { capability: 'wallet.balances.native', adapterIds: ['rpc-evm'] },
   { capability: 'wallet.balances.native', adapterIds: ['rpc-solana'] },
   {
@@ -106,7 +111,34 @@ export const adapterRegistrations: AdapterRegistration[] = [
   {
     id: 'defillama',
     hosts: ['api.llama.fi'],
-    rateLimit: { capacity: 5, refillPerSec: 1 },
+    // Raised from the M1 placeholder `{capacity: 5, refillPerSec: 1}` in TASK-007 (task 007-1,
+    // R-66). That value was OUR brake, not the vendor's: the vendor publishes no numeric rate
+    // limit at all (`api-docs.defillama.com` states only a qualitative "Standard | Higher"), and a
+    // live cache-busted probe took 40 CONCURRENT origin requests — 40/40 HTTP 200,
+    // `cf-cache-status: MISS` on every one, zero 429s.
+    //
+    // The old value was actively harmful for the capability this task adds: at 1 token/s a
+    // ten-chain sweep — the DoD `dex.volume.history` was built against — spent ~5s asleep in our
+    // own limiter, and a wider sweep crosses `MAX_WAIT_MS = 30_000` (`net/rate-limit.ts`) and
+    // starts THROWING `RateLimitRejectedError`. At 10/5 a 20-call batch's last caller waits 2s
+    // instead of 15s.
+    //
+    // **The real ceiling, stated correctly** (cycle 3, performance M-7 — the earlier wording here
+    // was wrong twice over). The limiter rejects when the computed wait exceeds 30s, i.e. when the
+    // BACKLOG passes 150 outstanding reservations (`200ms × (k-10) > 30_000`). That is a backlog,
+    // not a concurrency level: it accumulates over time, so a sustained 10 calls/s reaches it in
+    // ~30s without 160 of anything ever being in flight at once. And a full-coverage sweep is above
+    // the line by construction — 274 covered chains issued in parallel means calls 161-274 are
+    // refused outright.
+    //
+    // One bucket serves all three defillama capabilities (`protocol.tvl`, `chain.tvl`,
+    // `dex.volume.history`) — the limit is per PROVIDER, not per capability. So the earlier claim
+    // that raising it "cannot change their behaviour" was also wrong: `chain.tvl` costs ONE upstream
+    // call for all 458 chains (a shared catalog), while `dex.volume.history` costs one PER CHAIN, so
+    // a wide sweep can now park a backlog deep enough to make a concurrent `protocol.tvl` call wait
+    // tens of seconds or be refused. Nothing on this bucket could produce that before TASK-007.
+    // Bounding a wide sweep belongs at the tool layer, not here.
+    rateLimit: { capacity: 10, refillPerSec: 5 },
     requiresEnv: [],
   },
   // interface/config-stub in M1 — isAvailable() unconditionally returns false (§3.2 decision):

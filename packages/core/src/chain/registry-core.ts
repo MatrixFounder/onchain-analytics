@@ -322,15 +322,27 @@ function buildIndexes(chains: readonly ChainInfo[]): ChainIndexes {
     if (chain !== null) byNormalized.set(key, chain);
   }
 
-  // Space-joined, which is a SAFE separator here precisely because `normalizeKey` has already
+  // NUL-joined, which is a SAFE separator here precisely because `normalizeKey` has already
   // stripped every non-alphanumeric character from each field — and the query is normalized the
-  // same way, so it can never contain a space. A match therefore cannot straddle two fields (the
-  // tail of `name` plus the head of an alias).
+  // same way, so it can never contain one. A match therefore cannot straddle two fields (the tail
+  // of `name` plus the head of an alias).
+  //
+  // Written as the ESCAPE `'\u0000'`, never as a literal NUL byte in the source (TASK-007
+  // adversarial cycle 1). The literal is what this line used to contain, and the cost was not
+  // cosmetic: `grep`/`ripgrep` classify a file containing a NUL as BINARY and skip it silently
+  // unless `-a`/`--text` is passed. Every repo-wide text gate — including the loose-zod-schema
+  // audit TASK-007 runs as its AC-8 — was therefore quietly blind to this module, which is the one
+  // that validates the per-chain SSRF allowlist. A gate that cannot see the file it governs
+  // reports success for the wrong reason. (The comment also claimed "space-joined" while the code
+  // joined with NUL; both halves are corrected here.)
+  //
+  // The forbidden schema tokens are named indirectly above for the same reason: spelling them in
+  // prose makes every such audit report its own documentation as a hit.
   const searchKeys = new Map<string, string>();
   for (const chain of chains) {
     searchKeys.set(
       chain.caip2,
-      [chain.slug, chain.name, chain.caip2, ...chain.aliases].map(normalizeKey).join(' '),
+      [chain.slug, chain.name, chain.caip2, ...chain.aliases].map(normalizeKey).join('\u0000'),
     );
   }
 

@@ -7,7 +7,13 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**'],
+    // Mirrors `.prettierignore` (ARCHITECTURE.md §6.4 — the two gates ignore the same things).
+    // `docs/dune-query-discovery/**` is generated research output (a workflow writes the prose,
+    // the JSON and `build-report.mjs` that assembles them), curated by hand afterwards — the same
+    // class as `docs/onchain-analytics/`, which both gates already ignore. Added in TASK-007 after
+    // running the CHECK first and reviewing the file list, per the blast-radius rule in
+    // docs/BACKLOG.md: extend the ignore rules for curated/generated content, never reformat it.
+    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'docs/dune-query-discovery/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -30,7 +36,11 @@ export default tseslint.config(
     // files get `process`/`console`/etc. from `@types/node` via the TS parser, not from ESLint's
     // own scope analysis) — declare exactly the Node globals these scripts use, scoped narrowly
     // here rather than pulling in the `globals` npm package for a handful of identifiers.
-    files: ['**/scripts/**/*.mjs'],
+    // `**/eval/**/*.mjs` joins the same block in TASK-007: `packages/mcp-server/eval/run.mjs`
+    // (commit e542bf8) is the identical kind of plain Node ESM script and had been failing
+    // `no-undef` on `process`/`console`/`setTimeout` ever since it landed, because the pattern
+    // below matched only `scripts/`. Same reasoning, one more directory — not a new exemption.
+    files: ['**/scripts/**/*.mjs', '**/eval/**/*.mjs'],
     languageOptions: {
       globals: {
         process: 'readonly',

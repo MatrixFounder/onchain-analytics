@@ -2,12 +2,13 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. External API — 10 MCP tools
+### 5.1. External API — 11 MCP tools
 
 `onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
-Nansen-backed tools in M2 (§5.1.2), and two registry-backed tools with TASK-006 (§5.1.3).
+Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), and one
+free DEX-volume tool with TASK-007 (§5.1.4).
 
-**The `chain` parameter, stated once.** Eight of the ten tools take a chain, and every one of them
+**The `chain` parameter, stated once.** Nine of the eleven tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
 resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
 `ethereum` and `solana` are aliases and stay valid indefinitely. What a tool can actually serve is
@@ -177,7 +178,60 @@ would dump 458 rows into the model's context — a tool created to **save** 8.7k
 would spend more than that on its first call. `total` keeps it honest: the agent can see the list was
 truncated and narrow the filter, instead of concluding there are only 50 chains.
 
-**The `chain` parameter contract (R-50), shared by all eight chain-taking tools:**
+#### 5.1.4 The DEX-volume tool (TASK-007) — free
+
+```jsonc
+// onchain_dex_volume — daily DEX volume of a CHAIN, DeFiLlama-backed, keyless, 0 credits
+// { chain: ChainInput, days?: number (int, 1..1825, default 90), includeSeries?: boolean (default true) }
+// → {
+//     chain, name,                         // OUR slug and OUR display name, never the vendor's text
+//     window: { fromMs, toMs, days },      // epoch-ms UTC, what was actually returned
+//     series: Array<{ ts: number, volumeUsd: number }>,   // ts = epoch-ms UTC, daily step
+//     points: number,
+//     gapDays: number,                     // missing daily steps inside the window — counted, never stitched
+//     totals: { h24, d7, d30, d1y, allTime },  // vendor's own aggregates, each `number | null`
+//     truncated: { series: boolean, reason: string },
+//     source: "defillama", fetchedAt
+//   }
+// Capability: dex.volume.history
+```
+
+**Why the vendor's aggregates are passed through instead of recomputed (R-67, OQ-1).** `total24h`
+and friends are already in the document at no extra cost, and recomputing them from the series would
+mean quietly disagreeing with the vendor on rounding and on which protocols are double-counted — the
+vendor already excludes 54 aggregator protocols from its own total. They are `number | null`, never
+`0`-for-missing: a chain outside the vendor's active set answers HTTP 200 with `change_1d: null` and
+a **narrower key set** (measured on `litecoin`, 2026-07-27), and — measured on a chain this
+capability actually covers — `doge` answers HTTP 200 with `total24h: null` (274-chain echo probe,
+2026-07-28). A missing key rendered as `0` would be a fabricated number rather than an absent one.
+
+**Why gaps are counted rather than stitched (R-67c, OQ-5).** A missing day inside the covered window
+is reported as `gapDays`, and the series simply lacks that point. Interpolating would produce a
+number no one measured; dropping the count would make an incomplete answer indistinguishable from a
+complete one. The DoD this tool was built against is itself a gap measurement — a quarter over ten
+chains must return 92 points per chain with `gapDays === 0`.
+
+**`gapDays` is measured against the WINDOW, not against the returned series** (adversarial cycle 3,
+logic L-1). Deriving the expected count from the first and last returned points makes any gap at the
+window's _leading_ edge arithmetically unreachable — and a chain younger than the window then reports
+"five years, nothing missing". Two cases that look identical in the data are separated by asking
+whether the vendor has any point _before_ the window: if it does, the window lies inside the chain's
+lifetime and a missing first day is a real gap; if it does not, the history simply starts later and
+`window.days` shrinks to the range actually covered. The invariant a caller can check is
+`points + gapDays === window.days`.
+
+**Points are day-bucketed and unique per day** (cycle 3, logic L-2/L-4). The window anchor is floored
+to a day boundary, so the points must be too — otherwise a vendor that stops publishing exactly at
+midnight drops the very point that defined the window, and `days: 1` returns an empty series. Two
+points landing in one day are folded (last wins) and the fold raises `truncated.series` with a reason,
+because silently collapsing them let a duplicate mask exactly one genuine missing day.
+
+**Why `truncated` is not set by ordinary windowing (R-67d).** Slicing a 2825-point series down to the
+requested 90 days is the tool doing its job, not a truncation. `truncated.series` is set only when a
+hard cap was hit — the request asked for more points than the transport or the point cap will carry —
+so the flag keeps meaning "you did not get what you asked for" instead of degrading into decoration.
+
+**The `chain` parameter contract (R-50), shared by all nine chain-taking tools:**
 
 ```ts
 // One shared import; zero chain literals anywhere in mcp-server:

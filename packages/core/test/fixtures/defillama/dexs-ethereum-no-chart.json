@@ -1,0 +1,15 @@
+{
+  "$comment": "TASK-007 / WI-17 (D-2) — live-recorded response for the includeSeries:false MODE, i.e. with excludeTotalDataChart=true. Recorded 2026-07-28, keyless, HTTP 200. This is the input that decides what `window`/`points`/`gapDays` mean in that mode, and until now it was UNMEASURED: every includeSeries:false test fed the full-chart document instead. The answer: the vendor KEEPS the totalDataChart key and sets it to an EMPTY ARRAY — it does not omit it and does not send null. protocols[] dropped as in the sibling fixtures; the adapter never reads it.",
+  "recordedAt": "2026-07-28",
+  "url": "https://api.llama.fi/overview/dexs/ethereum?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true",
+  "httpStatus": 200,
+  "auth": "none (keyless)",
+  "chain": "Ethereum",
+  "totalDataChart": [],
+  "totalDataChartKeyPresent": true,
+  "total24h": 500558261.63,
+  "total7d": 5958976028.379999,
+  "total30d": 27868802014.38,
+  "total1y": 771377443202.3799,
+  "totalAllTime": 3983183028995.8296
+}

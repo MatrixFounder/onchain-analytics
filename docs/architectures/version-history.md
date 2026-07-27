@@ -2,6 +2,30 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
+- 2026-07-27, **v4.4** — TASK-007 `defillama-dex-volumes`: the free DEX-volume tier (research track
+  A-1). Three design decisions, each forced by a live keyless probe run the same day rather than by
+  the research write-up:
+
+  - **Coverage for `dex.volume.history` is a generated vendor list, not `vendors.defillama`**
+    (§4.2.3). That column came from the vendor's TVL catalog and is non-null for all 458 registry
+    chains; the DEX-volume dataset covers 287, of which 274 are ours. The naive predicate would have
+    advertised the capability on 184 chains that have no such data — TASK-006's H-1 defect class,
+    repeated verbatim. `DEFILLAMA_DEX_CHAINS` is generated from recorded raw evidence and committed,
+    on the same doctrine as `gen-nansen-coverage.ts`.
+  - **`normalize()` verifies the response's `chain` echo** (§3.2). The endpoint is name-tolerant, an
+    unknown chain answers HTTP **500** rather than 404, and a chain outside the vendor's active set
+    answers HTTP **200 with zeros and a narrower key set**. Without the echo check, "served a
+    different chain" and "this chain has no volume" are indistinguishable.
+  - **The response-size cap became real** (§7.3). `api.llama.fi` sends **no `Content-Length`**, and
+    the old cap returned early in exactly that case — inert on the host the engine was about to send
+    more traffic to. `safeFetch` now counts bytes off the stream and cancels the reader on overflow,
+    closing item (1) of the R-47 carry-over. This is a deliberate scope extension beyond the A-1
+    task text, recorded as such: without it the DoD's "large document is truncated" test would have
+    asserted nothing.
+
+  Also: `defillama`'s `rateLimit` was raised from the M1 placeholder (`capacity 5 / refillPerSec 1`)
+  — our own brake, not the vendor's, and measured at 40/40 concurrent origin requests with zero 429s.
+
 - 2026-07-27, **v4.3** — editorial pass over the whole document: index plus all ten section files
   translated to English and finalized. No design decision was changed; what changed is that the
   document now states the system rather than narrating how it got there.
