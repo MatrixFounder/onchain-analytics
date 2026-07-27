@@ -6,10 +6,16 @@
 -- Context: docs/issues/l-2-snapshotter-drops-a-metric-silently-dropped-array-never-leaves-the-node.md
 --
 -- WHY. platform-explorer stopped returning the `poolBalance` field after 2026-07-23 09:00 UTC, so
--- 70 hourly observations were never written (2026-07-23 10:00 → 2026-07-27 08:00). The value is
--- recoverable exactly: poolBalance == totalShieldedIn − totalShieldedOut, an identity that holds on
--- 60 of 60 buckets where all three were observed, with zero exceptions. `shielded_total_in/out` were
--- captured for every hour of the hole, so nothing is lost — only underived.
+-- from the next hour on nothing was written for this metric. The value is recoverable exactly:
+-- poolBalance == totalShieldedIn − totalShieldedOut, and `shielded_total_in/out` kept arriving
+-- throughout, so nothing is lost — only underived.
+--
+-- The gap size is INSTANCE-SPECIFIC and this file is data-driven, so it adapts: it repairs whatever
+-- hours that instance is missing. Observed 2026-07-27 — dev: 70 hours (its snapshotter had its own
+-- downtime, 130 buckets over a 155-hour span); prod: 96 hours (unbroken hourly coverage, 142/142).
+-- Both broke at the same wall-clock minute, which is what identifies this as the vendor rather than
+-- an instance fault. The identity was validated on dev against every bucket where all three values
+-- were observed — 60 of 60, zero exceptions — before any derived row was written anywhere.
 --
 -- WHY source='derived' AND NOT 'platform-explorer'. Writing these under the vendor's name would make
 -- the journal assert that the vendor reported a value it never reported. The dedup key is
@@ -31,7 +37,6 @@
 -- ON CONFLICT DO NOTHING. Safe to re-run; re-running after the vendor recovers adds nothing.
 -- Rollback: DELETE FROM onchain.snapshots WHERE metric='shielded_pool_balance_credits' AND source='derived';
 
-\set ON_ERROR_STOP on
 SET search_path TO onchain;
 
 BEGIN;
@@ -80,41 +85,44 @@ ON CONFLICT (source, asset, metric, ts_bucket) DO NOTHING;
 
 COMMIT;
 
--- ── 3. Verify gate (§5.3) — row counts, ts range, byte-exact spot check, zero orphans ──
-\echo
-\echo === VERIFY GATE ===
-SELECT count(*)                                                              AS derived_rows,
-       to_timestamp(min(ts_bucket)/1000) AT TIME ZONE 'UTC'                  AS first_bucket,
-       to_timestamp(max(ts_bucket)/1000) AT TIME ZONE 'UTC'                  AS last_bucket
-  FROM onchain.snapshots
- WHERE metric = 'shielded_pool_balance_credits' AND source = 'derived';
-
-\echo -- every bucket must now have exactly ONE balance row, and coverage must match its siblings
-SELECT (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots
-         WHERE metric='shielded_pool_balance_credits')                       AS balance_buckets,
-       (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots
-         WHERE metric='shielded_total_in_credits')                           AS in_buckets,
-       (SELECT count(*) FROM (SELECT ts_bucket FROM onchain.snapshots
-         WHERE metric='shielded_pool_balance_credits'
-         GROUP BY ts_bucket HAVING count(*) > 1) d)                          AS duplicate_buckets;
-
-\echo -- byte-exact spot check: recompute in-out independently and compare to the stored string
+-- ── 3. Verify gate (§5.3) — row counts, ts range, byte-exact spot check, zero orphans ────────
+-- ONE statement on purpose. A GUI SQL editor (Supabase) renders only the LAST result set, so a
+-- gate split across four queries would show only its last line and the other three would pass
+-- unread — a verify gate nobody sees is the same failure class this migration exists to close.
+-- Also: no psql backslash meta-commands anywhere in this file, so it pastes into a GUI editor
+-- unmodified. The CLI path already passes -v ON_ERROR_STOP=1 on the command line.
+--
+-- PASS means: mismatch = 0, duplicate_buckets = 0, orphans = 0, and balance_buckets = in_buckets.
 WITH chk AS (
-  SELECT s.ts_bucket, s.value_raw AS stored,
+  SELECT s.value_raw AS stored,
          (i.value_raw::numeric - o.value_raw::numeric)::text AS recomputed
     FROM onchain.snapshots s
     JOIN onchain.snapshots i ON i.metric='shielded_total_in_credits'  AND i.ts_bucket=s.ts_bucket
     JOIN onchain.snapshots o ON o.metric='shielded_total_out_credits' AND o.ts_bucket=s.ts_bucket
    WHERE s.metric='shielded_pool_balance_credits'
+), dup AS (
+  SELECT ts_bucket FROM onchain.snapshots
+   WHERE metric='shielded_pool_balance_credits'
+   GROUP BY ts_bucket HAVING count(*) > 1
 )
-SELECT count(*) AS checked,
-       count(*) FILTER (WHERE stored = recomputed)  AS exact_match,
-       count(*) FILTER (WHERE stored <> recomputed) AS mismatch
-  FROM chk;
-
-\echo -- zero orphans (§1.6)
-SELECT count(*) AS orphans
-  FROM onchain.snapshots s
-  LEFT JOIN onchain.assets  a ON s.asset  = a.id
-  LEFT JOIN onchain.metrics m ON s.metric = m.id
- WHERE a.id IS NULL OR m.id IS NULL;
+SELECT
+  (SELECT count(*) FROM onchain.snapshots
+    WHERE metric='shielded_pool_balance_credits' AND source='derived')          AS derived_rows,
+  (SELECT to_char(to_timestamp(min(ts_bucket)/1000) AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI')
+     FROM onchain.snapshots
+    WHERE metric='shielded_pool_balance_credits' AND source='derived')          AS first_bucket,
+  (SELECT to_char(to_timestamp(max(ts_bucket)/1000) AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI')
+     FROM onchain.snapshots
+    WHERE metric='shielded_pool_balance_credits' AND source='derived')          AS last_bucket,
+  (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots
+    WHERE metric='shielded_pool_balance_credits')                               AS balance_buckets,
+  (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots
+    WHERE metric='shielded_total_in_credits')                                   AS in_buckets,
+  (SELECT count(*) FROM dup)                                                    AS duplicate_buckets,
+  (SELECT count(*) FROM chk)                                                    AS checked,
+  (SELECT count(*) FROM chk WHERE stored = recomputed)                          AS exact_match,
+  (SELECT count(*) FROM chk WHERE stored <> recomputed)                         AS mismatch,
+  (SELECT count(*) FROM onchain.snapshots s
+     LEFT JOIN onchain.assets  a ON s.asset  = a.id
+     LEFT JOIN onchain.metrics m ON s.metric = m.id
+    WHERE a.id IS NULL OR m.id IS NULL)                                         AS orphans;

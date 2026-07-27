@@ -17,7 +17,6 @@
 -- re-run; re-running RESETS live tuning back to what this file declares (the file is the contract).
 -- Additive-only: no drop, no type change, no data loss.
 
-\set ON_ERROR_STOP on
 SET search_path TO onchain;
 
 -- BIGINT, not INTEGER: epoch-ms durations follow the same type as ts/ts_bucket (§1.2), and

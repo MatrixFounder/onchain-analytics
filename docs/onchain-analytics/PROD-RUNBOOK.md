@@ -173,9 +173,21 @@ Expect `shielded_pool_balance_credits` to trail the other dash metrics — same 
 so the same hole. **Record the numbers**; the close-out compares before/after.
 
 ### 2. Apply `003` then `004`
-Profile A: SQL editor, deleting the leading `\set ON_ERROR_STOP on` line from each. `004` prints its
-own verify gate. Both are idempotent and additive; `004` skips any bucket that already has a balance
-row from any source, so re-running never double-writes.
+Profile A: paste each into the SQL editor as-is — `003`/`004` contain **no psql backslash
+meta-commands**, unlike `001`/`002`. `004` ends in a single-statement verify gate (one statement
+because a GUI editor renders only the last result set). Both are idempotent and additive; `004`
+skips any bucket that already holds a balance row from any source, so re-running never double-writes.
+
+### 2a. Re-run `004` after step 4 — the gap keeps growing until the workflows land
+The **old** snapshotter is still running during the upgrade and still writes nothing for this metric,
+so every hour between applying `004` and importing the new workflows re-opens the hole by one bucket.
+The new snapshotter derives the *current* hour; it does not backfill. So the sequence is:
+
+**`003` → `004` → import workflows (step 4) → `004` again.**
+
+The second run costs nothing if nothing was lost, and closes the deployment window if anything was.
+This is exactly what the migration's idempotency is for; verified on dev by re-running it with no
+effect other than the rows the snapshotter had legitimately added meanwhile.
 
 ### 3. DB gate — pass this before importing any workflow
 ```sql
