@@ -161,7 +161,7 @@ reported. Three properties make the fallback safe rather than convenient:
   `raw_json`. The dedup key is `(source, asset, metric, ts_bucket)`, so a real vendor observation can
   land beside a derived one and stay distinguishable forever.
 
-**Backwards — `sql/migrations/004_backfill_shielded_pool_balance_derived.sql`.** The same formula and
+**Backwards — [`sql/maintenance/backfill_shielded_pool_balance_derived.sql`](../../sql/maintenance/backfill_shielded_pool_balance_derived.sql).** The same formula and
 the same label, applied to the 70 lost hours (2026-07-23 10:00 → 2026-07-27 08:00). Its verify gate
 (§5.3) recomputes every stored value from its inputs rather than trusting the INSERT: **130 checked,
 130 exact, 0 mismatches, 0 duplicate buckets, 0 orphans**, and `balance` coverage now equals its

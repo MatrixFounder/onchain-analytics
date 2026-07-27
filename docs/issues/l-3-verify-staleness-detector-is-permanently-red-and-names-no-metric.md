@@ -9,7 +9,7 @@ slug: l-3-verify-staleness-detector-is-permanently-red-and-names-no-metric
 component: onchain-verify
 evidence_paths:
   - n8n-workflows/exported/onchain-verify.json
-  - sql/migrations/003_metric_staleness_bounds.sql
+  - sql/migrations/001_init.sql
 resolved_at: 2026-07-27
 resolved_by: migration 003 (per-metric max_staleness_ms) + a registry-driven, metric-naming verify query
 ---
@@ -84,8 +84,10 @@ days behind, not two hours). The report must then **name** the offending metrics
 
 ## Resolution (2026-07-27)
 
-**The threshold moved to where the metric is defined.** `sql/migrations/003_metric_staleness_bounds.sql`
-adds `onchain.metrics.max_staleness_ms BIGINT` — additive, idempotent, no type change. Bounds are set
+**The threshold moved to where the metric is defined.** A migration added
+`onchain.metrics.max_staleness_ms BIGINT` — additive, idempotent, no type change. (It has since been
+folded into [`sql/migrations/001_init.sql`](../../sql/migrations/001_init.sql), which now seeds every
+metric with its bound.) Bounds are set
 per clock: **2h** for the hourly observations (8 dash-platform metrics + `zec_block_height`), **72h**
 for the two ZecHub close-date aggregates.
 

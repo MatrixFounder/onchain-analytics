@@ -1,40 +1,32 @@
--- migrations/004_backfill_shielded_pool_balance_derived.sql
--- Backfill the shielded_pool_balance_credits hole with DERIVED values, explicitly labelled.
+-- maintenance/backfill_shielded_pool_balance_derived.sql
+-- Repair hours where the vendor omitted `poolBalance`, by DERIVING the value and labelling it.
 -- Source of truth: DB-SCHEMA-CONCEPT.md §1.5 (append-only + idempotent), §1.6 (registry before
 -- observations), §1.7 (exact values as TEXT), §1.8 (source names come from the registry),
--- §5.3 (backfill passes a mandatory verify gate).
--- Context: docs/issues/l-2-snapshotter-drops-a-metric-silently-dropped-array-never-leaves-the-node.md
+-- §5.3 (a backfill passes a mandatory verify gate).
 --
--- WHY. platform-explorer stopped returning the `poolBalance` field after 2026-07-23 09:00 UTC, so
--- from the next hour on nothing was written for this metric. The value is recoverable exactly:
--- poolBalance == totalShieldedIn − totalShieldedOut, and `shielded_total_in/out` kept arriving
--- throughout, so nothing is lost — only underived.
+-- WHEN TO RUN THIS. Only on an instance whose history predates the snapshotter's self-healing, or
+-- one that received such history via a dump transfer. A current snapshotter derives this value
+-- itself on every run, so no new hole can open — this file exists for hours recorded before that.
+-- On an instance with nothing to repair it inserts zero rows and the gate still reports.
 --
--- The gap size is INSTANCE-SPECIFIC and this file is data-driven, so it adapts: it repairs whatever
--- hours that instance is missing. Observed 2026-07-27 — dev: 70 hours (its snapshotter had its own
--- downtime, 130 buckets over a 155-hour span); prod: 96 hours (unbroken hourly coverage, 142/142).
--- Both broke at the same wall-clock minute, which is what identifies this as the vendor rather than
--- an instance fault. The identity was validated on dev against every bucket where all three values
--- were observed — 60 of 60, zero exceptions — before any derived row was written anywhere.
+-- WHY IT IS SAFE. platform-explorer's `/transactions/shielded/statistic` can drop the `poolBalance`
+-- field while still returning `totalShieldedIn` / `totalShieldedOut`. The balance is then recoverable
+-- EXACTLY: poolBalance == totalShieldedIn − totalShieldedOut. Do not take that on faith — the gate
+-- at the end recomputes EVERY stored balance row from its inputs, including the ones the vendor
+-- reported itself, so a broken assumption shows up as a non-zero `mismatch` rather than as bad data.
 --
 -- WHY source='derived' AND NOT 'platform-explorer'. Writing these under the vendor's name would make
 -- the journal assert that the vendor reported a value it never reported. The dedup key is
 -- (source, asset, metric, ts_bucket), so a labelled derived row and a future real observation can
--- coexist for the same hour and stay distinguishable. Provenance is also written into raw_json:
--- the formula and both input values, so any row can be re-checked without this file.
+-- coexist for the same hour and stay distinguishable. Provenance also goes into raw_json — the
+-- formula and both input values — so any row can be re-checked without this file.
 --
--- SCOPE: HISTORY ONLY. This file repairs the 70 hours that were already lost. Going FORWARD the
--- same derivation runs inside the snapshotter's `Normalize` node on every hourly execution, using
--- the identical formula and the identical source label, so no new hole can open while the vendor
--- stays silent. The two must agree — that is asserted by the verify gate below, which recomputes
--- every stored value from its inputs rather than trusting this INSERT.
---
--- THE SUBSTITUTION IS NOT SILENT. Each derived row carries source='derived' plus its formula and
--- inputs, and onchain-verify reports derived metrics by name every day. Self-healing removes the
--- data gap, not the operator's obligation to chase the vendor or retire the metric.
+-- NOT SILENT. `onchain-verify` reports derived metrics by name every day and counts them against the
+-- report's OK state. Closing the data gap does not close the obligation to chase the vendor.
 --
 -- Idempotent: skips any bucket that already has a balance row from ANY source, plus
 -- ON CONFLICT DO NOTHING. Safe to re-run; re-running after the vendor recovers adds nothing.
+-- No psql backslash meta-commands — pastes into a GUI SQL editor unchanged.
 -- Rollback: DELETE FROM onchain.snapshots WHERE metric='shielded_pool_balance_credits' AND source='derived';
 
 SET search_path TO onchain;
@@ -64,8 +56,7 @@ SELECT i.ts,
          'formula',  'shielded_total_in_credits - shielded_total_out_credits',
          'inputs',   json_build_object('shielded_total_in_credits',  i.value_raw,
                                        'shielded_total_out_credits', o.value_raw),
-         'reason',   'vendor field poolBalance absent from platform-explorer '
-                     '/transactions/shielded/statistic since 2026-07-23T10:00Z',
+         'reason',   'vendor field poolBalance absent from the platform-explorer payload',
          'issue',    'L-2'
        )::text,
        (extract(epoch from now())*1000)::bigint
@@ -88,7 +79,7 @@ COMMIT;
 -- ── 3. Verify gate (§5.3) — row counts, ts range, byte-exact spot check, zero orphans ────────
 -- ONE statement on purpose. A GUI SQL editor (Supabase) renders only the LAST result set, so a
 -- gate split across four queries would show only its last line and the other three would pass
--- unread — a verify gate nobody sees is the same failure class this migration exists to close.
+-- unread — a verify gate nobody sees is the same failure class this file exists to close.
 -- Also: no psql backslash meta-commands anywhere in this file, so it pastes into a GUI editor
 -- unmodified. The CLI path already passes -v ON_ERROR_STOP=1 on the command line.
 --
