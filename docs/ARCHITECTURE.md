@@ -23,7 +23,7 @@
 | 1   | [Task description](#1-task-description)                             | inline        |
 | 2   | [Functional architecture](architectures/functional-architecture.md) | separate file |
 | 3   | [System architecture](architectures/system-architecture.md)         | separate file |
-| 4   | [Data model (conceptual)](architectures/data-model.md)              | separate file |
+| 4   | [Data Model (Conceptual)](architectures/data-model.md)              | separate file |
 | 5   | [Interfaces](architectures/interfaces.md)                           | separate file |
 | 6   | [Technology stack](architectures/technology-stack.md)               | separate file |
 | 7   | [Security](architectures/security.md)                               | separate file |
@@ -34,6 +34,10 @@
 | —   | [Version history (changelog)](architectures/version-history.md)     | separate file |
 
 ## 1. Task description
+
+Requirements and the RTM live in [docs/TASK.md](TASK.md); the milestone exit criteria live in
+[ROADMAP.md](onchain-analytics/ROADMAP.md). This section summarizes what the system is and which
+decisions constrain it.
 
 `onchain-intel` is an on-chain analytics engine: provider adapters (Nansen / Dune / CoinGecko /
 DexScreener / DeFiLlama / RPC / Dash DAPI / …) → normalization into canonical zod types → cache +
@@ -106,7 +110,7 @@ anchored on `usageAtObserve`, atomic check-and-reserve, singleflight, post-call 
 velocity window), `safeFetch` / `throttle`, the read-only PG client, the test suite, and the
 component diagram. → [architectures/system-architecture.md](architectures/system-architecture.md)
 
-## 4. Data model (conceptual)
+## 4. Data Model (Conceptual)
 
 Canonical entities (`Token`, `Wallet`/`Balance`, `Pool`, `OHLCV`, `Snapshot`, `SmartMoneyFlow`,
 `EntityLabel`, `TokenRiskScore`), plus `ChainInfo` and `CoverageProbe` as **build artifacts rather

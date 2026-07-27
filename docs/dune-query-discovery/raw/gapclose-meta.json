@@ -1,0 +1,13 @@
+{
+ "workflow": "dune-query-discovery-gapclose",
+ "date": "2026-07-27",
+ "mode": "inject",
+ "parent_run": "wf_af845947-864",
+ "candidates": 11,
+ "profiled": 11,
+ "verdicts": {
+  "adopt": 4,
+  "reference": 4,
+  "reject": 3
+ }
+}

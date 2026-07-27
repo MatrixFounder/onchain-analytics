@@ -1,0 +1,341 @@
+{
+ "inventory": {
+  "add_command": "claude mcp add --scope user --transport http dune https://api.dune.com/mcp/v1   ||   (API-key вариант, дословно) claude mcp add --scope user --transport http dune https://api.dune.com/mcp/v1 --header \"x-dune-api-key: <dune-api-key>\"",
+  "auth_methods": [
+   "OAuth 2.0 — Authorization server issuer: `https://dune.com/oauth/mcp`; Discovery metadata: `https://dune.com/.well-known/oauth-authorization-server/oauth/mcp`; Authorization endpoint: `https://dune.com/oauth/mcp/authorize`; Token endpoint: `https://dune.com/oauth/mcp/token`; Dynamic client registration endpoint: `https://dune.com/oauth/mcp/register`; JWKS endpoint: `https://dune.com/oauth/mcp/jwks.json` (дословно, docs/agents/mcp.md:244-249)",
+   "OAuth 2.0 grant types: `authorization_code`, `refresh_token`; Client auth at token endpoint: `none` (public clients); PKCE: required (`S256`); Scope: `mcp:dune:full`; Resource parameter for authorization requests: `https://api.dune.com` (дословно, docs/agents/mcp.md:250-254)",
+   "Dune API key — Header auth: `x-dune-api-key: <dune-api-key>` (дословно, docs/agents/mcp.md:39)",
+   "Dune API key — Query auth (for clients that prefer URL auth): `?api_key=<dune_api_key>` (дословно, docs/agents/mcp.md:40). Комментарий первоисточника: «Generally using the Header is preferred but some agents do now allow you to configure the Headers sent with MCP calls. In those cases you can pass the api key in the url query parameters.»",
+   "Дословная формулировка охвата: «Dune MCP supports two authentication modes today: 1. OAuth 2.0 (recommended for Browser agents or agents with access to the browser) 2. Dune API key (recommended for environments with no access to a browser)» (docs/agents/mcp.md:21-24)"
+  ],
+  "confidence": "medium — состав тулов (26 имён, 6 категорий, 2 ресурса) подтверждён ВЫСОКОЙ уверенностью: получена сырая markdown-версия первоисточника (curl, HTTP 200) и посчитана grep'ом (26 строк таблицы = 26 уникальных имён). Понижение до medium из-за того, что первоисточник MCP НЕ публикует ни per-tool входные JSON-схемы, ни per-tool кредитную стоимость, ни per-tool плановый гейт, ни собственные rate limit / размер ответа / серверный таймаут — эти поля выведены из REST-эндпоинтов-эквивалентов (docs.dune.com/api-reference/*) и помечены соответствующе. Дополнительно: dune.com/pricing и dune.com/blog/* отдают 403 краулеру (JS-рендер / антибот), поэтому часть тарифных чисел взята с docs.dune.com/learning/how-tos/pricing-faqs.md (первоисточник, HTTP 200), а не со страницы цен. Обнаружено прямое противоречие ВНУТРИ первоисточника по плановому гейту Query-эндпоинтов (Analyst vs Plus) — см. limitations. Дата верификации 2026-07-27; тарифы дрейфуют.",
+  "limitations": [
+   "ПЕРЕПРОВЕРКА ГИПОТЕЗЫ 1 (26 тулов, не 29) — **CONFIRMED**. Первоисточник https://docs.dune.com/docs/agents/mcp.md (raw markdown, HTTP 200, 14228 байт) раздел «## Tools and Resources Inventory → ### Tools»: таблица содержит ровно 26 строк и 26 уникальных имён (проверено grep: `grep -cE '^\\| \\*\\*'` = 26; `sort -u | wc -l` = 26). Разбивка по категориям тоже CONFIRMED и совпадает с прошлым прогоном: Discovery 5 / Query Lifecycle 5 / Materialized Views 6 / Visualization 5 / Dashboard 4 / Account 1 = 26. Streamable HTTP на https://api.dune.com/mcp/v1 — CONFIRMED. OAuth2+PKCE со scope `mcp:dune:full` ИЛИ `x-dune-api-key` — CONFIRMED дословно.",
+   "ПЕРЕПРОВЕРКА ГИПОТЕЗЫ 2 (free-план: 2500 кредитов/мес, полный доступ к API, overage $5/100 кредитов, ~55 rpm) — **CONFIRMED по всем четырём под-утверждениям**. (a) 2500 кредитов: «Both individuals and teams in the free tier can continue using Dune beyond their 2,500 monthly credits» — pricing-faqs.md:135. (b) overage: «Free: $5.00 per 100 credits» — pricing-faqs.md:117. (c) доступ к API на free: «Yes, the API is included in all Dune plans. This means that all teams and users, including those in the Free plan, can access the API to trigger executions and export data» — pricing-faqs.md:254. (d) ~55 rpm: «on the Free plan, you have a low limit of 15 requests per minute and a high limit of 40 requests per minute ... effectively having a combined limit of 55» — rate-limits.md. ВАЖНАЯ ПОПРАВКА к формулировке «полный доступ к API»: она НЕВЕРНА в сильном прочтении — Query-эндпоинты (create/read/update/list query) на free НЕ работают, см. следующий пункт.",
+   "ПЕРЕПРОВЕРКА ГИПОТЕЗЫ 3 (Dune Sim гасят 01.08.2026, регистрации закрыты; прошлый прогон имел только вторичный источник) — **CONFIRMED, и источник повышен со вторичного до первичного**. Официальный пост https://dune.com/blog/sunsetting-sim теперь индексируется и его содержимое доставлено через поисковый индекс: sunset 2026-08-01, новые регистрации отключены с 2026-05-18, существующие клиенты сохраняют полный доступ до 01.08, прораченный возврат предоплаты, Mutual Termination & Release Agreement, миграционные партнёры Zerion/Codex/Mobula. Статус доставки: прямой краулер получает HTTP 403 (антибот), не 404 как в прошлом прогоне. Найден также смежный официальный пост dune.com/blog/sunsetting-sim-idx.",
+   "ПРОТИВОРЕЧИЕ ВНУТРИ ПЕРВОИСТОЧНИКА (не разрешено, влияет на 3 из 26 тулов). Плановый гейт Query-эндпоинтов, на которых стоят `createDuneQuery` / `getDuneQuery` / `updateDuneQuery`, заявлен ДВУМЯ разными способами на docs.dune.com: (A) «To access Query endpoints, an [Analyst plan](https://dune.com/pricing) or higher is required» — повторено дословно на queries/endpoint/read.md:17, create.md:15, update.md, list.md; (B) «## Queries Endpoint — Available on Plus and Enterprise plans» — api-reference/overview/billing.md. Analyst и Plus — РАЗНЫЕ тарифы (в pricing-faqs.md:118-119 у них разные ставки overage: Analyst $1.875/100, Plus $1.596/100). Что именно требуется — Analyst или Plus — на 2026-07-27 из первоисточника не разрешается. Практический вывод не меняется: на Free эти три тула не работают.",
+   "ГЛАВНЫЙ ФУНКЦИОНАЛЬНЫЙ РАЗРЫВ ДЛЯ ЗАДАННОЙ ЦЕПОЧКИ. Шаг «НАЙТИ чужой запрос» в MCP ОТСУТСТВУЕТ как класс. Ни один из 26 тулов не ищет чужие публичные queries/дашборды по теме: `searchTables` ищет ТАБЛИЦЫ (датасеты), `searchDocs` ищет ДОКУМЕНТАЦИЮ, а REST-эндпоинт List Queries по первоисточнику возвращает только своё («Retrieve a paginated list of queries owned by the account tied to the API key», queries/endpoint/list.md) и вдобавок гейтится планом. Вывод: цепочка «найти → прочитать → исполнить → проверить» через официальный MCP закрывается только с шага 2; шаг 1 обязан быть внешним (веб-поиск по dune.com, курируемый реестр query id).",
+   "ВТОРОЙ РАЗРЫВ: в MCP нет дешёвого «прочитать последний закэшированный результат». REST имеет Get Latest Query Result (GET /query/{id}/results), про который первоисточник прямо пишет: «This endpoint does NOT trigger an execution but does consume credits based on the result size». В MCP аналога нет — `getExecutionResults` работает по execution_id, то есть требует предварительного `executeQueryById`. Для free-бюджета 2500 кредитов это означает, что через MCP нельзя получить готовый ответ, не оплатив исполнение.",
+   "Заявленные ограничения самого MCP: в первоисточнике их ПРАКТИЧЕСКИ НЕТ. Grep по docs/agents/mcp.md на `beta|preview|GA|limit|quota|timeout|size|rate` не дал ни одного заявления о серверном rate limit, максимальном размере ответа или серверном таймауте MCP. Единственное задокументированное ограничение — КЛИЕНТСКОЕ и чужое: «Codex's MCP client has a default tool timeout of 60 seconds. When `getExecutionResults` polls for a query that takes longer than this, Codex terminates the connection ... the MCP transport does not auto-reconnect after a timeout - all subsequent tool calls will fail with `Transport closed` until you start a new session.» Обходной путь дословно: `tool_timeout_sec = 300` в `[mcp_servers.dune]`.",
+   "Лимиты, которые применимы к MCP лишь ПО ВЫВОДУ (заявлены для Data API, не для MCP): rate limit Free 15 rpm (low, write-heavy: create/update/execute query) + 40 rpm (high, read-heavy: read query / get execution result / status / cancel) = комбинированно 55 rpm; per-IP 1000 rps; «Dune internally has a maximum query result size limit (which currently is 32GB)», при превышении нужен `allow_partial_results=true`. Первоисточник MCP нигде не утверждает, что эти лимиты распространяются на /mcp/v1.",
+   "Движковые ограничения, влияющие на исполнение чужого запроса (pricing-faqs.md:154-181): Small Engine — 0 кредитов на запуск, но «2-minute timeout limit», «Maximum of three (3) concurrent executions», «No performance guarantees», и доступен для ручного запуска в приложении Dune; Medium (дефолт для API/MCP) и Large — «Credits consumed based on actual compute resources used», Large ≈ 2x compute от Medium. Дословно: «Exact credit consumption varies based on query complexity, data volume scanned, processing required, and the time the query occupies the engine rather than being a fixed rate per execution» — то есть фиксированной цены за исполнение НЕ существует, и предсказать стоимость чужого запроса заранее можно только через `getTableSize`.",
+   "Кредитная экономика, релевантная шагу «исполнить/проверить» (billing.md, первоисточник): экспорт данных Free — 20 credits per MB Exported (Analyst 10, Plus 2); запись данных Free — 3 credits per GB Written, «Minimum charge is 1 credit per write operation»; сторедж Free — 100 MB; вебхуки Free — 1. Кредиты не переносятся: «Remaining credits at the end of a billing cycle do not rollover to the next month» (pricing-faqs.md:131). Оптовая докупка недоступна: «Credits are not available to purchase in bulk once you reach your quota» (pricing-faqs.md:127). Не всякий сбой платный: «Dune does not charge for SQL syntax/semantic errors, internal query-engine failures, or query-engine capacity-limit failures such as memory or stage limits» (billing.md).",
+   "Materialized Views на Free почти нежизнеспособны: «Materialized views contribute to your storage quota. On the free tier you can only create a 1MB materialized view» (materialized-views/overview.md). Плюс расписание ограничено: «The cron expression interval must be at least 15 minutes and at most weekly» (materialized-views/create.md), имя обязано быть вида `dune.<your_team>.result_<name>`. Каждый refresh — это исполнение запроса и трата кредитов.",
+   "ИСПРАВЛЕНИЕ ОШИБКИ СУБ-АГЕНТА (логируется, не молча). Первый проход через WebFetch по https://docs.dune.com/api-reference/agents/mcp вернул сводку с заголовком «## Tool Inventory (27 Total)», при этом перечислив в той же сводке ровно 26 имён. Это арифметическая ошибка суммаризатора WebFetch, а не расхождение первоисточника. Исправлено детерминированно: сырой markdown получен через curl и посчитан grep'ом — 26. Число 27 НЕ подтверждается ничем и отброшено.",
+   "СТАЛОЕ ЧИСЛО В ОФИЦИАЛЬНОМ БЛОГЕ (источник расхождения «12 vs 26»). Анонсирующий пост dune.com/blog/dune-mcp заявляет «The Dune MCP Server exposes 12 tools through a single endpoint». Это число с момента запуска и оно УСТАРЕЛО относительно документации на 2026-07-27 (26). Первоисточник-документация приоритетнее первоисточника-анонса. Отдельно блог подтверждает кредитную модель дословно: «The MCP server uses your existing Dune API credits and you can check usage with the getUsage tool.»",
+   "Область охвата MCP смещена в авторинг и презентацию, а не в потребление чужой аналитики: 15 тулов из 26 (Materialized Views 6 + Visualization 5 + Dashboard 4) обслуживают создание и оформление СВОИХ артефактов. На заданную цепочку «найти → прочитать SQL → исполнить → проверить» реально работают 8 тулов: searchDocs, searchTables, searchTablesByContractAddress, getTableSize, getDuneQuery, executeQueryById, getExecutionResults, getUsage — и из них getDuneQuery платный.",
+   "Статус GA/beta/preview официально НЕ объявлен ни на странице документации (grep на `beta|preview|general availability|GA|experimental` — 0 попаданий), ни в доставленном фрагменте анонса. Отсутствие маркировки «beta» НЕ равно подтверждённому GA. Поле status оставлено unknown намеренно."
+  ],
+  "missing_vs_rest": [
+   "Execute SQL (`POST /v1/.../execute-sql`) — исполнение ПРОИЗВОЛЬНОГО SQL без сохранения запроса. В MCP тула нет: любой SQL надо сперва сохранить через `createDuneQuery` (а он гейтится планом Analyst+). Для агента это означает, что «просто посчитать» на Free через MCP невозможно. Примечание: в Dune CLI такой путь есть — `dune query run-sql --sql \"SELECT * FROM ethereum.transactions LIMIT 5\" -o json` (docs/agents/cli-and-skills.md:58).",
+   "Get Latest Query Result (`GET /query/{id}/results`) и Get Latest Query Result in CSV — чтение последнего закэшированного результата БЕЗ запуска исполнения. Прямая цитата первоисточника: «This endpoint does NOT trigger an execution but does consume credits based on the result size». В MCP аналога нет — самый дешёвый путь получения готового ответа из MCP недоступен.",
+   "Get Execution Result in CSV — CSV-формат выдачи. В MCP только JSON-подобная выдача через `getExecutionResults`; ни одного CSV-тула нет.",
+   "Get Execution Status (`GET /execution/{id}/status`) как отдельная операция — в MCP свёрнут внутрь `getExecutionResults` («Fetch status and results»), то есть нельзя опросить статус, не запрашивая результат. Именно на этом polling'е возникает 60-секундный таймаут Codex.",
+   "Cancel Execution (`POST /execution/{id}/cancel`) — отмена запущенного исполнения. В MCP тула нет: агент не может остановить дорогое чужое исполнение, которое он сам же запустил. Прямой риск для кредитного бюджета.",
+   "List Queries (`GET /v1/queries`) — постраничный список СВОИХ запросов. В MCP тула нет вовсе; агент не может перечислить собственные сохранённые запросы (при том, что для materialized views `listMaterializedViews` есть, а для визуализаций `listQueryVisualizations` есть).",
+   "Archive Query / Unarchive Query — в MCP нет. Архивировать через MCP можно только дашборд (`archiveDashboard`), но не запрос.",
+   "Private Query / Unprivate Query — управление приватностью запроса. В MCP нет. Агент не может создать приватный запрос или скрыть созданный.",
+   "Get Query Pipeline, Execute Pipeline, Get Pipeline Execution Status (раздел Pipelines) — весь пайплайновый API отсутствует в MCP целиком.",
+   "Весь раздел Tables / Uploads — 6 REST-эндпоинтов без единого MCP-аналога: Create Table, Insert Data, Upload CSV, Clear Data, Delete Table, List Uploaded Tables. Через MCP нельзя загрузить собственные данные в Dune и объединить их с ончейн-таблицами.",
+   "Get Dataset и List Datasets (раздел Datasets) — в MCP есть только поисковые аналоги (`searchTables` ↔ Search Datasets, `searchTablesByContractAddress` ↔ Search Datasets by Contract Address), но нет «получить конкретный датасет по идентификатору» и «перечислить датасеты».",
+   "Create Webhook (алерты) — в MCP нет. Событийные уведомления по результату запроса недоступны агенту через MCP.",
+   "Параметры выдачи результата, задокументированные для REST отдельными страницами — Result Filtering, Pagination, Sampling, Sorting, а также `allow_partial_results=true` для результатов свыше внутреннего лимита 32GB. Для MCP их поддержка НЕ задокументирована (входные схемы тулов не публикуются) — фактически unverified, а не подтверждённое отсутствие.",
+   "Коннекторы Trino и dbt (включая Datashares, incremental models, CI/CD) — вне MCP полностью; это отдельный интеграционный контур.",
+   "ОБРАТНАЯ СТОРОНА — чего НЕТ в REST, но ЕСТЬ в MCP (MCP как надмножество): (1) все 5 тулов Visualization (`generateVisualization`, `getVisualization`, `updateVisualization`, `deleteVisualization`, `listQueryVisualizations`) — в индексе api-reference публичных REST-эндпоинтов визуализаций нет; (2) все 4 тула Dashboard (`createDashboard`, `getDashboard`, `updateDashboard`, `archiveDashboard`) — публичных REST-эндпоинтов дашбордов в индексе нет, есть только гайд «Build Custom Dashboards & Reports» поверх клиентского SDK; (3) `searchDocs` — поиск по документации Dune, REST-эндпоинта нет; (4) `getTableSize` — оценка объёма сканирования, REST-эндпоинта нет; (5) `listBlockchains` — REST-эндпоинта нет в индексе; (6) `updateMaterializedView` — в REST задокументировано 5 эндпоинтов matview (create/get/list/refresh/delete), в MCP их 6, отдельного update в REST-индексе нет (upsert совмещён с create)."
+  ],
+  "resources": [
+   "`query-engine-writing-efficient-queries` — «Performance and cost best practices for DuneSQL» (дословно). Это MCP-ресурс, НЕ тул; в счёт 26 не входит. Практическая ценность для агента: правила снижения стоимости сканирования перед исполнением чужого запроса.",
+   "`query-engine-functions-and-operators` — «DuneSQL function/operator reference» (дословно). MCP-ресурс, не тул. Ценность: проверка синтаксиса и семантики функций при чтении чужого SQL на шаге «проверить корректность».",
+   "Итого ресурсов: 2 (проверено grep по разделу «### Resources» первоисточника). Сумма поверхности MCP = 26 тулов + 2 ресурса."
+  ],
+  "server_url": "https://api.dune.com/mcp/v1",
+  "sources": [
+   "https://docs.dune.com/docs/agents/mcp.md — ПЕРВИЧНЫЙ, ГЛАВНЫЙ. Статус доставки: HTTP 200 напрямую через curl, 14228 байт сырого markdown. Отсюда взяты дословно: полная таблица 26 тулов с категориями и описаниями, 2 ресурса, server URL, транспорт, все OAuth-эндпоинты и scope, оба способа API-key-авторизации, команды подключения для Claude Code / Claude Desktop / OpenCode / Codex / Cursor, предупреждение про таймаут Codex, раздел Troubleshooting.",
+   "https://docs.dune.com/api-reference/agents/mcp — ПЕРВИЧНЫЙ (тот же контент). Статус доставки: HTTP 308 redirect → финально 200; фактический конечный URL — /docs/agents/mcp. Вариант с суффиксом .md отдаёт HTTP 307 → 200. ВНИМАНИЕ: WebFetch по этому URL вернул сводку с ошибочным итогом «27 Total» при 26 фактически перечисленных именах — суммаризатор ошибся в арифметике, см. limitations.",
+   "https://docs.dune.com/llms.txt — ПЕРВИЧНЫЙ, индекс документации. HTTP 200, 1086 строк. Использован для построения полного перечня REST-поверхности (77 страниц api-reference) и, следовательно, для диффа MCP↔REST. Ограничение индекса: он НЕ полон — страница learning/how-tos/pricing-faqs в нём отсутствует, хотя существует и отдаётся 200.",
+   "https://docs.dune.com/api-reference/overview/rate-limits.md — ПЕРВИЧНЫЙ, HTTP 200. Источник чисел: Per IP 1000 rps; Free low 15 rpm / high 40 rpm (комбинированно 55); Plus 70/200; Enterprise 350+/1000+; список low-limit и high-limit эндпоинтов; лимит размера результата 32GB и параметр `allow_partial_results`.",
+   "https://docs.dune.com/api-reference/overview/billing.md — ПЕРВИЧНЫЙ, HTTP 200. Источник: таблицы Credits per MB Exported (Free 20 / Analyst 10 / Plus 2), Credits per GB Written (Free 3), Storage Limit (Free 100 MB), Webhooks (Free 1), правило «Minimum charge is 1 credit per write operation», политика неоплаты синтаксических/движковых сбоев, поле `execution_cost_credits`, и спорная строка «Queries Endpoint — Available on Plus and Enterprise plans».",
+   "https://docs.dune.com/learning/how-tos/pricing-faqs.md — ПЕРВИЧНЫЙ, HTTP 200, 15671 байт. Ключевой заменитель недоступной страницы цен. Источник: 2,500 monthly credits на free; overage Free $5.00/100 credits, Analyst $1.875 (monthly)/$1.625 (annual), Plus $1.596/$1.396, Legacy Premium $0.999 (no longer available); отсутствие переноса кредитов; невозможность оптовой докупки; определение кредита; параметры Small/Medium/Large движков (2-минутный таймаут и 3 конкурентных исполнения у Small); подтверждение «the API is included in all Dune plans».",
+   "https://docs.dune.com/api-reference/queries/endpoint/read.md — ПЕРВИЧНЫЙ, HTTP 200. Критично для шага «прочитать чужой SQL». Дословно: «This API allows for anyone to read the sql text, parameters, name, tags, and state of a query. For private queries, only the API key generated under the context of the owner of that query will work.» + «Minimum required API key scope: `Read`» + «To access Query endpoints, an [Analyst plan](https://dune.com/pricing) or higher is required.»",
+   "https://docs.dune.com/api-reference/queries/endpoint/create.md и .../update.md — ПЕРВИЧНЫЕ, HTTP 200. Источник планового гейта Analyst+ для create/update, scope `Read/Write`, и ограничения владельца на update («Only the API key generated under the context of the owner of that query will work»).",
+   "https://docs.dune.com/api-reference/queries/endpoint/list.md — ПЕРВИЧНЫЙ, HTTP 200. Доказательство ключевого разрыва: «Retrieve a paginated list of queries owned by the account tied to the API key» — поиска ЧУЖИХ запросов нет ни в REST, ни в MCP.",
+   "https://docs.dune.com/api-reference/executions/endpoint/execute-query.md — ПЕРВИЧНЫЙ, HTTP 200. Подтверждает: scope `Read`, планового гейта НЕТ (то есть Free работает), параметр `performance` (medium по умолчанию, large), «Credits are consumed based on actual compute resources used».",
+   "https://docs.dune.com/api-reference/executions/endpoint/get-query-result.md — ПЕРВИЧНЫЙ, HTTP 200. Источник цитаты про отсутствующий в MCP дешёвый путь: «This endpoint does NOT trigger an execution but does consume credits based on the result size».",
+   "https://docs.dune.com/api-reference/usage/endpoint/get-usage.md — ПЕРВИЧНЫЙ, HTTP 200. Источник нулевой стоимости getUsage: «This is a metadata endpoint and does not consume credits» + описание возвращаемых полей (credits, queries, dashboards, storage; текущий биллинговый период по умолчанию).",
+   "https://docs.dune.com/api-reference/materialized-views/overview.md и .../create.md, .../refresh.md — ПЕРВИЧНЫЕ, HTTP 200. Источник: «On the free tier you can only create a 1MB materialized view», список 5 REST-эндпоинтов matview, правила именования `dune.<your_team>.result_*`, cron «at least 15 minutes and at most weekly», medium/large тиры обновления.",
+   "https://docs.dune.com/api-reference/datasets/endpoint/search.md и .../search-by-contract.md — ПЕРВИЧНЫЕ, HTTP 200. REST-эквиваленты `searchTables` и `searchTablesByContractAddress`: scope `Read`, планового гейта нет; фильтры categories (canonical/decoded/spell/community) и blockchains; явное упоминание сценария «AI Agents: Enable AI agents to discover relevant tables and schemas before constructing SQL queries».",
+   "https://docs.dune.com/api-reference/overview/introduction.md — ПЕРВИЧНЫЙ, HTTP 200. Источник разделения стоимости: «Execution endpoints: Credit-based / Metadata endpoints: Free».",
+   "https://docs.dune.com/api-reference/overview/faq.md — ПЕРВИЧНЫЙ, HTTP 200. Вторая, более грубая формулировка rate limit («40 per minute on Free, 200 per minute on Plus») — расходится по детализации с rate-limits.md, где Free разложен на 15+40. Приоритет отдан rate-limits.md как более специфичной странице.",
+   "https://docs.dune.com/docs/agents/cli-and-skills.md — ПЕРВИЧНЫЙ, HTTP 200. Источник альтернативного пути `dune query run-sql --sql ... -o json`, доказывающего, что произвольный SQL доступен в CLI, но не в MCP.",
+   "https://dune.com/pricing — ПЕРВИЧНЫЙ, НО НЕ ДОСТАВЛЕН. Статус: HTTP 403 краулеру напрямую (curl), а через WebFetch отдаёт только навигацию и обрывается на «Loading» — JS-рендер + антибот. Ни одно число НЕ взято отсюда; тарифные числа заменены первоисточником docs.dune.com/learning/how-tos/pricing-faqs.md.",
+   "https://dune.com/blog/dune-mcp — ПЕРВИЧНЫЙ (анонс), ДОСТАВЛЕН ЧАСТИЧНО. Прямой краулер: HTTP 403. Содержимое получено через поисковый индекс той же первичной URL. Даёт: устаревшее «12 tools», подтверждение кредитной модели MCP, список совместимых клиентов, команду подключения. Число 12 признано устаревшим относительно документации.",
+   "https://dune.com/blog/sunsetting-sim — ПЕРВИЧНЫЙ, ДОСТАВЛЕН ЧАСТИЧНО. Прямой краулер: HTTP 403 (в прошлом прогоне фиксировался 404). Содержимое получено через поисковый индекс первичной URL: sunset 2026-08-01, регистрации отключены с 2026-05-18, доступ существующих клиентов до 01.08, прораченный возврат, партнёры миграции Zerion/Codex/Mobula. Смежный официальный пост: https://dune.com/blog/sunsetting-sim-idx.",
+   "https://docs.sim.dune.com/ и https://docs.sim.dune.com/support — ПЕРВИЧНЫЕ, HTTP 200, но БЕЗ уведомления о закрытии (grep на sunset/shutting down/August — 0 попаданий; WebFetch по /support подтвердил отсутствие уведомления). Отрицательный результат зафиксирован честно: документация Sim на 2026-07-27 не предупреждает о собственном закрытии.",
+   "https://www.allium.so/blog/dune-sim-is-shutting-down-heres-how-to-migrate-to-allium/ — secondary (конкурент, миграционный гайд). Использован только как перекрёстная подпорка к sunset Sim; ни одно число из него не взято.",
+   "https://blockchain.news/news/dune-mcp-server-ai-agents-blockchain-data — secondary. Не использован для чисел.",
+   "https://github.com/duneanalytics/skills — ПЕРВИЧНЫЙ репозиторий (официальная организация Dune), проверен через `gh api repos/duneanalytics/skills`: archived=false, created_at=2026-03-06, pushed_at=2026-06-12, stars=22, description «Agent skills». Живой, но малозвёздный; последний пуш за ~1.5 месяца до даты верификации. Использован только как lifecycle-подтверждение агентского направления Dune, не как источник инвентаря тулов."
+  ],
+  "status": "unknown — GA/beta/preview официально НЕ заявлены. Grep по первоисточнику https://docs.dune.com/docs/agents/mcp.md на `beta|preview|general availability|GA|experimental` даёт 0 попаданий: страница описывает сервер как действующий продукт («Dune MCP is Dune's official remote MCP server»), но нигде не маркирует зрелость. Анонс dune.com/blog/dune-mcp отдаёт 403 краулеру; в доставленном через поисковый индекс фрагменте маркировки зрелости также нет. Отдельной страницы changelog у docs.dune.com нет (https://docs.dune.com/changelog → HTTP 404), поэтому историю изменений инвентаря тулов проследить по первоисточнику невозможно. Косвенные признаки активной разработки: инвентарь вырос с 12 тулов (анонс в блоге) до 26 (документация на 2026-07-27); на странице документации присутствуют опечатки («Setup exampls», «some agents do now allow you» вместо «do not allow»), что типично для свежего, ещё не вычитанного материала. Вывод: считать GA нельзя, считать beta тоже нельзя — поле оставлено unknown намеренно, поверхность тулов следует перепроверять ежеквартально.",
+  "tools": [
+   {
+    "name": "searchDocs",
+    "category": "Discovery",
+    "input": "Свободнотекстовый поисковый запрос. Точная входная JSON-схема первоисточником не публикуется (unverified).",
+    "returns": "Релевантные фрагменты документации Dune — гайды, примеры, справка по API. Дословное описание: «Search Dune docs for guides, examples, and API references».",
+    "plan_gate": "unknown — MCP-only тул, публичного REST-эквивалента в индексе api-reference нет, поэтому плановый гейт не выводится даже косвенно.",
+    "credit_cost": "unverified — первоисточник MCP не указывает стоимость. Косвенно: docs.dune.com/api-reference/overview/introduction.md заявляет «Metadata endpoints: Free», а поиск по документации не является исполнением запроса, но прямого утверждения о нулевой стоимости именно для searchDocs нет.",
+    "agent_use": "Шаг 4 «проверить корректность»: агент читает чужой SQL и упирается в незнакомую функцию DuneSQL или в семантику spell-таблицы — searchDocs даёт нормативный ответ из документации вместо галлюцинации. Также используется на шаге 2, чтобы правильно интерпретировать параметры чужого запроса. Не участвует в шаге 1 (поиске чужого запроса) — ищет документацию, а не чужие queries."
+   },
+   {
+    "name": "searchTables",
+    "category": "Discovery",
+    "input": "Свободнотекстовый запрос плюс фильтры. По REST-эквиваленту POST /v1/datasets/search: free-text (например «dex trades», «ethereum transactions»), categories (`canonical`, `decoded`, `spell`, `community`), blockchains, schemas. Точная MCP-схема не публикуется.",
+    "returns": "Список подходящих таблиц/датасетов каталога Dune со схемами и метаданными. Дословно: «Find tables by protocol, chain, category, or schema».",
+    "plan_gate": "free — REST-эквивалент (datasets/endpoint/search.md) требует только «Minimum required API key scope: `Read`» и НЕ содержит плановой оговорки, в отличие от Query-эндпоинтов.",
+    "credit_cost": "unverified для MCP. Косвенно бесплатен: метаданные, а introduction.md заявляет «Metadata endpoints: Free». Прямого per-tool утверждения нет.",
+    "agent_use": "Двойная роль. Шаг 4 «проверить корректность» — главная: прочитав чужой SQL, агент проверяет, что таблицы из FROM реально существуют и какого они класса. Класс критичен для доверия: `spell` — курируемая dbt-модель сообщества (высокое доверие), `decoded` — автодекод контракта, `community` — загруженное кем угодно (низкое доверие). Это и есть машинная проверка происхождения данных. Шаг 1-заменитель: когда готового чужого запроса не нашлось, searchTables даёт материал для написания своего SQL с нуля."
+   },
+   {
+    "name": "listBlockchains",
+    "category": "Discovery",
+    "input": "Параметры не задокументированы; предположительно без аргументов (unverified).",
+    "returns": "Список проиндексированных блокчейнов с количеством таблиц по каждому. Дословно: «List indexed blockchains with table counts».",
+    "plan_gate": "unknown — MCP-only, REST-эквивалента в индексе api-reference нет.",
+    "credit_cost": "unverified — метаданные, стоимость не заявлена.",
+    "agent_use": "Гейт покрытия ПЕРЕД тратой кредитов: прежде чем искать и исполнять чужой запрос про сеть X, агент проверяет, что сеть X вообще проиндексирована Dune. Дешёвый способ вернуть явный отказ вместо дорогого пустого результата. Также даёт table_counts как грубый прокси глубины покрытия сети."
+   },
+   {
+    "name": "searchTablesByContractAddress",
+    "category": "Discovery",
+    "input": "Адрес контракта; по REST-эквиваленту дополнительно фильтр `blockchains`. Точная MCP-схема не публикуется.",
+    "returns": "Декодированные таблицы событий и вызовов (event/call) для указанного контракта. Дословно: «Find decoded event/call tables for a contract address».",
+    "plan_gate": "free — REST-эквивалент (datasets/endpoint/search-by-contract.md) требует только scope `Read`, плановой оговорки нет.",
+    "credit_cost": "unverified для MCP; метаданные, косвенно бесплатны.",
+    "agent_use": "Мост «сырой адрес → правильная таблица», когда вопрос задан про конкретный контракт, а готового чужого запроса нет. На шаге 4 служит перекрёстной проверкой: если чужой запрос читает из таблицы, которой этот тул для данного контракта не возвращает, это сигнал, что запрос смотрит не на тот контракт или на устаревший декод."
+   },
+   {
+    "name": "getTableSize",
+    "category": "Discovery",
+    "input": "Одна или несколько таблиц (по описанию — «for one or more tables»); вероятно также текст запроса. Точная схема не публикуется (unverified).",
+    "returns": "Оценка объёма данных, которые просканирует запрос. Дословно: «Estimate the data scanned by a query for one or more tables».",
+    "plan_gate": "unknown — MCP-only, REST-эквивалента нет.",
+    "credit_cost": "unverified — оценочный/метаданный тул, стоимость не заявлена.",
+    "agent_use": "КРИТИЧЕСКИ ВАЖЕН для этой цепочки и не имеет REST-аналога. Стоимость исполнения на Dune не фиксирована — первоисточник прямо пишет, что она «varies based on query complexity, data volume scanned, processing required, and the time the query occupies the engine rather than being a fixed rate per execution». Значит, чужой запрос — это кот в мешке по цене. getTableSize — единственный документированный способ оценить масштаб сканирования ДО `executeQueryById` и не сжечь месячные 2500 кредитов одним тяжёлым чужим запросом. В агентском пайплайне должен стоять обязательным предохранителем между шагом 2 и шагом 3."
+   },
+   {
+    "name": "createDuneQuery",
+    "category": "Query Lifecycle",
+    "input": "SQL-текст, имя, описание, теги, параметры (по REST-эквиваленту create.md: `name`, `description`, `query_sql`, `parameters` с типами text/number/…). Точная MCP-схема не публикуется.",
+    "returns": "Созданный сохранённый запрос с его query_id. Дословно: «Create and save a new Dune query».",
+    "plan_gate": "paid-only — REST-эквивалент дословно: «To access Query endpoints, an [Analyst plan](https://dune.com/pricing) or higher is required» (create.md:15). ПРОТИВОРЕЧИЕ: billing.md для того же раздела заявляет «Queries Endpoint — Available on Plus and Enterprise plans». Analyst или Plus — из первоисточника не разрешается; на Free не работает в любом прочтении.",
+    "credit_cost": "unverified — создание запроса само по себе не является исполнением; отдельной цены за create первоисточник не публикует.",
+    "agent_use": "Шаг 2.5 «форкнуть чужое, чтобы исполнить своё»: чужой запрос нельзя изменить (update — только владельцу) и нельзя параметризовать под свой вопрос. Стандартный обход — прочитать чужой SQL через getDuneQuery, создать СВОЙ запрос с этим SQL, и дальше исполнять его. Именно здесь цепочка упирается в платный план: без Analyst+ форк невозможен."
+   },
+   {
+    "name": "getDuneQuery",
+    "category": "Query Lifecycle",
+    "input": "Идентификатор запроса (query_id).",
+    "returns": "SQL-текст, параметры, имя, теги, состояние запроса. Дословно: «Fetch SQL and metadata for an existing query».",
+    "plan_gate": "paid-only — Analyst+ (или Plus, см. противоречие в limitations). ВАЖНОЕ УТОЧНЕНИЕ ПО ДОСТУПУ: работает на ЧУЖИХ публичных запросах. Дословно из read.md: «This API allows for anyone to read the sql text, parameters, name, tags, and state of a query. For private queries, only the API key generated under the context of the owner of that query will work.»",
+    "credit_cost": "unverified — метаданный доступ; отдельной цены первоисточник не публикует.",
+    "agent_use": "ЭТО И ЕСТЬ ШАГ 3 ЦЕПОЧКИ «прочитать SQL чужого запроса» — и единственный тул, который его закрывает. Именно он делает чужую аналитику проверяемой: агент получает исходный SQL, видит таблицы, джойны, фильтры и дефолты параметров, и может вынести суждение о корректности вместо слепого доверия числу с дашборда. Главный неприятный вывод инвентаря: этот шаг платный (Analyst+), то есть бесплатный контур не может читать чужой SQL через официальный API/MCP."
+   },
+   {
+    "name": "updateDuneQuery",
+    "category": "Query Lifecycle",
+    "input": "query_id плюс изменяемые поля: SQL, заголовок, описание, теги, параметры. Дословно: «Update SQL, title, description, tags, or parameters».",
+    "returns": "Обновлённый объект запроса.",
+    "plan_gate": "paid-only — Analyst+ (update.md). Дополнительное ограничение владения: «Only the API key generated under the context of the owner of that query will work» — чужой запрос обновить нельзя, только свой (в том числе свой форк).",
+    "credit_cost": "unverified — правка не является исполнением.",
+    "agent_use": "Шаг оптимизации между «прочитать» и «исполнить»: агент сузил окно дат, добавил фильтр по партиционной колонке, понизил тир — и тем самым срезал стоимость сканирования, оценённую через getTableSize. Первоисточник сам приводит этот сценарий как пример промпта: «Review query `1234567`, optimize it for lower scan cost, update it in place, run it, and summarize result quality and execution credits used.»"
+   },
+   {
+    "name": "executeQueryById",
+    "category": "Query Lifecycle",
+    "input": "query_id; по REST-эквиваленту также `query_parameters` (объект) и `performance` (тир движка, дефолт `medium`, опционально `large`).",
+    "returns": "Идентификатор исполнения (execution ID) — не результат. Дословно: «Execute a saved query and return an execution ID».",
+    "plan_gate": "free — REST-эквивалент execute-query.md требует только scope `Read` и НЕ содержит плановой оговорки; pricing-faqs.md:254 подтверждает, что все планы, включая Free, «can access the API to trigger executions and export data».",
+    "credit_cost": "ДА, СПИСЫВАЕТ. Дословно: «Credits are consumed based on actual compute resources used». Фиксированной ставки нет — «rather than being a fixed rate per execution». Тир влияет: `large` ≈ 2x compute от `medium` и обычно дороже за тот же запрос. Small-движок (0 кредитов на запуск) в API/MCP как тир не предлагается — дефолт `medium`.",
+    "agent_use": "ЭТО ШАГ 3 ЦЕПОЧКИ «исполнить». Асинхронный: возвращает только execution ID, результат забирается отдельно. Работает на Free — то есть исполнять запросы бесплатный контур может, а вот читать их SQL (getDuneQuery) уже нет; это и создаёт перекос, при котором агент на Free способен запускать чужой запрос, не имея возможности программно его прочитать и проверить. Отмены исполнения в MCP нет (Cancel Execution отсутствует), поэтому запущенный дорогой запрос остановить через MCP невозможно."
+   },
+   {
+    "name": "getExecutionResults",
+    "category": "Query Lifecycle",
+    "input": "execution_id. Поддержка фильтрации/пагинации/сортировки/сэмплирования (документированных для REST отдельными страницами) в MCP не описана — unverified.",
+    "returns": "Статус исполнения и строки результата. Дословно: «Fetch status and results for a query execution».",
+    "plan_gate": "free — REST-эквивалент get-execution-result.md требует только scope `Read`, плановой оговорки нет.",
+    "credit_cost": "ДА, СПИСЫВАЕТ, отдельно от исполнения. По billing.md кредиты тратятся при экспорте результата: Free — 20 credits per MB Exported (Analyst 10, Plus 2). Важный нюанс из billing.md: «If you execute a query but never pull the results, you are only charged for the execution» — то есть исполнение и вытаскивание результата тарифицируются раздельно.",
+    "agent_use": "Закрывает конец шага 3 и вход в шаг 4: даёт собственно данные для сверки с независимым источником. Здесь же главный операционный риск всей цепочки — именно этот тул опрашивает статус в цикле, и именно на нём срабатывает 60-секундный таймаут MCP-клиента Codex, после которого транспорт не переподключается и все последующие вызовы падают с `Transport closed` до перезапуска сессии (обход: `tool_timeout_sec = 300`). Экономический риск: на Free 20 кредитов за мегабайт делают выгрузку широких результатов дорогой — агент должен агрегировать в SQL, а не тянуть сырые строки."
+   },
+   {
+    "name": "createMaterializedView",
+    "category": "Materialized Views",
+    "input": "Идентификатор сохранённого запроса, имя (обязан быть без префикса `dune.<your_team>.` и начинаться с `result_`), опциональное расписание `cron_expression` (валидное 5-секционное cron-выражение), тир производительности. Дословно: «Materialize a saved query's results into a queryable table, with an optional scheduled refresh».",
+    "returns": "Созданная (или обновлённая — эндпоинт upsert-семантики) материализованная вьюха как запрашиваемая таблица.",
+    "plan_gate": "free-tier-limited — дословно: «Materialized views contribute to your storage quota. On the free tier you can only create a 1MB materialized view». Плюс общий сторедж Free = 100 MB. Дополнительно cron ограничен: «at least 15 minutes and at most weekly».",
+    "credit_cost": "ДА. Каждое обновление — это исполнение запроса: «Each refresh of a materialized view triggers a query execution and consumes credits based on the performance level». Плюс запись: Free 3 credits per GB Written, «Minimum charge is 1 credit per write operation».",
+    "agent_use": "Единственный штатный способ НЕ платить за один и тот же ответ дважды: проверенный чужой запрос материализуется один раз, дальше читается как обычная таблица. Для агента это кэш-ярус внутри самого Dune. На бесплатном плане практически бесполезен — потолок 1MB на вьюху отсекает почти любую содержательную агрегацию."
+   },
+   {
+    "name": "listMaterializedViews",
+    "category": "Materialized Views",
+    "input": "Параметры не задокументированы (unverified).",
+    "returns": "Список материализованных вьюх, принадлежащих пользователю или его команде. Дословно: «List materialized views owned by you or your team».",
+    "plan_gate": "free — REST-эквивалент (materialized-views/list) плановой оговорки не содержит; ограничение free-плана касается размера вьюхи, а не права перечислять.",
+    "credit_cost": "unverified — метаданные, косвенно бесплатны.",
+    "agent_use": "Инвентаризация собственного кэша перед тем, как платить за новое исполнение: агент сначала смотрит, нет ли уже готовой материализации под этот вопрос. Первоисточник приводит ровно такой сценарий: «Materialize my daily active addresses query into a table and refresh it every hour, then list my materialized views to confirm»."
+   },
+   {
+    "name": "getMaterializedView",
+    "category": "Materialized Views",
+    "input": "Имя материализованной вьюхи.",
+    "returns": "Метаданные вьюхи, её размер и статус исполнения. Дословно: «Fetch a materialized view's metadata, size, and execution status».",
+    "plan_gate": "free — плановой оговорки у REST-эквивалента нет.",
+    "credit_cost": "unverified — метаданные.",
+    "agent_use": "Проверка свежести и годности кэша перед использованием: возвращает статус последнего исполнения и размер. Размер прямо нужен на Free, где потолок вьюхи 1MB — по нему агент понимает, не обрезана ли материализация."
+   },
+   {
+    "name": "refreshMaterializedView",
+    "category": "Materialized Views",
+    "input": "Имя вьюхи; опционально JSON-тело с тиром: по REST-эквиваленту «By default, the refresh runs on the `medium` engine. To boost performance, pass in a JSON body with `{\"performance\": \"large\"}`».",
+    "returns": "Запуск повторного исполнения исходного запроса и обновление таблицы. Дословно: «Re-run the source query on demand to update the materialized table».",
+    "plan_gate": "free-tier-limited — сам вызов не гейтится, но результат упирается в потолок 1MB на free.",
+    "credit_cost": "ДА. Дословно: «Credits are consumed based on actual compute resources used for the refresh operation». Large-тир — 2x compute относительно medium.",
+    "agent_use": "Управляемое обновление кэша под контролем бюджета: агент решает, когда именно платить за свежесть, вместо того чтобы платить по расписанию. В связке с getUsage позволяет обновлять только при наличии остатка кредитов."
+   },
+   {
+    "name": "updateMaterializedView",
+    "category": "Materialized Views",
+    "input": "Имя вьюхи плюс изменяемые настройки: тир производительности и/или расписание обновления. Дословно: «Change the performance tier or add/change/remove the refresh schedule».",
+    "returns": "Обновлённая конфигурация вьюхи.",
+    "plan_gate": "free-tier-limited (те же ограничения хранилища).",
+    "credit_cost": "unverified — изменение конфигурации само по себе не исполнение; кредиты тратят вызванные им обновления.",
+    "agent_use": "Рычаг снижения расхода: снять авто-refresh с дорогой вьюхи или понизить тир с large на medium, когда бюджет 2500 кредитов подходит к концу. Обратите внимание — у этого тула НЕТ отдельного REST-эквивалента в индексе api-reference (там 5 эндпоинтов matview против 6 тулов в MCP), то есть это одна из точек, где MCP шире REST."
+   },
+   {
+    "name": "deleteMaterializedView",
+    "category": "Materialized Views",
+    "input": "Имя вьюхи.",
+    "returns": "Подтверждение необратимого удаления. Дословно: «Permanently delete a materialized view».",
+    "plan_gate": "free — плановой оговорки нет.",
+    "credit_cost": "unverified — удаление; стоимость не заявлена.",
+    "agent_use": "Освобождение квоты хранилища (на Free всего 100 MB суммарно), чтобы дать место новой материализации. Деструктивная и необратимая операция — в агентском контуре должна требовать явного подтверждения, а не вызываться автономно."
+   },
+   {
+    "name": "generateVisualization",
+    "category": "Visualization",
+    "input": "Результаты исполнения запроса плюс спецификация визуализации (тип: график, счётчик, таблица). Точная схема не публикуется.",
+    "returns": "Созданная визуализация. Дословно: «Create charts, counters, and tables from query results».",
+    "plan_gate": "unknown — публичного REST-эквивалента нет вовсе, вывести гейт не из чего.",
+    "credit_cost": "unverified — не заявлено.",
+    "agent_use": "Для цепочки «найти → прочитать → исполнить → проверить» НЕ НУЖЕН — это презентационный слой поверх уже полученного ответа. Ценен, только если агент обязан вернуть человеку картинку, а не число. Отмечаем как MCP-only возможность: через REST этого сделать нельзя."
+   },
+   {
+    "name": "getVisualization",
+    "category": "Visualization",
+    "input": "Идентификатор визуализации.",
+    "returns": "Детали существующей визуализации. Дословно: «Fetch details of an existing visualization».",
+    "plan_gate": "unknown — REST-эквивалента нет.",
+    "credit_cost": "unverified.",
+    "agent_use": "Косвенная польза на шаге 4: конфигурация визуализации показывает, КАК автор интерпретировал собственные данные (какая колонка на оси, какая агрегация, какие единицы) — это помогает не переврать смысл чужого запроса. В остальном к цепочке не относится."
+   },
+   {
+    "name": "updateVisualization",
+    "category": "Visualization",
+    "input": "Идентификатор визуализации плюс новая конфигурация.",
+    "returns": "Обновлённая визуализация. Дословно: «Update an existing visualization's configuration».",
+    "plan_gate": "unknown — REST-эквивалента нет.",
+    "credit_cost": "unverified.",
+    "agent_use": "Вне целевой цепочки; презентационный слой."
+   },
+   {
+    "name": "deleteVisualization",
+    "category": "Visualization",
+    "input": "Идентификатор визуализации.",
+    "returns": "Подтверждение удаления. Дословно: «Delete a visualization».",
+    "plan_gate": "unknown — REST-эквивалента нет.",
+    "credit_cost": "unverified.",
+    "agent_use": "Вне целевой цепочки. Деструктивная операция — требует подтверждения в автономном контуре."
+   },
+   {
+    "name": "listQueryVisualizations",
+    "category": "Visualization",
+    "input": "Идентификатор запроса.",
+    "returns": "Все визуализации, прикреплённые к запросу. Дословно: «List all visualizations attached to a query».",
+    "plan_gate": "unknown — REST-эквивалента нет.",
+    "credit_cost": "unverified.",
+    "agent_use": "Слабая, но реальная польза на шаге 4 «проверить»: по числу и типу прикреплённых визуализаций видно, был ли чужой запрос доведён до презентационного состояния (признак того, что им действительно пользовались) или это черновик. Косвенный сигнал доверия, не доказательство."
+   },
+   {
+    "name": "createDashboard",
+    "category": "Dashboard",
+    "input": "Спецификация дашборда: виджеты и раскладка. Дословно: «Create a new dashboard with widgets and layout».",
+    "returns": "Созданный дашборд.",
+    "plan_gate": "unknown — публичных REST-эндпоинтов дашбордов в индексе api-reference НЕТ; гейт вывести не из чего.",
+    "credit_cost": "unverified.",
+    "agent_use": "Вне целевой цепочки — это публикация результата, а не его получение или проверка. Отмечаем как одну из четырёх MCP-only возможностей: программное создание дашбордов через публичный REST недоступно, только через MCP."
+   },
+   {
+    "name": "getDashboard",
+    "category": "Dashboard",
+    "input": "Идентификатор дашборда.",
+    "returns": "Детали существующего дашборда. Дословно: «Fetch details of an existing dashboard».",
+    "plan_gate": "unknown — REST-эквивалента нет. Доступность ЧУЖИХ публичных дашбордов первоисточником не оговорена — unverified (в отличие от getDuneQuery, где право читать чужое заявлено явно).",
+    "credit_cost": "unverified.",
+    "agent_use": "ПОТЕНЦИАЛЬНО самый интересный тул для шага 1, но именно здесь первоисточник молчит. Если бы getDashboard читал чужие публичные дашборды, он давал бы мост «известный дашборд → входящие в него query_id → getDuneQuery». Документация этого НЕ подтверждает и НЕ опровергает. Проверять живым вызовом, не принимать на веру."
+   },
+   {
+    "name": "updateDashboard",
+    "category": "Dashboard",
+    "input": "Идентификатор дашборда плюс изменения содержимого, раскладки или метаданных. Дословно: «Update a dashboard's content, layout, or metadata».",
+    "returns": "Обновлённый дашборд.",
+    "plan_gate": "unknown — REST-эквивалента нет.",
+    "credit_cost": "unverified.",
+    "agent_use": "Вне целевой цепочки; публикация результата."
+   },
+   {
+    "name": "archiveDashboard",
+    "category": "Dashboard",
+    "input": "Идентификатор дашборда.",
+    "returns": "Заархивированный дашборд. Дословно: «Archive a dashboard».",
+    "plan_gate": "unknown — REST-эквивалента нет.",
+    "credit_cost": "unverified.",
+    "agent_use": "Вне целевой цепочки. Примечательная асимметрия инвентаря: архивировать через MCP можно дашборд, но НЕ запрос — REST-эндпоинты Archive/Unarchive Query в MCP не представлены."
+   },
+   {
+    "name": "getUsage",
+    "category": "Account",
+    "input": "Опционально временной интервал; без него — текущий биллинговый период. По REST-эквиваленту: «Returns the current billing period when no timeframe is specified».",
+    "returns": "Данные потребления аккаунта: кредиты, запросы, дашборды, хранилище. Дословно описание тула: «Check current billing-period credit usage».",
+    "plan_gate": "free — REST-эквивалент usage/endpoint/get-usage.md требует только scope `Read`, плановой оговорки нет.",
+    "credit_cost": "0 — ЕДИНСТВЕННЫЙ тул с явно задокументированной нулевой стоимостью. Дословно: «This is a metadata endpoint and does not consume credits». Подтверждено и анонсом: «The MCP server uses your existing Dune API credits and you can check usage with the getUsage tool».",
+    "agent_use": "Бюджетный предохранитель всей цепочки и единственный бесплатный способ измерить её цену. Практический протокол: снять getUsage до исполнения и после — разница даёт фактическую стоимость конкретного чужого запроса в кредитах, поскольку заранее она непредсказуема («not a fixed rate per execution»). При остатке из 2500 месячных кредитов ниже порога агент обязан отказать, а не исполнять: перерасход на Free автоматически тарифицируется по $5.00 за 100 кредитов, то есть молча превращается в счёт."
+   }
+  ],
+  "total_tools": 26,
+  "transport": "Remote MCP over Streamable HTTP (дословно). Endpoint: `https://api.dune.com/mcp/v1`. Interaction pattern дословно: «`POST /mcp/v1` for MCP requests», «`GET /mcp/v1` for stream resumption/event replay». Server name: `dune`. Источник: https://docs.dune.com/docs/agents/mcp.md, раздел «## Connection Details → ### Transport».",
+  "unverified": [
+   "input_schema (все 26 тулов) — первоисточник публикует только текстовые описания тулов в таблице, но НЕ публикует их JSON-схемы входа. Типы, обязательность и имена аргументов в этом отчёте реконструированы по REST-эквивалентам там, где они есть, и помечены как реконструкция. Достоверно получить схемы можно только живым `tools/list` к https://api.dune.com/mcp/v1 с валидным ключом.",
+   "credit_cost per tool (25 из 26) — исключение только `getUsage` (явно 0). Для остальных первоисточник MCP не публикует ни одной цифры. Известно лишь общее правило по Data API: исполнение тарифицируется по фактическому compute, экспорт — 20 credits/MB на Free, запись — 3 credits/GB на Free при минимуме 1 кредит за операцию. Сопоставление «тул → статья расхода» сделано по REST-эквиваленту, а не по документации MCP.",
+   "plan_gate per tool — первоисточник MCP не содержит ни одной плановой оговорки. Гейты выведены из REST-эндпоинтов-эквивалентов. Для 10 тулов (5 Visualization, 4 Dashboard, плюс searchDocs, getTableSize, listBlockchains — итого 12) REST-эквивалента не существует вовсе, поэтому их плановая доступность НЕИЗВЕСТНА в принципе.",
+   "Analyst vs Plus для Query-эндпоинтов — два первоисточника docs.dune.com противоречат друг другу (read/create/update/list.md говорят «Analyst plan or higher», billing.md говорит «Available on Plus and Enterprise plans»). Не разрешено. Затрагивает createDuneQuery, getDuneQuery, updateDuneQuery.",
+   "MCP-специфичный rate limit — не заявлен нигде. Применимость к /mcp/v1 общих лимитов Data API (Free 15 rpm low + 40 rpm high = 55 комбинированно, 1000 rps на IP) НЕ подтверждена первоисточником; кроме того, неизвестно, как MCP-тулы раскладываются на low/high-категории.",
+   "MCP-специфичный лимит размера ответа — не заявлен. Внутренний потолок результата запроса 32GB задокументирован для Data API; поведение MCP при больших выдачах, наличие пагинации и поддержка `allow_partial_results` не описаны.",
+   "MCP-специфичный серверный таймаут — не заявлен. Задокументирован ТОЛЬКО клиентский таймаут стороннего клиента (Codex, 60 с по умолчанию). Сколько сервер Dune готов держать долгий вызов — неизвестно.",
+   "Поддержка в MCP параметров выдачи Result Filtering / Pagination / Sampling / Sorting, задокументированных для REST отдельными страницами — не описана. Это неизвестность, а не подтверждённое отсутствие.",
+   "Статус зрелости GA / beta / preview — официально не объявлен (0 попаданий по grep на странице документации; changelog у docs.dune.com отсутствует, HTTP 404).",
+   "Читает ли `getDashboard` ЧУЖИЕ публичные дашборды — не оговорено. Для `getDuneQuery` право читать чужое заявлено явно, для дашбордов аналогичного утверждения нет. Ключевая неизвестность: при положительном ответе появился бы мост «чужой дашборд → его query_id» и шаг 1 цепочки частично закрылся бы.",
+   "Списывает ли кредиты сам факт установления MCP-сессии, вызов `tools/list` или удержание SSE-стрима — не заявлено.",
+   "Точное число кредитов за конкретное исполнение предсказать нельзя в принципе: «Exact credit consumption varies based on query complexity, data volume scanned, processing required, and the time the query occupies the engine rather than being a fixed rate per execution». Любая априорная оценка стоимости чужого запроса — это оценка, а не число из первоисточника.",
+   "Числа тарифов и лимитов актуальны на 2026-07-27 и дрейфуют. Страница dune.com/pricing краулеру недоступна (403 + JS-рендер), поэтому тарифные числа взяты с docs.dune.com/learning/how-tos/pricing-faqs.md — первоисточник того же владельца, но не сама страница цен. Перед любой тратой числа проверять заново.",
+   "Живая валидация не проводилась: ключ DUNE_API_KEY в окружении отсутствует, ни одного реального вызова к https://api.dune.com/mcp/v1 не сделано. Весь инвентарь — из документов, а не из ответа сервера. Следующий шаг для перевода в high: получить бесплатный ключ и снять `tools/list` с живого сервера, сверив 26 имён и получив настоящие входные схемы."
+  ]
+ },
+ "verification": {
+  "refuted": false,
+  "kill_shot": "Я атаковал пятью векторами и НИ ОДИН не убил инвентарь.\n\n(1) ВЫДУМАННЫЕ ТУЛЫ — главный заявленный риск. Гипотеза: модель «достроила» правдоподобные имена (`listQueryVisualizations`, `searchTablesByContractAddress`, `archiveDashboard` — ровно тот тип имён, который LLM генерирует по аналогии). Независимо перекачал первоисточник (curl https://docs.dune.com/docs/agents/mcp.md, HTTP 200, 14228 байт — совпало с заявленным байт-в-байт) и извлёк имена регуляркой из таблицы, а не глазами. Все 26 имён физически присутствуют в mcp.md:173-198. Выдуманных нет. ПРОВАЛ АТАКИ.\n\n(2) ЧИСЛО ТУЛОВ — самый перспективный вектор, т.к. в поле лежат ТРИ конфликтующих числа (26 в доке, 27 от WebFetch-суммаризатора, 12 в официальном блоге). Гипотеза: существует вторая страница MCP-доки, где число иное, и «26» — артефакт выбора URL. Убито проверкой редиректа: https://docs.dune.com/api-reference/agents/mcp.md отдаёт 301 на https://docs.dune.com/docs/agents/mcp.md, те же 14228 байт, те же 26 строк. Второй страницы НЕ существует, поэтому «27» окончательно закрывается как арифметическая ошибка суммаризатора (инвентарь это и утверждал), а «12» — как устаревшее число анонса. Детерминированный пересчёт: `grep -cE '^\\| \\*\\*'` = 26, уникальных имён = 26, разбивка Discovery 5 / Query Lifecycle 5 / Materialized Views 6 / Visualization 5 / Dashboard 4 / Account 1 = 26. ПРОВАЛ АТАКИ.\n\n(3) ПЛАНОВЫЙ ГЕЙТ — гипотеза: номера строк выдуманы (классика). Проверил посимвольно: queries/endpoint/read.md строка 17 и create.md строка 15 содержат ДОСЛОВНО «To access Query endpoints, an [Analyst plan](https://dune.com/pricing) or higher is required.» — точные номера строк. billing.md:65-67 содержит «## Queries Endpoint / Available on Plus and Enterprise plans.» Заявленное противоречие Analyst-vs-Plus РЕАЛЬНО и воспроизводится. Дополнительно нашёл list.md:14 и update.md:16 (инвентарь их упомянул без номеров — корректно). ПРОВАЛ АТАКИ.\n\n(4) КРЕДИТЫ — гипотеза: «MCP тратит те же кредиты, что REST» есть домысел, т.к. grep по mcp.md даёт всего 3 вхождения «credit» и ни одно этого не утверждает. Инвентарь ЧЕСТНО не приписал это доке, а атрибутировал блогу — и цитата подтвердилась через поисковый индекс: «The Dune MCP server uses your existing Dune API credits, and you can check usage with the getUsage tool». Атрибуция корректная. ПРОВАЛ АТАКИ.\n\n(5) СТАТУС GA/beta — гипотеза: есть маркер нестабильности, который инвентарь замолчал. Grep по mcp.md на beta|preview|general availability|GA|experimental|deprecat|unstable|breaking = 0 попаданий; changelog.md = 404; в анонсе маркера нет. Поле status=unknown выставлено верно, и инвентарь сам корректно оговаривает, что отсутствие метки «beta» ≠ подтверждённый GA. ПРОВАЛ АТАКИ.\n\nИТОГ: убить не удалось. Инвентарь выдерживает адверсариальную проверку — все проверенные file:line разрешились точно, ни одного выдуманного символа. Найдены три РЕАЛЬНЫХ дефекта (см. corrections), но все они — недо-раскрытие и одна переоценка уверенности, а НЕ ложные факты, и ни один не меняет практический вывод.",
+  "bad_citations": [],
+  "corrections": "ПУСТОЙ bad_citations — это не снисходительность: я перепроверил КАЖДЫЙ заявленный file:line чтением файла, и все разрешились точно (mcp.md:21-24/39/40/52/58/99/106/244-249/250-254; pricing-faqs.md:117/118-119/127/131/135/154-181/254; q-read.md:17; q-create.md:15; billing.md; rate-limits.md; mv-overview.md:14; mv-create.md:16,21; get-query-result.md:20). Все источники перекачаны заново с HTTP 200.\n\nДЕФЕКТ 1 (существенный) — ОБРЕЗАННАЯ ЦИТАТА СКРЫЛА ВТОРОЕ ПРОТИВОРЕЧИЕ. Инвентарь цитирует pricing-faqs.md:135 ради «2,500 monthly credits» и на основании :254 объявляет под-утверждение (c) «доступ к API на free» CONFIRMED. Но ТА ЖЕ строка 135 заканчивается: «...consider upgrading to a paid plan for better value, paid plans offer significantly lower per-credit rates and additional features like **API access** and unlimited concurrent executions.» Это прямо противоречит :254 («the API is included in all Dune plans... including those in the Free plan»). Инвентарь отрезал цитату ровно перед фрагментом, подрывающим его же вывод. Он нашёл противоречие Analyst-vs-Plus, но НЕ нашёл второе — «является ли API вообще платной фичей» — внутри строки, которую сам цитировал. КОРРЕКЦИЯ: под-утверждение (c) понизить с CONFIRMED до CONFIRMED-WITH-CONFLICT; дока противоречит себе дважды, а не один раз.\n\nДЕФЕКТ 2 (существенный, ПРОПУСК) — отсутствует самый жёсткий факт для free-бюджета. pricing-faqs.md:250 дословно: «Query executions are identical to those triggered on dune.com. Please note: **free executions are not supported via the API.**» В инвентаре этой строки НЕТ. Последствие: связка «Small Engine — 0 кредитов на запуск» + «через MCP исполняем» читается как существование бесплатного пути исполнения. Его НЕТ: 0-кредитные прогоны Small Engine доступны только вручную в приложении. Формально `small` принимается API как значение `performance` (exec-query.md:220-230), но :250 закрывает бесплатность. Практический вывод: КАЖДОЕ исполнение через MCP тратит кредиты из 2500/мес, нулевого маршрута не существует. Это усиливает второй разрыв инвентаря, но должно быть заявлено явно.\n\nДЕФЕКТ 3 (переоценка уверенности) — «ВТОРОЙ РАЗРЫВ» заявлен как факт при собственном признании нехватки данных. Инвентарь пишет «В MCP аналога [Get Latest Query Result] нет — getExecutionResults работает по execution_id», одновременно признавая, что первоисточник НЕ публикует per-tool входные схемы. Описание тула («Fetch status and results for a query execution») это поддерживает, но НЕ доказывает: без схемы нельзя утверждать, что query_id не принимается. КОРРЕКЦИЯ: перевести из фактов в unverified[] (метод проверки — реальный tools/list к https://api.dune.com/mcp/v1, здесь недоступен). REST-половина утверждения при этом CONFIRMED дословно: get-query-result.md:20 — «This endpoint does NOT trigger an execution but does **consume credits based on the result size**».\n\nДЕФЕКТ 4 (мелкий) — «Medium (дефолт для API/MCP)»: половина «API» подтверждена (exec-query.md:48 «by default it will use the \"medium\" performance tier»), половина «/MCP» — вывод; MCP-дока о тире по умолчанию молчит. Пометить вторую половину выведенной.\n\nДЕФЕКТ 5 (мелкий, неподтверждённая деталь) — в описании sunsetting-sim фраза «Mutual Termination & Release Agreement» не подтвердилась: dune.com/blog/sunsetting-sim отдаёт краулеру HTTP 403, поисковый индекс вернул дату sunset 2026-08-01, отключение регистраций 2026-05-18, прорационный возврат и партнёров Zerion/Codex/Mobula, но эту формулировку — нет. Понизить именно эту деталь до unverified; остальная часть гипотезы 3 CONFIRMED.\n\nПОДТВЕРЖДЕНО СВЕРХ ЗАЯВЛЕННОГО (усиливает инвентарь):\n- Редирект api-reference/agents/mcp.md → docs/agents/mcp.md, идентичные 14228 байт ⇒ версия «27» закрыта окончательно, второй страницы не существует.\n- Арифметика охвата сходится: MV 6 + Viz 5 + Dashboard 4 = 15 «своих артефактов»; 15 + 8 (цепочка) + 3 (listBlockchains, createDuneQuery, updateDuneQuery) = 26.\n- «List Queries возвращает только своё» — дословно q-list.md:7 и :17 «queries owned by the account tied to the API key». Главный функциональный разрыв (нет поиска чужих queries среди 26 тулов) CONFIRMED.\n- billing.md подтверждает построчно: экспорт Free 20 / Analyst 10 / Plus 2 кредитов за MB; запись 3 кредита за GB; «Minimum charge is 1 credit per write operation»; сторедж Free 100 MB; вебхуки Free 1; неоплачиваемые сбои.\n- rate-limits.md подтверждает 15+40=55 rpm, 1000 rps на IP, лимит результата 32GB.\n- ТРЕТЬЯ несогласованность планов, инвентарём не отмеченная: в таблице rate-limits.md вообще НЕТ строки Analyst (только Free/Plus/Enterprise) — это усугубляет неразрешённую двусмысленность Analyst-vs-Plus.\n- Страница MCP ОТСУТСТВУЕТ в https://docs.dune.com/llms.txt (1086 строк, 0 попаданий на mcp/agents), хотя сама эта страница предписывает агентам использовать llms.txt как «complete documentation index» — сигнал свежести/обнаружимости доки.\n- duneanalytics/skills (gh api: MIT, 22 звезды, не архивирован, pushed 2026-06-12) — CLI-скиллы, а не MCP-схемы; всё ещё содержит skills/sim/* несмотря на sunset 2026-08-01.\n- dune.com/pricing, /blog/dune-mcp, /blog/sunsetting-sim — все три отдают краулеру HTTP 403 ⇒ заявленный обход через docs.dune.com оправдан.",
+  "confidence": "high — все первоисточники перекачаны независимо с HTTP 200 (mcp.md 14228 байт, pricing-faqs.md 15671, rate-limits.md 2832, billing.md 3140, q-read/create/list/update, mv-overview/create, get-query-result.md, exec-query.md), число тулов пересчитано детерминированно (grep/sort -u = 26, разбивка 5/5/6/5/4/1), каждый заявленный file:line проверен чтением файла и совпал. Дата верификации 2026-07-27. Понижающие факторы отсутствуют для проверенного ядра; остаточная неопределённость только там, где первоисточник молчит по существу (per-tool входные схемы, per-tool кредитная стоимость, серверные лимиты самого /mcp/v1, статус GA/beta) и где блог dune.com отдаёт 403 краулеру (цитаты подтверждены через поисковый индекс, а не прямой доставкой)."
+ }
+}

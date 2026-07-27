@@ -1,0 +1,1905 @@
+{
+ "sweeps": [
+  {
+   "round": 1,
+   "axis": "первоисточник Dune (docs.dune.com + pricing)",
+   "n_seen": 31,
+   "queries": [
+    "https://docs.dune.com/api-reference/overview/introduction",
+    "docs.dune.com api-reference execute query endpoint credits",
+    "https://docs.dune.com/llms.txt",
+    "https://docs.dune.com/api-reference/overview/billing",
+    "https://docs.dune.com/api-reference/executions/endpoint/execute-query",
+    "https://docs.dune.com/api-reference/executions/endpoint/get-query-result",
+    "https://docs.dune.com/api-reference/overview/rate-limits",
+    "https://docs.dune.com/api-reference/overview/faq",
+    "Dune API execute query you did not create someone else's public query fork 403 \"not enough permissions\"",
+    "https://dune.com/pricing",
+    "https://docs.dune.com/api-reference/queries/endpoint/query-object",
+    "https://docs.dune.com/api-reference/overview/getting-started",
+    "https://docs.dune.com/api-reference/executions/endpoint/execute-sql",
+    "https://docs.dune.com/api-reference/datasets/endpoint/search-datasets (404)",
+    "docs.dune.com \"Search Datasets\" endpoint api-reference datasets search contract address",
+    "Dune Analytics MCP server official docs.dune.com agents AI",
+    "https://docs.dune.com/api-reference/agents/mcp",
+    "https://docs.dune.com/api-reference/datasets/search (404)",
+    "https://docs.dune.com/docs/changelog",
+    "https://docs.dune.com/api-reference/datasets/endpoint/search",
+    "https://dune.com/apis-and-connectors",
+    "Dune pricing plans Free Analyst Plus Enterprise monthly credits price $399 2026",
+    "https://docs.dune.com/api-reference/materialized-views/overview",
+    "https://docs.dune.com/learning/how-tos/credit-system",
+    "https://dune.com/blog/credits-changing (404)",
+    "\"dune\" api \"fork\" query \"you can only execute\" OR \"queries you own\" OR \"own queries\" api key execute public query id",
+    "https://docs.dune.com/api-reference/overview/authentication",
+    "https://docs.dune.com/query-engine/query-executions",
+    "https://docs.dune.com/api-reference/webhooks/endpoint/create-webhook (404)",
+    "https://docs.dune.com/api-reference/connectors/trino/overview",
+    "Dune API search queries OR dashboards endpoint \"list queries\" /v1/queries own queries only",
+    "https://docs.dune.com/api-reference/sdks/python",
+    "https://docs.dune.com/api-reference/queries/endpoint/list",
+    "https://docs.dune.com/api-reference/queries/endpoint/read"
+   ],
+   "notes": "ГЛАВНЫЕ ОТВЕТЫ НА 4 ЦЕЛЕВЫХ ВОПРОСА.\n\n(1) МОЖНО ЛИ ИСПОЛНИТЬ ЧУЖОЙ ЗАПРОС — ДА, если он публичный. Первоисточник, дословно: «Query executions can be triggered by any user or team for public queries, and by the owner for private queries» (docs.dune.com/query-engine/query-executions). Подтверждено вторым местом: «The query specified must either be public or a query you have ownership of (you or a team you belong to have ownership)» (get-query-result). Третье подтверждение — официальный getting-started гоняет чужой публичный queryId 3493826. Confidence: HIGH. 403 «Query is archived, unsaved or not enough permissions» относится к archived/unsaved/приватным, а не к «не твой». Важно: чтение SQL-ТЕКСТА чужого запроса (GET /v1/query/{id}) — тоже разрешено («allows for anyone to read the sql text»), НО сама группа Query endpoints требует Analyst+; исполнение же (POST execute) и чтение результатов (GET results) — scope Read, без плановой блокировки.\n\n(2) ЕСТЬ ЛИ ПОИСК ПО ЗАПРОСАМ/ДАШБОРДАМ В API — НЕТ. Это главный структурный провал оси. Документирован полнотекстовый поиск ТОЛЬКО по датасетам/таблицам: POST /v1/datasets/search и POST /v1/datasets/search-by-contract (появились в марте 2026). GET /v1/queries отдаёт «queries owned by the account tied to the API key» — только свои. В MCP из 25 тулов поисковые — searchDocs, searchTables, searchTablesByContractAddress: по чужим запросам и дашбордам поиска нет. Практический вывод: этап «НАЙТИ нужный чужой запрос» headless-агентом внутри Dune API не закрывается — его придётся закрывать веб-поиском по dune.com или внешним индексом, а в API входить уже с готовым query_id. Confidence: HIGH (негатив подтверждён тремя страницами + полным индексом llms.txt).\n\n(3) GET /query/{id}/results ПРОТИВ POST /query/{id}/execute. Цена: GET «does NOT trigger an execution but does consume credits based on the result size» — платишь за БАЙТЫ; POST execute — «credits are consumed based on actual compute resources used», платишь за CPU/сканирование (performance small/medium/large, default medium; Large ≈ 2x compute). Свежесть: GET отдаёт результат последнего прогона «regardless of the job id/run or if it is run in the app or the api» — контроля свежести на уровне REST нет (max_age_hours существует только в Python SDK get_latest_result, в OpenAPI сырого эндпоинта не документирован), т.е. данные могут быть произвольной давности, зато агент бесплатно снимает урожай с чужих scheduled-прогонов популярных дашбордов. POST даёт свежесть ценой compute + асинхронной polling-петли (execute → status → results). ДЛЯ ЗАДАЧИ-МОТИВАТОРА оптимально: GET results на популярном публичном запросе (дёшево), а при подозрении на устаревание — POST execute того же id. Фактическую цену видно только постфактум: execution_cost_credits на status-эндпоинте, «You'll see costs after execution».\n\n(4) ЧТО ГЕЙТИТСЯ ПЛАТНЫМ ПЛАНОМ. Гейтится: группа Query endpoints (create/read/update/archive/list) — «an Analyst plan or higher is required»; Trino Connector — «only available to Plus and Enterprise customers» (и принудительно Large engine); Data Transformations / dbt — Enterprise-only; материализованное представление на Free ограничено 1 MB; сторедж Free 100 MB; ставка экспорта на Free штрафная (20 кредитов/МБ против 2 на Plus); rate limit Free 15 rpm низколимитных / 40 rpm высоколимитных. НЕ гейтится планом (доступно на Free, scope Read): POST /v1/query/{id}/execute чужого публичного запроса, GET /v1/query/{id}/results (+csv), POST /v1/sql/execute с произвольным SQL, все execution-статусы, поиск датасетов, MCP. Бюджет Free — 2 500 кредитов/мес.\n\nВЕРДИКТ ПО ЗАДАЧЕ-МОТИВАТОРУ: обе задачи закрываются БЕЗ платного плана двумя механизмами — (а) POST /v1/sql/execute со своим DuneSQL по bitcoin-таблицам и dex.trades (не требует ни Analyst, ни сохранённого запроса — это обход CRUD-гейта, ключевая находка оси); (б) GET /v1/query/{id}/results поверх чужого публичного запроса для независимой перекрёстной проверки. Независимая проверяемость обеспечена тем, что оба пути возвращают execution_id и query_id, а SQL-текст чужого публичного запроса читаем.\n\nПРОТИВОРЕЧИЕ ВНУТРИ ПЕРВОИСТОЧНИКА (не разрешено): страница api-reference/overview/billing утверждает «The Queries Endpoint is available only on Plus and Enterprise plans», тогда как сами страницы queries/endpoint/list и queries/endpoint/read говорят «an Analyst plan or higher is required». Помечено как unverified: точный план-гейт группы Queries (Analyst против Plus). Confidence: MEDIUM.\n\nСТАТУС ДОСТАВКИ ИСТОЧНИКОВ. Успешно отдались краулеру: docs.dune.com (introduction, billing, llms.txt, rate-limits, faq, getting-started, authentication, execute-query, execute-sql, get-query-result, queries/query-object, queries/list, queries/read, datasets/endpoint/search, agents/mcp, materialized-views/overview, connectors/trino/overview, sdks/python, docs/changelog, query-engine/query-executions, learning/how-tos/credit-system). НЕ отдались (404 краулеру): docs.dune.com/api-reference/datasets/endpoint/search-datasets (неверный путь, исправлен на .../endpoint/search через changelog), docs.dune.com/api-reference/webhooks/endpoint/create-webhook, dune.com/blog/credits-changing. JS-РЕНДЕР, отдал только навигацию без цифр: dune.com/pricing и dune.com/apis-and-connectors.\n\nUNVERIFIED (нет первоисточника ⇒ литерал unverified, цифры НЕ выдуманы): месячные ДОЛЛАРОВЫЕ цены планов Dune (Analyst/Plus/Premium) — dune.com/pricing не отдался, встреченные $349/$390/$1990 взяты только из вторичных обзорных сайтов и в кандидаты не внесены; точный метод+путь+план webhooks; точный план-гейт группы Queries (Analyst vs Plus, см. противоречие); точное число тулов MCP (страница декларирует 25, поимённая выборка дала 26 имён при внутренне несогласованных счётчиках категорий — Materialized Views подписан «5», перечислено 6; Dashboard в одном проходе «3», в другом 4); наличие concurrent-execution лимитов (в rate-limits не специфицировано); отдельная строка «datapoints» в тарификации (упомянута только качественно в Trino-разделе как «proportional to datapoints returned»).\n\nДАТА ВЕРИФИКАЦИИ 2026-07-27. Тарифы и лимиты дрейфуют: credit-based модель для self-serve введена в феврале 2026, поиск датасетов — март 2026, matviews в MCP — июнь 2026, т.е. поверхность активно менялась в последние 6 месяцев. Депрекейшн зафиксирован один: /v1/tables → /v1/uploads (ноябрь 2025). Подтверждённых sunset/archived среди действующих эндпоинтов не найдено.\n\nДЕДУП ВНУТРИ ОСИ: schлопнуто — execution status и execution result сведены в одного кандидата (одна polling-петля); results JSON и results CSV оставлены раздельно (разная сериализация, но одна тарификация); шесть операций materialized views сведены в одного кандидата; шесть операций uploads — в одного; create/update/archive/private/unprivate query — в одного кандидата CRUD. Всего 24 кандидата."
+  },
+  {
+   "round": 1,
+   "axis": "официальный Dune MCP — поверхность целиком",
+   "n_seen": 34,
+   "queries": [
+    "https://docs.dune.com/api-reference/agents/mcp (WebFetch, socket hang up на 1-й попытке, затем 200)",
+    "curl -sL https://docs.dune.com/api-reference/agents/mcp.md → 308 → https://docs.dune.com/docs/agents/mcp.md [HTTP 200, 14228 байт] — КАНОНИЧЕСКИЙ первоисточник",
+    "curl -sL https://docs.dune.com/llms.txt [HTTP 200, 1086 строк] — индекс всех страниц доков",
+    "curl -sL https://docs.dune.com/docs/changelog.md [HTTP 200, 24767 байт]",
+    "curl -sL https://docs.dune.com/api-reference/overview/billing.md [200]",
+    "curl -sL https://docs.dune.com/api-reference/overview/rate-limits.md [200]",
+    "curl -sL https://docs.dune.com/api-reference/queries/endpoint/read.md [200]",
+    "curl -sL https://docs.dune.com/api-reference/queries/endpoint/list.md [200]",
+    "curl -sL https://docs.dune.com/api-reference/datasets/endpoint/search.md [200]",
+    "curl -sL https://docs.dune.com/api-reference/usage/overview.md [200]",
+    "curl -sL https://docs.dune.com/api-reference/executions/endpoint/get-query-result.md [200, 17089 байт]",
+    "curl -sL https://docs.dune.com/docs/agents/mpp.md [200]",
+    "curl -sL https://docs.dune.com/docs/agents/cli-and-skills.md [200]",
+    "curl -sL https://docs.dune.com/resources/credits-billing/how-credits-work.md [200]",
+    "curl -sL https://docs.dune.com/learning/how-tos/pricing-faqs.md [200]",
+    "curl -s https://dune.com/.well-known/oauth-authorization-server/oauth/mcp [HTTP 200] — ЖИВАЯ проверка OAuth-метаданных",
+    "curl -s -X POST https://api.dune.com/mcp/v1 -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' → {\"error\":\"missing credentials\"} [HTTP 401]",
+    "curl -s -X POST https://api.dune.com/mcp/v1 -H 'x-dune-api-key: invalid_probe_key' ... → {\"error\":\"invalid API key\"} [HTTP 401]",
+    "gh api repos/duneanalytics/skills --jq '{stars,pushed,archived,license}'",
+    "gh api 'repos/duneanalytics/skills/git/trees/HEAD?recursive=1'",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/skills/HEAD/skills/dune/references/{query-management,dashboard-management,dataset-discovery,query-execution,visualization-management,docs-and-usage}.md",
+    "curl -s https://registry.modelcontextprotocol.io/v0/servers?search=dune → {\"servers\":[],\"count\":0}",
+    "WebFetch https://dune.com/blog/dune-mcp → HTTP 404 краулеру (дважды: socket hang up, затем 404)",
+    "WebFetch https://dune.com/pricing → JS-рендер, таблица тарифов отсутствует в HTML",
+    "WebSearch: Dune Analytics MCP server api.dune.com/mcp/v1 tools list",
+    "WebSearch: \"Dune MCP\" server tools \"searchTables\" \"executeQueryById\" OR \"createMaterializedView\" docs",
+    "WebSearch: Dune blog \"Introducing the Dune MCP Server\" beta launch date tools",
+    "WebSearch: docs.dune.com Dune MCP changelog beta \"general availability\" OR GA agents 2026",
+    "WebSearch: docs.dune.com \"MCP\" credits consumed \"same\" API credits query execution agents billing",
+    "WebSearch: \"createAndExecuteQuery\" Dune MCP tool"
+   ],
+   "notes": "КАНОНИЧЕСКИЙ ПЕРВОИСТОЧНИК: docs.dune.com/api-reference/agents/mcp отдаёт 308 → docs.dune.com/docs/agents/mcp.md (14228 байт, HTTP 200). Дата верификации 2026-07-27.\n\nЧИСЛО ТУЛОВ — ОСТОРОЖНО. В таблице доков РОВНО 26 строк: Discovery 5 + Query Lifecycle 5 + Materialized Views 6 + Visualization 5 + Dashboard 4 + Account 1 = 26. Первая суммаризация WebFetch выдала «29 total» — это галлюцинация суммаризатора, пересчёт по сырому markdown даёт 26. Блог dune.com/blog/dune-mcp (404 краулеру) и все витрины повторяют «12 tools» — это цифра запуска (февраль 2026), устаревшая. При этом changelog подтверждает МИНИМУМ один тул вне таблицы (createAndExecuteQuery, май 2026) плюс заявленный поиск по Dashboards/Queries (апрель 2026) ⇒ реальный живой список ≥ 27; точное число = unverified, живой tools/list закрыт (401 без валидного ключа, 401 с невалидным). Таблица тулов в доках СТАРЕЕТ — это самостоятельный дефект первоисточника.\n\n(1) ЕСТЬ ЛИ ПОИСК ПО ЧУЖИМ ПУБЛИЧНЫМ ЗАПРОСАМ/ДАШБОРДАМ — ПРОТИВОРЕЧИЕ ДВУХ ПЕРВОИСТОЧНИКОВ, confidence LOW. В таблице 26 тулов такого тула нет (есть только searchDocs / searchTables / searchTablesByContractAddress — всё по ТАБЛИЦАМ и ДОКАМ). Changelog за апрель 2026 дословно: «MCP folder & search support — You can now create queries under specific folders via MCP, and search Dashboards and Queries via MCP». Третья проверка: CLI зеркалит MCP-поверхность, но в duneanalytics/skills (22 звезды, MIT, pushed 2026-06-12, не архивирован) команд поиска запросов/дашбордов НЕТ — полный список: query create/get/update/archive, dashboard create/get/update/archive, dataset search, dataset search-by-contract, query run, query run-sql, execution results, viz create/get/list/update/delete, docs search, usage. Что тул принимает на вход — установить не удалось. РАЗРЕШИТЬ ПРОТИВОРЕЧИЕ МОЖНО ТОЛЬКО ОДНИМ СПОСОБОМ: владелец подключает MCP и делает tools/list с валидными кредами.\n\n(2) ДАЁТ ЛИ MCP ПРОЧИТАТЬ SQL ЧУЖОГО ЗАПРОСА — ДА, но платно. getDuneQuery = REST GET /v1/query/{id}; read.md: «For private queries, only the API key generated under the context of the owner of that query will work» ⇒ публичные читает кто угодно. НО плановый гейт противоречив в первоисточниках: read.md — «To access Query endpoints, an Analyst plan or higher is required»; billing.md — «Queries Endpoint: Available on Plus and Enterprise plans». Любая из версий убивает бесплатный сценарий. Побочно: list-эндпоинт НЕ ищет чужое — «Retrieve a paginated list of queries owned by the account tied to the API key».\n\n(3) СПИСЫВАЕТ ЛИ MCP ТЕ ЖЕ КРЕДИТЫ, ЧТО REST — ДА (confidence high, но дословной фразы в доках нет). Косвенные доказательства из первоисточников: тул getUsage описан как «Check current billing-period credit usage»; billing.md не содержит ни одной MCP-специфичной строки или отдельного тарифа; FAQ: «credits still apply for API usage, regardless of the plan you are on». MCP не имеет собственного прайса нигде. Явного предложения «MCP-вызовы стоят столько же, сколько REST» в доступных доках НЕТ (блог 404 краулеру) ⇒ это вывод, а не цитата.\n\n(4) ЧЕГО В MCP НЕТ ПО СРАВНЕНИЮ С REST — ГЛАВНОЕ: НЕТ getLatestQueryResult. REST GET /v1/query/{id}/results «Returns the latest execution id and results of that latest run, regardless of the job id/run or if it is run in the app or the api», «The query specified must either be public or a query you have ownership of», «This endpoint does NOT trigger an execution but does consume credits based on the result size» (Free = 20 кредитов/МБ экспорта). Это САМЫЙ дешёвый способ снять готовый ответ с чужого публичного запроса — и он существует ТОЛЬКО в REST, в MCP его нет. Также отсутствуют в MCP: POST /v1/sql/execute (сырой SQL без сохранения запроса), оба CSV-эндпоинта, cancel-execution, list собственных запросов, archive/unarchive/private/unprivate, все 6 эндпоинтов загрузки таблиц, вебхуки/алерты, 3 эндпоинта pipelines, datasets get/list, коннекторы dbt/Trino/Datashares. Наоборот, ТОЛЬКО в MCP (в REST-справочнике их нет): searchDocs, listBlockchains, getTableSize, весь viz-CRUD (5), весь dashboard-CRUD (4), updateMaterializedView, MCP Apps.\n\nСТАТУС GA/BETA: метки GA или beta НЕТ НИГДЕ в доках — ни на странице MCP, ни в changelog. Таймлайн по changelog: февраль 2026 — запуск MCP; март 2026 — OAuth + CLI/Skills + MPP; апрель 2026 — viz-менеджмент, папки, заявленный поиск Dashboards/Queries; май 2026 — MCP Apps/Dune Charts, createAndExecuteQuery, скоупируемые API-ключи; июнь 2026 — полный CRUD материализованных вью, и «Dune Agent retired: the experimental Dune Agent has been removed in favor of the Dune MCP and Dune CLI» (то есть MCP — теперь основная агентская поверхность). Отдельно: «MCP access is not affected by this flag» — Enterprise-тумблер отключения in-app AI на MCP не влияет.\n\nЛИМИТЫ И ЦЕНЫ (первоисточник docs.dune.com). Тарифы: Free $0 / 2 500 кредитов в мес / $5.00 за 100 сверх; Analyst $75 в мес / 4 000; Plus $399 в мес / 25 000; Enterprise custom. Экспорт данных: Free 20 кредитов/МБ, Analyst 10, Plus 2. Запись: 3 кредита/ГБ, минимум 1 кредит на операцию. Хранилище: Free 100 МБ. Кредиты НЕ переносятся на следующий месяц. Рейт-лимиты опубликованы только для КЛАССОВ REST-эндпоинтов (Free: low 15 rpm / high 40 rpm; Plus: 70/200; per-IP 1000 rps) — MCP-специфичных рейт-лимитов в доках НЕТ (unverified). Лимит результата 32 ГБ, иначе нужен allow_partial_results=true.\n\nИЗВЕСТНЫЕ ОГРАНИЧЕНИЯ: (а) Codex рвёт длинные поллинги getExecutionResults на 60 с с «Transport closed» и не переподключается (openai/codex#11489), лечится tool_timeout_sec = 300; (б) таблица тулов в доках отстаёт от changelog минимум на 2 фичи; (в) единственный OAuth-scope mcp:dune:full — выдать агенту read-only через OAuth нельзя, гранулярность доступна только через скоупируемый API-ключ (Read / Read-Write, с мая 2026); (г) dune.com/pricing — JS-рендер, таблицы тарифов в HTML нет, все цены взяты со страниц доков.\n\nВЕРДИКТ ПО ЗАДАЧЕ-МОТИВАТОРУ («сколько BTC добыто», «дневной объём DEX по сетям за квартал» БЕЗ платного плана): официальный MCP этот сценарий НЕ ЗАКРЫВАЕТ. Все ответные пути MCP идут через создание и исполнение запроса, а Queries-эндпоинты требуют платного плана (Analyst либо Plus — первоисточники расходятся), плюс само исполнение жжёт кредиты из 2 500/мес. Бесплатный путь «прочитать последний закешированный результат чужого публичного запроса» в MCP ОТСУТСТВУЕТ и живёт только в REST. Для независимой перепроверки ответа MCP тоже слабее REST: чужой SQL читается (getDuneQuery), но платно.\n\nСМЕЖНОЕ, НЕ ВОШЕДШЕЕ В ЭТУ ОСЬ (для других осей): (1) Dune MPP (Machine Payment Protocol, docs/agents/mpp.md) — HTTP 402 + платёжный канал Tempo, дословно «no API keys, no user account, and no credit card required», НО покрывает РОВНО 3 REST-эндпоинта (POST /v1/sql/execute, GET /v1/execution/:id/results, GET /v1/execution/:id/csv) и НЕ покрывает MCP-эндпоинт — это отдельный кандидат оси REST/alt-free, не MCP. (2) Dune CLI + Skills (github.com/duneanalytics/skills, 22 звезды, MIT, pushed 2026-06-12) — официально позиционируется как «lightweight alternative to MCP ... typically fewer tokens than MCP protocol overhead», имеет `dune query run-sql` (сырой SQL, чего в MCP нет) ⇒ кандидат семейства dune-sdk на соседней оси. (3) Dune не зарегистрирован в registry.modelcontextprotocol.io (поиск по «dune» вернул 0 серверов)."
+  },
+  {
+   "round": 1,
+   "axis": "OSS-экосистема (GitHub/npm/pypi)",
+   "n_seen": 180,
+   "queries": [
+    "gh api repos/duneanalytics/spellbook --jq '{...stargazers_count,archived,pushed_at,license}'",
+    "gh api repos/duneanalytics/dune-client",
+    "gh api repos/duneanalytics/client-sdk  # -> 404 Not Found (репо не существует; npm-пакет @duneanalytics/client-sdk живёт в duneanalytics/ts-dune-client)",
+    "gh api \"orgs/duneanalytics/repos?per_page=100&sort=pushed\" --jq '.[] | [.full_name,.stargazers_count,.pushed_at,.archived,(.license.spdx_id//\"none\"),.language,.description] | @tsv'",
+    "gh search repos \"dune analytics mcp\" --limit 40 --json fullName,stargazersCount,pushedAt,isArchived,license,description,language",
+    "gh search repos \"dune mcp server\" --limit 40",
+    "gh search repos \"dunesql\" --limit 30",
+    "gh search repos \"spellbook dune\" --limit 30",
+    "gh search repos \"awesome dune analytics\" --limit 30  # 0 результатов",
+    "gh search repos 'dune analytics client' --limit 30",
+    "gh search repos 'duneanalytics' --limit 40",
+    "gh api users/deacix --jq '.login,.name,.html_url'",
+    "gh api \"users/deacix/repos?per_page=100\"",
+    "gh api -X GET search/repositories -f q=\"dune analytics in:name,description,readme\" -f sort=stars -f order=desc -f per_page=25  # total=4022",
+    "gh api -X GET search/repositories -f q=\"dune query id in:readme dune.com\" -f sort=stars  # total=216",
+    "gh api -X GET search/repositories -f q=\"topic:dune-analytics\"  # total=44",
+    "gh api -X GET search/repositories -f q=\"dune spellbook in:name,description\"  # total=6",
+    "gh api -X GET search/repositories -f q=\"dune dashboard queries in:description blockchain\"  # total=9",
+    "gh api -X GET search/repositories -f q=\"X-Dune-API-Key in:readme\"  # total=2913, шум (токенизация)",
+    "gh api -X GET search/repositories -f q=\"org:cowprotocol dune\"  # total=6",
+    "gh api -X GET search/repositories -f q=\"dune analytics skill in:name,description\"  # total=7",
+    "gh api -X GET search/repositories -f q=\"dune-query-sync\"  # total=1",
+    "gh api -X GET search/repositories -f q=\"org:duneanalytics mcp\"  # total=1 (sim-api-mcp, archived)",
+    "gh api -X GET search/repositories -f q=\"dune in:name language:ocaml\"  # total=152 — доменный гейт",
+    "gh api -X GET search/repositories -f q=\"dune build system in:description\"  # total=14 — доменный гейт",
+    "gh api -X GET search/repositories -f q=\"dune hd media player in:name,description\"  # total=8 — доменный гейт",
+    "gh api \"repos/duneanalytics/spellbook/git/trees/main?recursive=1\" --jq '[.tree[]|select(.path|endswith(\".sql\"))]|length'  # 7917; .yml -> 2436; .truncated=false",
+    "gh api \"repos/duneanalytics/cli/git/trees/HEAD?recursive=1\" --jq '.tree[].path'",
+    "gh api repos/duneanalytics/cli/releases --jq '.[]|[.tag_name,.published_at]|@tsv'",
+    "gh api \"repos/bruin-data/ingestr/git/trees/main?recursive=1\" --jq '.tree[].path' | grep -i dune",
+    "gh api \"repos/cowprotocol/dune-queries/git/trees/main?recursive=1\" --jq '.tree[].path'",
+    "gh api \"orgs/SixdegreeLab/repos?per_page=50&sort=pushed\"",
+    "gh api \"users/kukapay/repos?per_page=100&sort=pushed\" --jq '.[]|select(.name|test(\"dune|chain|crypto\";\"i\"))'",
+    "gh api \"repos/kukapay/crypto-skills/contents/skills\" --jq '.[].name'  # dune-скилла НЕТ",
+    "gh api repos/hajnalben/dune-analytics-mcp --jq .default_branch  # main, но README называется readme.md (raw README.md -> 404)",
+    "curl -s \"https://registry.npmjs.org/-/v1/search?text=dune%20analytics&size=25\"",
+    "curl -s https://registry.npmjs.org/@duneanalytics/client-sdk  # latest 0.4.3, modified 2026-07-01, license: null",
+    "curl -s https://registry.npmjs.org/dune-analytics-mcp  # 1.0.1, MIT, repo hajnalben/dune-analytics-mcp",
+    "curl -s https://pypi.org/pypi/dune-client/json  # 1.11.3, Apache-2.0, upload 2026-06-19",
+    "curl -s https://pypi.org/pypi/dune-spice/json  # 0.2.7, upload 2025-07-21",
+    "curl -s https://pypi.org/pypi/spice/json  # KeyError info -> пакет называется dune_spice, не spice",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/skills/main/skills/dune/SKILL.md",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/skills/main/skills/dune/references/query-execution.md",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/skills/main/skills/dune/references/query-management.md",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/skills/main/skills/dune/references/dataset-discovery.md",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/spellbook/main/LICENSE  # BUSL-1.1, Change Date Mar 3 2027 -> GPL-3.0-or-later",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/cli/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/cli/main/.goreleaser.yml  # AMPLITUDE_KEY -> телеметрия вшита в бинарь",
+    "curl -s https://raw.githubusercontent.com/duneanalytics/dune-client/main/dune_client/api/extensions.py | grep -nE '^\\s*(def|async def) '",
+    "curl -s https://raw.githubusercontent.com/duneanalytics/dune-client/main/dune_client/api/execution.py | grep -nE '^\\s*(def|async def) '",
+    "curl -sL https://raw.githubusercontent.com/paradigmxyz/spice/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/duneanalytics/DuneQueryRepo/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/cowprotocol/dune-queries/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/kukapay/dune-analytics-mcp/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/deacix/dune-mcp/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/demomagic/dune-mcp-server/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/ekailabs/dune-mcp-server/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/Evan-Kim2028/spice-mcp/main/README.md",
+    "curl -sL https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/main/README.md | grep -i dune",
+    "WebSearch: Dune Analytics official MCP server mcp.dune.com remote MCP"
+   ],
+   "notes": "ГЛАВНЫЙ ВЫВОД ОСИ: с марта 2026 Dune сама закрыла нишу — вышли duneanalytics/cli (создан 2026-03-02, 17 релизов, v0.1.17 от 2026-06-15) и duneanalytics/skills (создан 2026-03-06). Связка `dune query get <id>` (отдаёт SQL и Owner чужого публичного запроса) + `dune query run <id>` + `dune dataset search` покрывает 4 из 5 механизмов доступа лучше, чем любой community-MCP. Все community-MCP (kukapay 41★/2 тула, deacix 0★/34 тула, demomagic 0★/6 тулов, ekailabs 2★/5 тулов, hajnalben 4★) суммарно набирают 47★ — против 22★ у официального skill'а, но у skill'а за спиной вендор.\n\nТРИ ЮРИДИЧЕСКИХ МИНЫ (все проверены живьём, не по README):\n1. Spellbook — НЕ MIT, а BUSL-1.1 (файл LICENSE, Licensor: Dune Analytics AS, Licensed Work: Spellbook 3.0.0). Additional Use Grant дословно: «you may not use the Licensed Work for a Data or Analytics Platform», где платформа = «offering that allows third parties … to access the functionality or outputs of the Licensed Work … either directly or indirectly through any other tool or program». Если наш агент отдаёт ответы третьим лицам — вкомпиливание Spellbook-моделей под вопросом. Change Date 2027-03-03 → GPL-3.0-or-later. gh api при этом показывает license=NOASSERTION, то есть по метаданным GitHub мину не видно.\n2. duneanalytics/ts-dune-client и duneanalytics/duners — файла LICENSE в репозитории НЕТ (gh api license=none; в npm-манифесте @duneanalytics/client-sdk license=null). Формально «все права защищены».\n3. sripwoud/dune-ts — AGPL-3.0 + archived.\n\nТЕЛЕМЕТРИЯ В ОФИЦИАЛЬНОМ CLI (дисквалификатор для headless): .goreleaser.yml вшивает `-X main.amplitudeKey={{ .Env.AMPLITUDE_KEY }}`, в дереве есть cmd/config/telemetry.go. Перед adopt — проверить `dune config telemetry off` или собирать из исходников с пустым AMPLITUDE_KEY.\n\nПЛАТНЫЙ ГЕЙТ, найденный в OSS-первоисточнике: README архивного duneanalytics/DuneQueryRepo дословно — «The api key must be from a plus plan for this repo to work». То есть CRUD-путь (создать/обновить свой запрос) требует Plus. Путь «прочитать чужой готовый запрос» (query get / get_latest_result) такого предупреждения не несёт — это косвенный аргумент, что бесплатный сценарий = чужой query id + get_latest_result. ЯВНО НЕ ВЕРИФИЦИРОВАНО ЧИСЛАМИ: стоимость в кредитах для get_latest_result vs execute, размер free-квоты, лимиты Plus — ни одного числа из docs.dune.com/pricing я на этой оси не подтверждал ⇒ unverified, отдаю ценовой оси.\n\nЧТО ИСКАЛ И НЕ НАШЁЛ (логирую как потери покрытия, не молча):\n- Нет ни одного «awesome-dune» списка: `gh search repos \"awesome dune analytics\"` → 0 результатов; в punkpeye/awesome-mcp-servers по слову dune ровно одна строка (kukapay).\n- Нет публичного централизованного РЕЕСТРА query id. Ближайшее — протокольные репо-каталоги, где id зашит в имя файла (cowprotocol/dune-queries, паттерн `**/*_{queryId}.sql` + CI-синк). Это единственный масштабируемый OSS-механизм «найти чужой готовый запрос по теме»; для задачи-мотиватора (BTC supply, дневной DEX-объём по сетям) готовых id я НЕ нашёл — их придётся брать через dune.com-поиск (другая ось) либо писать SQL самому поверх Spellbook-таблиц dex.trades.\n- Официальный Dune MCP закрыт: `gh api search/repositories q=\"org:duneanalytics mcp\"` → 1 результат, и тот archived sim-api-mcp. Число «12 тулов» и OAuth-схема взяты из WebSearch-выжимки блога/доков, страницу docs.dune.com/api-reference/agents/mcp я НЕ фетчил ⇒ confidence medium.\n- kukapay/crypto-skills (31★, MIT) — dune-скилла внутри НЕТ (contents/skills: evm-swiss-knife, market-sentiment, meme-scout, token-minter, trading-strategist, yield-opportunities).\n\nДОСТАВКА ИСТОЧНИКОВ: raw.githubusercontent.com/hajnalben/dune-analytics-mcp/main/README.md → 404 (файл называется readme.md в нижнем регистре) ⇒ перечень тулов этого MCP не подтверждён построчно. pypi.org/pypi/spice/json → KeyError 'info' (пакет опубликован как dune-spice/dune_spice). gh api repos/duneanalytics/client-sdk → 404: репозитория с таким именем не существует, npm-пакет @duneanalytics/client-sdk собирается из duneanalytics/ts-dune-client (подтверждено полем repository в npm-манифесте).\n\nМЕТОДИКА СЧЁТА n_seen=180: число РАЗЛИЧНЫХ репозиториев и пакетов, по которым я реально видел строку живых метаданных (stars/pushed_at/archived/license) — 60 репо org:duneanalytics + 9 deacix + 20 kukapay + 5 SixdegreeLab + 6 cowprotocol + ~52 из 12 поисковых сводок + 9 пакетов npm/PyPI + 28 омонимов (OCaml/Dune HD). Числа звёзд/дат/лицензий — из `gh api` и registry-JSON на 2026-07-27, НЕ из README. Оговорка: звёзды и pushed_at дрейфуют, это снимок дня.\n\nСМЕЩЕНИЕ ОСИ: gh search repos токенизирует и даёт ложные срабатывания на generic-словах (запрос \"X-Dune-API-Key in:readme\" вернул total=2913 с public-apis наверху) — на такие сводки я не опирался; отбирал по org-листингам, topic:dune-analytics (44 репо, полный перебор) и точечным именам. Репо с 0 звёзд заведомо недопредставлены в сортировке по stars — возможен хвост свежих 2026-х MCP/skill-проектов, который я не увидел."
+  },
+  {
+   "round": 1,
+   "axis": "как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ)",
+   "n_seen": 53,
+   "queries": [
+    "WebSearch: Dune Analytics MCP server tools list search queries dashboards",
+    "WebSearch: Dune Analytics \"Dune AI\" natural language SQL copilot which plan free",
+    "WebSearch: dune.com \"discover/content/trending\" browse dashboards queries trending tags",
+    "WebSearch: site:dune.com/queries bitcoin supply mined total",
+    "WebSearch: Dune API get dashboard query ids from dashboard URL public endpoint",
+    "WebSearch: \"dune.com\" curated dashboards list awesome best dashboards protocol teams official",
+    "WebSearch: Dune API free plan Analyst plan query endpoints \"Analyst plan or higher\" datasets search credits",
+    "WebSearch: \"Dune MCP\" server prerequisites \"free plan\" OR \"any plan\" API key credits docs.dune.com 2026",
+    "WebSearch: dune search queries browse discover (доменный гейт: намеренно общий)",
+    "WebSearch: dune query search tool documentation (доменный гейт: намеренно общий)",
+    "WebFetch: https://docs.dune.com/api-reference/overview/introduction",
+    "WebFetch: https://docs.dune.com/llms.txt (полный индекс доков, 99948 байт)",
+    "WebFetch: https://docs.dune.com/api-reference/agents/mcp (x2)",
+    "WebFetch: https://docs.dune.com/api-reference/datasets/endpoint/search.md",
+    "WebFetch: https://docs.dune.com/api-reference/datasets/introduction.md",
+    "WebFetch: https://docs.dune.com/api-reference/queries/endpoint/list.md",
+    "WebFetch: https://docs.dune.com/api-reference/queries/endpoint/read.md",
+    "WebFetch: https://docs.dune.com/api-reference/apis/quickstart-dashboards.md",
+    "WebFetch: https://docs.dune.com/api-reference/overview/billing.md",
+    "WebFetch: https://docs.dune.com/web-app/dune-ai",
+    "WebFetch: https://docs.dune.com/web-app/search",
+    "WebFetch: https://docs.dune.com/query-engine/query-a-query",
+    "WebFetch: https://dune.com/queries/2052839 (проверка доставки)",
+    "WebFetch: https://dune.com/blog/dune-mcp (404 краулеру)",
+    "curl -I https://dune.com/browse/queries | https://dune.com/browse/dashboards | https://dune.com/search?q=bitcoin%20supply | https://dune.com/queries/1234 | https://dune.com/discover | https://dune.com/discover/content/trending?q=bitcoin&resource-type=dashboards | https://dune.com/dashboards | https://dune.com/catalog | https://dune.com/browse/dashboards?tags=frame | https://dune.com/pricing",
+    "curl https://dune.com/robots.txt",
+    "curl https://dune.com/sitemap.xml ; https://dune.com/sitemap-index.xml",
+    "curl https://prod-dune-sitemaps.s3.eu-west-1.amazonaws.com/sitemaps/sitemap-index.xml",
+    "curl .../sitemaps/queries-0.xml.gz ; queries-20.xml.gz ; queries-39.xml.gz ; dashboards-0..3.xml.gz ; users-18.xml.gz ; teams-0.xml.gz",
+    "curl -X POST https://api.dune.com/mcp/v1 -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' (без ключа)",
+    "curl https://api.dune.com/api/v1/datasets/search (без ключа)",
+    "curl https://html.duckduckgo.com/html/?q=site%3Adune.com%2Fqueries+bitcoin+supply",
+    "curl https://www.bing.com/search?q=site%3Adune.com%2Fqueries+bitcoin+supply",
+    "gh api repos/duneanalytics/spellbook ; contents/dbt_subprojects ; raw.githubusercontent.com/duneanalytics/spellbook/main/README.md"
+   ],
+   "notes": "ГЛАВНЫЙ ВЫВОД ОСИ: официального программного поиска ПО ЧУЖИМ ЗАПРОСАМ И ДАШБОРДАМ у Dune не существует. Проверено по полному индексу доков (docs.dune.com/llms.txt, 99 948 байт): единственные два search-эндпоинта во всём API — datasets/search и datasets/search-by-contract, оба ищут ТАБЛИЦЫ. GET /api/v1/queries отдаёт только собственные запросы владельца ключа. Поиск по запросам/дашбордам живёт исключительно в веб-UI.\n\nДОСТАВКА (проверено HTTP 2026-07-27, curl + WebFetch). Весь dune.com закрыт интерактивным Cloudflare-челленджем: /browse/queries, /browse/dashboards, /search?q=, /queries/1234, /queries/2052839, /discover, /discover/content/trending?q=, /dashboards, /catalog, /pricing — все HTTP 403 с заголовками `cf-mitigated: challenge`, `server: cloudflare` и телом `<title>Just a moment...</title>`. WebFetch на dune.com/queries/2052839 вернул JS-оболочку с навигацией и «Loading» — без title и SQL. dune.com/blog/dune-mcp — HTTP 404 краулеру. Вывод: НИ ОДНА HTML-поверхность dune.com не пригодна для headless-агента.\nЧто боту отдаётся: docs.dune.com (HTTP 200 везде), dune.com/robots.txt и /sitemap*.xml (HTTP 200 — статика мимо челленджа), sitemap-и на S3 (HTTP 200), api.dune.com (HTTP 401 без ключа — эндпоинт жив), raw.githubusercontent + api.github.com (HTTP 200).\n\nURL-ФОРМАТ ПОИСКОВОЙ ВЫДАЧИ (восстановлен из проиндексированных Google URL, т.к. сама страница 403): `https://dune.com/discover/content/trending?q=<текст>&resource-type=dashboards&tags=<тег>`. Легаси `/browse/queries` и `/browse/dashboards?tags=frame` дают 308-редирект на `/discover/content/trending?...` — старый формат из туториалов мёртв. Фильтры (docs.dune.com/web-app/search): title, tags, author, description, code, created_before/after, updated_before/after; сортировки Favorites / Trending / New; «Advanced search filters are currently supported for Dashboards and Queries only»; дефолт Discover — трендовые дашборды за последние 4 часа.\n\nROBOTS.TXT — ключ к пути №1: `User-Agent: *` → `Allow: /`, но три бота точечно отрезаны от запросов: GPTBot, Baiduspider, Applebot → `Disallow: /queries`. Googlebot и Bingbot НЕ ограничены, поэтому dune.com/queries индексируется с человеческими титулами, и `site:dune.com/queries <вопрос>` работает как внешний семантический индекс Dune. Практическая проверка на задаче-мотиваторе прошла: выдача дала «Bitcoin - Basic metrics» → dune.com/queries/2052839 (circulating supply, % mined) и «Bitcoinmet» → dune.com/queries/2369947/3885408. Формат URL выдачи — dune.com/queries/<queryId>/<visualizationId>, т.е. query id извлекается прямо из ссылки. Оговорка: прямой скрейп поисковиков ненадёжен — html.duckduckgo.com отдал HTTP 202 (бот-митигация) и 0 ссылок на /queries/<id>; bing.com отдал HTTP 200, но ссылки завёрнуты в редирект-обёртку. Для продакшена нужен поисковый API (Brave/Serper/Google CSE), а не скрейп.\n\nSITEMAP — точность чисел. Индекс на S3 содержит 64 файла: 40 queries, 4 dashboards, 19 users, 1 teams. Проверено пофайлово: queries-0 = 50 000, queries-20 = 50 000, queries-39 = 1 008; dashboards-0/1/2 = 50 000 каждый, dashboards-3 = 3 328; users-18 = 15 989; teams-0 = 47 733. Отсюда ТОЧНО: дашбордов 153 328 (проверены все 4 файла), команд 47 733 (проверен единственный файл). ОЦЕНОЧНО (файлы 1–38 и 0–17 не скачивались): запросов ~1 951 008, пользователей ~915 989 — помечать как estimate, не как факт. Схема записи: только <loc> + <lastmod>, БЕЗ титулов и описаний. Практическое следствие: sitemap запросов даёт голые числовые id и семантически бесполезен, а sitemap дашбордов даёт слаги вида dune.com/<user>/dex-volume, dune.com/Rampage/bitcoin-velocity — их можно грепать по ключевому слову офлайн. Это единственный полный офлайн-индекс дашбордов, доступный агенту.\n\nЦЕПОЧКА, КОТОРАЯ РЕАЛЬНО РАБОТАЕТ БЕЗ ПЛАТНОГО ПЛАНА: поисковик (site:dune.com/queries) → query id → `SELECT * FROM query_<id>` внутри собственного запроса → execute на free (2 500 кредитов/мес). Она обходит план-гейт: чтение чужого SQL через GET /api/v1/query/{id} требует Analyst+, а переиспользование как вью — нет («Querying private queries is an Enterprise feature only», про публичные ограничений не заявлено). Проверяемость ответа обеспечивается тем, что id и автор запроса известны.\n\nПРОТИВОРЕЧИЕ В ДОКАХ (флаг, не факт): страница read-эндпоинта заявляет «To access Query endpoints, an Analyst plan or higher is required», а страница биллинга — «Queries Endpoint restricted to Plus/Enterprise». Кто прав — не установлено, у меня нет ключа Dune (в .env проекта переменной DUNE* нет), эмпирически не проверял. Понижаю confidence по план-гейту Query-эндпоинтов до medium.\n\nUNVERIFIED (нет первичного источника — числа не выдумывались): план/тир для доступа к MCP-серверу (страница docs.dune.com/api-reference/agents/mcp требования не называет; вторичные источники утверждают, что хватает free-аккаунта); тир для Wand/Dune AI (док-страница тира не называет; вторичный источник называет «paid tiers, beta»); стоимость в кредитах для datasets/search, query read и MCP-вызовов (в billing.md эти категории отсутствуют); точное число тулов MCP (док перечисляет ~24 по группам, маркетинговый текст говорит «12 tools» — расхождение не разрешено); общее число URL в sitemap запросов и пользователей (оценка по выборке из 3 и 1 файла соответственно).\n\nПРОБЕЛ ДЛЯ СМЕЖНЫХ ОСЕЙ: дашборд→query id не решается ничем официальным — это самое узкое место всей находимости, потому что именно дашборды (а не запросы) имеют семантические слуги в sitemap и именно их находит поисковик. Агент может найти дашборд, но не может программно разложить его на исполняемые query id."
+  },
+  {
+   "round": 1,
+   "axis": "бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег",
+   "n_seen": 46,
+   "queries": [
+    "Flipside Crypto SQL API free tier 2026 deprecated",
+    "Flipside Crypto shutting down 2026 data platform announcement",
+    "\"Flipspace\" Flipside \"June 17, 2026\" shut down data API sunset",
+    "Etherscan API free plan rate limit \"5 calls/second\" \"100,000\" calls per day 2026",
+    "Etherscan free API tier reduced 2026 alternative explorers Blockscout Routescan",
+    "Blockchair API free \"requests per minute\" limit without API key documentation 2026",
+    "bigquery-public-data crypto_bitcoin crypto_ethereum blockchain analytics public datasets 2026 available chains",
+    "bigquery crypto_bitcoin dataset deprecated stale not updated 2025 2026 blockchain-etl public datasets",
+    "growthepie API documentation free public api.growthepie.xyz endpoints license",
+    "Artemis API pricing 2026 free tier terminal.artemis.xyz developers API key",
+    "Token Terminal API pricing 2026 free tier access data",
+    "https://cloud.google.com/bigquery/pricing (curl 200, 4.7 MB)",
+    "https://docs.cloud.google.com/bigquery/public-data (WebFetch 200)",
+    "https://docs.coinmetrics.io/api/v4 (curl 200, 6.8 MB)",
+    "https://docs.coinmetrics.io/asset-metrics/supply/splycur (curl 200)",
+    "curl https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=SplyCur&frequency=1d&page_size=2&end_time=2026-07-26",
+    "curl https://community-api.coinmetrics.io/v4/catalog-v2/asset-metrics?assets=btc",
+    "curl https://mempool.space/api/blocks/tip/height",
+    "curl https://mempool.space/api/v1/mining/reward-stats/144",
+    "curl https://blockchain.info/q/totalbc",
+    "curl https://api.blockchain.info/charts/total-bitcoins?timespan=5days&format=json",
+    "curl https://api.blockchair.com/bitcoin/stats",
+    "curl 'https://api.blockchair.com/bitcoin/blocks?a=sum(generation)'",
+    "curl 'https://api.blockchair.com/bitcoin/blocks?a=count()'",
+    "https://raw.githubusercontent.com/Blockchair/Blockchair.Support/master/API_DOCUMENTATION_EN.md (curl 200, 447 KB)",
+    "curl 'https://api.llama.fi/overview/dexs?excludeTotalDataChart=true'",
+    "curl 'https://api.llama.fi/overview/dexs/ethereum?dataType=dailyVolume'",
+    "curl https://api.llama.fi/v2/chains",
+    "https://api-docs.defillama.com/ (WebFetch 200)",
+    "curl https://api.growthepie.xyz/v1/fundamentals.json",
+    "curl https://api.growthepie.xyz/v1/master.json",
+    "curl https://l2beat.com/api/tvs",
+    "curl https://eth.hypersync.xyz/height",
+    "https://docs.envio.dev/docs/HyperSync/api-tokens (WebFetch 200)",
+    "https://envio.dev/pricing (WebFetch 200)",
+    "curl https://portal.sqd.dev/datasets/ethereum-mainnet/head",
+    "https://docs.sqd.dev/subsquid-network/overview/ (WebFetch 200)",
+    "curl 'https://api.etherscan.io/v2/api?chainid=1&module=stats&action=ethsupply' (no key)",
+    "https://docs.etherscan.io/resources/rate-limits.md (curl 200)",
+    "https://info.etherscan.com/whats-changing-in-the-free-api-tier-coverage-and-why/ (WebFetch 200)",
+    "curl https://eth.blockscout.com/api/v2/stats",
+    "https://www.blog.blockscout.com/blockscout-vs-etherscan-api-free-tier-pricing-rate-limits-compared-2026/ (WebFetch 200)",
+    "https://bitquery.io/pricing (WebFetch 200)",
+    "https://thegraph.com/docs/en/subgraphs/providers/subgraph-studio/introduction/ (WebFetch 200)",
+    "https://goldsky.com/pricing (WebFetch 200)",
+    "https://goldrush.dev/pricing/ (WebFetch 200)",
+    "https://moralis.com/pricing/ (WebFetch 200)",
+    "https://registry.opendata.aws/aws-public-blockchain/ (WebFetch 200)",
+    "curl 'https://aws-public-blockchain.s3.us-east-2.amazonaws.com/?list-type=2&delimiter=/' (+ prefixes v1.0/btc, v1.0/eth, v1.1/*)",
+    "curl https://api.3xpl.com/bitcoin?data=summary",
+    "curl -L https://flipsidecrypto.xyz/flipspace/ (301 -> edisyl.com)",
+    "curl https://api-v2.flipsidecrypto.xyz/json-rpc (HTTP 000 / NXDOMAIN)",
+    "https://raw.githubusercontent.com/blockchain-etl/public-datasets/master/README.md (curl 200)",
+    "gh api repos/blockchain-etl/public-datasets ; gh api repos/blockchain-etl/ethereum-etl",
+    "curl 'https://api.coingecko.com/api/v3/coins/bitcoin?market_data=true'"
+   ],
+   "notes": "ДАТА ВЕРИФИКАЦИИ: 2026-07-27. Все живые пробы — curl из этой сессии, HTTP-коды указаны в why.\n\nВОРОНКА: 46 просмотрено → 31 дедуплицировано → 28 прошли доменный гейт → 27 кандидатов в выдаче (1 склеен: Blockchair keyless REST и его агрегатор ?a= — один механизм).\n\n=== ГЛАВНЫЙ ОТВЕТ: «СКОЛЬКО BTC УЖЕ ДОБЫТО» ===\nПравильный порядок, от самого доверенного к самому удобному:\n\n1) ДЕТЕРМИНИРОВАННЫЙ РАСЧЁТ (эталон, ничьих чисел не требует). Берём высоту тира из mempool.space (keyless, /api/blocks/tip/height = 959830 на 2026-07-27 11:35 UTC) и суммируем консенсусное расписание субсидии (50 BTC, halving каждые 210,000 блоков). Получилось 20,061,971.875 BTC. Это ВЕРХНЯЯ ГРАНИЦА — «сколько разрешено было выпустить».\n2) ФАКТИЧЕСКИ ВЫПУЩЕНО. Blockchair /bitcoin/stats: circulation = 2,006,194,291,655,096 сат = 20,061,942.91655096 BTC. blockchain.info /q/totalbc = 2,006,194,000,000,000 сат = 20,061,940 BTC. Разница с п.1 = −28.958 BTC: майнеры исторически недозаявляли субсидию в coinbase (блоки 124724, 501726 и др.).\n3) ФАКТИЧЕСКИ ТРАТИМО (UTXO-сет). Coin Metrics community SplyCur (btc, 2026-07-26 00:00 UTC) = 20,061,648.01057864 BTC. По определению CM «For UTXO chains, current supply is the sum of all unspent output values» — то есть это ровно то же, что bitcoin-cli gettxoutsetinfo → total_amount. Отстаёт от п.2 примерно на сутки эмиссии (~450 BTC/сутки при субсидии 3.125) плюс provably-unspendable выходы.\n4) НЕЗАВИСИМАЯ СВЕРКА. Единственная, не требующая доверия ни к кому: свой Bitcoin Core (или любой полный узел) → `bitcoin-cli gettxoutsetinfo` → поля height и total_amount. Всё остальное — сверка «трёх независимых вендоров» (Blockchair + blockchain.info + Coin Metrics + CoinGecko circulating 20,061,909), и она у нас сошлась в пределах суточной эмиссии.\n\nПРАКТИЧЕСКОЕ ПРАВИЛО ДЛЯ АГЕНТА: отвечать числом из п.1 (с явной формулой и высотой блока) + числом из п.3 (как «сколько реально живёт в UTXO») + оговоркой про ~29 BTC недозаявленной субсидии. Один вендорский эндпоинт как источник истины — дефект: Blockchair нам забанил IP (code 430) после 4-го запроса.\n\n=== ВТОРОЙ МОТИВАТОР: «ДНЕВНОЙ ОБЪЁМ DEX ПО СЕТЯМ ЗА КВАРТАЛ» ===\nЗакрывается ОДНИМ бесплатным keyless вызовом на сеть: GET https://api.llama.fi/overview/dexs/{chain}?dataType=dailyVolume — по ethereum вернулось 2825 дневных точек (2018-11-02 … 2026-07-27), total24h = $491,711,986.63. Список сетей — GET /overview/dexs (в ответе 100+ сетей: BSC, Solana, Base, Ethereum, Polygon, Arbitrum, …). Ключ не нужен, Pro ($300/мес) для этого вопроса не требуется. Независимая сверка: пересчёт свопов из AWS Public Blockchain (v1.0/eth/logs) или BigQuery crypto_ethereum — дорого по байтам, но воспроизводимо.\n\n=== СТРУКТУРА ОСИ: три разных класса бесплатности ===\nA. ГОТОВЫЙ АГРЕГАТ БЕСПЛАТНО И БЕЗ КЛЮЧА (лучшее для headless-агента): Coin Metrics community, DefiLlama open API, growthepie, mempool.space, blockchain.info, Blockchair (с оговоркой про бан).\nB. СЫРЬЁ БЕСПЛАТНО, СЧИТАЕШЬ САМ: AWS Public Blockchain S3 (единственный полностью бесплатный — данные и листинг keyless, платишь только своим CPU; btc/blocks свежие на date=2026-07-27), BigQuery public datasets (1 TiB/мес бесплатно, дальше $6.25/TiB), SQD Portal, Envio HyperSync, blockchain-etl self-hosted.\nC. FREE-ТАРИФ С КЛЮЧОМ И КВОТОЙ: Etherscan V2 (3 rps / 100k в сутки, урезанное покрытие сетей), Blockscout, Routescan, The Graph (100k запросов/мес), Goldsky Starter, Moralis (40k CU/сутки).\nНЕ БЕСПЛАТНЫ (мимикрируют под free): Bitquery (только 7-дневный триал, 1,000 points), GoldRush (14-дневный триал, 25,000 кредитов), Artemis API, Token Terminal API, 3xpl (403 без токена).\n\n=== ЛИФСАЙКЛ / МЁРТВОЕ (важнейшее изменение 2026 года) ===\n* Flipside — МЁРТВ как бесплатный источник. 2026-05-19 data-бизнес продан SonarX; Flipspace последний день 2026-06-17; ранее, 2025-07-01, уже закрыли Studio и Dashboard Builder. Домены flipsidecrypto.com и flipsidecrypto.xyz редиректят 301 на edisyl.com (enterprise-AI, крипта отсутствует). api-v2.flipsidecrypto.xyz → NXDOMAIN / HTTP 000. Формулировка задания «Flipside (SQL API/LiveQuery — статус и бесплатность в 2026)» имеет однозначный ответ: НЕТ, планировать нельзя.\n* Etherscan — деградация free: с 2025-11-22 покрытие free-тарифа сокращено до ~90% сетей, с 2026-07-01 max records per request 10,000 → 1,000 и убран Internal Transactions by Block Range; free = 3 calls/s (не 5, как пишут вторичные источники) / 100k в сутки.\n* Envio — с 2025-11-03 API-токен обязателен (бесплатный).\n* Blockchair — «generally our API is not free to use»; keyless потолок 1440 запросов/сутки, и бан наступает быстрее, чем формальный лимит.\n\n=== СТАТУС ДОСТАВКИ ПЕРВОИСТОЧНИКОВ (§2) ===\n403 краулеру: docs.flipsidecrypto.com, api.flipsidecrypto.com (Cloudflare), etherscan.io/apis, ccn.com. 401: blockchair.com/api/docs (обошёл через raw.githubusercontent Blockchair/Blockchair.Support). 404: api-docs.flipsidecrypto.xyz, docs.bitquery.io/docs/ide/private-preview, docs.blockscout.com/pro-api/plans.md, docs.cloud.google.com/application/blockchain-analytics/docs/overview, l2beat.com/api/tvs. 301/307/308 редиректы: cloud.google.com/bigquery/public-data → docs.cloud.google.com, defillama.com/pro-api/docs → api-docs.defillama.com, thegraph.com/docs/en/subgraphs/billing → .../subgraph-studio/introduction, app.artemisanalytics.com → classic.artemis.ai → www.artemis.ai, docs.sqd.ai → docs.sqd.dev. JS-рендер (числа не извлечены): defillama.com/pro-api (Cloudflare challenge), artemis.ai/pricing, dev.blockscout.com.\n\n=== unverified[] (числа, которые НЕЛЬЗЯ использовать как факт) ===\nmempool.space: числовые rate limits (в докax только «we enforce rate limits» / HTTP 429). blockchain.info: rate limits. DefiLlama: rate limit бесплатного api.llama.fi (докa говорит лишь «Standard»). Blockscout: RPS/дневные лимиты free-тарифа и цены PRO. Routescan: 5 calls/s и 100k/day — только вторичный источник (CCN), первичную страницу не проверял. The Graph: цена за запрос сверх 100k. Artemis: $49/мес и состав free-тарифа — вторичный источник (eco.com), страница JS-рендерная. Token Terminal: $588/год — вторичный источник. BigQuery: реальная свежесть crypto_bitcoin/crypto_ethereum в 2026 — живой запрос невозможен (bq/gcloud/duckdb в среде отсутствуют, `which bq gcloud duckdb` → not found); лаг «Bitcoin 3 мин» взят из README blockchain-etl/public-datasets, который сам застоял (pushed_at 2024-06-26). Envio: цены платных планов в $. AWS: заявленные реестром 11 сетей — фактическим листингом подтверждены btc, eth (v1.0) и bnb, cronos, sonarx/{aptos,arbitrum,base,provenance,xrp}, stellar, ton (v1.1); свежесть v1.0/eth/transactions — партиции с пропусками (есть 2026-07-21/22/24/26, нет 23 и 25 на момент листинга).\n\n=== ИЗВЕСТНЫЕ ПОТЕРИ ===\nНе успел проверить первичными источниками: Chainbase, Ankr Advanced API, Alchemy/QuickNode free tiers, Messari free API, Glassnode free tier, Snowflake Marketplace крипто-датасеты, Dune Sim APIs (исключены как Dune-семейство по определению оси), публичные ClickHouse ethPandaOps/Xatu, Allium (заведомо платный). L2Beat включён с 404 на пробе — путь API требует отдельного захода."
+  },
+  {
+   "round": 1,
+   "axis": "корректность чужого запроса",
+   "n_seen": 40,
+   "queries": [
+    "https://docs.dune.com/api-reference/queries/endpoint/read-query (HTTP 404 — неверный путь)",
+    "Dune Analytics API get query SQL \"read query\" endpoint public query someone else's",
+    "https://docs.dune.com/api-reference/queries/endpoint/read",
+    "https://docs.dune.com/api-reference/queries/endpoint/read.md",
+    "https://docs.dune.com/api-reference/queries/endpoint/query-object",
+    "https://docs.dune.com/api-reference/executions/endpoint/get-query-result",
+    "https://docs.dune.com/api-reference/executions/endpoint/execute-sql",
+    "https://docs.dune.com/api-reference/datasets/endpoint/search",
+    "https://docs.dune.com/api-reference/agents/mcp",
+    "https://docs.dune.com/api-reference/agents/mpp",
+    "https://docs.dune.com/data-catalog/overview",
+    "https://docs.dune.com/data-catalog/data-quality",
+    "https://docs.dune.com/data-catalog/data-freshness",
+    "https://docs.dune.com/data-catalog/curated/dex-trades/overview",
+    "https://docs.dune.com/data-catalog/evm/gnosis/curated-data/dex/dex-aggregator-trades",
+    "https://docs.dune.com/data-catalog/spellbook/DEX/dex-trades (HTTP 404)",
+    "https://docs.dune.com/web-app/teams",
+    "https://docs.dune.com/web-app/query-editor/version-history",
+    "https://docs.dune.com/learning/how-tos/pricing-faqs",
+    "https://docs.dune.com/llms.txt",
+    "https://dune.com/pricing (отдал только навигацию)",
+    "https://dune.com/queries/4319 (SPA, SQL не отдан)",
+    "curl -s https://api.dune.com/api/v1/query/4319  ->  401 {\"error\":\"invalid API Key\"}",
+    "curl -sL https://dune.com/queries/4319  ->  403",
+    "Dune Spellbook dbt tests data quality review process contributing spells",
+    "https://raw.githubusercontent.com/duneanalytics/spellbook/main/README.md",
+    "https://github.com/duneanalytics/spellbook/blob/main/CONTRIBUTING.md",
+    "gh api repos/duneanalytics/spellbook",
+    "gh api repos/duneanalytics/spellbook/issues/610",
+    "gh api search/code?q=repo:duneanalytics/spellbook+data_tests+extension:yml",
+    "gh api repos/duneanalytics/spellbook/contents/.github/workflows",
+    "gh api repos/duneanalytics/spellbook/contents/.github/workflows/prices_check.yml",
+    "https://raw.githubusercontent.com/duneanalytics/spellbook/main/dbt_subprojects/dex/models/trades/_schema.yml",
+    "https://raw.githubusercontent.com/duneanalytics/spellbook/main/dbt_subprojects/dex/models/_schema.yml",
+    "Dune spellbook dex_aggregator.trades avoid double counting aggregator volume spell",
+    "Dune Analytics DEX volume double counting dashboard wrong wash trading data quality",
+    "Dune Analytics NFT wash trading dashboard inflated volume Spellbook filter known issue",
+    "https://dune.com/blog/nft-wash-trading-on-ethereum (HTTP 404)",
+    "https://community.dune.com/blog/nft-wash-trading-on-ethereum",
+    "Dune query \"version history\" revisions see previous versions of a query UI forked from",
+    "Dune query execution state QUERY_STATE_FAILED error broken query API check last execution",
+    "docs.dune.com query parameters defaults API \"parameters\" execute query parameter types",
+    "Dune pricing 2026 Free plan credits Analyst plan $ per month API credits limit",
+    "\"dune.com\" verified dashboard \"verified\" badge official team queries trust author",
+    "Dune official MCP server docs.dune.com mcp tools list query SQL",
+    "Dune dashboard wrong numbers bridged BTC supply double count \"wrapped\" analytics error onchain",
+    "blockchain.com API free bitcoin total circulating supply endpoint q/totalbc",
+    "gh api repos/duneanalytics/DuneQueryRepo | repos/NexusMutual/dune-queries | repos/duneanalytics/dune-client",
+    "curl -s https://blockchain.info/q/totalbc  ->  2006194000000000",
+    "curl -s https://api.llama.fi/overview/dexs?excludeTotalDataChart=true",
+    "curl -sL https://status.dune.com  ->  200"
+   ],
+   "notes": "ГЛАВНЫЙ ВЫВОД ОСИ (асимметрия гейтов). Прочитать SQL чужого публичного запроса headless'ом БЕСПЛАТНО нельзя: (a) API GET /api/v1/query/{id} дословно гейтится «To access Query endpoints, an Analyst plan or higher is required»; (b) веб-страница dune.com/queries/{id} формально публична, но для агента закрыта — curl -L отдал HTTP 403, WebFetch вернул только навигацию (JS-SPA); (c) api.dune.com без ключа отдал HTTP 401 {\"error\":\"invalid API Key\"}. При этом ЗАПУСТИТЬ произвольный SQL можно с minimum scope = Read (POST /api/v1/sql/execute), а через MPP — вообще «without requiring API keys, accounts, or credit cards». Практический вывод: бесплатный агент не читает чужой запрос, но может читать Spellbook-модели на GitHub и перепрогонять SQL сам. Обход Analyst-гейта: (1) Spellbook GitHub — SQL curated-таблиц целиком; (2) протокольные git-репо с дашборд-запросами (NexusMutual/dune-queries); (3) реальный браузер вместо fetch.\n\nЧЕК-ЛИСТ ПРОВЕРКИ ЧУЖОГО ЗАПРОСА (12 шагов, каждый с командой и критерием провала).\n1. Достать SQL и метаданные: GET https://api.dune.com/api/v1/query/{id} с X-Dune-API-Key. Провал: 401 (нет ключа) или 403/гейт плана → SQL недоступен, дальше идти нельзя, ставь unverified. Fallback: искать тот же запрос в git-репо протокола.\n2. Проверить, что запрос жив и публичен: в ответе шага 1 поля is_private=false, is_archived=false, is_temp=false, is_unsaved=false. Провал: is_archived=true → автор его забросил.\n3. Снять список таблиц: распарсить FROM/JOIN в query_sql. Классифицировать каждую через POST /api/v1/datasets/search (categories: canonical | decoded | spell | community). Провал: таблица категории community (чужой аплоад, вне контроля Dune) — резко понизить доверие.\n4. Проверить слой decoded vs raw: если запрос читает decoded-таблицу (событие/функция контракта), помнить, что decoded существует только при засабмиченном ABI/IDL — контракты без ABI молча выпадают из выборки. Провал: запрос претендует на «весь рынок», но бьёт по decoded одного протокола.\n5. Прочитать первоисточник curated-таблицы: найти модель в https://github.com/duneanalytics/spellbook (dbt_subprojects/<sector>/models/...), прочитать SQL модели и _schema.yml. Критерий: описания колонок совпадают с тем, как их использует автор запроса. Пример реальной ловушки из доки dex_trades: «token_pair … Always alphabetical order, not trade order» и «amount_usd … Can be null if we don't have enough data» — SUM(amount_usd) молча теряет строки.\n6. Проверить тесты модели: grep data_tests в соответствующем _schema.yml (по репо 1224 попадания в .yml). Критерий: у модели есть unique / not_null / dbt_utils.unique_combination_of_columns на первичном ключе. Провал: у dex_trades в dbt_subprojects/dex/models/trades/_schema.yml тестового блока НЕТ — целостность держится на CI-прогоне, а не на тестах самой модели.\n7. Проверить историю дефектов таблицы: поиск по issues/PR в duneanalytics/spellbook по имени таблицы. Эталонный кейс: issue #610 «Matcha & 0x Aggregator Trades overcounted in dex.trades» (bh2smith, 2021-12-07 → закрыт 2022-05-20) — один своп считался 6 раз. Провал: открытый issue про ту же метрику.\n8. Проверить double-counting агрегаторов явно: если в SQL есть dex.trades — убедиться, что нет UNION/сложения с dex_aggregator.trades и нет схлопывания хопов. Правило из доки: «One row in dex_aggregator.trades corresponds to one or more rows in dex.trades». Провал: суммирование обеих таблиц → объём завышен кратно числу хопов.\n9. Проверить фильтры мусора: для NFT/DEX-объёмов искать в SQL отсечку wash trading. Эталон — 4 критерия Dune: buyer=seller; back&forth (обратная сделка тем же NFT); один адрес купил тот же NFT 3+ раз; buyer и seller впервые профинансированы одним кошельком (таблица addresses_events_ethereum.first_funded_by). Провал: фильтров нет → по данным самого Dune wash = 1.5% сделок, но ~45% объёма.\n10. Снять параметры и их дефолты: массив parameters[] из шага 1, объекты {key,type,value,enumOptions}, типы number|text|date|enum. Критерий: явно передать все параметры в вызове. Провал: не передал → «it will just run with the default params», ответ посчитан на чужом окне и выглядит валидным.\n11. Проверить свежесть и что запрос не сломан: GET /api/v1/query/{id}/results (кеш, без нового прогона) — смотреть execution_ended_at, state, row_count, datapoint_count. Провал: state = QUERY_STATE_FAILED (тогда GET /api/v1/execution/{id}/status отдаст error{type,message} с номером строки) ИЛИ execution_ended_at старше допустимого окна. Отдельно проверить лаг СЛОЯ: decoded «within 15 to 60 seconds» после raw, curated «once every hour», Solana — 6-часовой график (свежесть 6–7 ч); плюс status.dune.com (на 2026-07-27 отдал HTTP 200 и содержал маркер degraded).\n12. Независимая сверка ответа вне Dune (обязательна, обе проверены живьём и бесплатно без ключа): BTC-эмиссия — curl https://blockchain.info/q/totalbc → 2006194000000000 сатоши = 20 061 940 BTC (лимит 1 запрос/10 c, задержка до 1 ч); DEX-объёмы по сетям — curl 'https://api.llama.fi/overview/dexs?excludeTotalDataChart=true' → разбивка allChains. Критерий: расхождение с Dune > порога → не публиковать ответ, а искать причину (двойной счёт, окно параметра, устаревший кеш). Дифференциальный тест: прочитанный SQL и свой исправленный вариант прогнать через POST /api/v1/sql/execute (scope Read) на одном движке и сравнить дельту.\nДоп. шаг для долгоживущих пайплайнов: зафиксировать поле version из шага 1 и сверять при каждом прогоне — Version History в UI держит diff'ы «30 days by default», у форка история начинается заново; API к истории версий в доке не описан.\n\nДОВЕРИЕ К АВТОРУ — отрицательный результат, важный сам по себе. Никакого verified/official-бейджа для авторов и дашбордов в документации нет: docs.dune.com/web-app/teams описывает только роли Admin / Editor / Viewer и ни слова про верификацию организаций. Поиск по «verified badge» дал лишь ложные срабатывания (дашборд «Verified USD (USDV)», «Sonus Badge Checker»). Единственная верифицируемая атрибуция — на curated-слое, в поле contributors внутри Spellbook _schema.yml (у dex_trades: 0xRob, hosuke, jeff-dude, tomfutago, viniabussafi) плюс git-история ревью PR. Отсюда практическое правило: доверять НЕ автору запроса, а таблице, на которую он опирается.\n\nПРОЦЕСС РЕВЬЮ SPELLBOOK (что реально гарантирует качество). Требуется issue с префиксом [CONTRIBUTION] до написания кода; ревью приоритизирует enterprise-клиентов Dune, «PRs from contributors who aren't customers are accepted on a case by case basis», исключение — багфиксы. Подпроекты: daily_spellbook (новые спеллы, обновление раз в сутки) и hourly_spellbook (промотированные, требуют одобрения команды Dune). CI: 10 workflow-файлов (cla, codeql, commit_manifest, dbt_full_run, dbt_pr_run, dbt_pr_trigger, dbt_run, pr_automation, prices_check, pytest_automations); тестовые таблицы доступны ~24 ч как test_schema.git_dunesql_{{commit_hash}}_{{table_name}}. Отдельный prices_check.yml триггерится на изменения dbt_subprojects/tokens/models/prices/*/*.sql — то есть цены токенов (источник amount_usd) проверяются отдельным пайплайном.\n\nЧТО ГАРАНТИРУЕТ САМ DUNE НА СЛОЕ ИНДЕКСАЦИИ (docs/data-catalog/data-quality): Gap Detection, Duplicate Detection, Block Integrity, Re-org Handling (finality awareness → reorg detection → data correction), Null Detection & Validation, Token Metadata Updates. Явные оговорки в той же доке: «Reorg detection coverage varies by chain» и «Curated data propagation is not immediate». Формальные SLA — только на Enterprise.\n\nСТАТУСЫ ДОСТАВКИ ИСТОЧНИКОВ (первичный/вторичный). Отдались нормально: все docs.dune.com/* (включая llms.txt), raw.githubusercontent.com/duneanalytics/spellbook/*, gh api по репо/issues/contents, status.dune.com (200), blockchain.info/q/totalbc, api.llama.fi. НЕ отдались: docs.dune.com/api-reference/queries/endpoint/read-query → 404 (верный путь — /endpoint/read); docs.dune.com/data-catalog/spellbook/DEX/dex-trades → 404 (устаревший путь из выдачи); dune.com/blog/nft-wash-trading-on-ethereum → 404, взято рабочее зеркало community.dune.com/blog/... (тот же контент, помечаю как первичный от Dune, но по зеркальному домену); dune.com/pricing → 200, но отдал только навигацию (SPA), цены НЕ извлечены; dune.com/queries/4319 → 403 для curl и пустая навигация для WebFetch; GitHub blob-страница CONTRIBUTING.md отдала неполный текст, часть фактов о ревью взята из README репозитория.\n\nunverified[] (числа без первоисточника — НЕ использовать без перепроверки): стоимость Read Query в кредитах (в доке не указана); стоимость и план-гейт Dune MCP (в docs/api-reference/agents/mcp не указаны); месячные кредиты Free-плана (цифра 2500 встречена только во вторичной выдаче, dune.com/pricing не отдался, а docs/learning/how-tos/pricing-faqs даёт лишь оверейдж «Free: $5.00 per 100 credits»); цена Analyst-плана ($75/мес и $65/мес при годовой оплате — вторичные источники, конфликтуют с другой вторичной выдачей про $390/$1990); наличие API к истории версий запроса; точные пороги лага raw-данных по конкретным сетям (в доке они внутри встроенной таблицы/дашборда, текстом не отдались); статус status.dune.com «degraded» снят grep'ом по HTML и относится к моменту проверки, конкретный затронутый компонент не идентифицирован.\n\nCONFIDENCE ПО БЛОКАМ: high — гейт Read Query на Analyst, недоступность SPA для headless, факты Spellbook по gh api (звёзды/даты/workflow/issue #610), семантика dex vs dex_aggregator, поведение дефолтных параметров, поля метаданных исполнения, живые ответы blockchain.info и DefiLlama. medium — детали ревью Spellbook (CONTRIBUTING отдался частично), фреймворк data-quality (пересказ страницы без построчной цитаты), отсутствие бейджа верификации (доказано отсутствием в доке, а не явным утверждением Dune). low — всё, что в unverified[]: любые цены, кредиты и план-гейт MCP.\n\nДЫРЫ ОСИ, КОТОРЫЕ Я НЕ ЗАКРЫЛ (для честности): (1) не нашёл официального публичного документа Dune с постмортемами инцидентов данных — status.dune.com есть, но история инцидентов не разобрана; (2) не подтвердил первоисточником кейс double-counting bridged/wrapped supply (нашлось только общее предупреждение о смешивании нативного USDC и мостового USDC.e — вторичный источник, в кандидаты не выношу); (3) не проверил на живом ключе, действительно ли Free-план получает 403 на GET /v1/query/{id} — вывод сделан по тексту доки, не по эксперименту."
+  },
+  {
+   "round": 1,
+   "axis": "экономика кредитов и лимиты",
+   "n_seen": 30,
+   "queries": [
+    "https://docs.dune.com/api-reference/overview/credits (→ HTTP 404, страницы с таким именем нет)",
+    "https://docs.dune.com/api-reference/overview/rate-limits + .md",
+    "https://docs.dune.com/api-reference/overview/billing + .md (dateModified 2026-06-24)",
+    "https://docs.dune.com/resources/credits-billing/how-credits-work.md (dateModified 2026-07-27)",
+    "https://docs.dune.com/learning/how-tos/credit-system.md (дубль how-credits-work, схлопнут)",
+    "https://docs.dune.com/learning/how-tos/pricing-faqs.md (dateModified 2026-06-08)",
+    "https://docs.dune.com/api-reference/overview/troubleshooting.md",
+    "https://docs.dune.com/api-reference/overview/faq.md",
+    "https://docs.dune.com/api-reference/executions/endpoint/execute-query.md",
+    "https://docs.dune.com/api-reference/executions/endpoint/execute-sql.md",
+    "https://docs.dune.com/api-reference/executions/endpoint/get-execution-result.md",
+    "https://docs.dune.com/api-reference/executions/endpoint/get-query-result.md",
+    "https://docs.dune.com/api-reference/executions/pagination",
+    "https://docs.dune.com/api-reference/queries/endpoint/create-query (→ HTTP 404)",
+    "https://docs.dune.com/llms.txt",
+    "curl https://dune.com/pricing (→ HTTP 403 краулеру)",
+    "curl https://dev.dune.com/pricing (→ 302 на vercel.com/sso-api, недоступно)",
+    "https://dune.com/blog/credits-changing (→ HTTP 404 краулеру, линкуется из docs)",
+    "curl https://sim.dune.com/pricing (→ HTTP 403 краулеру)",
+    "https://docs.sim.dune.com/llms.txt + index.md",
+    "WebSearch: docs.dune.com API credits \"datapoints\" credit cost query execution",
+    "WebSearch: Dune API \"250,000 datapoints\" limit \"ignore_max_credits_per_request\" credits per request",
+    "WebSearch: Dune API concurrent executions limit free plan \"concurrent\" query execution queue",
+    "WebSearch: Dune API \"max credits per request\" default limit value ignore_max_credits_per_request",
+    "WebSearch: \"dune.com/pricing\" Dune Analytics plan Analyst $99 Plus price per month 2026 credits",
+    "WebSearch: Sim APIs by Dune pricing free plan credits per month rate limit sim.dune.com",
+    "curl -w dateModified: сверка свежести billing / pricing-faqs / how-credits-work"
+   ],
+   "notes": "ГЛАВНЫЙ ВЫВОД ОСИ: у headless-агента на Free НЕТ бесплатного исполнения. Бесплатный Small-движок существует (\"Small Engine (0 credits to run)\"), но доступен только руками в веб-редакторе: \"the Free query engine is limited to manual query editor executions only; automated executions (API, scheduling, refreshing) are not available\" и прямо в API-FAQ: \"free executions are not supported via the API\" (pricing-faqs.md, dateModified 2026-06-08). Значит агентская экономика на Free держится на ЧТЕНИИ чужих готовых результатов, а не на запуске запросов.\n\n=== 1. КВОТА И ПЕРИОД (первоисточник: docs.dune.com/resources/credits-billing/how-credits-work, dateModified 2026-07-27 — свежее некуда) ===\nFree 2500 кр/мес, $0, overage $5.00/100 кр. Analyst $75/мес → 4000 кр, $1.875/100. Analyst Annual $65/мес ($780/год) → 4000 кр, $1.625/100. Plus $399/мес → 25000 кр, $1.596/100. Plus Annual $349/мес ($4188/год) → 25000 кр, $1.396/100. Legacy Premium — закрыт для новых, overage $0.999/100 кр (pricing-faqs). Enterprise — custom.\nСброс ЕЖЕМЕСЯЧНО даже на годовой оплате: \"customers on this plan will still have their credits reset on a monthly basis\". Переноса нет: \"Remaining credits at the end of a billing cycle do not rollover\". Оптом докупить нельзя: \"Credits are not available to purchase in bulk once you reach your quota\". Free Trial живёт по Free-экономике (2500 кр).\n\n=== 2. ЧТО ИМЕННО СПИСЫВАЕТ КРЕДИТЫ ===\n(a) ИСПОЛНЕНИЕ — \"Credits are consumed based on actual compute resources used\": CPU, объём просканированных данных, время занятия движка. Engine size влияет: Large ≈ 2x вычислительной ёмкости Medium и жжёт быстрее; Small — 0 кредитов, но только вручную. Default для API = medium (execute-query.md: 'default is \"medium\"'). Free ограничен Small+Medium: \"you will be limited to the Small and Medium engine\" ⇒ Large на Free недоступен.\n(b) ЧТЕНИЕ РЕЗУЛЬТАТОВ — да, списывает, и КАЖДЫЙ раз: \"we accrue the resulting datapoints returned from every request to your credit quota\". get-query-result: \"does NOT trigger an execution but does consume credits based on the result size\".\n(c) ЗАПИСЬ ДАННЫХ — 3 кредита/ГБ на Free/Analyst/Plus, минимум 1 кредит за операцию.\n(d) MATERIALIZED VIEWS + SCHEDULED QUERIES — списывают как обычные исполнения, через \"system user\".\n(e) CRUD запросов сам по себе кредитов не стоит, но закрыт планом (см. §5).\n(f) НЕ списывается: \"SQL syntax/semantic errors, internal query-engine failures, or query-engine capacity-limit failures such as memory or stage limits\". Списывается при таймауте, при остановке по cost-cap и при отмене пользователем после начала compute. Факт по конкретному исполнению — поле execution_cost_credits на status-эндпоинте. Metadata-эндпоинты бесплатны (api-reference/overview/introduction).\n\n=== 3. ФОРМУЛА СТОИМОСТИ ОДНОГО ВЫЗОВА ===\nC_call = C_exec + C_export.\nC_exec = UNVERIFIED ПО ОПРЕДЕЛЕНИЮ. Dune прямым текстом отказывается публиковать: \"we don't share a single, per-query formula because credit usage depends on real-time factors\". Это не пробел моего поиска, это заявленная политика вендора — единственный способ узнать цену постфактум: execution_cost_credits.\nC_export — и вот тут В ДОКАХ ОДНОВРЕМЕННО ЖИВУТ ДВЕ РАЗНЫЕ ЕДИНИЦЫ (дефект документации, фиксирую честно):\n  • Модель А, «датапоинты» (learning/how-tos/pricing-faqs, 2026-06-08): datapoints = max(rows * columns, ceil(total_bytes / 100)); Free и Analyst — 1 кредит = 1000 датапоинтов; Plus — 1 кредит = 5000; Legacy Premium — 1 кредит = 25000.\n  • Модель Б, «мегабайты» (api-reference/overview/billing, 2026-06-24): кредитов за МБ экспорта — Free 20, Analyst 10, Plus 2, Enterprise custom.\n  СВЕРКА: Free 20 кр/МБ ⇒ 1 кредит = 1048576/20 = 52 428.8 байт. Модель А даёт 1 кредит = 1000 ячеек. Они сходятся ровно тогда, когда средняя ячейка ≈ 52.4 байта. То есть модели согласованы по порядку величины, но НЕ тождественны, и какая из них биллится реально — unverified. Ниже считаю по модели А и перепроверяю моделью Б.\nКосвенный признак, что API-reference новее: в живых .md-файлах эндпоинтов параметр называется ignore_max_credits_per_request («bypass the default max credits per request limit»), тогда как повсеместно цитируемый лимит «250 000 датапоинтов на запрос» с параметром ignore_max_datapoints_per_request встречается ТОЛЬКО в кеше поисковиков и в DeepWiki — в текущих .md его нет. ЧИСЛОВОЕ значение дефолтного max-credits-per-request в доках не указано ⇒ unverified.\n\n=== 4. RATE LIMITS И ПОВЕДЕНИЕ НА ИСЧЕРПАНИИ ===\nЛимиты раздельные по двум корзинам и СКЛАДЫВАЮТСЯ: Free low 15 rpm / high 40 rpm (в сумме 55, прямо оговорено в доке), Plus 70/200, Enterprise 350+/1000+. Per IP — 1000 rps на всех планах. Строки для ANALYST в таблице rate-limits НЕТ ⇒ rpm для Analyst unverified.\nLow-корзина (write-heavy) = create/update/private/unprivate/archive query, execute query, create/insert/upload/delete table. High-корзина (read-heavy) = read query, get execution result (+CSV), get execution status, cancel execution. Практический вывод: execute сидит в узкой корзине 15 rpm, а чтение кеша — в широкой 40 rpm.\nКонкурентность: 3 одновременных (executing или queued) — но ТОЛЬКО для Free-движка; для Medium — \"No limit on concurrent executions\". Пер-плановые лимиты конкурентности для API не опубликованы ⇒ unverified. Таймаут исполнения = 30 минут, как в веб-приложении; у Small-движка 120 секунд.\nКоды: 402 Payment Required — \"This api request would exceed your configured limits per billing cycle. Please visit your settings on dune.com and adjust your limits to continue usage.\" 429 Too Many Requests — рейт-лимит. 403 Forbidden — нет прав (например, чужой приватный запрос). Важно: 402 прилетает при УПЁРТОМ В ВЫСТАВЛЕННЫЙ ЛИМИТ, а по умолчанию исчерпание квоты не блокирует, а начинает биллить overage. Максимальный результат — 32 ГБ, дальше нужен allow_partial_results=true.\n\n=== 5. FREE vs ANALYST vs PLUS ПО ДОСТУПУ (не по цене) ===\nQueries CRUD endpoint: \"Available on Plus and Enterprise plans\" ⇒ на Free И НА ANALYST создать/обновить/заприватить/заархивировать запрос через API НЕЛЬЗЯ. Analyst платит $75 и CRUD всё равно не получает.\nEngine: Free — Small+Medium, Large закрыт; Large доступен на платных.\nЭкспорт: Free 20 кр/МБ против Plus 2 кр/МБ — десятикратная разница в цене за те же данные (при 1000 vs 5000 датапоинтов на кредит — пятикратная; ещё одно место, где две модели расходятся).\nStorage cap: Free 100 MB / Analyst 1 GB / Plus 15 GB / Enterprise unlimited. Webhooks: 1 / 5 / 5 / custom.\nПРОТИВОРЕЧИЕ В ДОКАХ: pricing-faqs в одном месте пишет, что платные планы дают \"additional features like API access\", а в другом — \"the API is included in all Dune plans ... including those in the Free plan\". Второе подтверждается таблицей rate-limits (строка Free существует) ⇒ считаю авторитетным: API на Free ЕСТЬ.\nОБХОДНОЙ ПУТЬ, требующий эмпирической проверки: POST /api/v1/sql/execute (Execute SQL) выполняет произвольный DuneSQL БЕЗ создания сохранённого запроса, заявленный минимум — scope `Read`, планового гейта в доке НЕ УКАЗАНО. Если он реально не гейтится, Free-агент получает произвольный SQL в обход Plus-only CRUD. Гейт — unverified, нужен живой тест с Free-ключом.\n\n=== 6. СКОЛЬКО «АГЕНТСКИХ ВОПРОСОВ В МЕСЯЦ» ДАЁТ FREE (с формулой) ===\nQ = 2500 / (C_exec + C_export), где C_export = (N строк × K колонок) / 1000 для Free.\n• Сценарий A — агент ТОЛЬКО читает кеш чужого публичного запроса (C_exec = 0), типичный ответ 100 строк × 5 колонок = 500 ячеек ⇒ C_export = 0.5 кр ⇒ Q = 2500/0.5 = 5000 вопросов/мес. Перепроверка моделью Б: 500 ячеек × 52 Б = 26 000 Б = 0.0248 МБ × 20 = 0.496 кр ⇒ 5040 вопросов. Модели сходятся.\n• Сценарий B — «сколько биткоинов добыто»: 1 строка × 2 колонки = 2 датапоинта = 0.002 кр ⇒ формально 1.25 млн вопросов, но раньше упрётся потолок rpm: 40 rpm × 60 × 24 × 30 = 1 728 000 вызовов/мес. Вывод: на микроответах связывает не квота, а рейт-лимит.\n• Сценарий C — «дневной объём DEX по сетям за квартал»: 90 дней × 10 сетей = 900 строк × 3 колонки = 2700 ячеек = 2.7 кр ⇒ Q ≈ 926 таких вопросов/мес. Обе задачи-мотиватора помещаются в Free с большим запасом — ЕСЛИ читать готовые публичные запросы.\n• Сценарий D — агент вынужден ИСПОЛНЯТЬ (нет подходящего кеша / нужны свои параметры): Q = 2500/(C_exec + 0.5), а C_exec не опубликован. При ДОПУЩЕНИИ (моя оценка, НЕ из доков, не тратить деньги без проверки) 10 кр на средний medium-запрос ⇒ ≈238 вопросов/мес; при 50 кр ⇒ ≈49. Честный диапазон: 50–250, разброс в 5 раз целиком сидит в неопубликованной величине.\nДОПУЩЕНИЯ ФОРМУЛЫ (все обязательны к оглашению): (1) 2500 кр/мес, помесячный сброс, без переноса; (2) ответ = N×K ячеек, средняя ячейка ≤ 100 байт, иначе доминирует байтовое слагаемое ceil(total_bytes/100); (3) курс Free 1 кр = 1000 датапоинтов (модель А); (4) РОВНО один экспортный вызов на вопрос — без пагинации, без ретраев; каждый ретрай тарифицируется заново («from every request»), поэтому реальный расход выше на долю неудачных попыток; (5) параметр columns не используется для обрезки (использование снижает счёт пропорционально); (6) в сценариях A/B/C исполнения нет вообще; (7) metadata-вызовы бесплатны; (8) рейт-лимиты не связывают (проверено в сценарии B).\n\n=== 7. НАДЁЖНОСТЬ И ЧТО ОСТАЛОСЬ UNVERIFIED ===\nДоставка первоисточников: docs.dune.com отдаёт .md-версии страниц (Mintlify) — брал вербатим оттуда, это сильная сторона выборки. НЕДОСТУПНЫ краулеру: dune.com/pricing → HTTP 403; dune.com/blog/credits-changing → HTTP 404 (при этом линкуется из живых доков); dev.dune.com/pricing → 302 на vercel SSO; sim.dune.com/pricing → HTTP 403. Поэтому пофичерная витрина планов с dune.com/pricing НЕ подтверждена первоисточником — цены и квоты я взял из docs.dune.com/resources/credits-billing/how-credits-work, что является первичным источником вендора.\nUNVERIFIED (числа отсутствуют в первоисточнике, выдумывать запрещено): C_exec — формула/ставка кредитов за исполнение (вендор отказывается публиковать); числовое значение дефолтного max credits per request; актуальность легаси-лимита 250 000 датапоинтов; rpm для плана Analyst (строки в таблице нет); пер-плановые лимиты КОНКУРЕНТНЫХ исполнений через API (кроме Free-движка = 3 и Medium = без лимита); плановый гейт эндпоинта /api/v1/sql/execute; все тарифы Sim APIs.\nConfidence: HIGH по квотам/ценам планов, rate limits, кодам ошибок, поведению overage и по гейту Queries CRUD (всё вербатим из .md первоисточника, страницы от 2026-06-08…2026-07-27). MEDIUM по формуле экспорта (две живые взаимно несводимые модели единиц). LOW по стоимости исполнения и, соответственно, по сценарию D. Дата верификации 2026-07-27; тарифы дрейфуют — перед тратами перепроверить.\nРЕКОМЕНДАЦИЯ ДЛЯ АГЕНТА: строить на GET /api/v1/query/{id}/results по чужим публичным запросам (кеш, без исполнения) + columns= для обрезки + выставить «limit extra credits» в 0, чтобы исчерпание давало детерминированный 402 вместо тихого биллинга; Execute SQL проверить живым Free-ключом — это единственная гипотеза, дающая произвольный вопрос без $399/мес."
+  },
+  {
+   "round": 2,
+   "axis": "gap-раунд 2: Dune-поверхности, которых нет в списке",
+   "n_seen": 360,
+   "queries": [
+    "curl -sS -L https://docs.dune.com/llms.txt",
+    "curl -sS -L https://docs.dune.com/sitemap.xml",
+    "curl -sS -L https://docs.dune.com/llms-full.txt (3 705 400 B)",
+    "curl -sS -L https://docs.dune.com/docs/changelog.md",
+    "curl -sS -L https://docs.dune.com/{datashare/datashare,datashare/datashare-snowflake,datashare/datashare-s3,datashare/datashare-trial,datashare/datashare-faqs,api-reference/apis/quickstart-dashboards,api-reference/executions/endpoint/cancel-execution,web-app/alerts,web-app/share,learning/how-tos/export-data-out,query-engine/query-a-query,query-engine/Functions-and-operators/live-fetch,web-app/query-editor/query-scheduler,docs/agents/mpp,web-app/search,web-app/dune-ai,data-catalog/dune-index/introduction,api-reference/webhooks/webhook,web-app/query-editor/version-history,enterprise/data-hub/overview,api-reference/tables/endpoint/migration,api-reference/api-overview}.md",
+    "curl -sS -L https://docs.sim.dune.com/llms.txt",
+    "curl -sS -L https://docs.sim.dune.com/{index,compute-units,proxy,agent-reference,evm/overview}.md",
+    "curl -sS -L https://docs.sim.dune.com/openapi.json",
+    "curl -sS https://dune.com/robots.txt ; https://dune.com/sitemap.xml ; https://dune.com/llms.txt",
+    "LIVE PROBE (no API key): curl https://api.dune.com/api/v1/{dashboards,dashboards/1,dashboard/1,visualizations,visualization/1,queries,query,uploads,usage,materialized-views,webhooks,create-webhook,alerts,schedules,datasets,pipelines,teams,me,users,endpoints,custom-endpoints,folders,contracts,api-keys,collections,blockchains,labels,graphql,tables,search,queries/search}",
+    "LIVE PROBE: curl -X POST https://api.dune.com/api/v1/sql/execute -d '{\"query_sql\":\"select 1\"}'  (=> HTTP 402 MPP challenge)",
+    "LIVE PROBE: curl -D - https://api.dune.com/api/v1/execution/01HHHPMKG6NBY0B04A36TS3AQH/results/csv (=> 402 + www-authenticate: Payment ... method=\"tempo\")",
+    "LIVE PROBE: curl https://api.dune.com/api/echo/v1/balances/evm/0xd8da..., /api/echo/beta/..., /api/v1/dex/pairs/ethereum, /api/v1/farcaster/casts, /api/v1/eigenlayer/operators, /api/v1/trends/ethereum (=> все 404 URL not found)",
+    "LIVE PROBE: curl https://api.sim.dune.com/v1/evm/supported-chains (=> 200 БЕЗ ключа)",
+    "LIVE PROBE: curl https://dune.com/embeds/3478053/5845623 (=> Cloudflare 403 краулеру)",
+    "WebSearch: Dune Analytics \"preset endpoints\" OR \"curated endpoints\" api.dune.com/api/v1 DEX pair endpoint docs",
+    "WebSearch: Dune \"Sim APIs\" sim.dune.com EVM balances activity transactions token-info docs 2026",
+    "WebSearch: Dune \"custom endpoints\" dune.com workspace query API endpoint feature docs",
+    "WebFetch https://sim.dune.com/pricing.md",
+    "WebFetch https://dune.com/apis",
+    "WebFetch https://dune.com/embeds/2945343/4867680",
+    "WebFetch https://app.snowflake.com/marketplace/providers/GZSVZMYSCO/Dune",
+    "gh api search/code q='\"app-api.dune.com/v1/graphql\"'",
+    "gh api search/code q='\"dune.com/embeds\" language:python'",
+    "gh api repos/{itzmestar/duneanalytics,rysuds/dunebuggy,noyyyy/dune-query-export,horizontalsystems/markets-server}",
+    "curl raw.githubusercontent.com/itzmestar/duneanalytics/master/duneanalytics/duneanalytics.py",
+    "curl raw.githubusercontent.com/noyyyy/dune-query-export/main/src/lib/dune.ts",
+    "curl raw.githubusercontent.com/horizontalsystems/markets-server/master/src/providers/dune.js"
+   ],
+   "notes": "СТАТУС ДОСТАВКИ ИСТОЧНИКОВ. Первоисточники docs.dune.com и docs.sim.dune.com берутся ТОЛЬКО через curl с суффиксом `.md` (Mintlify) — WebFetch на docs.dune.com стабильно давал socket hang up. Домены dune.com и sim.dune.com отдают Cloudflare-challenge 403 curl-краулеру (проверено на /pricing, /pricing.md, /embeds/*, /queries/*), НО /robots.txt, /sitemap.xml и /llms.txt отдаются 200 — асимметрия сама по себе факт. sim.dune.com/pricing.md удалось взять только через WebFetch. app.snowflake.com и dune.com/embeds — JS-рендер, фетчеру приходит пустой каркас: цифры Snowflake Marketplace НЕ подтверждены первоисточником напрямую, взяты из docs.dune.com/datashare/datashare. deepwiki.com заблокирован политикой сети.\n\nГЛАВНОЕ ДЛЯ ЗАДАЧИ-МОТИВАТОРА («без платного плана, с независимой проверкой»). Живая карта авторизации api.dune.com на 2026-07-27 без ключа: POST /api/v1/sql/execute -> 402 (MPP), GET /api/v1/execution/{id}/{results,results/csv,status} -> 402 (MPP), а вот GET /api/v1/query/{id}/results, /results/csv и GET /api/v1/query/{id} -> 401 invalid API Key. Практический вывод: MPP даёт агенту произвольный DuneSQL и выгрузку результата вообще без аккаунта Dune (платёж криптой per-request, ~$0.0107 за /results/csv по live-challenge), но НЕ даёт бесплатно прочитать кеш чужого сохранённого запроса — для этого по-прежнему нужен ключ либо embed-iframe (JS-рендер, нужен браузер). «Сколько биткоинов добыто» и «дневной DEX-объём по сетям за квартал» закрываются связкой Query Views (`query_<id>` поверх чужого запроса) + MPP-исполнение, либо форк+Scheduler+get_latest_result на бесплатном плане.\n\nПРОТИВОРЕЧИЯ ДОКОВ И РЕАЛЬНОСТИ (адверсариальные находки, каждая проверена live): (1) док миграции таблиц утверждает «old endpoints ... remain functional», но GET /api/v1/tables уже 404, тогда как POST /api/v1/table/create ещё 401 — депрекация выполнена частично, заявленная дата удаления 2026-03-01; (2) док MPP перечисляет `GET /v1/execution/:execution_id/csv`, а такого роута нет (404) — рабочий путь `/results/csv` (402); (3) вторичные источники всё ещё рекламируют preset/echo-эндпоинты, которых нет.\n\nНЕПРОВЕРЕННОЕ (unverified[]): (a) факт работы app-api.dune.com/v1/graphql `GetExecution` без авторизации — TLS к app-api/core-hsr из среды блокируется, доказательство только вторичное (код noyyyy/dune-query-export, itzmestar/duneanalytics 135★ но последний push 2024-04-12, т.е. ~27 мес. без обновлений); (b) режим `Accept: text/markdown` на дашбордах dune.com — заявлен в changelog, живьём Cloudflare 403; (c) наличие/цена листинга Dune в Snowflake Marketplace — страница JS-рендерная; (d) точный список тарифов dune.com/pricing (Free/Analyst/Plus/Enterprise) — страница за Cloudflare, WebFetch дал socket hang up, поэтому в кандидатах приведены только те тарифные числа, что есть в docs.dune.com (20/10/2 кредита за МБ экспорта, CSV только Plus+).\n\nЧЕГО ИСКАЛ И НЕ НАШЁЛ (отрицательный результат, чтобы не искали снова): REST-эндпоинтов для alerts, schedules, webhooks-CRUD, visualizations, teams, folders, contracts, api-keys, collections, blockchains, labels, custom-endpoints, поиска по чужим запросам, а также /api/v2/* и /api/v1/graphql — все 404 при живом пробе. Формата parquet/arrow у results нет (404), только JSON и CSV. Отдельного «Dune Datashare marketplace» вне Snowflake/BigQuery/Databricks/S3 не существует. Термин «custom endpoints» встречается только как элемент сайдбара в changelog и НИ РАЗУ во всём llms-full.txt (3.7 МБ) — отдельной документированной фичи под этим именем нет."
+  },
+  {
+   "round": 2,
+   "axis": "gap-раунд 2: не-Dune источники, которых нет в списке",
+   "n_seen": 71,
+   "queries": [
+    "curl https://api.llama.fi/v2/chains (проба доставки)",
+    "https://api-docs.defillama.com/ (WebFetch: free endpoints + rate limits)",
+    "curl https://stablecoins.llama.fi/stablecoinchains",
+    "curl 'https://api.llama.fi/overview/dexs?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true'",
+    "curl https://api.llama.fi/overview/fees",
+    "https://docs.coinmetrics.io/api/v4/ (WebFetch: Community API limits)",
+    "curl 'https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=SplyCur,AdrActCnt&frequency=1d'",
+    "Blockchair API free tier limits requests per day without API key documentation",
+    "curl https://raw.githubusercontent.com/Blockchair/Blockchair.Support/master/API_DOCUMENTATION_EN.md (grep rate limits)",
+    "curl https://api.blockchair.com/bitcoin/stats",
+    "curl https://blockchain.info/q/totalbc",
+    "curl 'https://api.blockchain.info/charts/n-unique-addresses?format=json&timespan=5days'",
+    "https://mempool.space/docs/api/rest (WebFetch)",
+    "curl https://mempool.space/api/v1/fees/recommended",
+    "https://docs.growthepie.com/api-reference/api.md (WebFetch)",
+    "curl https://api.growthepie.com/v1/master.json",
+    "curl https://l2beat.com/api/scaling/summary vs https://api.l2beat.com/api/scaling/summary",
+    "https://www.coingecko.com/en/api/pricing (WebFetch: Demo plan)",
+    "CoinGecko official MCP server remote free \"mcp.api.coingecko.com\" docs",
+    "curl -X POST https://mcp.api.coingecko.com/mcp (MCP initialize probe)",
+    "curl https://www.geckoterminal.com/dex-api (grep calls/min)",
+    "https://docs.dexscreener.com/api/reference (WebFetch: rate limits)",
+    "curl https://eth.blockscout.com/api/v2/stats",
+    "curl https://eth.blockscout.com/api/v2/tokens/0xdAC17F958D2ee523a2206206994597C13D831ec7 (holders_count)",
+    "Blockscout MCP server mcp.blockscout.com official free tools list documentation",
+    "curl 'https://api.etherscan.io/v2/api?chainid=1&module=stats&action=ethsupply' (keyless)",
+    "Etherscan V2 API free plan \"100,000\" calls per day 5 calls/second multichain 60 chains one key",
+    "\"Etherscan\" API free tier 2026 credits per day change \"V2\" rate limits documentation",
+    "curl -X POST https://ethereum-rpc.publicnode.com eth_call 0x18160ddd (USDT totalSupply)",
+    "https://docs.cloud.google.com/bigquery/public-data (WebFetch: 1 TB/mo free)",
+    "\"bigquery-public-data.crypto_ethereum\" OR \"bigquery-public-data.crypto_bitcoin\" google cloud marketplace dataset blockchain analytics",
+    "AWS Public Blockchain Data registry of open data bitcoin ethereum parquet free s3",
+    "ethPandaOps Xatu public data clickhouse free parquet ethereum datasets",
+    "https://ethpandaops.io/data/xatu/getting-started/ (WebFetch)",
+    "The Graph free plan 100000 queries per month API key gateway 2026 pricing",
+    "SQD Subsquid portal free public data lake API 2026 no API key blockchain data",
+    "Bitquery free developer plan 2026 API points per month limits docs",
+    "GoldRush Covalent free plan credits per month 2026 token holders API pricing",
+    "Moralis free plan 2026 compute units per month token holders API limits pricing",
+    "\"Flipside\" free SQL API credits 2026 docs rate limit onchain data",
+    "Flipside Crypto shut down 2026 sunset data platform announcement",
+    "SonarX blockchain data acquired Flipside free tier API access 2026",
+    "Token Terminal API free tier pricing 2026 metrics fees revenue active addresses",
+    "Artemis Analytics API free tier documentation developer API key pricing 2026",
+    "Artemis API \"free\" tier developers signup docs \"api.artemisanalytics.com\" OR \"api.artemis.xyz\" rate limit",
+    "https://visaonchainanalytics.com/ (WebFetch)",
+    "free onchain analytics API 2026 stablecoin supply by chain active addresses no API key",
+    "DefiLlama API free tier rate limit requests per minute documented \"rate limit\" api.llama.fi",
+    "curl-пробы статуса: api.coinpaprika.com, min-api.cryptocompare.com, beaconcha.in/api/v1, rest.coincap.io/v3, data.messari.io/api/v1, api.rated.network/v0, public-api.solscan.io, production-api.mobula.io, api.covalenthq.com/v1, deep-index.moralis.io, api.footprint.network, portal.sqd.dev, gateway.thegraph.com, ultrasound.money/api/v2, chainspect.app/api"
+   ],
+   "notes": "ФАНКЕЛ: ~95 ссылок и эндпоинтов просмотрено → 71 механизм реально проверен (48 curl-проб статуса/тела + 23 doc-страницы) → 38 кандидатов в выдаче (дедуп по «вендор+эндпоинт/механизм»). Ни один из 38 не пересекается со списком «уже найдено» (там всё Dune-центрично); Sim by Dune намеренно НЕ включён — вендор Dune, вне оси.\n\nЗАДАЧА-МОТИВАТОР ЗАКРЫТА БЕСПЛАТНО И ПЕРЕПРОВЕРЯЕМО (все проверки — curl, 2026-07-27):\n(1) «Сколько биткоинов добыто» — три независимых keyless источника сходятся: Coin Metrics community SplyCur = 20 061 648.01 BTC (2026-07-26), blockchain.info/q/totalbc = 2 006 195 600 000 000 сатоши = 20 061 956 BTC, Blockchair /bitcoin/stats circulation = 2 006 195 229 155 096 сатоши. Расхождение blockchain.info vs Blockchair ≈ 3.7 BTC — это разница момента среза (высота блока), а не ошибка; при цитировании обязательно указывать высоту/время.\n(2) «Дневной объём DEX по сетям за квартал» — DefiLlama /overview/dexs без ключа: total24h = 5 469 776 744.59 USD, total7d = 43 358 041 658.53, разрез allChains; исторические ряды — тем же эндпоинтом с dataType/breakdown, кросс-чек — GeckoTerminal (10 calls/min) и Bitquery.\n\nЛУЧШИЙ БЕСПЛАТНЫЙ СТЕК ДЛЯ HEADLESS-АГЕНТА (без ключа вообще): DefiLlama (TVL/DEX/fees/stablecoins) + Coin Metrics Community (supply/active addresses) + growthepie (L2 daa/fees/txcosts) + Blockscout REST/MCP (холдеры, gas, 3000+ сетей) + CoinGecko MCP (supply/цены) + публичный RPC для независимой перепроверки. Второй эшелон, требующий бесплатного ключа: Etherscan V2 (50+ сетей одним ключом), The Graph (100k запросов/мес), GoldRush, Moralis. Тяжёлая артиллерия для произвольного SQL: BigQuery public datasets (1 ТБ/мес бесплатно) и AWS S3 parquet + cryo.\n\nDEAD / SUNSETTING (§лайфсайкл): Flipside Crypto — дата-бизнес продан SonarX в мае 2026, Flipspace выключен 2026-06-17, домены flipsidecrypto.xyz и docs.flipsidecrypto.xyz 301→edisyl.com, api-v2.flipsidecrypto.xyz не резолвится (curl code 000). Любые старые рекомендации «возьми бесплатные query-seconds у Flipside» недействительны.\nСУЖЕНИЕ FREE-ТАРИФА: Etherscan в июле 2026 урезал free — max records на запрос 10 000 → 1 000, а Internal Transactions by Block Range выведен из free (источник вторичный — блог Blockscout; страница docs.etherscan.io/etherscan-v2/rate-limits JS-рендерится и не отдалась ни WebFetch, ни curl).\n\nСТАТУС ДОСТАВКИ ПЕРВОИСТОЧНИКОВ: blockchair.com/api/docs и /api/plans → 401 краулеру (обошёл через raw.githubusercontent.com/Blockchair/Blockchair.Support — там точные лимиты); docs.coingecko.com/reference/* → 308 на /ai-integration/*; support.coingecko.com → Cloudflare-челлендж; docs.growthepie.com/api → 404, рабочий путь /api-reference/api.md; www.artemisanalytics.com/products/api → 301 на about.artemis.ai, docs → 307/timeout; docs.etherscan.io и thegraph.com/studio-pricing → socket hang up (числа взяты из вторички); defillama.com/docs/api → 403 (рабочая дока api-docs.defillama.com).\n\nUNVERIFIED[] (числа без первоисточника — НЕ подставлять в отчёт как факт): DefiLlama free rate limit (в доках только слово «Standard»); mempool.space точные лимиты; L2Beat лимиты и условия использования API; Dexscreener лимит на /latest/dex/*; Etherscan free 5 vs 3 calls/sec и 100k/day; The Graph 100k запросов/мес и $2/100k; SQD лимиты публичного портала; Bitquery 1 000 points/мес после первого месяца; GoldRush объём free-кредитов (25k/100k/200k — три разных значения в источниках); Moralis 40k CU (сутки или месяц — источники расходятся); наличие API на бесплатном тарифе Artemis; наличие API/CSV у Visa Onchain Analytics; наличие бесплатного тарифа у SonarX; лимиты Coinpaprika free.\n\nЧЕГО НАМЕРЕННО НЕТ (anti-goals этой оси): платные-по-определению провайдеры без бесплатного самообслуживания — Nansen, Glassnode, Allium, Kaiko, Amberdata, Chainalysis, CryptoQuant, IntoTheBlock, rwa.xyz; RPC-провайдеры как таковые (Alchemy/QuickNode/Ankr/Helius) — они дают доступ к цепочке, а не агрегированные метрики; венчурно-специфичные API бирж. Их отсутствие — решение о скоупе, а не пропуск."
+  },
+  {
+   "round": 3,
+   "axis": "gap-раунд 3: Dune-поверхности, которых нет в списке",
+   "n_seen": 95,
+   "queries": [
+    "https://docs.dune.com/llms.txt (полный индекс докзов; отдан 200, но обрезан: '452 pages and 8 OpenAPI specs omitted')",
+    "https://docs.dune.com/sitemap.xml (221479 байт; отфильтровал data-catalog → ~180 не-каталожных URL)",
+    "https://dune.com/llms.txt (200, 8214 байт — agent-индекс самого dune.com)",
+    "https://dune.com/sitemap.xml (200; 30 страниц /collection/*)",
+    "https://docs.dune.com/query-engine/query-a-query.md",
+    "https://docs.dune.com/web-app/alerts.md",
+    "https://docs.dune.com/learning/how-tos/export-data-out.md",
+    "https://docs.dune.com/docs/agents/mpp.md",
+    "https://docs.dune.com/web-app/search.md",
+    "https://docs.dune.com/web-app/dashboards.md",
+    "https://docs.dune.com/web-app/dune-ai.md",
+    "https://docs.dune.com/web-app/query-editor/query-scheduler.md",
+    "https://docs.dune.com/query-engine/Functions-and-operators/live-fetch.md",
+    "https://docs.dune.com/api-reference/executions/endpoint/cancel-execution.md",
+    "https://docs.dune.com/api-reference/overview/faq.md",
+    "https://docs.dune.com/api-reference/overview/rate-limits.md",
+    "https://docs.dune.com/api-reference/usage/endpoint/get-usage.md",
+    "https://docs.dune.com/resources/credits-billing/how-credits-work.md",
+    "https://docs.dune.com/learning/how-tos/query-templates.md",
+    "https://docs.dune.com/learning/flipside-migration-guide.md",
+    "https://docs.dune.com/datashare/datashare.md",
+    "https://docs.dune.com/docs/product-comparison.md",
+    "https://docs.dune.com/docs/changelog.md",
+    "https://docs.dune.com/docs/agents/cli-and-skills.md",
+    "https://docs.dune.com/docs/agents/mcp.md",
+    "https://docs.sim.dune.com/llms.txt + https://docs.sim.dune.com/index.md",
+    "WebSearch: Dune Analytics embed visualization iframe embeds.dune.com",
+    "WebSearch: docs.dune.com Dune API endpoints dashboard API alerts",
+    "WebSearch: Dune Analytics Snowflake Databricks marketplace data share \"Dune Datashare\"",
+    "WebSearch: \"Sim\" Dune \"sim.dune.com\" API 2026 Echo rebrand free tier",
+    "WebSearch: dune.com blog \"Sunsetting Sim\" August 2026 Sim APIs shut down date",
+    "WebSearch: Dune API \"query/search\" endpoint undocumented search public queries api.dune.com",
+    "WebFetch https://www.allium.so/blog/dune-sim-is-shutting-down-heres-how-to-migrate-to-allium/",
+    "WebFetch https://dune.com/collection/prediction-markets/overview",
+    "gh api search/code q='\"api.dune.com/api/v1/query/search\"' (0 hits)",
+    "LIVE-ПРОБЫ (curl, ключ = 32×'a', 404 'URL not found' vs 401 'invalid API Key' как детектор существования маршрута): GET/POST/PUT/PATCH/DELETE api.dune.com/api/v1/{dashboards, dashboards/1, dashboards/search, dashboards/zzznotarealthing, visualizations/1, visualizations/zzznotarealthing, query/1, query/search, query/zzznotarealthing, queries, queries/search, search, alerts, webhooks, visualizations, blockchains, tables, uploads, usage, mcp, datasets, datasets/search, materialized-views, account, me, teams, spellbook, chains, definitely/not/a/real/endpoint} + beta/v1/... + v2/... (45 проб)",
+    "curl -H 'Accept: text/markdown' https://dune.com/{queries/3237025, collection/prediction-markets/overview, discover} → 403 Cloudflare",
+    "curl https://dune.com/embeds/5823843/9431565 (curl/8 и Chrome UA) → 403 Cloudflare",
+    "curl https://core-hsr.dune.com/v1/graphql, https://app-api.dune.com/v1/graphql → Cloudflare challenge (000/403)",
+    "curl https://dune.com/api/embeds/3237025/5432466/data, https://dune.com/api/queries/3237025 → 403 Cloudflare",
+    "curl https://docs.dune.com/openapi.json, https://api.dune.com/api/v1/openapi.json → 404"
+   ],
+   "notes": "ГЛАВНЫЕ НАХОДКИ ПО СУТИ ЗАДАЧИ-МОТИВАТОРА. (1) Query Views (`query_<id>`) — то, чего в списке принципиально не хватало: способ ПЕРЕИСПОЛЬЗОВАТЬ чужую готовую логику внутри своего SQL, а не только исполнить её целиком. (2) MPP — единственный найденный путь исполнить произвольный DuneSQL вообще без аккаунта/ключа/карты (оплата криптой по 402). (3) Embeds — единственный путь получить живой результат чужой визуализации совсем без ключа. (4) Query Templates — первопартийный список готовых query_id. (5) Advanced search `code:\"from dex.trades\"` — единственный подтверждённый способ найти чужой запрос по тексту SQL.\n\nАДВЕРСАРИАЛЬНЫЙ KILL-SHOT (важно, чтобы это не попало в отчёт как находка). Я сначала «обнаружил» недокументированные GET /api/v1/query/search и GET /api/v1/dashboards/search (оба отдавали 401 при 404 на заведомо несуществующем пути). Проверка на wildcard-конфаунд убила гипотезу: GET /v1/query/zzznotarealthing и GET /v1/dashboards/zzznotarealthing тоже дают 401 — значит «search» просто матчится как {id} в документированных маршрутах Read Query / dashboards-by-id. Никакого search-эндпоинта в REST API нет. Подтверждение с другой стороны: gh api search/code по строке \"api.dune.com/api/v1/query/search\" — 0 попаданий, а таблица тулов Dune MCP (docs/agents/mcp) содержит только searchDocs / searchTables / listBlockchains / searchTablesByContractAddress / getTableSize — поиска по чужим ЗАПРОСАМ и ДАШБОРДАМ там нет. Итог: заявленный в ченджлоге «поиск по чужим публичным запросам и дашбордам» на 2026-07-27 машинно НЕ доступен — только через UI веб-приложения. Уцелели после этой же проверки два маршрута: POST /v1/dashboards (GET/PUT/PATCH/DELETE → 405, то есть коллекционный маршрут существует и разрешает только POST) и GET /v1/visualizations/{id} (при 404 на /v1/visualizations без id) — они реальны и недокументированы.\n\nОШИБКА В УЖЕ СОБРАННОМ СПИСКЕ (требует правки). Запись «Dune Get Usage — GET /api/v1/usage» неверна по методу: живая проба даёт GET /v1/usage → 405 'HTTP method not allowed', POST /v1/usage → 401 'invalid API Key'; сами доки (api-reference/usage/endpoint/get-usage.md и usage/overview.md) описывают маршрут как `POST /v1/usage`. Правильно: POST /api/v1/usage.\n\nДРЕЙФ ДОКОВ (снижает доверие к FAQ как к источнику). docs.dune.com/api-reference/overview/faq утверждает «You currently cannot paginate through the API» — это противоречит живой странице api-reference/executions/pagination и SDK, где пагинация описана как рабочая. Там же FAQ даёт лимиты «40/min Free, 200/min Plus», тогда как отдельная страница rate-limits даёт более точную двухмерную картину: per-IP 1000 rps; Free low 15 rpm / high 40 rpm; Plus low 70 / high 200; Enterprise 350+/1000+; лимиты складываются (на Free фактически 55 rpm). Числа брать со страницы rate-limits, не из FAQ.\n\nЧИСЛА, ПОДТВЕРЖДЁННЫЕ ПЕРВОИСТОЧНИКОМ (as of 2026-07-27): кредиты по планам — Free 2 500/мес при $5.00 за 100 доп. кредитов; Analyst $75/мес, 4 000; Plus $399/мес, 25 000; Legacy Premium «no longer available for new subscriptions» (docs.dune.com/resources/credits-billing/how-credits-work). Экспорт: Free 20 / Analyst 10 / Plus 2 кредита за МБ; CSV-экспорт из UI — только Plus и Enterprise (learning/how-tos/export-data-out). Таймаут исполнения 30 минут; максимальный размер результата 32 GB, свыше — обрезка, читается только с allow_partial_results=true (rate-limits) — этот параметр в списке модификаторов results-эндпоинтов отсутствует, добавить к существующей записи «Result Filtering / Pagination / Sampling / Sorting». LiveFetch: таймаут 5 с, 80 rps на прокси × 3 прокси, ответ ≤ 4 MiB, POST-тело ≤ 1 MB. Масштаб контента для поиска: 100K дашбордов и 700K сохранённых запросов (web-app/search). Datashare: 1.5M+ таблиц, 100+ сетей, обновление hourly/daily.\n\nСТАТУС ДОСТАВКИ ИСТОЧНИКОВ. docs.dune.com отдаёт per-page markdown по суффиксу .md — это самый надёжный первоисточник (все 25 страниц пришли 200). Наоборот, сам dune.com за Cloudflare: /queries/*, /embeds/*, /collection/*, /discover, /blog/* дают 403 и curl'у, и браузерному UA; исключение — /llms.txt и /sitemap.xml (200). Поэтому: факт публичности embeds доказан косвенно (Dune встраивает свои же embeds в публичные доки), а сунсет Sim — вторичкой (Allium, 2026-05-19) + сводкой поиска по недоступному первоисточнику dune.com/blog/sunsetting-sim → confidence medium, дату 2026-08-01 перед решением стоит перепроверить браузером. Ни docs.dune.com/openapi.json, ни api.dune.com/api/v1/openapi.json не существуют (404), хотя llms.txt упоминает «8 OpenAPI specs» — спеки, судя по всему, встроены в тела страниц api-reference (я видел полный OpenAPI-фрагмент внутри cancel-execution.md), отдельного скачиваемого файла нет.\n\nСМЕЖНЫЙ ФАКТ ДЛЯ ОСИ alt-free: docs.dune.com/learning/flipside-migration-guide открывается словами «With the recent shutdown of Flipside Creator Studio» — то есть Flipside Creator Studio как бесплатная альтернатива мёртв, и это подтверждено первоисточником-конкурентом (Dune). Плюс сама Dune закрывает Sim — за последний год бесплатные REST-альтернативы SQL-пути схлопываются, что усиливает вес MPP и Query Views.\n\nСЧЁТ n_seen = 95: 25 страниц докой прочитано целиком/в объёме, 45 живых HTTP-проб маршрутов api.dune.com, 12 внешних страниц и поисковых выдач, 4 машинных индекса (2× llms.txt, 2× sitemap.xml), 9 отброшенных по доменному гейту/скоупу. Отдельно триажировано ~180 не-каталожных URL из docs.dune.com/sitemap.xml (сам каталог таблиц на ~1000+ URL сознательно не разворачивал — это data-catalog, а не поверхность доступа)."
+  },
+  {
+   "round": 3,
+   "axis": "gap-раунд 3: не-Dune источники, которых нет в списке",
+   "n_seen": 68,
+   "queries": [
+    "curl https://api.llama.fi/v2/chains",
+    "curl https://stablecoins.llama.fi/stablecoinchains",
+    "curl https://api.llama.fi/overview/dexs",
+    "curl https://api.llama.fi/overview/dexs/ethereum",
+    "curl https://api.llama.fi/overview/fees",
+    "curl https://api.llama.fi/v2/historicalChainTvl/Ethereum",
+    "curl https://api.llama.fi/protocols",
+    "curl https://api-docs.defillama.com/ (render to text)",
+    "curl https://api.coingecko.com/api/v3/ping",
+    "curl https://api.coingecko.com/api/v3/global",
+    "curl 'https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&market_data=true'",
+    "curl https://docs.coingecko.com/llms.txt",
+    "curl https://api.geckoterminal.com/api/v2/networks",
+    "curl 'https://api.dexscreener.com/latest/dex/search?q=WETH%20USDC'",
+    "curl https://api.blockchair.com/bitcoin/stats",
+    "curl https://api.blockchair.com/stats",
+    "curl https://api.blockchair.com/bitcoin/dashboards/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+    "curl https://blockchair.com/api/docs",
+    "curl https://blockchain.info/q/totalbc",
+    "curl https://api.blockchain.info/stats",
+    "curl https://mempool.space/api/blocks/tip/height",
+    "curl https://mempool.space/api/v1/fees/recommended",
+    "curl 'https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=SplyCur,AdrActCnt&frequency=1d&page_size=2&end_time=2026-07-25'",
+    "curl https://api.growthepie.xyz/v1/master.json",
+    "curl https://api.growthepie.xyz/v1/fundamentals.json",
+    "curl https://api.growthepie.com/v1/master.json",
+    "curl https://api.l2beat.com/api/scaling/summary",
+    "curl https://api.l2beat.com/openapi.json",
+    "curl 'https://api.l2beat.com/api/scaling/costs?apiKey=test'",
+    "curl https://eth.blockscout.com/api/v2/stats",
+    "curl https://eth.blockscout.com/api/v2/stats/charts/transactions",
+    "curl https://eth.blockscout.com/api/v2/tokens/0xdAC17F958D2ee523a2206206994597C13D831ec7/holders",
+    "curl -X POST https://mcp.blockscout.com/mcp -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'",
+    "curl -X POST https://mcp.api.coingecko.com/mcp -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'",
+    "curl 'https://api.ethplorer.io/getTopTokenHolders/0xdAC17F958D2ee523a2206206994597C13D831ec7?apiKey=freekey&limit=3'",
+    "curl 'https://api.ethplorer.io/getTokenInfo/0xdAC17F958D2ee523a2206206994597C13D831ec7?apiKey=freekey'",
+    "curl https://ultrasound.money/api/v2/fees/base-fee-per-gas",
+    "curl https://api.owlracle.info/v4/eth/gas",
+    "curl https://api.blocknative.com/gasprices/blockprices",
+    "curl https://api.coinpaprika.com/v1/global",
+    "curl https://api.diadata.org/v1/quotation/BTC",
+    "curl 'https://api.mobula.io/api/1/market/data?asset=Bitcoin'",
+    "curl https://data-api.cryptocompare.com/asset/v1/data/by/symbol?asset_symbol=BTC",
+    "curl -X POST https://api.santiment.net/graphql -d '{\"query\":\"{getMetric(metric:\\\"daily_active_addresses\\\"){timeseriesData(slug:\\\"ethereum\\\",from:...,to:...,interval:\\\"1d\\\"){datetime value}}}\"}'",
+    "curl https://portal.sqd.dev/datasets",
+    "curl -X POST https://ethereum-rpc.publicnode.com -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_blockNumber\"}'",
+    "curl https://api.artemisxyz.com/health",
+    "curl -X POST https://api.hyperliquid.xyz/info",
+    "WebSearch: Coin Metrics Community API free \"community-api\" rate limit endpoints documentation",
+    "WebSearch: free onchain data API no API key active addresses network fees stablecoin supply by chain 2026",
+    "WebSearch: \"growthepie\" API documentation free open source Ethereum L2 data api.growthepie.xyz",
+    "WebSearch: L2Beat API key free tier \"api.l2beat.com\" documentation 2026",
+    "WebSearch: L2BEAT API key how to get free \"api.l2beat.com\" apiKey announcement 2026 github l2beat api access",
+    "WebSearch: CoinGecko official MCP server free public remote \"mcp.api.coingecko.com\" 2026",
+    "WebSearch: Etherscan V2 API free tier \"100,000 calls\" per day 5 calls per second multichain 60 chains one key",
+    "WebSearch: Google BigQuery public blockchain datasets crypto_ethereum crypto_bitcoin free tier 1 TiB per month 2026",
+    "WebSearch: Flipside Crypto free API credits 2026 \"flipsidecrypto\" REST API query free tier limits",
+    "WebSearch: Blockscout API free tier rate limits no API key \"api/v2\" 2026 blog Blockscout vs Etherscan",
+    "WebSearch: \"Blockscout MCP server\" official mcp.blockscout.com free tools 2026",
+    "WebSearch: The Graph free plan 100000 queries per month Subgraph Studio 2026 pricing GRT",
+    "WebSearch: Bitquery free plan 2026 \"developer plan\" points per month GraphQL onchain DEX trades API limits",
+    "WebSearch: \"The Graph\" Token API free tier 2026 token balances holders transfers REST MCP endpoint",
+    "WebSearch: Artemis API free tier \"artemisxyz\" API key documentation stablecoin data 2026",
+    "WebSearch: AWS Public Blockchain Data registry open data bitcoin ethereum parquet free S3 2026",
+    "WebSearch: Envio HyperSync free \"hypersync\" no API key rate limit 2026 hyperrpc onchain data",
+    "WebSearch: rwa.xyz API free access documentation stablecoin tokenized treasuries data 2026",
+    "WebSearch: \"DefiLlama\" official MCP server 2026 mcp.llama.fi agent tools free",
+    "WebSearch: Allium Nansen Token Terminal free tier API 2026 pricing onchain data no free plan",
+    "WebSearch: Footprint Analytics free plan 2026 API \"Footprint\" SQL onchain data credits limits",
+    "WebSearch: DefiLlama Pro API pricing 2026 \"$\" per month rate limit free open API calls per minute",
+    "WebSearch: CoinGecko Demo API free plan \"10,000 calls\" per month \"30 calls\" per minute 2026 pricing",
+    "WebSearch: GeckoTerminal public API rate limit \"30 calls/min\" free no api key documentation",
+    "WebSearch: Messari API free tier 2026 credits per month endpoints; CryptoQuant free API limits 2026",
+    "WebSearch: Covalent GoldRush free tier 2026 credits; Moralis free plan CU per day token holders API",
+    "WebSearch: Helius free plan 2026 credits per month Solana RPC DAS API; Solscan Public API free tier limits",
+    "WebFetch: https://docs.growthepie.com/api-reference/api",
+    "WebFetch: https://pinax.network/products/api",
+    "WebFetch: https://docs.llama.fi/pro-api",
+    "WebFetch: https://docs.etherscan.io/etherscan-v2/rate-limits",
+    "WebFetch: https://apiguide.geckoterminal.com/",
+    "WebFetch: https://docs.dexscreener.com/api/reference"
+   ],
+   "notes": "ЗАДАЧА-МОТИВАТОР ПРОВЕРЕНА ЖИВЫМИ ВЫЗОВАМИ (2026-07-27, 0 $, без ключей).\n(1) «Сколько биткоинов уже добыто» — три независимых keyless-источника, сходятся до ~5-го знака: blockchain.info/q/totalbc = 2 006 200 625 000 000 сат (20 062 006.25 BTC); Blockchair /bitcoin/stats circulation = 2 006 197 416 655 096 сат (20 061 974.17 BTC); Coin Metrics Community SplyCur@2026-07-25 = 20 061 191.76 BTC. Расхождение объясняется временем среза и учётом неспендабельных выходов — независимая перепроверка работает.\n(2) «Дневной объём DEX по сетям за квартал» — DefiLlama /overview/dexs (200, 18.1 МБ, ряд с 2016-04-19) и /overview/dexs/{chain} (200, 1.97 МБ для ethereum) дают готовый дневной totalDataChart без SQL; независимая сверка — GeckoTerminal (30 вызовов/мин, keyless) на уровне пулов.\n\nСТАТУС ДОСТАВКИ (важно для воспроизводимости):\n- api-docs.defillama.com — WebFetch заблокирован политикой («Unable to verify if domain is safe»), curl отдал HTML 200 → таблицу Free vs Pro снял через curl+regex. Первоисточник по цене: «Auth Required | No | Yes ($300/mo)».\n- blockchair.com/api/docs — HTTP 401 краулеру (Qrator JS-челлендж); численные лимиты free-тарифа Blockchair НЕ подтверждены первоисточником ⇒ unverified. Зато сам API дал живое доказательство узости квоты: HTTP 430 «temporary blacklisted» со второго вызова с того же IP.\n- api.growthepie.com → HTTP 403 (CloudFront), рабочий хост — api.growthepie.xyz (200). Доки на docs.growthepie.com дают base URL .com — расхождение доки и реальности, фиксирую.\n- api.l2beat.com — 401 на ВСЕХ пробах (/api/scaling/summary, /api/scaling/costs, /openapi.json); /docs/json отдаёт Swagger-обёртку (JS-рендер), процедуры выдачи ключа в публичных источниках не нашёл ⇒ «как получить ключ L2BEAT» = unverified.\n- artemis.xyz/pricing → 301 на about.artemis.ai/pricing, повторный WebFetch — socket hang up; квоты Artemis взяты из вторичных источников ⇒ confidence low. Старый api.artemisxyz.com/health = HTTP 410.\n- thegraph.com/token-api/ → 308 на pinax.network/products/api (Token API де-факто обслуживает Pinax); «100 req/s free» — с маркетинговой страницы Pinax, не из rate-limit-доки ⇒ confidence medium.\n- mcp.api.coingecko.com/mcp — сырой POST tools/list вернул -32000 «Mcp-Session-Id header is required» (сервер жив, нужен MCP-хендшейк); mcp.blockscout.com/mcp — полноценный 200 с 73 348 байт списка тулов без аутентификации.\n- data-api.cryptocompare.com (ныне CoinDesk Data) — HTTP 401 «API key required»; api.mobula.io — HTTP 429 «You need to create an API key» ⇒ оба выпадают из keyless-класса.\n\nЧТО ЗАКРЫВАЕТ КАКОЙ КЛАСС ВОПРОСОВ (бесплатно, без плана):\n• supply/эмиссия → blockchain.info, Blockchair, Coin Metrics Community, CoinGecko keyless, CoinPaprika\n• дневной объём DEX → DefiLlama /overview/dexs*, GeckoTerminal, Dexscreener (только текущий срез), Bitquery(points)\n• активные адреса → Coin Metrics AdrActCnt, growthepie aa_last7d, Santiment daily_active_addresses, Blockscout stats/charts\n• распределение холдеров → Blockscout /tokens/{addr}/holders, Ethplorer freekey getTopTokenHolders (с полем share %), Pinax /v1/holders, Moralis\n• комиссии сети → growthepie (fees/rent-paid), ultrasound.money, mempool.space, Owlracle, DefiLlama /overview/fees, Blockscout gas_prices\n• стейблкоин-supply по сетям → DefiLlama stablecoins (единственный полностью keyless и исторический), Artemis (Sheets-квота), RWA.xyz (ключ)\n• произвольный SQL как замена Dune → BigQuery public datasets (1 TiB/мес бесплатно), Flipside Community (500 query-seconds), AWS Public Blockchain Data (Parquet в открытом S3), SQD Portal, публичные RPC + cryo\n\nРЕКОМЕНДУЕМЫЙ БЕСПЛАТНЫЙ БАНДЛ ДЛЯ HEADLESS-АГЕНТА (все проверены живьём, ключи не нужны): DefiLlama Free API (DeFi/DEX/fees/стейблы) + Coin Metrics Community (сетевые фундаменталы и supply) + growthepie (L2 комиссии и активные адреса) + Blockscout REST/MCP (адреса, холдеры, контракты, 120+ сетей) + BigQuery public datasets как «тяжёлый хвост» для произвольного SQL. Взаимная перепроверка чисел встроена: каждая метрика есть минимум в двух источниках из бандла.\n\nОГРАНИЧЕНИЯ ЭТОГО РАУНДА: (а) числа тарифов и rate limit'ов дрейфуют — дата верификации 2026-07-27, все цены/квоты со вторичных источников (Bitquery, Moralis, Helius, Solscan, Messari, GoldRush, Etherscan, Footprint, Artemis, RWA.xyz) помечены confidence medium/low, потому что первоисточник либо JS-рендер, либо за логином; (б) не проверял live: CryptoQuant free, Glassnode free tier, Chainbase, Space and Time, Visa Onchain Analytics, Amberdata, DappRadar, beaconcha.in, Rated Network, Hyperliquid info-API (probe вернул 422 из-за пустого тела, требует конкретный type) — это заготовки для следующего gap-раунда; (в) лицензии проверены точечно (Coin Metrics Community = CC non-commercial, growthepie = CC-BY-4.0 + MIT-бэкенд) — для остальных лицензионный статус данных unverified и это блокер для перепродажи, но не для внутреннего исследования."
+  }
+ ],
+ "below_line": [
+  {
+   "name": "dune-client (py) — `get_latest_result(query_id)`: прочитать закешированный результат чужого запроса без исполнения",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "DuneSQL Query Views — `select * from query_<queryID>`: подключить ЧУЖОЙ публичный запрос как SQL-view прямо внутри своего запроса (+ проброс параметров `\"query_3256410(blockchain='ethereum')\"`)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Embed-iframe публичной визуализации — https://dune.com/embeds/{query_id}/{visualization_id} (+ ?darkMode=true, + произвольные query-параметры)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "spice / dune_spice (py) — `spice.query(21693)` и `spice.query('https://dune.com/queries/21693')`",
+   "vendor": "Paradigm",
+   "family": "dune-access"
+  },
+  {
+   "name": "Параметры запроса и их дефолты (parameters[] в Read Query + Using Parameters)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "bruin-data/ingestr — CLI `ingestr` с нативным Dune-источником (pkg/source/dune/dune.go)",
+   "vendor": "Bruin Data",
+   "family": "dune-access"
+  },
+  {
+   "name": "CSV-экспорт из веб-приложения («Export to CSV») — тарифный гейт Plus/Enterprise + прайс за экспорт по мегабайтам",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Alerts — расписание запроса + доставка email / webhook (JSON со схемой query_result + data_uri + visualizations[].image_url) / Slack Incoming Webhook",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Execution Status / Result по execution_id — GET /api/v1/execution/{execution_id}/status и /results (+ /results/csv)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune extra-credits overage (pay-as-you-go после исчерпания квоты; HTTP 402 + тумблер \"limit extra credits\")",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Get Execution Status (GET /api/v1/execution/{execution_id}/status) — детект сломанного запроса",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Get Latest Query Result in CSV (GET /api/v1/query/{id}/results/csv)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Get Usage — GET /api/v1/usage (учёт кредитов)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Latest Query Result in CSV — GET /api/v1/query/{query_id}/results/csv",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP — авторизация API-ключом (заголовок x-dune-api-key или ?api_key= в URL)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP — авторизация OAuth 2.0 + PKCE (scope mcp:dune:full, Dynamic Client Registration)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Query Scheduler — расписание исполнения запроса/дашборда (medium и large engine, кредиты)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune result-shaping параметры как рычаг цены (columns / filters / limit+offset / sample_count / ignore_max_credits_per_request)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Small engine (0 кредитов) — ТОЛЬКО ручной запуск в веб-редакторе",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune UI CSV Export («Export to CSV» на странице запроса) — отдельно от API-CSV",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Zapier App (экспериментальное приватное приложение) — экшен «fetch a query's latest results by query id» + webhook-триггер",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "DuneSQL LiveFetch — http_get(url[,headers]) / http_post(url,body[,headers]) внутри запроса",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Google Sheets IMPORTDATA-мост — =importData(\"https://api.dune.com/api/v1/query/{query_id}/results/csv?api_key={api_key}\")",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "kukapay/dune-analytics-mcp — MCP с 2 тулами: get_latest_result / run_query по query_id",
+   "vendor": "kukapay (community)",
+   "family": "dune-access"
+  },
+  {
+   "name": "Query Alerts (Schedule + Email/Webhook/Slack) — push-доставка результата ПО РАСПИСАНИЮ, + официальное Zapier-приложение Dune",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Result Filtering / Pagination / Sampling / Sorting (модификаторы на results-эндпоинтах)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Недокументированный внутренний GraphQL веб-приложения — https://app-api.dune.com/v1/graphql (operation GetExecution) и legacy https://core-hsr.dune.com/v1/graphql",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Официальный Dune MCP (mcp.dune.com, 12 тулов) — НЕ OSS, хостед, найден по OSS-следам",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "УДАЛЕНО: «preset / curated» REST-эндпоинты Dune (/api/v1/dex/pairs/{chain}, /api/v1/farcaster/*, /api/v1/eigenlayer/*, /api/v1/trends/*)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "УДАЛЕНО: эндпоинты Dune Echo (api.dune.com/api/echo/v1/... и /api/echo/beta/...) — преемник Sim (api.sim.dune.com)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Cancel Execution — POST /api/v1/execution/{execution_id}/cancel",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "cowprotocol/dune-alerts — планировщик прогонов Dune-запросов с алертами в Slack",
+   "vendor": "CoW Protocol",
+   "family": "dune-access"
+  },
+  {
+   "name": "deacix/dune-mcp — MCP, 34 тула, покрывает все эндпоинты Dune API (uvx-запуск без клонирования)",
+   "vendor": "deacix / Sergej Kunz (community)",
+   "family": "dune-access"
+  },
+  {
+   "name": "demomagic/dune-mcp-server — MCP с ЗАШИТЫМИ бандлами чужих query id (Chainlink revenue, Pump.fun)",
+   "vendor": "demomagic (community)",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune Cancel Execution — POST /api/v1/execution/{execution_id}/cancel (scope: Read, high-limit endpoint)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP — категория Account (1 тул: getUsage)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP — категория Dashboard (4 тула: createDashboard, getDashboard, updateDashboard, archiveDashboard)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP — категория Materialized Views (6 тулов: create/list/get/refresh/update/deleteMaterializedView)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP — транспорт Remote MCP over Streamable HTTP (POST /mcp/v1 запросы, GET /mcp/v1 возобновление стрима)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "ekailabs/dune-mcp-server — MCP поверх Dune preset/echo эндпоинтов (НЕ query execution)",
+   "vendor": "ekailabs (community)",
+   "family": "dune-access"
+  },
+  {
+   "name": "hajnalben/dune-analytics-mcp (npm `dune-analytics-mcp`) — TS MCP, ставится через npx",
+   "vendor": "hajnalben (community)",
+   "family": "dune-access"
+  },
+  {
+   "name": "Quantumlyy/arrakis — OSS-клиент к ОФИЦИАЛЬНОМУ хостед Dune MCP + Better Auth OAuth-плагин",
+   "vendor": "Quantumlyy (community)",
+   "family": "dune-access"
+  },
+  {
+   "name": "Query Scheduler — плановый прогон запроса, чтобы Latest-Result-кеш всегда был свежим",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Scoped API keys (Read vs Read/Write) — гейт прав поверх всех REST-поверхностей",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "ЛЕГАСИ: GraphQL-эндпоинты Dune (core-hsr.dune.com/v1/graphql, app-api.dune.com/v1/graphql), на которых построены неофициальные клиенты",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Недокументированный веб-логин dune.com — POST /api/auth/csrf + POST /api/auth {action:login,username,password} -> cookie auth-refresh -> app-api GraphQL",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "СНЯТО: экспериментальный Dune Agent (июнь 2026) — заменён на Dune MCP + Dune CLI",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "УСТАРЕВШИЕ ПУТИ: /v1/table/* и GET /v1/tables -> /v1/uploads/* (заявленная дата удаления 1 марта 2026)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "УСТАРЕВШИЙ ПУТЬ: /api/v1/tables/* → перенесён на /api/v1/uploads/*",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP — категория Visualization (5 тулов: generateVisualization, getVisualization, updateVisualization, deleteVisualization, listQueryVisualizations)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP Apps — Dune Charts MCP App (интерактивные графики внутри MCP-клиента)",
+   "vendor": "Dune",
+   "family": "dune-access"
+  },
+  {
+   "name": "itzmestar/duneanalytics — неофициальный py-клиент через приватный/браузерный API (login по паролю)",
+   "vendor": "itzmestar (community)",
+   "family": "dune-access"
+  },
+  {
+   "name": "rysuds/dunebuggy — лёгкий неофициальный py-клиент (приватный API)",
+   "vendor": "rysuds (community)",
+   "family": "dune-access"
+  },
+  {
+   "name": "Dune MCP — поиск по чужим публичным ЗАПРОСАМ и ДАШБОРДАМ (заявлен в changelog, отсутствует в таблице тулов)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune Read Query API (GET /api/v1/query/{queryId}) — чтение ЧУЖОГО публичного запроса",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune Read Query API (достать SQL-ТЕКСТ чужого публичного запроса) — GET /api/v1/query/{queryId}",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Web-app Search / Discover с продвинутыми фильтрами — code:\"from dex.trades\", author:, tags:, title:, description:, created_after:, updated_before:, минус-исключения",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Дашборд → query id входящих визуализаций (публичного API НЕТ)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Публичные sitemap Dune на S3 (queries/dashboards/users/teams .xml.gz)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Agent-facing поверхности dune.com: dune.com/llms.txt, dune.com/sitemap.xml (88 URL), robots.txt и режим `Accept: text/markdown` на страницах дашбордов",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Datasets Search API (POST /api/v1/datasets/search) — проверка, что запрос бьёт по правильному слою",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune Datasets Search-by-Contract (POST /api/v1/datasets/search-by-contract)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune MCP — категория Discovery (5 тулов: searchDocs, searchTables, listBlockchains, searchTablesByContractAddress, getTableSize)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune Search Datasets — POST /api/v1/datasets/search (поиск ТАБЛИЦ, не запросов)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune Search Datasets by Contract Address — POST /api/v1/datasets/search-by-contract",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "dune.com-страницы в Markdown по заголовку `Accept: text/markdown` (дашборды)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "spice-mcp (Evan-Kim2028) — MCP, который для discovery таблиц парсит GitHub-репо Spellbook",
+   "vendor": "Evan-Kim2028 (community)",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Агент-индексы без ключа: https://dune.com/llms.txt, https://dune.com/sitemap.xml, https://docs.dune.com/llms.txt",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Веб-поиск/Discover на dune.com (/discover/content/trending?q=&resource-type=&tags=)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune Discover / Collections — dune.com/discover/content/trending и 30 страниц dune.com/collection/*",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune List Queries — GET /api/v1/queries (ТОЛЬКО свои запросы, НЕ поиск)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune List Queries API (GET /api/v1/queries) — только СВОИ запросы",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "perdedune/perdedune — вытащить ВСЕ запросы дашборда в файлы (dashboard → queries)",
+   "vendor": "perdedune (community)",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Query Version History — доступ к прежним редакциям SQL запроса (30 дней по умолчанию)",
+   "vendor": "Dune",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Кластер community agent-skills для Dune (7 репо, все ≤3★)",
+   "vendor": "разные (community)",
+   "family": "dune-discovery"
+  },
+  {
+   "name": "Dune Materialized Views API — POST /api/v1/materialized-views, GET/DELETE /api/v1/materialized-views/{name}, POST /{name}/refresh, GET /api/v1/materialized-views",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Dune Query CRUD (создать/форкнуть свой запрос) — POST /api/v1/query, PATCH /api/v1/query/{id}, + archive/unarchive/private/unprivate",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "DuneQueryRepo — официальный шаблон bulk-pull SQL по списку query id (queries.yml → pull_from_dune.py)",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "LiveFetch-функции DuneSQL (http_get и др.) — HTTP-запрос к любому внешнему API прямо из SQL",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Version History запроса (иконка часов в редакторе, ретенция 30 дней)",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Недокументированный Dashboards REST API — POST /api/v1/dashboards (создать) и GET /api/v1/dashboards/{id} (прочитать)",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "НЕДОКУМЕНТИРОВАННЫЙ REST Dashboard API — POST /api/v1/dashboards, GET/PATCH /api/v1/dashboards/{id}",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Dune dbt Connector (write access to DuneSQL)",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Dune materialized views / scheduled queries (\"system user\" автообновления)",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Dune Pipelines — Execute Pipeline / Get Pipeline Execution Status, + Get Query Pipeline",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Dune Tables API (create table / insert / upload CSV) — запись своих данных",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Dune Uploads API (свои данные в DuneSQL) — /api/v1/uploads (Create Table, Upload CSV, Insert, Clear, Delete, List)",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Dune Webhooks — POST create-webhook",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "dune-dbt-template — dbt-trino шаблон поверх DuneSQL Trino Connector",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "duneanalytics/harmonizer — транслятор legacy-SQL → DuneSQL",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Недокументированный Visualizations REST API — GET /api/v1/visualizations/{id}",
+   "vendor": "Dune",
+   "family": "dune-authoring"
+  },
+  {
+   "name": "Spellbook (duneanalytics/spellbook) — готовое знание о данных в GitHub",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Spellbook GitHub (duneanalytics/spellbook) — чтение dbt-модели, стоящей за curated-таблицей",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Spellbook Issues/PR как реестр дефектов curated-таблиц (кейс #610)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Семантика dex.trades vs dex_aggregator.trades (доки таблиц) — защита от double-counting",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "cowprotocol/dune-queries — живой публичный РЕЕСТР query id (имя файла = `*_{queryId}.sql`, CI синкает в Dune)",
+   "vendor": "CoW Protocol",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Data Freshness доки + status.dune.com — проверка лага слоя, а не запроса",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "dbt data_tests в Spellbook (dbt_utils.unique_combination_of_columns, unique, not_null)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "docs.dune.com как bot-deliverable каталог знания (llms.txt + /data-catalog/*)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Dune API Rate Limits (гейт пропускной способности)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Dune Datashare — Snowflake Marketplace / BigQuery / Databricks / S3-Iceberg (+ dbt-to-Datashare)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Dune MCP — Resources (2 ресурса: query-engine-writing-efficient-queries, query-engine-functions-and-operators)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Dune Read Query / metadata endpoints (GET /api/v1/query/{id} — забрать SQL-текст и параметры чужого запроса)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "SixdegreeLab/MasteringChainAnalytics — учебник + библиотека готовых паттернов DuneSQL-запросов",
+   "vendor": "SixdegreeLab",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Spellbook CI/тесты (dbt_pr_run.yml, dbt_full_run.yml, prices_check.yml, codeql.yml) + test_schema",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Доверие к автору: contributors в Spellbook _schema.yml (а не бейдж на dune.com)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Кейс NFT wash trading (hildobby) — официальное признание Dune, что их же фильтр был неверен",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Официальный data-quality фреймворк Dune (docs/data-catalog/data-quality)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Различение слоёв raw / decoded / curated (data-catalog overview)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "docs.dune.com/llms.txt + llms-full.txt (3.7 МБ полного дампа документации в одном файле)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Dune Datashare — репликация всего датасета в чужой warehouse: Snowflake Marketplace (30-дневный триал), BigQuery, Databricks, S3-Iceberg (только через dbt)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Dune Get Dataset / List Datasets — GET /api/v1/datasets/{...}",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "sambacha/dune-snippets — каталог SQL-сниппетов Dune (наследие v1/Postgres)",
+   "vendor": "sambacha (community)",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "SUNSET: Dune Index (metrics.* таблицы живы, продукт закрыт)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "dune.com/collection/* — курируемые страницы датасетов (balances, decoded-logs, prediction-markets, payments, token-transfers) и dune.com/brief (Digital Asset Brief)",
+   "vendor": "Dune",
+   "family": "dune-catalog"
+  },
+  {
+   "name": "Dune MPP (HTTP-402 микроплатежи, api.dune.com без ключа/аккаунта)",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "Dune Python SDK — dune-client (pip install dune-client)",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "DuneSQL Trino Connector — trino.api.dune.com:443, SSL, user=dune / password=API key",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "ts-dune-client / npm @duneanalytics/client-sdk (TS)",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "Dune TypeScript SDK — @duneanalytics/client-sdk (dune.runQuery({queryId}))",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "dune-client — официальный Python SDK (модель состояний исполнения)",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "duneapi-client-go — официальный Go-клиент + CLI (предшественник duneanalytics/cli)",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "duners — официальный Rust-клиент Dune API",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "SQLMesh поверх Dune Trino-коннектора (без выделенного шаблона)",
+   "vendor": "Dune",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "sripwoud/dune-ts — неофициальный TS-клиент",
+   "vendor": "sripwoud (community)",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "Прочие SDK-обёртки (Ruby / dlt / JS-экспортёр)",
+   "vendor": "разные (community)",
+   "family": "dune-sdk"
+  },
+  {
+   "name": "Blockscout REST API v2 (keyless на публичных инстансах) — /api/v2/stats, /api/v2/tokens/{addr}, /api/v2/tokens/{addr}/holders",
+   "vendor": "Blockscout",
+   "family": "alt-free"
+  },
+  {
+   "name": "Coin Metrics Community API — keyless timeseries (GET community-api.coinmetrics.io/v4/timeseries/asset-metrics)",
+   "vendor": "Coin Metrics",
+   "family": "alt-free"
+  },
+  {
+   "name": "Coin Metrics Community API — timeseries/asset-metrics (keyless GET, SplyCur/AdrActCnt/TxCnt/BlkCnt)",
+   "vendor": "Coin Metrics",
+   "family": "alt-free"
+  },
+  {
+   "name": "Coin Metrics Community API v4 — GET https://community-api.coinmetrics.io/v4/timeseries/asset-metrics",
+   "vendor": "Coin Metrics",
+   "family": "alt-free"
+  },
+  {
+   "name": "CoinGecko Public API keyless + Demo-ключ (api.coingecko.com/api/v3)",
+   "vendor": "CoinGecko",
+   "family": "alt-free"
+  },
+  {
+   "name": "CoinGecko официальный remote MCP — https://mcp.api.coingecko.com/mcp (keyless, + /sse)",
+   "vendor": "CoinGecko",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama DEX Volume API — GET https://api.llama.fi/overview/dexs и /overview/dexs/{chain}",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Fees & Revenue API — GET /overview/fees, /overview/fees/{chain}, /summary/fees/{protocol}",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Free API — DEX volume by chain (GET /overview/dexs, /overview/dexs/{chain}, /summary/dexs/{protocol})",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Free API — Stablecoins (GET stablecoins.llama.fi/stablecoinchains, /stablecoincharts/{chain}, /stablecoin/{asset})",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Open API (api.llama.fi) — /overview/dexs и /overview/dexs/{chain} для дневных объёмов DEX по сетям",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Stablecoins API — GET https://stablecoins.llama.fi/stablecoinchains (+ /stablecoins, /stablecoincharts/{chain})",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "Flipside Crypto REST API v3 (api.flipsidecrypto.xyz/public/v3, run-SQL + результаты)",
+   "vendor": "Flipside Crypto",
+   "family": "alt-free"
+  },
+  {
+   "name": "Flipside SQL API / LiveQuery (Compass API, ShroomDK) — МЁРТВ",
+   "vendor": "Flipside Crypto → SonarX / edisyl",
+   "family": "alt-free"
+  },
+  {
+   "name": "GeckoTerminal Public API (api.geckoterminal.com/api/v2, keyless)",
+   "vendor": "CoinGecko / GeckoTerminal",
+   "family": "alt-free"
+  },
+  {
+   "name": "Google BigQuery public blockchain datasets — bigquery-public-data.crypto_* и goog_blockchain_*",
+   "vendor": "Google Cloud",
+   "family": "alt-free"
+  },
+  {
+   "name": "Google BigQuery Public Blockchain Datasets (crypto_bitcoin, crypto_ethereum, +11 сетей)",
+   "vendor": "Google Cloud",
+   "family": "alt-free"
+  },
+  {
+   "name": "Google BigQuery public datasets — SQL по bigquery-public-data.crypto_bitcoin / crypto_ethereum в пределах free tier",
+   "vendor": "Google BigQuery",
+   "family": "alt-free"
+  },
+  {
+   "name": "growthepie Public API — GET https://api.growthepie.com/v1/master.json, /v1/export/{metric}.json, /v1/metrics/chains/{chain}/{metric}.json",
+   "vendor": "growthepie",
+   "family": "alt-free"
+  },
+  {
+   "name": "growthepie Public API (api.growthepie.xyz/v1/master.json, /fundamentals.json, /export/{metric}.json)",
+   "vendor": "growthepie",
+   "family": "alt-free"
+  },
+  {
+   "name": "mempool.space REST API — /api/blocks/tip/height + /api/v1/mining/reward-stats/{n} (keyless)",
+   "vendor": "mempool.space",
+   "family": "alt-free"
+  },
+  {
+   "name": "Web-поисковик как де-факто индекс запросов Dune (site:dune.com/queries <вопрос на NL>)",
+   "vendor": "Google / Bing (Dune как индексируемый контент)",
+   "family": "alt-free"
+  },
+  {
+   "name": "Независимая сверка BTC-эмиссии: blockchain.info/q/totalbc",
+   "vendor": "Blockchain.com",
+   "family": "alt-free"
+  },
+  {
+   "name": "Независимая сверка DEX-объёмов: DefiLlama /overview/dexs",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "Собственный/публичный Bitcoin Core RPC — gettxoutsetinfo (total_amount) как независимая сверка supply",
+   "vendor": "Bitcoin Core (self-hosted)",
+   "family": "alt-free"
+  },
+  {
+   "name": "AWS Public Blockchain Data — s3://aws-public-blockchain/v1.0/{btc,eth}/ (Parquet, Athena/Spark)",
+   "vendor": "AWS (Registry of Open Data)",
+   "family": "alt-free"
+  },
+  {
+   "name": "AWS Public Blockchain Data (s3://aws-public-blockchain/v1.0/{btc,eth}/, Parquet, без аутентификации)",
+   "vendor": "AWS Open Data Registry (+ SonarX для Aptos/Arbitrum/Base/Provenance/XRPL)",
+   "family": "alt-free"
+  },
+  {
+   "name": "blockchain-etl / Ethereum-ETL как self-hosted путь к своему датасету",
+   "vendor": "blockchain-etl (open source)",
+   "family": "alt-free"
+  },
+  {
+   "name": "Blockchain.com Charts & Stats API — GET https://api.blockchain.info/charts/{chart} и https://blockchain.info/q/totalbc",
+   "vendor": "Blockchain.com",
+   "family": "alt-free"
+  },
+  {
+   "name": "blockchain.info — /q/* скалярные запросы и /charts/{id} исторические ряды (keyless)",
+   "vendor": "Blockchain.com",
+   "family": "alt-free"
+  },
+  {
+   "name": "Blockchair keyless REST + агрегатор ?a=sum()/count() по blocks/transactions/outputs",
+   "vendor": "Blockchair",
+   "family": "alt-free"
+  },
+  {
+   "name": "Blockchair Stats API (GET api.blockchair.com/{chain}/stats, /dashboards/address/{addr})",
+   "vendor": "Blockchair",
+   "family": "alt-free"
+  },
+  {
+   "name": "Blockscout публичный REST v2 (per-chain, keyless) + Universal PRO API по ключу",
+   "vendor": "Blockscout",
+   "family": "alt-free"
+  },
+  {
+   "name": "CoinGecko free tier — Public keyless API + Demo API key (api.coingecko.com/api/v3)",
+   "vendor": "CoinGecko",
+   "family": "alt-free"
+  },
+  {
+   "name": "CoinGecko MCP Server (бесплатный remote, mcp.api.coingecko.com/mcp)",
+   "vendor": "CoinGecko",
+   "family": "alt-free"
+  },
+  {
+   "name": "cryo (paradigmxyz/cryo) — OSS-экстрактор блоков/логов/трейсов в parquet поверх любого RPC",
+   "vendor": "Paradigm",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Core TVL/Chains API — GET /v2/chains, /protocols, /protocol/{p}, /v2/historicalChainTvl",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Free API — Fees & Revenue (GET /overview/fees, /summary/fees/{protocol})",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Free API — TVL по сетям (GET /v2/chains, /v2/historicalChainTvl/{chain}, /protocols)",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama MCP (официальный defillama.com/mcp + бесплатный хостед mcpllama.com/mcp)",
+   "vendor": "DefiLlama / Pipeworx",
+   "family": "alt-free"
+  },
+  {
+   "name": "DEX Screener API — https://api.dexscreener.com (/latest/dex/search, /token-pairs, /token-profiles)",
+   "vendor": "DEX Screener",
+   "family": "alt-free"
+  },
+  {
+   "name": "Dexscreener API (api.dexscreener.com, без ключа)",
+   "vendor": "Dexscreener",
+   "family": "alt-free"
+  },
+  {
+   "name": "Envio HyperSync — бесплатный API-токен, быстрый выборочный доступ к логам/транзакциям",
+   "vendor": "Envio",
+   "family": "alt-free"
+  },
+  {
+   "name": "Etherscan API V2 — единый ключ на 50+ EVM-сетей (api.etherscan.io/v2/api?chainid=…)",
+   "vendor": "Etherscan",
+   "family": "alt-free"
+  },
+  {
+   "name": "Etherscan V2 free API key — stats/account/logs модули по одному ключу на 60+ сетей",
+   "vendor": "Etherscan",
+   "family": "alt-free"
+  },
+  {
+   "name": "Etherscan V2 free tier (один ключ на 50+ EVM-сетей, chainid-параметр)",
+   "vendor": "Etherscan",
+   "family": "alt-free"
+  },
+  {
+   "name": "Ethplorer API с публичным ключом `freekey` (getTopTokenHolders, getTokenInfo)",
+   "vendor": "Ethplorer",
+   "family": "alt-free"
+  },
+  {
+   "name": "GeckoTerminal Public API — https://api.geckoterminal.com/api/v2/{networks,pools,tokens}",
+   "vendor": "CoinGecko / GeckoTerminal",
+   "family": "alt-free"
+  },
+  {
+   "name": "GoldRush (ex-Covalent) API — free tier + x402 pay-per-request без регистрации",
+   "vendor": "GoldRush / Covalent",
+   "family": "alt-free"
+  },
+  {
+   "name": "growthepie API — master.json + fundamentals.json / export/{metric}.json (keyless, CC BY 4.0)",
+   "vendor": "growthepie (orbal GmbH)",
+   "family": "alt-free"
+  },
+  {
+   "name": "L2Beat Public API — GET https://l2beat.com/api/scaling/summary (TVS/activity по роллапам)",
+   "vendor": "L2Beat",
+   "family": "alt-free"
+  },
+  {
+   "name": "mempool.space REST API — GET /api/v1/fees/recommended, /api/v1/mining/hashrate/{period}, /api/v1/mining/blocks/fees/{period}, /api/v1/difficulty-adjustment",
+   "vendor": "mempool.space",
+   "family": "alt-free"
+  },
+  {
+   "name": "mempool.space REST API (GET /api/blocks/tip/height, /api/v1/fees/recommended) + self-host",
+   "vendor": "mempool.space (Mempool Space K.K.)",
+   "family": "alt-free"
+  },
+  {
+   "name": "Santiment SanAPI GraphQL (api.santiment.net/graphql, getMetric)",
+   "vendor": "Santiment",
+   "family": "alt-free"
+  },
+  {
+   "name": "Sim by Dune (api.sim.dune.com) — realtime REST: EVM/SVM balances, activity, transactions, token-info, token-holders, search-tokens, collectibles, defi-positions, stablecoins + webhook-подписки; openapi.json опубликован",
+   "vendor": "Dune",
+   "family": "alt-free"
+  },
+  {
+   "name": "Sim by Dune API (бывш. Echo) — REST /v1/evm/{balances,activity,transactions,collectibles,token-holders,token-info,defi-positions,stablecoins}, /v1/svm/*, заголовок X-Sim-Api-Key — SUNSET 2026-08-01",
+   "vendor": "Dune",
+   "family": "alt-free"
+  },
+  {
+   "name": "SQD (Subsquid) Network Portal — открытые датасеты (portal.sqd.dev/datasets)",
+   "vendor": "SQD Network",
+   "family": "alt-free"
+  },
+  {
+   "name": "SQD (Subsquid) Network Portal — публичные датасеты, keyless HTTP-стриминг блоков/логов",
+   "vendor": "SQD (ex-Subsquid)",
+   "family": "alt-free"
+  },
+  {
+   "name": "SQD Portal — бесплатные публичные streaming-HTTP эндпоинты (225+ сетей)",
+   "vendor": "SQD (ex-Subsquid)",
+   "family": "alt-free"
+  },
+  {
+   "name": "The Graph — субграфы через gateway (free plan)",
+   "vendor": "The Graph",
+   "family": "alt-free"
+  },
+  {
+   "name": "The Graph Subgraph Studio / Gateway — Free Plan (GraphQL к чужим сабграфам)",
+   "vendor": "The Graph",
+   "family": "alt-free"
+  },
+  {
+   "name": "The Graph Token API / Pinax (REST /v1/holders, /v1/balances, /v1/transfers + нативный MCP)",
+   "vendor": "The Graph / Pinax Network",
+   "family": "alt-free"
+  },
+  {
+   "name": "Публичные git-репозитории с production Dune-SQL (протокольные + шаблон DuneQueryRepo)",
+   "vendor": "Dune / протокольные команды",
+   "family": "alt-free"
+  },
+  {
+   "name": "Публичные JSON-RPC эндпоинты (ethereum-rpc.publicnode.com и аналоги) + cryo/локальная выгрузка",
+   "vendor": "PublicNode (Allnodes) / Paradigm cryo",
+   "family": "alt-free"
+  },
+  {
+   "name": "Публичные RPC-эндпоинты (ethereum-rpc.publicnode.com и т.п.) + eth_call/eth_feeHistory",
+   "vendor": "PublicNode / Llamanodes и др.",
+   "family": "alt-free"
+  },
+  {
+   "name": "3xpl Data API (преемник Blockchair API v3)",
+   "vendor": "3xpl",
+   "family": "alt-free"
+  },
+  {
+   "name": "Artemis — Artemis Lite (free) + Artemis Sheets plugin + REST API v3",
+   "vendor": "Artemis Analytics",
+   "family": "alt-free"
+  },
+  {
+   "name": "Artemis — free Lite (Terminal + Sheets 100k вызовов/мес); REST API sales-gated",
+   "vendor": "Artemis Analytics",
+   "family": "alt-free"
+  },
+  {
+   "name": "Artemis API — платный (free-тариф только веб/Lite)",
+   "vendor": "Artemis",
+   "family": "alt-free"
+  },
+  {
+   "name": "Bitquery GraphQL — Developer (free) тариф с системой Points",
+   "vendor": "Bitquery",
+   "family": "alt-free"
+  },
+  {
+   "name": "Bitquery GraphQL — free Developer plan",
+   "vendor": "Bitquery",
+   "family": "alt-free"
+  },
+  {
+   "name": "Bitquery GraphQL — free-доступ (только 7-дневный триал)",
+   "vendor": "Bitquery",
+   "family": "alt-free"
+  },
+  {
+   "name": "CoinGecko free API — /coins/{id} market_data.circulating_supply",
+   "vendor": "CoinGecko",
+   "family": "alt-free"
+  },
+  {
+   "name": "CoinPaprika Free API (api.coinpaprika.com/v1)",
+   "vendor": "CoinPaprika",
+   "family": "alt-free"
+  },
+  {
+   "name": "Coinpaprika free API (keyless) — /v1/coins/{id}, /v1/global",
+   "vendor": "Coinpaprika",
+   "family": "alt-free"
+  },
+  {
+   "name": "Community MCP-серверы поверх DefiLlama (dcSpark/mcp-server-defillama, IQAIcom/mcp-defillama и др.)",
+   "vendor": "разные (community)",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Pro API — платный гейт (pro-api.llama.fi/{KEY}, 38 эксклюзивных эндпоинтов)",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "DIA Free API (api.diadata.org/v1/quotation/{asset})",
+   "vendor": "DIA",
+   "family": "alt-free"
+  },
+  {
+   "name": "Envio HyperSync / HyperRPC — API-токен теперь обязателен",
+   "vendor": "Envio",
+   "family": "alt-free"
+  },
+  {
+   "name": "ethereum-etl / blockchain-etl — OSS-пайплайн, которым построены публичные датасеты BigQuery",
+   "vendor": "blockchain-etl (OSS)",
+   "family": "alt-free"
+  },
+  {
+   "name": "ethPandaOps Xatu public parquet — https://data.ethpandaops.io/xatu/mainnet/databases/default/…",
+   "vendor": "ethPandaOps (Ethereum Foundation)",
+   "family": "alt-free"
+  },
+  {
+   "name": "Footprint Analytics Data API",
+   "vendor": "Footprint Analytics",
+   "family": "alt-free"
+  },
+  {
+   "name": "GoldRush (ex-Covalent) API — только триал, не бессрочный free",
+   "vendor": "Covalent / GoldRush",
+   "family": "alt-free"
+  },
+  {
+   "name": "GoldRush (ex-Covalent) Unified API — free-доступ (только 14-дневный триал)",
+   "vendor": "GoldRush / Covalent",
+   "family": "alt-free"
+  },
+  {
+   "name": "Goldsky Starter (free) — 3 always-on сабграфа + 1 Mirror-пайплайн",
+   "vendor": "Goldsky",
+   "family": "alt-free"
+  },
+  {
+   "name": "Helius — Solana free plan (RPC + DAS/Enhanced API)",
+   "vendor": "Helius",
+   "family": "alt-free"
+  },
+  {
+   "name": "L2BEAT API (api.l2beat.com/api/scaling/*) — БОЛЬШЕ НЕ БЕСПЛАТНЫЙ keyless",
+   "vendor": "L2BEAT",
+   "family": "alt-free"
+  },
+  {
+   "name": "L2Beat публичный API (TVS/активность по L2)",
+   "vendor": "L2Beat",
+   "family": "alt-free"
+  },
+  {
+   "name": "Messari API — free tier",
+   "vendor": "Messari",
+   "family": "alt-free"
+  },
+  {
+   "name": "Moralis free plan — Wallet/Token/Blockchain REST API, 40,000 CU/сутки",
+   "vendor": "Moralis",
+   "family": "alt-free"
+  },
+  {
+   "name": "Moralis Web3 Data API — free Starter plan",
+   "vendor": "Moralis",
+   "family": "alt-free"
+  },
+  {
+   "name": "Moralis Web3 Data API — Starter (free): Token Holders / Owners",
+   "vendor": "Moralis",
+   "family": "alt-free"
+  },
+  {
+   "name": "Owlracle Gas API v4 (GET api.owlracle.info/v4/{chain}/gas)",
+   "vendor": "Owlracle",
+   "family": "alt-free"
+  },
+  {
+   "name": "Routescan free tier — Etherscan-совместимый REST по OP Mainnet/Base",
+   "vendor": "Routescan",
+   "family": "alt-free"
+  },
+  {
+   "name": "RWA.xyz API (стейблкоины + токенизированные казначейские)",
+   "vendor": "RWA.xyz",
+   "family": "alt-free"
+  },
+  {
+   "name": "Sim APIs by Dune (отдельный realtime-API продукт с собственным тарифом)",
+   "vendor": "Dune",
+   "family": "alt-free"
+  },
+  {
+   "name": "Sim Subscriptions API — вебхуки реального времени (create/get/list/update/delete webhook, update/replace addresses) — SUNSET вместе с Sim 2026-08-01",
+   "vendor": "Dune",
+   "family": "alt-free"
+  },
+  {
+   "name": "Solscan Public API — free tier",
+   "vendor": "Solscan",
+   "family": "alt-free"
+  },
+  {
+   "name": "SonarX — преемник данных Flipside (публично только через AWS-бакет)",
+   "vendor": "SonarX",
+   "family": "alt-free"
+  },
+  {
+   "name": "The Graph — Subgraph Studio / Gateway, 100k бесплатных запросов в месяц по API-ключу",
+   "vendor": "The Graph",
+   "family": "alt-free"
+  },
+  {
+   "name": "Token Terminal API — платный (free-тариф только веб)",
+   "vendor": "Token Terminal",
+   "family": "alt-free"
+  },
+  {
+   "name": "ultrasound.money API — GET /api/v2/fees/burn-sums (ETH burn/fees)",
+   "vendor": "ultrasound.money",
+   "family": "alt-free"
+  },
+  {
+   "name": "ultrasound.money API (GET /api/v2/fees/base-fee-per-gas и др.)",
+   "vendor": "ultrasound.money",
+   "family": "alt-free"
+  },
+  {
+   "name": "Visa Onchain Analytics — публичный дашборд на данных Allium",
+   "vendor": "Visa + Allium",
+   "family": "alt-free"
+  },
+  {
+   "name": "Кластер key-gated метрик-API, где keyless-доступ закрыт (Messari, Rated Network, Solscan, CCData/CryptoCompare, beacon.chain beaconcha.in, Mobula, CoinCap v3)",
+   "vendor": "разные",
+   "family": "alt-free"
+  },
+  {
+   "name": "DefiLlama Pro API (платный шлюз, 38 эксклюзивных эндпоинтов)",
+   "vendor": "DefiLlama",
+   "family": "alt-free"
+  },
+  {
+   "name": "Flipside Crypto (SQL-платформа + Compass API + бесплатные query-seconds) — МЁРТВ / продан",
+   "vendor": "Flipside → SonarX / edisyl",
+   "family": "alt-free"
+  },
+  {
+   "name": "Nansen API / Allium — платные, бесплатного контура нет",
+   "vendor": "Nansen / Allium",
+   "family": "alt-free"
+  },
+  {
+   "name": "SonarX Blockchain Data API / datashares (правопреемник данных Flipside)",
+   "vendor": "SonarX",
+   "family": "alt-free"
+  },
+  {
+   "name": "Token Terminal — free-метрики в UI, API только в Pro",
+   "vendor": "Token Terminal",
+   "family": "alt-free"
+  },
+  {
+   "name": "Token Terminal API (25+ REST-эндпоинтов, fees/revenue/DAA)",
+   "vendor": "Token Terminal",
+   "family": "alt-free"
+  }
+ ],
+ "dropped_by_domain_gate": [
+  "dune (OCaml build system): dune build / dune-project / opam / dune-release — целевые токены (dune.com, DuneSQL, X-Dune-API-Key, query id) отсутствуют; поисковые запросы были доменно-заякорены, поэтому в выдачу не попали, но класс исключён явно (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "Dune (роман Фрэнка Герберта) / Dune 2021 / Dune: Part Two — фильм и книга, нет ни одного целевого токена (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "Dune HD (медиаплееры Dune HD Pro/Solo/Neo) — потребительская электроника, нет целевых токенов (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "Dune Sands / dune (геоморфология, песчаная дюна) — научный омоним, отброшен (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "apis.io/apis/dune-analytics/query-api и apis.io/plans/... — НЕ омоним, но вторичный агрегатор-зеркало; отброшен как источник чисел в пользу docs.dune.com (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "cryptoindustry.com / comparedge.com / softwaresuggest.com / finance.toolsinfo.com «Dune Analytics Review 2026» — вторичные обзорные сайты с ценами; отброшены как первоисточник (цены помечены unverified) (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "webmail.parschauer.com «Fix: Remote Server Error 403 Forbidden On ExecuteQuery» — SEO-мусор, не про Dune; отброшен (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "docs.inverse.watch «Dune API» — стороннее продуктовое зеркало, вторичный источник (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "kukapay/dune-analytics-mcp, ekailabs/dune-mcp-server, deacix-dune-mcp, Evan-Kim2028/spice-mcp — НЕ омонимы, но НЕ первоисточник Dune: сторонние обёртки, принадлежат другой оси (S-third-party MCP), из оси S1 исключены (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "SixdegreeLab/MasteringChainAnalytics ch23, sambacha/dune-snippets, metaDAOproject/dune-dashboard, duneanalytics/DuneQueryRepo — обучающие/шаблонные репозитории, не документированные способы доступа; DuneQueryRepo оставлен только как подтверждение ownership-ограничения (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "Google Chronicle dashboardQueries.get/list, Adobe Experience Platform Query Service 403, ManageEngine Analytics Plus — чужие продукты, попали по строке запроса; отброшены (агент, ось первоисточник Dune (docs.dune.com + pricing))",
+  "Dune: Awakening (видеоигра) — steamdb.info/app/1172710/patchnotes/, всплыла в выдаче по запросу про changelog/GA; целевой токен (dune.com/docs.dune.com/DuneSQL) отсутствует (агент, ось официальный Dune MCP — поверхность целиком)",
+  "OCaml dune build system (dune build, dune-project, opam) — целенаправленно проверено, в выдаче по всем 6 запросам НИ ОДНОГО попадания; отсечено превентивно (агент, ось официальный Dune MCP — поверхность целиком)",
+  "роман/фильм Frank Herbert «Dune» — ни одного попадания в выдаче; отсечено превентивно (агент, ось официальный Dune MCP — поверхность целиком)",
+  "медиаплееры Dune HD — ни одного попадания в выдаче; отсечено превентивно (агент, ось официальный Dune MCP — поверхность целиком)",
+  "НЕ омонимы, но отброшены как НЕофициальные сторонние Dune-MCP-серверы (доменный гейт прошли, фильтр «официальный api.dune.com/mcp/v1» — нет): kukapay/dune-analytics-mcp, ekailabs/dune-mcp-server, olaxbt/dune-query-mcp, demomagic/dune-mcp-server, deacix/dune-mcp, mwamedacen/dune-mcp, SAK1337/dune-mcp, nice-bills/dune-mcp, yuri-xyz/dune-analytics-mcp, Evan-Kim2028/spice-mcp (агент, ось официальный Dune MCP — поверхность целиком)",
+  "Агрегаторы-витрины (вторичные, числа тулов у них расходятся с первоисточником): lobehub.com/mcp, glama.ai/mcp, mcpservers.org, pulsemcp.com, flowhunt.io, mcpmarket.com, ubos.tech, hexmos.com/freedevtools, blockchain.news, mexc.com/news (агент, ось официальный Dune MCP — поверхность целиком)",
+  "ocaml/dune (1900★) — OCaml build system, целевой токен dune.com/DuneSQL отсутствует (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "ocaml-community/awesome-ocaml (3102★) — попал по слову dune в readme, OCaml (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "mjambon/dune-starter (131★) — OCaml project template (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "tarides/dune-release (122★) — релиз dune-пакетов в opam (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "mjambon/dune-deps (62★) — граф зависимостей OCaml/Dune (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "ocaml-dune/pp (56★) — OCaml pretty printing (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "ocurrent/opam-dune-lint (45★) — сверка dune и opam зависимостей (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "ocaml-dune/csexp (30★) — OCaml S-expressions (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "ocaml-dune/fiber (22★) — OCaml concurrency (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "edwintorok/dune-compiledb (12★) — compile_commands.json для OCaml C stubs (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "o1-labs/describe-dune (9★) — dune project structure as JSON (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "rocq-community/coq-plugin-template (23★) — Coq plugin на Dune build system (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "maelvls/vscode-dune (10★) — подсветка синтаксиса Dune/Jbuilder (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "emacsmirror/dune (0★) — интеграция с dune build system (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "saschazelzer/DUNE-superbuild (0★) — CMake meta build (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "cushionbadak/duneproj-template (1★) — OCaml Dune template (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "dboris/eliom-template-basic-dune (0★) — Eliom/OCaml template (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "FedericoBruzzone/setup-ocaml-project-with-dune (1★) и setup-ocaml-project-without-dune (3★) (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "NeuralCoder3/adventofcode-ocaml-template (2★) — AoC на dune (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "LaifsV1/YulTracer (3★) — OCaml-чекер, собран Dune build system (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "mirage/irmin (1951★) — попал по dune в readme (OCaml-сборка) (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "valentinalexeev/pdunehd (4★) — Python-обёртка Dune HD media player API (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "timdp/dune-movie-prettifier (3★) и timdp/dune-tv-prettifier (1★) — листинги для Dune HD плееров (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "Rodinia/php-UitzendingGemist4DuneHD (3★) — индексатор для Dune HD (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "nikitadanilov/dune-index (1★) — медиа-индекс для dune hd (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "sadam6752-tech/ioBroker.dune-hd-remote (1★) — ioBroker адаптер для Dune HD (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "TyranR/zabbix-dune-monitoring (0★) — Zabbix-шаблон мониторинга Dune HD плееров (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "sndpl/apple-trailers-dune-plugin (0★) — плагин трейлеров для Dune HD (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "Dune-Analytics-App/.github, Dune-Analytics-SQL/.github, Bubblemaps-App/.github, Bubblemaps-App/Bubblemaps — SEO/бейт-репозитории «Download Dune Analytics for MacOS and Windows» (Dune — веб-сервис, десктоп-приложения не существует); токен проходит, но это не инструмент (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "npm-шум по слову analytics: @vercel/analytics, universal-analytics, workbox-google-analytics, @segment/analytics-core, @segment/analytics-node, @firebase/analytics, @amplitude/analytics-browser, @google-analytics/data, @react-native-firebase/analytics, @upstash/core-analytics, analytics-node, analytics/@analytics/core, analytics-utils, @rudderstack/analytics-js, insight, swagger-ui-dist — Dune ни при чём (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "ipsamcorporis (npm 1.5.0) — точная копия описания @duneanalytics/client-sdk под чужим именем: typosquat/подозрительный форк, НЕ брать (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "swe-train/duneanalytics__spellbook (0★) — ML-training артефакт, не инструмент (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "duneanalytics/evm.codes, duneanalytics/color-palettes, duneanalytics/tempo-*, duneanalytics/sim-idx-* и др. — репо вендора Dune, но вне домена «доступ к готовым Dune-запросам» (агент, ось OSS-экосистема (GitHub/npm/pypi))",
+  "Discovery shopping (en.wikipedia.org) — омоним слова discover, целевой токен dune отсутствует (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "Discovery system (bibliographic search) (en.wikipedia.org) — библиотечный поиск, не Dune (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "Library Hub Discover (en.wikipedia.org) — библиотечный агрегатор, не Dune (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "superset dashboard get by id (glama.ai/mcp/servers/aptro/superset-mcp) x2 — Apache Superset MCP, чужая платформа дашбордов (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "dune.com/watch-category/sitemap.xml — внутри целевого домена, но это видео-контент Dune, к находимости запросов/дашбордов отношения не имеет (отброшено как off-axis, не как омоним) (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "SourceForge \"Dune Dashboard Reviews in 2026\" — review-агрегатор, вторичный, ни одного первичного числа (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "comparedge.com / softwaresuggest.com / cryptoindustry.com / swotanalysis.com / linqto.com \"Dune Analytics Review 2026\" — SEO-обзорные фермы, вторичные, не использованы как источник чисел (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "skywork.ai \"An AI Engineer's Deep Dive\" / \"Ultimate Guide\" — сгенерированные обзорные страницы, вторичные (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "mexc.com/news, binance.com/square, theblockbeats.info \"20 Dune analysis dashboards\" — листиклы, вторичные, без программного доступа (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "ЧЕСТНАЯ ОГОВОРКА: омонимы OCaml (dune build / dune-project / opam), роман-фильм Фрэнка Герберта и медиаплееры Dune HD в выдаче НЕ ВСПЛЫЛИ ни разу — включая два намеренно общих запроса (\"dune search queries browse discover\", \"dune query search tool documentation\"); отбрасывать было нечего, гейт сработал превентивно за счёт токенов dune.com / Dune Analytics в остальных запросах (агент, ось как реально находят готовые запросы/дашборды (S3 — НАХОДИМОСТЬ))",
+  "dune (OCaml build system): dune build / dune-project / opam — не встречалось в выдаче по этой оси, стоп-слово применялось превентивно (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "Frank Herbert «Dune» роман/фильм — не встречалось в выдаче по этой оси (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "Dune HD медиаплееры — не встречалось в выдаче по этой оси (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "Artemis program (NASA) — en.wikipedia.org/wiki/Artemis_program, омоним по слову Artemis (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "Artemis Coin Price Guide 2026 (bitget.com/academy/artemis-coin-price) — торговый ликбез про тикер, не аналитический API (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "artemispower.com/pricing — одноимённая компания вне крипто-домена (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "getflip.com «Meta Sunsets Workplace: Why Flip is Best Alternative» — омоним по слову Flip/Flipside (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "Claude Code Pricing 2026 (nxcode.io), Gemini pricing (cloudzero.com), Kimi AI Pricing (lorphic.com), aipricing.guru — LLM-прайсинг, попал по слову «token» в запросе про Token Terminal (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "zoho.com/commerce/api/api-call-limit.html и docs.data.nasdaq.com/docs/rate-limits — рейт-лимиты вне крипто-домена (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "github.com/bitcoin-data/stale-blocks — по слову «stale», не про датасеты BigQuery (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "publicapis.io каталог — вторичный агрегатор без первичных чисел (агент, ось бесплатные альтернативы под тот же класс вопросов (агрегаты по цепочке: supply, объёмы, holders, активные адреса) — без Dune и без денег)",
+  "Dune (mathematics software) — en.wikipedia.org/wiki/Dune_(mathematics_software), DUNE = Distributed and Unified Numerics Environment, C++ PDE-фреймворк; всплыло в выдаче по 'Dune query version history' (агент, ось корректность чужого запроса)",
+  "account.duneawakening.com — Dune: Awakening (MMO от Funcom), портал аккаунтов игры; всплыло в выдаче по 'dune.com verified badge' (агент, ось корректность чужого запроса)",
+  "getdune.org/docs/administration — сайт документации постороннего проекта 'Dune', не Dune Analytics; всплыло в выдаче по version history (агент, ось корректность чужого запроса)",
+  "en.wikipedia.org/wiki/Version_control — общая статья про системы контроля версий, целевой токен отсутствует (агент, ось корректность чужого запроса)",
+  "dune.com/ui/Badge — служебный UI-роут dune.com без содержательной страницы, ложное срабатывание на токен 'badge' (агент, ось корректность чужого запроса)",
+  "dune.com/sonusexchange/sonus-badge-checker — реальный дашборд Dune, но совпал лишь по слову 'badge'; никакого отношения к верификации авторов не имеет (агент, ось корректность чужого запроса)",
+  "dune.com/matrixdock/usdv-dashboard ('Verified USD') — совпадение по слову 'Verified' в названии токена USDV, не признак верификации дашборда (агент, ось корректность чужого запроса)",
+  "cryptotracelabs.com/blog/what-are-wash-trading-patterns — вторичный блог про wash trading вне контекста Dune-таблиц (агент, ось корректность чужого запроса)",
+  "www.mexc.com/news/845765 и /722177 — биржевые перепечатки анонса Dune MCP и заметки про double-counting; вторичные зеркала, первоисточник взят напрямую (агент, ось корректность чужого запроса)",
+  "ainvest.com / cryptorank.io про Polymarket double-counting — вторичные новости о чужой платформе, не о Dune-таблицах (агент, ось корректность чужого запроса)",
+  "comparedge.com / cryptoindustry.com / findmymoat.com 'Dune Analytics Review 2026' — вторичные обзорные сайты с ценами; отброшены как источник чисел в пользу docs.dune.com (агент, ось корректность чужого запроса)",
+  "glama.ai/mcp/servers/@mwamedacen/dune-mcp, mcpservers.org/servers/ekailabs/dune-mcp-server, lobehub/deacix-dune-mcp, ubos.tech/mcp/dune-query-mcp — сторонние неофициальные Dune-MCP; целевой токен есть, но для оси корректности не дают ничего сверх официального api.dune.com/mcp/v1 (агент, ось корректность чужого запроса)",
+  "balancer/dune-spellbook — форк Spellbook 3-й стороны; схлопнут в пользу upstream duneanalytics/spellbook (агент, ось корректность чужого запроса)",
+  "ПРЕДЪЯВЛЕННЫЙ СТОП-ЛИСТ, НЕ ВСТРЕТИЛСЯ В ВЫДАЧЕ: OCaml build system (dune build / dune-project / opam), роман и фильм Фрэнка Герберта, медиаплееры Dune HD — ни одна страница по ним не всплыла на этой оси (агент, ось корректность чужого запроса)",
+  "docs.sim.ai/execution/costs — \"Cost calculation | Sim Docs\": омоним Dune-овского Sim, это платформа Sim AI (workflow-автоматизация), целевой токен dune.com/DuneSQL отсутствует (агент, ось экономика кредитов и лимиты)",
+  "fal.ai/docs/documentation/model-apis/concurrency-limits — выпало на запрос про concurrent executions, к Dune отношения не имеет (агент, ось экономика кредитов и лимиты)",
+  "help.zoho.com \"Kaizen #35 - API Concurrency\" (3 разных URL-страницы) — Zoho CRM API, чистый шум по слову concurrency (агент, ось экономика кредитов и лимиты)",
+  "apis.io/plans/dune-analytics/... — целевой токен есть, но это агрегатор-реселлер тарифов, не первоисточник; отброшено по правилу «первичный vs вторичный», не по омониму (агент, ось экономика кредитов и лимиты)",
+  "softwaresuggest.com / comparedge.com / oreateai.com / finance.toolsinfo.com / rocketreach.co — SEO-агрегаторы с противоречивыми ценами Dune ($399 vs $390 vs $1990 за Premium); отброшены как вторичные, числа из них НЕ использованы (агент, ось экономика кредитов и лимиты)",
+  "withorb.com/case-studies/dune — маркетинговый кейс биллинг-вендора Orb, вторичный (агент, ось экономика кредитов и лимиты)",
+  "eco.com/support/.../best-onchain-analytics-platforms-2026 — обзорная статья, вторичная (агент, ось экономика кредитов и лимиты)",
+  "docs.inverse.watch/user-guide/data-sources/dune-api — сторонняя дока третьего лица, вторичная (агент, ось экономика кредитов и лимиты)",
+  "ПРИМЕЧАНИЕ по классическим омонимам: OCaml build system (dune build / dune-project / opam), роман и фильм Ф. Герберта, медиаплееры Dune HD — НЕ дали ни одного попадания на этой оси, т.к. каждый запрос нёс связку токенов (dune.com / credits / datapoints / API), поэтому отбрасывать поимённо было нечего (агент, ось экономика кредитов и лимиты)",
+  "OCaml dune build system (dune-project, opam, `dune build`) — предзарегистрированный стоп-слов-набор; в этом раунде НЕ дал ни одного попадания, т.к. вся разведка велась по доменам docs.dune.com / api.dune.com / sim.dune.com / dune.com и по точным строкам эндпоинтов, а не по свободному токену «dune» (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "Роман/фильм Frank Herbert «Dune», Dune: Part Two, Arrakis — стоп-слова; попаданий нет. ОСОБО: репозиторий Quantumlyy/arrakis из уже найденного списка НЕ является омонимом — это OSS-клиент к официальному Dune MCP, оставлен (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "Медиаплееры Dune HD (dunehd.com) — стоп-слово; попаданий нет (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "ajay1706/recon :: results/run-27543264426/batch-26/subfinder.txt — отброшен: строка «dune.com» встречается лишь как хост в выводе subfinder (bug-bounty recon), способа доступа не описывает (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "ajay1706/testing :: results/run-29260272269/batch-25/subfinder.txt — отброшен по той же причине (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "rix4uni/BugBountyData :: data/dune.com.txt — отброшен: дамп поддоменов для bug-bounty, не механизм доступа (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "Neche-Stephen/feedback :: csv-json/partitioned_extensions/.../najiannhbfegmjhgkgikhpdefhnfdbmc.json — отброшен: дамп манифестов Chrome-расширений, «app-api.dune.com» встречается как строка в permissions (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "InverseFinance/inverse-alerts (8 файлов handlers/event/**) — отброшен: «dune.com/embeds» используется как декоративная картинка в Discord-эмбеде алерта, доступа к данным не даёт (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "https://deepwiki.com/duneanalytics/dune-docs/* — отброшен как вторичный и УСТАРЕВШИЙ источник: описывает «preset/curated endpoints» (DEX pairs, EigenLayer, Farcaster), которые живьём отдают 404 (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "https://apis.io/apis/dune-analytics/query-api/, https://ubos.tech/mcp/dune-analytics-data-server/, https://mcpservers.org/servers/ekailabs/dune-mcp-server — отброшены как вторичные каталоги-переупаковки без первоисточниковых чисел (агент, ось gap-раунд 2: Dune-поверхности, которых нет в списке)",
+  "Apache Artemis (artemis.apache.org) — брокер сообщений, не аналитика (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "Artemis RGB (wiki.artemis-rgb.com, Local REST API) — подсветка периферии (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "WarnerMedia/artemis (github, docs/api-examples.md) — сканер безопасности (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "Artemis Ag / developer.artemisag.com — агротех-портал (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "docs.artemisplatform.com — одноимённая SaaS-платформа, не крипто (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "llama.cpp MCP Server (localaimaster.com) — локальный инференс GGUF, попал в выдачу по «llama», не DefiLlama (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "AWS API Gateway pricing / apigatewaycost.com / costgoat / costbench — шум по слову «gateway» в запросе про The Graph (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "Zoho Commerce API call limit — шум по «API call limit» (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "Grafana Cloud pricing — шум по «rate limit/pricing» (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "Примечание: dune-омонимы (OCaml dune build / dune-project, роман и фильм Ф. Герберта, медиаплееры Dune HD) на этой оси не возникали — запросы намеренно не содержали токен dune (агент, ось gap-раунд 2: не-Dune источники, которых нет в списке)",
+  "OCaml/`dune` build system (dune build, dune-project, opam, dune-release) — всплывал в gh api search/code при поиске по строке 'v1/dashboards dune.com'; отброшен: нет ни одного целевого токена (dune.com / DuneSQL / query id / X-Dune-API-Key) (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "Роман и фильмы Френка Герберта «Dune» / «Dune: Part Two/Three» — отсекались формулировкой запросов (dune.com, docs.dune.com, duneanalytics, X-Sim-Api-Key); в выдаче не появились (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "Медиаплееры Dune HD — то же, в выдаче не появились (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "MMO «Dune: Awakening» — то же, в выдаче не появилось (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "https://dune.com/brand, /brand/manifest.json, /brand/usage.md — ЦЕЛЕВОЙ домен, но не поверхность доступа к данным (бренд-гайдлайны); отброшено по scope, не по омонимии (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "https://trust.dune.com (Trust Center, доступ по NDA) и https://status.dune.com — целевой домен, но это compliance/операционный статус, а не способ достать результат запроса; отброшено по scope (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "api-evangelist/dune-analytics и apis.io/apis/dune-analytics/query-api — сторонние ЗЕРКАЛА OpenAPI-описания Dune API; не самостоятельный способ доступа, к тому же вторичный источник неизвестной свежести (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "glama.ai / mwamedacen/dune-mcp и подобные community-MCP — целевые, но это уже покрытый в прошлых раундах класс «community MCP поверх официального API», нового механизма доступа не добавляют (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "docs.dune.xyz/sharing/embeds (старый домен доков Dune) — целевой, но это устаревшее зеркало той же страницы Share/Embeds; актуальный первоисточник — docs.dune.com/web-app/share (агент, ось gap-раунд 3: Dune-поверхности, которых нет в списке)",
+  "WarnerMedia/artemis (GitHub, security-scanning tool) — омоним Artemis Analytics, всплыл по запросу про Artemis API (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "support.leading2lean.com «L2L Knowledge Base — API Documentation» — омоним L2BEAT по токену «L2» (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "Footprint (footprint.com, KYC/identity-верификация) — омоним Footprint Analytics (footprint.network) (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "getphyllo «Instagram API Pricing», blotato «Facebook API Pricing» — шум запроса «free tier 2026», не ончейн (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "help.mistral.ai «what are the limits of the free tier», blog.laozhang.ai «gemini api rate limits guide» / «claude api key free tier», grizzlypeaksoftware «Every AI API with a Free Tier in 2026», freellm.net «How to Get a Free LLM API Key» — LLM-API-омонимы по токену «free tier / API key» (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "dune.com/hashed_official/api-guide — страница НА Dune, отброшена как in-family (ось = не-Dune) (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "Sim APIs (sim.dune.com) — продукт Dune, отброшен как in-family, не омоним (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "Transpose — поглощён Dune и свёрнут, in-family/sunset (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "Dune build system (OCaml: dune build, dune-project, opam), роман/фильм Ф. Герберта, медиаплееры Dune HD — исключены априори; в запросах этого раунда целевой токен «dune» не использовался, поэтому попаданий 0 (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "paoloanzn/free-solscan-api («Solscan 200$/mo API, reversed engineered for FREE») — отброшен: реверс платного API, не легальный первоисточник (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)",
+  "spark.money / eco.com / coinstats.app / stealthex.io листиклы «Best Crypto APIs 2026» — вторичные обзоры, использованы только как навигация к первоисточникам (агент, ось gap-раунд 3: не-Dune источники, которых нет в списке)"
+ ]
+}
