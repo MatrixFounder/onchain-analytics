@@ -17,6 +17,7 @@ function chain(overrides: Partial<ChainInfo> & Pick<ChainInfo, 'caip2' | 'slug'>
     family: 'evm',
     aliases: [],
     nativeSymbol: null,
+    nativeDecimals: null,
     vendors: {},
     rpcHosts: null,
     tvlUsdAtSync: null,

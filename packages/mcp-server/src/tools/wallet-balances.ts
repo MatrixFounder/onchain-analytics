@@ -77,7 +77,10 @@ export async function walletBalancesHandler(
   // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
   // would hash to two different cache entries for one logical request, which on a paid route is
   // two charges (data-model.md §4.2.2).
-  const chain = canonicalizeChain(input.chain);
+  //
+  // Resolved against `ctx.registry`, never the default — see `get-token.ts` for both halves of
+  // that (vdd-multi cycle 5, H-4).
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const address = normalizeAddress(chain, input.address);
   const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
     chain,
@@ -93,8 +96,15 @@ export function registerWalletBalancesTool(server: McpServer, ctx: WalletBalance
   server.registerTool(
     'onchain_wallet_balances',
     {
+      // See `get-token.ts` for why the chain set is named through the discovery tool rather than
+      // listed here (vdd-multi cycle 5, M-2). This capability is the narrowest of the eight: it
+      // needs a HUMAN-CURATED RPC host per chain (security.md §7.2.1), so coverage is a short
+      // allowlist, not "every EVM chain" — which is exactly why guessing is expensive and the
+      // discovery call is worth naming.
       description:
-        'Native asset balance (ETH or SOL) for a wallet address on ethereum or solana (JSON-RPC-backed).',
+        'Native asset balance for a wallet address, from a curated JSON-RPC endpoint. ' +
+        'Served only on chains with an approved RPC host — call ' +
+        'onchain_list_chains({capability:"wallet.balances.native"}) for the list.',
       inputSchema: WalletBalancesInputSchema,
       outputSchema: WalletBalancesOutputSchema,
     },

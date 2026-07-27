@@ -136,6 +136,9 @@ describe('nansen adapter (contract — golden normalization, R-31/R-32/R-33)', (
 
     const raw = {
       chain: 'ethereum' as const,
+      // vdd-multi cycle 6 (L-3): the hand-off carries the address FAMILY, so case-folding a
+      // vendor address is decided by the encoding rather than by one chain's name.
+      family: 'evm' as const,
       tokenAddress: normalizedTokenAddress,
       netflow: endpointResult(netflowFixture, '5'),
       holders: endpointResult(holdersFixture, '5'),
@@ -177,6 +180,9 @@ describe('nansen adapter (contract — golden normalization, R-31/R-32/R-33)', (
 
     const raw = {
       chain: 'ethereum' as const,
+      // vdd-multi cycle 6 (H-2): the vendor echoes its OWN chain token, so the row filter
+      // must compare against that, never against our slug.
+      vendorChain: 'ethereum',
       tokenAddress: normalizeAddress('ethereum', USDC_ADDRESS),
       premiumRequested: false,
       search: endpointResult(searchFixture, '0'),
@@ -224,6 +230,9 @@ describe('nansen adapter (contract — golden normalization, R-31/R-32/R-33)', (
 
     const raw = {
       chain: 'ethereum' as const,
+      // vdd-multi cycle 6 (H-2): the vendor echoes its OWN chain token, so the row filter
+      // must compare against that, never against our slug.
+      vendorChain: 'ethereum',
       tokenAddress: normalizeAddress('ethereum', DUST_HOLDER_ADDRESS),
       premiumRequested: false,
       search: endpointResult(searchEmptyFixture, '0'),
@@ -337,6 +346,9 @@ describe('nansen adapter (contract — golden normalization, R-31/R-32/R-33)', (
     it('smart-money.flows: netflow.data is not an array', () => {
       const raw = {
         chain: 'ethereum' as const,
+        // vdd-multi cycle 6 (L-3): the hand-off carries the address FAMILY, so case-folding a
+        // vendor address is decided by the encoding rather than by one chain's name.
+        family: 'evm' as const,
         tokenAddress: normalizeAddress('ethereum', UNI_ADDRESS),
         netflow: endpointResult({ data: 'not-an-array' }),
         holders: endpointResult({ data: [] }),
@@ -361,6 +373,9 @@ describe('nansen adapter (contract — golden normalization, R-31/R-32/R-33)', (
     it('entity.labels exhaustive: profiler/address/labels response missing "data"', () => {
       const raw = {
         chain: 'ethereum' as const,
+        // vdd-multi cycle 6 (H-2): the vendor echoes its OWN chain token, so the row filter
+        // must compare against that, never against our slug.
+        vendorChain: 'ethereum',
         tokenAddress: normalizeAddress('ethereum', AAVE_ADDRESS),
         premiumRequested: true,
         search: undefined,

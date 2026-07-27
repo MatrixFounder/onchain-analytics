@@ -87,7 +87,10 @@ export async function tokenRiskHandler(
   // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
   // would hash to two different cache entries for one logical request, which on a paid route is
   // two charges (data-model.md §4.2.2).
-  const chain = canonicalizeChain(input.chain);
+  //
+  // Resolved against `ctx.registry`, never the default — see `get-token.ts` (vdd-multi cycle 5,
+  // H-4); the paid-route note in `smart-money-flows.ts` applies here identically.
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const tokenAddress = normalizeAddress(chain, input.tokenAddress);
   const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
     chain,
@@ -117,8 +120,10 @@ export function registerTokenRiskTool(server: McpServer, ctx: TokenRiskContext):
   server.registerTool(
     'onchain_token_risk',
     {
+      // See `get-token.ts` (M-2) and `smart-money-flows.ts` (paid route) for the rationale.
       description:
-        'Risk/reward indicators for a token on ethereum or solana (Nansen-backed, paid).',
+        'Risk/reward indicators for a token. Coverage is per chain — call ' +
+        'onchain_list_chains({capability:"token.risk"}) first (Nansen-backed, paid).',
       inputSchema: TokenRiskInputSchema,
       outputSchema: TokenRiskOutputSchema,
     },

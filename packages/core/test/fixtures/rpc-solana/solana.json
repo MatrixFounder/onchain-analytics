@@ -1,6 +1,8 @@
 {
   "chain": "solana",
   "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "nativeSymbol": "SOL",
+  "nativeDecimals": 9,
   "raw": {
     "jsonrpc": "2.0",
     "result": {

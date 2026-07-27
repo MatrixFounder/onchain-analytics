@@ -1,3 +1,5 @@
+import { MAX_CHAIN_INPUT_LENGTH } from './registry-core.js';
+
 /**
  * Chain-registry errors (TASK-006, R-48/R-50c, ARCHITECTURE.md §3.2 "Модуль src/chain/registry.ts").
  *
@@ -25,8 +27,19 @@ export class UnknownChainError extends Error {
 
   constructor(input: string, candidates: readonly string[], registrySize: number) {
     const suggestion = candidates.length > 0 ? ` Did you mean: ${candidates.join(', ')}?` : '';
+    // The input is TRUNCATED before it is echoed (vdd-multi cycle 5, L-4). This message travels
+    // back into the model's context as the tool's error text, so reflecting an arbitrarily long
+    // argument verbatim hands a caller a way to put a megabyte of its own text there. The
+    // neighbouring `CapabilityNotCoveredOnChainError` already truncates both of its lists for the
+    // same reason. Bound taken from `MAX_CHAIN_INPUT_LENGTH` rather than repeated as a literal
+    // (vdd-multi cycle 6, L): a literal would silently start truncating legitimate inputs the day
+    // that constant is raised.
+    const shown =
+      input.length > MAX_CHAIN_INPUT_LENGTH
+        ? `${input.slice(0, MAX_CHAIN_INPUT_LENGTH)}… (${input.length} chars)`
+        : input;
     super(
-      `unknown chain '${input}'.${suggestion} ` +
+      `unknown chain '${shown}'.${suggestion} ` +
         `Call onchain_list_chains to browse ${registrySize} chains.`,
     );
     this.name = 'UnknownChainError';
@@ -80,29 +93,45 @@ export class CapabilityNotCoveredOnChainError extends Error {
   constructor(details: {
     capability: string;
     chain: string;
+    /** May already be truncated by the caller — pass `totalServedChains` so the "+N more" count
+     * stays honest. */
     availableChains: readonly string[];
-    availableCapabilities: readonly string[];
-    totalChains?: number;
+    /** **`undefined` means NOT COMPUTED, and renders nothing** (vdd-multi cycle 6, M-6). It used to
+     * be a required array, so a caller with no cheap way to compute it passed `[]` — and `[]` is
+     * indistinguishable from a computed empty list, which this constructor rendered as the flat
+     * assertion "No capability is available on 'ton'". That was false: `chain.tvl`/`protocol.tvl`
+     * are served there. An error whose stated purpose is to save the caller a wasted call must not
+     * talk an agent out of calls that would succeed, so an uncomputed list now says nothing. */
+    availableCapabilities?: readonly string[];
+    /** Total served chains before the caller truncated `availableChains`. Omit when the list is
+     * complete. */
+    totalServedChains?: number;
+    /** Appended verbatim — for a refusal the two lists cannot express, e.g. "this is the exhaustive
+     * tier; the default tier IS served here". */
+    hint?: string;
   }) {
     // Both lists are truncated: an error meant to save the caller a wasted call must not itself
     // dump 458 chain slugs into the model's context.
     const more = (shown: number, total: number): string =>
       total > shown ? `, … (+${total - shown} more)` : '';
     const chains = details.availableChains.slice(0, 10);
-    const caps = details.availableCapabilities.slice(0, 10);
+    const caps = (details.availableCapabilities ?? []).slice(0, 10);
     super(
       `capability '${details.capability}' is not available on chain '${details.chain}'.` +
         (chains.length
-          ? ` Available on: ${chains.join(', ')}${more(chains.length, details.totalChains ?? details.availableChains.length)}.`
+          ? ` Available on: ${chains.join(', ')}${more(chains.length, details.totalServedChains ?? details.availableChains.length)}.`
           : ' It is not available on any known chain.') +
         (caps.length
-          ? ` Available on '${details.chain}' instead: ${caps.join(', ')}${more(caps.length, details.availableCapabilities.length)}.`
-          : ` No capability is available on '${details.chain}'.`),
+          ? ` Available on '${details.chain}' instead: ${caps.join(', ')}${more(caps.length, details.availableCapabilities?.length ?? 0)}.`
+          : details.availableCapabilities === undefined
+            ? '' // not computed — say nothing rather than deny
+            : ` No capability is available on '${details.chain}'.`) +
+        (details.hint ? ` ${details.hint}` : ''),
     );
     this.name = 'CapabilityNotCoveredOnChainError';
     this.capability = details.capability;
     this.chain = details.chain;
     this.availableChains = details.availableChains;
-    this.availableCapabilities = details.availableCapabilities;
+    this.availableCapabilities = details.availableCapabilities ?? [];
   }
 }

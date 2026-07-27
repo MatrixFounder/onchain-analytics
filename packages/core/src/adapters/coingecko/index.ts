@@ -3,6 +3,11 @@ import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle } from '../../net/rate-limit.js';
 import { safeFetch } from '../../net/safe-fetch.js';
+import {
+  truncateVendorText,
+  MAX_VENDOR_NAME_LENGTH,
+  MAX_VENDOR_SYMBOL_LENGTH,
+} from '../truncate-vendor-text.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { TokenSchema, type Token } from '../../types/token.js';
 import type { ProviderAdapter } from '../types.js';
@@ -121,7 +126,14 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
       const proApiKey = env['COINGECKO_PRO_API_KEY'];
       const demoApiKey = env['COINGECKO_API_KEY'];
       const host = proApiKey ? 'pro-api.coingecko.com' : 'api.coingecko.com';
-      const url = `https://${host}/api/v3/coins/${platformId}/contract/${normalizedAddress}`;
+      // **Both path segments are percent-encoded** (vdd-multi cycle 5, M-4) — the sibling adapters
+      // `defillama`/`dexscreener` already do this and this one did not. `normalizeAddress` returns
+      // its input VERBATIM for a family with no validator (`bitcoin` is `family: other` and carries
+      // `vendors.coingecko: "ordinals"`), and `isValidAddress` accepts any 1–128 characters there,
+      // so `address: '../../../simple/price?ids=x'` rewrote the path and sent the request — with
+      // our API key attached — to a different endpoint of the vendor's API. Not SSRF (the host is
+      // fixed in the template), but request forgery inside the vendor's own surface.
+      const url = `https://${host}/api/v3/coins/${encodeURIComponent(platformId)}/contract/${encodeURIComponent(normalizedAddress)}`;
       const headers: Record<string, string> = proApiKey
         ? { 'x-cg-pro-api-key': proApiKey }
         : demoApiKey
@@ -148,8 +160,22 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
       const token: Token = {
         chain: chain.slug,
         address: normalizeAddress(chain, detail.contract_address),
-        symbol: typeof body.symbol === 'string' ? body.symbol.toUpperCase() : '',
-        name: typeof body.name === 'string' ? body.name : '',
+        // Vendor-authored, therefore bounded here rather than at `TokenSchema.parse` below
+        // (vdd-multi cycle 5, M-6) — see `truncate-vendor-text.ts` for why truncating beats
+        // rejecting on a value the token's deployer chose.
+        symbol:
+          typeof body.symbol === 'string'
+            ? // Truncate FIRST, then upper-case (vdd-multi cycle 6, perf): `.toUpperCase()` on the
+              // full vendor string is work proportional to attacker-chosen input, performed
+              // immediately below the guard that exists to bound exactly that. `safeFetch`'s size
+              // cap is `Content-Length`-based and its own docstring concedes chunked bodies are
+              // uncapped mid-stream.
+              truncateVendorText(body.symbol, MAX_VENDOR_SYMBOL_LENGTH).toUpperCase()
+            : '',
+        name:
+          typeof body.name === 'string'
+            ? truncateVendorText(body.name, MAX_VENDOR_NAME_LENGTH)
+            : '',
         source: 'coingecko',
         fetchedAt: now(),
         ...(typeof detail.decimal_place === 'number' ? { decimals: detail.decimal_place } : {}),

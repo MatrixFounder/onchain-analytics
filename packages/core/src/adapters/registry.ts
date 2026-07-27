@@ -212,10 +212,15 @@ export class CapabilityRegistry {
     // pre-TASK-006 contract accepted.
     if (chainInfo && !this.getCoverage().isCovered(capability, chainInfo)) {
       const coverage = this.getCoverage();
+      // BOUNDED (vdd-multi cycle 6, perf): `chainsFor(...).map(slug)` built a ~450-element array
+      // so the constructor could render ten of them, which made the refusal path cost more than
+      // the cache-HIT success path — on exactly the request a confused agent repeats.
+      const served = coverage.servedSlugs(capability, 10);
       throw new CapabilityNotCoveredOnChainError({
         capability,
         chain: chainInfo.slug,
-        availableChains: coverage.chainsFor(capability).map((c) => c.slug),
+        availableChains: served.slugs,
+        totalServedChains: served.total,
         availableCapabilities: coverage.capabilitiesFor(chainInfo),
       });
     }
@@ -274,6 +279,15 @@ export class CapabilityRegistry {
       try {
         raw = await adapter.fetch(capability, args);
       } catch (error) {
+        // A PERMANENT refusal propagates as itself (vdd-multi cycle 5, H-1). Everything else in
+        // this catch is treated as "this adapter could not answer right now, try the next one",
+        // and the call ends as `CapabilityUnavailableError` — which tells the caller to RETRY.
+        // For "this capability is not served on this chain" that advice is wrong in a way that
+        // costs: the agent retries forever, and on a paid route each retry is a reservation
+        // attempt. The gate above catches this for coverage it can see; an adapter can also
+        // discover it deeper (Nansen's exhaustive `entity.labels` tier has a narrower chain list
+        // than the default tier, and `chainSupport()` cannot see `args.exhaustive`).
+        if (error instanceof CapabilityNotCoveredOnChainError) throw error;
         // FETCH failures are NOT negative-cached (L-1). A transport error, a 429, a 5xx or a budget
         // refusal is transient by nature: the same call a second later can legitimately succeed.
         // Caching that verdict would turn a blip into a self-inflicted outage lasting the whole

@@ -12,9 +12,13 @@ import { ChainSchema } from './chain.js';
 export const TokenSchema = z
   .object({
     chain: ChainSchema,
-    address: z.string(),
-    symbol: z.string(),
-    name: z.string(),
+    address: z.string().max(128),
+    // Backstops for VENDOR-AUTHORED text (vdd-multi cycle 5, M-6). The adapters truncate to these
+    // same bounds in `normalize()` (`adapters/truncate-vendor-text.ts`), so these caps should never
+    // be the thing that rejects a response — a post-fetch parse throw discards a response already
+    // in hand, which for a paid provider means paying again to be rejected identically.
+    symbol: z.string().max(64),
+    name: z.string().max(256),
     decimals: z.number().int().nonnegative().optional(),
     priceUsd: z.number().nonnegative().optional(),
     marketCapUsd: z.number().nonnegative().optional(),

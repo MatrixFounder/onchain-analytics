@@ -13,10 +13,24 @@ const REGISTRATION = adapterRegistrations.find((r) => r.id === 'rpc-solana');
 if (!REGISTRATION) {
   throw new Error('rpc-solana: no matching entry in adapterRegistrations (providers.config.ts)');
 }
-const HOSTS = REGISTRATION.hosts;
 const RATE_LIMIT = REGISTRATION.rateLimit;
 
-const ENDPOINT = `https://${HOSTS[0]}`;
+/* Endpoints and the SSRF allowlist come from the REQUESTED chain's own curated `rpcHosts` and from
+ * nowhere else (vdd-multi cycle 6, H-1) — the identical fix `rpc-evm` received one cycle earlier
+ * and this twin did not. The module used to hold `const ENDPOINT = https://${HOSTS[0]}`, i.e.
+ * Solana mainnet, and send every request there while `chainSupport()` advertised coverage for ANY
+ * svm row with a curated host. The moment a second SVM chain is curated — which this branch exists
+ * to make a data edit rather than a code change — that chain's balance query would have been
+ * answered by Solana mainnet, labelled with the other chain's slug, cached, and schema-valid. */
+
+/** `https://host/...` → `host`. **Throws** on an unparseable entry rather than passing it through
+ * (vdd-multi cycle 6, security M-1): this value becomes an SSRF ALLOWLIST entry, and a security
+ * control's default on malformed input must be "drop", never "trust the raw string". A bare
+ * `evil.example` would otherwise be unusable as an endpoint (so no test would ever exercise it)
+ * while still widening the set of hosts a redirect may be followed to. */
+function hostOf(url: string): string {
+  return new URL(url).hostname;
+}
 
 /** Optional constructor dependencies (injectable, same DI convention as `rpc-evm`). Keyless — no
  * `env` dependency needed. */
@@ -30,6 +44,10 @@ export interface RpcSolanaAdapterDeps {
 interface RpcSolanaFetchResult {
   chain: Chain;
   address: string;
+  /** Carried from the registry so `normalize()` labels the balance with THIS chain's gas token —
+   * same reasoning as `rpc-evm` (cycle 5, H-3). `SOL`/9 were literals here. */
+  nativeSymbol: string;
+  nativeDecimals: number;
   raw: unknown;
 }
 
@@ -48,12 +66,24 @@ function extractFetchArgs(
   // TASK-006 (task 006-5): the same condition `chainSupport()` reports — family plus a CURATED
   // RPC host. `rpcHosts: null` is not "misconfigured", it is "we never approved a host for this
   // chain" (security.md §7.2.1), and the coverage gate should have refused long before here.
-  if (!chain || chain.family !== 'svm' || chain.rpcHosts === null || typeof address !== 'string') {
+  if (!chain || !servesChain(chain) || typeof address !== 'string') {
     throw new Error(
-      `rpc-solana.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a svm chain with a curated RPC host>, address: string})`,
+      `rpc-solana.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <an svm chain with a curated RPC host and a known native currency>, address: string})`,
     );
   }
   return { chain, address };
+}
+
+/** The single definition of "this adapter can serve that chain" — read by `chainSupport()` (what
+ * the coverage matrix advertises) AND by `extractFetchArgs()` (what the transport accepts). Two
+ * readers, one predicate; mirrors `rpc-evm`'s `servesChain` exactly. */
+function servesChain(chain: ChainInfo): boolean {
+  return (
+    chain.family === 'svm' &&
+    chain.rpcHosts !== null &&
+    chain.nativeSymbol !== null &&
+    chain.nativeDecimals !== null
+  );
 }
 
 /**
@@ -91,8 +121,9 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
     // it stays consistent with its EVM twin and avoids hardcoding a chain id back into an adapter,
     // which is the coupling this task removes. Equivalent while Solana is the only SVM chain with
     // a curated host, and correct by construction if another ever appears.
-    chainSupport: (chain: ChainInfo): boolean => chain.family === 'svm' && chain.rpcHosts !== null,
-    capabilities: () => [{ id: 'wallet.balances.native', chains: ['solana'] }],
+    chainSupport: servesChain,
+    // No `chains` literal — `servesChain` owns that answer (vdd-multi cycle 6, M-7).
+    capabilities: () => [{ id: 'wallet.balances.native' }],
     costOf: () => ({ credits: 0 }),
     fetch: async (_cap: string, args: Record<string, unknown>): Promise<RpcSolanaFetchResult> => {
       const { chain, address } = extractFetchArgs(args, chains);
@@ -105,25 +136,51 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
       });
 
       await throttle('rpc-solana', RATE_LIMIT);
-      const response = await safeFetch(
-        ENDPOINT,
-        { method: 'POST', headers: { 'content-type': 'application/json' }, body },
-        HOSTS,
-        fetchImpl,
-      );
-      if (!response.ok) {
-        throw new Error(`rpc-solana: HTTP ${response.status} for ${ENDPOINT}`);
+
+      // Per-chain endpoints + per-chain allowlist, walked in the order a human approved them.
+      const endpoints = [...(chain.rpcHosts ?? [])];
+      const allowlist = endpoints.map(hostOf);
+
+      let lastError: unknown;
+      for (const endpoint of endpoints) {
+        try {
+          const response = await safeFetch(
+            endpoint,
+            { method: 'POST', headers: { 'content-type': 'application/json' }, body },
+            allowlist,
+            fetchImpl,
+          );
+          if (!response.ok) {
+            // `hostOf`, not the full URL (vdd-multi cycle 6, security L-2): `rpcHosts` is a
+            // full-URL column, this message reaches the model, and a curated endpoint could one
+            // day carry a key in its path or query. `safeFetch`'s own errors already do this.
+            throw new Error(`rpc-solana: HTTP ${response.status} for ${hostOf(endpoint)}`);
+          }
+          const raw = (await response.json()) as JsonRpcGetBalanceResponse;
+          if (raw.error) {
+            throw new Error(
+              `rpc-solana: JSON-RPC error from ${hostOf(endpoint)}: ${stringifyTruncated(raw.error)}`,
+            );
+          }
+          return {
+            chain: chain.slug,
+            address: normalizedAddress,
+            // Non-null by `servesChain()`, enforced in `extractFetchArgs` above.
+            nativeSymbol: chain.nativeSymbol as string,
+            nativeDecimals: chain.nativeDecimals as number,
+            raw,
+          };
+        } catch (error) {
+          lastError = error;
+        }
       }
-      const raw = (await response.json()) as JsonRpcGetBalanceResponse;
-      if (raw.error) {
-        throw new Error(
-          `rpc-solana: JSON-RPC error from ${ENDPOINT}: ${stringifyTruncated(raw.error)}`,
-        );
-      }
-      return { chain: chain.slug, address: normalizedAddress, raw };
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(`rpc-solana: all endpoints failed for chain ${chain.slug}`);
     },
     normalize: (_cap: string, rawResult: unknown): Wallet => {
-      const { chain, address, raw } = rawResult as RpcSolanaFetchResult;
+      const { chain, address, nativeSymbol, nativeDecimals, raw } =
+        rawResult as RpcSolanaFetchResult;
       const body = raw as JsonRpcGetBalanceResponse;
       const lamports = body.result?.value;
       // Adversarial cycle 1, fix F: `lamports` must be a non-negative SAFE integer before it's
@@ -148,8 +205,9 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
         balances: [
           {
             assetType: 'native',
-            symbol: 'SOL',
-            decimals: 9,
+            // From the registry, never a literal (vdd-multi cycle 6, H-1 — see `servesChain()`).
+            symbol: nativeSymbol,
+            decimals: nativeDecimals,
             // Exact integer as a string (DB-SCHEMA-CONCEPT §1.7) — see this module's docstring for
             // the vendor-side precision caveat above ~9.007M SOL.
             amountRaw: String(lamports),

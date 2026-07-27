@@ -1,3 +1,4 @@
+import type { ChainFamily } from '../../chain/registry-core.js';
 import { throttle as productionThrottle } from '../../net/rate-limit.js';
 import type { Throttle } from '../../net/rate-limit.js';
 import { safeFetch } from '../../net/safe-fetch.js';
@@ -12,11 +13,29 @@ const HOSTS = REGISTRATION.hosts;
 const RATE_LIMIT = REGISTRATION.rateLimit;
 const BASE_URL = `https://${HOSTS[0]}`;
 
-/** Only the two chains any M2 tool ever passes through to these request builders (ARCHITECTURE.md
- * §3.2 "Десятый адаптер", OQ-3) — a self-contained literal union, not the wider canonical `Chain`
- * (which also carries `'dash'`, never valid here), mirroring `defillama/index.ts`'s own
- * `SupportedChain` precedent. */
-export type NansenChain = 'ethereum' | 'solana';
+/**
+ * A chain as these request builders need it (vdd-multi cycle 5, H-1).
+ *
+ * **Was `type NansenChain = 'ethereum' | 'solana'`.** That literal union was correct while the
+ * adapter served two chains, and became a silent lie in task 006-9, which widened
+ * `chainSupport()` to Nansen's full per-capability coverage (17/25/25 chains from the committed
+ * OpenAPI spec) without touching this transport. The coverage gate then advertised — and admitted —
+ * chains whose request could never be built, so `token.risk({chain:'bsc'})` passed every gate and
+ * died in `fetch()` as a RETRYABLE `CapabilityUnavailableError`, i.e. an agent retrying forever
+ * against a permanent condition.
+ *
+ * Two fields, because the transport genuinely needs two different things and conflating them is
+ * how the old code went wrong:
+ *   - `token` — NANSEN's own chain name (`bnb`, not our slug `bsc`; `optimism`, not `op-mainnet`).
+ *     This is what goes on the wire. It comes from `registry.data.json`'s `vendors.nansen` column,
+ *     which is exactly what that column is for.
+ *   - `family` — OUR address family, which decides how `token_address` must be cased below. A
+ *     vendor chain token says nothing about address encoding.
+ */
+export interface NansenChainRef {
+  readonly token: string;
+  readonly family: ChainFamily;
+}
 
 /**
  * Thrown on `429 Too Many Requests` (task-005-4, R-29 UC-7). YAGNI-scoped: an explicit, immediate
@@ -150,29 +169,34 @@ async function callEndpoint(
 }
 
 /**
- * How this ONE vendor filter wants a token address cased, per chain.
+ * How this ONE vendor filter wants a token address cased.
  *
- * Deliberately an exhaustive `switch` with a `never` guard, not a ternary (cycle-4 verification
- * pass). A `chain === 'solana' ? verbatim : lowercase` ternary is a deny-list: the day `NansenChain`
- * gains a third member — the vendor's own `SmartMoneyChain` enum lists ~18, several of them
- * case-sensitive (tron, sui, ton, bitcoin) — that chain silently falls into the EVM fold and
- * re-creates the DF-1/L-1 corruption with no test failing. This form makes the same addition a
- * COMPILE error, which is exactly what `chain/address.ts`'s own per-chain switch already does.
+ * **Keyed on FAMILY, not on chain name** (vdd-multi cycle 5, H-1). The old exhaustive switch over
+ * `'ethereum' | 'solana'` was written to make adding a chain a COMPILE error — a good instinct that
+ * became unmaintainable the moment coverage went to 25 chains, since the rule was never per-chain
+ * in the first place. It is per ENCODING: a hex address is case-insensitive by definition, so
+ * folding it is safe (and required — DF-1 root cause #2, live-proven 2026-07-24: this endpoint
+ * matches case-sensitively against a lowercase-stored column). Everything else — base58 for
+ * `svm`/tron, bech32 for `cosmos`, and the `other` bucket that holds `ton`/`near`/`starknet` — is
+ * case-sensitive as an ENCODING, so folding corrupts the address rather than re-casing it (L-1).
+ *
+ * The `never` guard survives, now on `ChainFamily`: a NEW family still forces this decision to be
+ * made explicitly instead of defaulting into the EVM fold.
  */
-function netflowTokenAddressFilter(chain: NansenChain, tokenAddress: string): string {
-  switch (chain) {
-    // Lowercase, NOT the EIP-55 checksummed form: this endpoint matches case-sensitively against a
-    // lowercase-stored column (DF-1 root cause #2, live-proven 2026-07-24).
-    case 'ethereum':
+function netflowTokenAddressFilter(family: ChainFamily, tokenAddress: string): string {
+  switch (family) {
+    case 'evm':
       return tokenAddress.toLowerCase();
-    // Verbatim: base58 is case-sensitive as an ENCODING, so folding corrupts the mint rather than
-    // re-casing it (L-1).
-    case 'solana':
+    case 'svm':
+    case 'move':
+    case 'cosmos':
+    case 'utxo':
+    case 'other':
       return tokenAddress;
     default: {
-      const unhandled: never = chain;
+      const unhandled: never = family;
       throw new Error(
-        `nansen.postSmartMoneyNetflow: no token_address casing rule for chain ${String(unhandled)}`,
+        `nansen.postSmartMoneyNetflow: no token_address casing rule for family ${String(unhandled)}`,
       );
     }
   }
@@ -198,14 +222,14 @@ function netflowTokenAddressFilter(chain: NansenChain, tokenAddress: string): st
  * endpoint; for a token-scoped query they must not narrow the result.
  */
 export function postSmartMoneyNetflow(
-  params: { chain: NansenChain; tokenAddress: string },
+  params: { chain: NansenChainRef; tokenAddress: string },
   deps: NansenEndpointDeps,
 ): Promise<NansenEndpointResult> {
   return callEndpoint(
     'POST',
     '/api/v1/smart-money/netflow',
     {
-      chains: [params.chain],
+      chains: [params.chain.token],
       filters: {
         // **EVM ONLY: lowercase, not the EIP-55 checksummed form** (live-confirmed 2026-07-24,
         // DF-1 root cause #2): this endpoint's `token_address` filter matches CASE-SENSITIVELY
@@ -226,7 +250,7 @@ export function postSmartMoneyNetflow(
         // live verification covered EVM only, so the blanket fold would have re-created the DF-1
         // tarpit on the one chain nobody probed: empty `data: []` → post-payment normalize throw →
         // nothing cached → 10cr per retry, forever.
-        token_address: netflowTokenAddressFilter(params.chain, params.tokenAddress),
+        token_address: netflowTokenAddressFilter(params.chain.family, params.tokenAddress),
         include_stablecoins: true,
         include_native_tokens: true,
       },
@@ -243,14 +267,14 @@ export function postSmartMoneyNetflow(
  * `chain`+`token_address` are the only two required properties.
  */
 export function postTgmHolders(
-  params: { chain: NansenChain; tokenAddress: string; premiumLabels?: boolean },
+  params: { chain: NansenChainRef; tokenAddress: string; premiumLabels?: boolean },
   deps: NansenEndpointDeps,
 ): Promise<NansenEndpointResult> {
   return callEndpoint(
     'POST',
     '/api/v1/tgm/holders',
     {
-      chain: params.chain,
+      chain: params.chain.token,
       token_address: params.tokenAddress,
       // Forwarded so PRICE AND REQUEST AGREE (cycle-2 review L-2). `cost-of.ts` charges the flat
       // 150cr `NANSEN_PREMIUM_LABELS_COST` whenever `premium_labels === true`; previously this
@@ -270,13 +294,13 @@ export function postTgmHolders(
  * are its only two (required) properties.
  */
 export function postTgmIndicators(
-  params: { chain: NansenChain; tokenAddress: string },
+  params: { chain: NansenChainRef; tokenAddress: string },
   deps: NansenEndpointDeps,
 ): Promise<NansenEndpointResult> {
   return callEndpoint(
     'POST',
     '/api/v1/tgm/indicators',
-    { chain: params.chain, token_address: params.tokenAddress },
+    { chain: params.chain.token, token_address: params.tokenAddress },
     deps,
   );
 }
@@ -289,13 +313,13 @@ export function postTgmIndicators(
  * timeframe knob, so there is no caller-supplied value to thread through.
  */
 export function postTgmTokenInformation(
-  params: { chain: NansenChain; tokenAddress: string },
+  params: { chain: NansenChainRef; tokenAddress: string },
   deps: NansenEndpointDeps,
 ): Promise<NansenEndpointResult> {
   return callEndpoint(
     'POST',
     '/api/v1/tgm/token-information',
-    { chain: params.chain, token_address: params.tokenAddress, timeframe: '1d' },
+    { chain: params.chain.token, token_address: params.tokenAddress, timeframe: '1d' },
     deps,
   );
 }
@@ -303,18 +327,18 @@ export function postTgmTokenInformation(
 /**
  * `POST /api/v1/search/general` (`GeneralSearchRequest`, 0cr both plans) — `chain` is passed as
  * the request's own optional "narrow down token results" filter (`searchQuery` alone is required
- * by the vendor schema). Narrowing by chain keeps `TokenSearchResult.chain` values consistent with
- * the caller's own narrow `NansenChain`, so `normalize.ts` never has to reconcile an arbitrary
- * vendor chain string against the strict canonical `ChainSchema` enum.
+ * by the vendor schema). Narrowing by chain keeps `TokenSearchResult.chain` values scoped to the
+ * one chain the caller asked about, so `normalize.ts` never has to reconcile an arbitrary vendor
+ * chain string against a canonical one.
  */
 export function postSearchGeneral(
-  params: { chain: NansenChain; searchQuery: string },
+  params: { chain: NansenChainRef; searchQuery: string },
   deps: NansenEndpointDeps,
 ): Promise<NansenEndpointResult> {
   return callEndpoint(
     'POST',
     '/api/v1/search/general',
-    { search_query: params.searchQuery, chain: params.chain },
+    { search_query: params.searchQuery, chain: params.chain.token },
     deps,
   );
 }
@@ -348,13 +372,13 @@ export function postSearchEntityName(
  * /profiler/address/labels"). `chain`+`address` are its only two required properties.
  */
 export function postProfilerAddressLabels(
-  params: { chain: NansenChain; address: string },
+  params: { chain: NansenChainRef; address: string },
   deps: NansenEndpointDeps,
 ): Promise<NansenEndpointResult> {
   return callEndpoint(
     'POST',
     '/api/v1/profiler/address/labels',
-    { address: params.address, chain: params.chain },
+    { address: params.address, chain: params.chain.token },
     deps,
   );
 }

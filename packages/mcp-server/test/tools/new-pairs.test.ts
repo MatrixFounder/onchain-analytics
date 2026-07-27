@@ -122,7 +122,15 @@ describe('newPairsHandler', () => {
       new Map([['dexscreener', fakeAdapterWithMalformedPools()]]),
     );
 
-    await expect(newPairsHandler({ chain: 'ethereum' }, { registry })).rejects.toThrow();
+    // CHANGED EXPECTATION (vdd-multi cycle 6, M): the validation still runs — that is what this
+    // test was written to prove and it is still proven — but it is now reported through the
+    // handler's own `{ok:false, reason}` contract instead of thrown. Six sibling handlers already
+    // worked this way; `parse` here escaped the declared `Promise<NewPairsOutcome>` return type
+    // and surfaced as a generic transport error rather than this tool's own message.
+    const outcome = await newPairsHandler({ chain: 'ethereum' }, { registry });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) throw new Error('expected ok:false');
+    expect(outcome.reason).toContain('violating the tool contract');
   });
 
   it('materializes the default limit BEFORE building cache-key args — an omitted limit and an explicit default-valued limit share the SAME cache entry, never a duplicate upstream fetch (post-M1 polish, fix 1)', async () => {

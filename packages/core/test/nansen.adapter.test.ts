@@ -10,12 +10,15 @@ import type { Chain } from '../src/types/chain.js';
 // fake key), never falling back to ambient `process.env`.
 
 describe('nansen adapter (config-stub skeleton, R-30)', () => {
-  it('capabilities() declares the three M2 capabilities on ethereum+solana', () => {
+  // CHANGED EXPECTATION (vdd-multi cycle 6, M-7): the `chains: ['ethereum','solana']` literals
+  // were false by 14–16 chains after task 006-9 widened `chainSupport`. This assertion froze the
+  // stale half of a two-place answer — see `dune.test.ts` for the rationale.
+  it('capabilities() declares the three M2 capabilities without re-declaring a chain set', () => {
     const adapter = createNansenAdapter({ env: {} });
     expect(adapter.capabilities()).toEqual([
-      { id: 'smart-money.flows', chains: ['ethereum', 'solana'] },
-      { id: 'entity.labels', chains: ['ethereum', 'solana'] },
-      { id: 'token.risk', chains: ['ethereum', 'solana'] },
+      { id: 'smart-money.flows' },
+      { id: 'entity.labels' },
+      { id: 'token.risk' },
     ]);
   });
 

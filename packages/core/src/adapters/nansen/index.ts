@@ -1,8 +1,14 @@
 import type { ProviderAdapter } from '../types.js';
-import type { ChainInfo } from '../../chain/registry-core.js';
-import { NANSEN_CHAIN_COVERAGE } from './chain-coverage.js';
+import {
+  MAX_CHAIN_INPUT_LENGTH,
+  type ChainInfo,
+  type ChainRegistry,
+} from '../../chain/registry-core.js';
+import { loadChainRegistry } from '../../chain/registry.js';
+import { CapabilityNotCoveredOnChainError } from '../../chain/errors.js';
+import { NANSEN_CHAIN_COVERAGE, NANSEN_EXHAUSTIVE_LABELS_CHAINS } from './chain-coverage.js';
 import type { BudgetStore } from '../../cache/budget-store.js';
-import { normalizeAddress } from '../../chain/address.js';
+import { hasAddressValidator, normalizeAddress } from '../../chain/address.js';
 import { deriveArgsHash } from '../../net/args-hash.js';
 import type { Throttle } from '../../net/rate-limit.js';
 import { createNansenAccountState } from './account-state.js';
@@ -16,7 +22,7 @@ import {
   postTgmHolders,
   postTgmIndicators,
   postTgmTokenInformation,
-  type NansenChain,
+  type NansenChainRef,
   type NansenEndpointDeps,
   type NansenEndpointResult,
 } from './endpoints.js';
@@ -73,6 +79,10 @@ export interface NansenAdapterDeps {
   now?: () => number;
   fetchImpl?: typeof fetch;
   throttle?: Throttle;
+  /** Chain registry used to map our slug → Nansen's own chain token and to enforce per-capability
+   * coverage in the TRANSPORT, not just in the gate (vdd-multi cycle 5, H-1). Same DI convention as
+   * `rpc-evm`/`dexscreener`; defaults to the shipped snapshot. */
+  chains?: ChainRegistry;
   /**
    * Explicit opt-in for the ungated (no `budgetStore`) HTTP-contract-test escape hatch (M-6,
    * adversarial review cycle 1) — must be the literal `true`, never inferred from any other deps
@@ -83,42 +93,178 @@ export interface NansenAdapterDeps {
   __ungatedForTestsOnly?: boolean;
 }
 
-function isNansenChain(value: unknown): value is NansenChain {
-  return value === 'ethereum' || value === 'solana';
+/** `Object.hasOwn`, never a bare index (vdd-multi cycle 5, L-2): `NANSEN_CHAIN_COVERAGE` is an
+ * ordinary object literal, so `['toString']` yields a FUNCTION and `?? []` never fires — the caller
+ * would then run `.includes` on `Function.prototype.toString`. Unreachable from today's three
+ * capabilities, and the same class of bug `net/args-hash.ts` already moved to a null prototype for. */
+function coveredTokensFor(capability: string): readonly string[] {
+  return Object.hasOwn(NANSEN_CHAIN_COVERAGE, capability)
+    ? (NANSEN_CHAIN_COVERAGE[capability] ?? [])
+    : [];
+}
+
+/**
+ * The ONE statement of "this paid adapter serves that chain" — read by `chainSupport()` (what the
+ * coverage matrix advertises), by `resolveVendorChain()` (what the transport accepts), and by the
+ * refusal path's "available on" list. Three readers, one predicate: cycle 5's H-1 was exactly what
+ * happens when the advertisement and the transport are written twice.
+ *
+ * Three conditions, and the third is new (vdd-multi cycle 6, C-1):
+ *   1. the chain is not deprecated — `coverage.ts` refuses those, and the adapter's own gate must
+ *      not disagree with the matrix it feeds;
+ *   2. the registry maps it to a Nansen chain token AND the spec covers that token for this
+ *      capability;
+ *   3. **its family has a real address validator** (`hasAddressValidator`). Without one we cannot
+ *      tell a valid `tokenAddress` from arbitrary text, cannot canonicalize it into a stable cache
+ *      key, and cannot know how the vendor cases its address column — on a route that spends money
+ *      for every attempt. See `hasAddressValidator`'s docstring for the three concrete failures.
+ *
+ * **Stated cost of condition 3**, so it is a decision and not a silent narrowing: `entity.labels`
+ * 25 → 18 chains, `token.risk` 24 → 18, `smart-money.flows` 17 → 16. Dropped: `bitcoin`, `near`,
+ * `sei`, `starknet`, `sui`, `ton`, `tron`. Each becomes reachable again the moment its family gets
+ * a validator — `sei` is the strongest candidate (it is EVM-addressed in practice; our generator
+ * files it under `other` only because no EIP-155 chain id joined), but re-classifying it needs
+ * evidence, not a guess, so it waits.
+ */
+function nansenServesChain(chain: ChainInfo, capability: string): boolean {
+  if (chain.deprecated) return false;
+  if (!hasAddressValidator(chain.family)) return false;
+  const token = chain.vendors['nansen'];
+  if (token == null) return false;
+  return coveredTokensFor(capability).includes(token);
+}
+
+/**
+ * Resolves the caller's chain slug into the pair the transport needs, and REFUSES a chain this
+ * capability is not served on (vdd-multi cycle 5, H-1).
+ *
+ * This is the single place where "what the coverage matrix advertises" and "what `fetch()` can
+ * actually build a request for" are forced to be the same statement: both read
+ * `vendors.nansen` × `NANSEN_CHAIN_COVERAGE[capability]`, the same two inputs `chainSupport()`
+ * reads. Before this, `chainSupport()` was widened to 17/25/25 chains while the transport still
+ * hardcoded `'ethereum' | 'solana'`, so the gate admitted 23 chains the request builders could not
+ * express — and the resulting throw was classified as a RETRYABLE outage.
+ *
+ * The refusal is a `CapabilityNotCoveredOnChainError` on purpose: "not here, and it will not be" is
+ * permanent, and `CapabilityRegistry.resolve()` rethrows this class instead of folding it into
+ * `CapabilityUnavailableError` (which means "retry, or add a key"). It is raised from
+ * `validateArgs()`, i.e. BEFORE `ensureBudget()` — no credits are reserved to discover it.
+ */
+function resolveVendorChain(
+  capabilityLabel: string,
+  rawChain: unknown,
+  chains: ChainRegistry,
+  serves: (chain: ChainInfo) => boolean,
+  hint?: string,
+): { chain: ChainInfo; ref: NansenChainRef } {
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  if (!chain || !serves(chain)) {
+    throw new CapabilityNotCoveredOnChainError({
+      capability: capabilityLabel,
+      // Truncated like `UnknownChainError` does (vdd-multi cycle 6, L): this message is rendered
+      // back into the model's context, and a direct `CapabilityRegistry` caller is not bounded by
+      // the tools' `ChainInputSchema.max(64)`.
+      chain: chain?.slug ?? truncateForMessage(String(rawChain)),
+      // Computed lazily and BOUNDED (vdd-multi cycle 6, perf): the previous version scanned all
+      // 458 rows and built a ~450-element array so the error could render ten of them, which made
+      // the refusal path far more expensive than the success path it protects.
+      availableChains: listServedChains(chains, serves, ERROR_LIST_LIMIT),
+      totalServedChains: countServedChains(chains, serves),
+      // `availableCapabilities` deliberately OMITTED, not `[]` (vdd-multi cycle 6, M-6): this
+      // adapter knows nothing about the other adapters' capabilities, and `[]` would render as
+      // "No capability is available on '<chain>'" — a denial we never checked and which is false
+      // for every chain `chain.tvl` covers.
+      ...(hint !== undefined ? { hint } : {}),
+    });
+  }
+  const token = chain.vendors['nansen'] as string; // non-null by `serves`
+  return { chain, ref: { token, family: chain.family } };
+}
+
+/** How many slugs an error message may name; the constructor renders the same number. */
+const ERROR_LIST_LIMIT = 10;
+
+function listServedChains(
+  chains: ChainRegistry,
+  serves: (chain: ChainInfo) => boolean,
+  limit: number,
+): string[] {
+  const out: string[] = [];
+  for (const candidate of chains.list()) {
+    if (!serves(candidate)) continue;
+    out.push(candidate.slug);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function countServedChains(chains: ChainRegistry, serves: (chain: ChainInfo) => boolean): number {
+  let n = 0;
+  for (const candidate of chains.list()) if (serves(candidate)) n += 1;
+  return n;
+}
+
+function truncateForMessage(raw: string): string {
+  return raw.length > MAX_CHAIN_INPUT_LENGTH
+    ? `${raw.slice(0, MAX_CHAIN_INPUT_LENGTH)}… (${raw.length} chars)`
+    : raw;
 }
 
 /** Shared `{chain, tokenAddress}` arg extraction for `smart-money.flows`/`token.risk` (both tool
- * contracts use the same two-field shape, interfaces.md §5.1.2). `capLabel` is only for the error
- * message (which capability rejected the args). */
+ * contracts use the same two-field shape, interfaces.md §5.1.2). `cap` is both the coverage key and
+ * the error message's subject (which capability rejected the args). */
 function extractChainTokenAddress(
   cap: string,
   args: Record<string, unknown>,
-): { chain: NansenChain; tokenAddress: string } {
-  const chain = args['chain'];
+  chains: ChainRegistry,
+): { chain: ChainInfo; ref: NansenChainRef; tokenAddress: string } {
   const tokenAddress = args['tokenAddress'];
-  if (!isNansenChain(chain) || typeof tokenAddress !== 'string') {
+  if (typeof tokenAddress !== 'string') {
     throw new Error(
-      `nansen.fetch(${cap}): invalid args ${JSON.stringify(args)} (expected {chain: 'ethereum'|'solana', tokenAddress: string})`,
+      `nansen.fetch(${cap}): invalid args ${JSON.stringify(args)} (expected {chain: string, tokenAddress: string})`,
     );
   }
-  return { chain, tokenAddress };
+  const { chain, ref } = resolveVendorChain(cap, args['chain'], chains, (candidate) =>
+    nansenServesChain(candidate, cap),
+  );
+  return { chain, ref, tokenAddress };
 }
 
-function extractEntityLabelArgs(args: Record<string, unknown>): {
-  chain: NansenChain;
+function extractEntityLabelArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): {
+  chain: ChainInfo;
+  ref: NansenChainRef;
   query: string | undefined;
   tokenAddress: string | undefined;
   exhaustive: boolean;
 } {
-  const chain = args['chain'];
-  if (!isNansenChain(chain)) {
-    throw new Error(
-      `nansen.fetch(entity.labels): invalid args ${JSON.stringify(args)} (expected chain: 'ethereum'|'solana')`,
-    );
-  }
+  const exhaustiveRequested = args['exhaustive'] === true;
+  // **The exhaustive tier is gated on its OWN, narrower chain list** (vdd-multi cycle 5, M-7).
+  // `NANSEN_EXHAUSTIVE_LABELS_CHAINS` was generated, documented as refusing "before the 100cr
+  // escalation", and then read by nobody: `chainSupport()` cannot see `args.exhaustive`, so the
+  // only place the distinction can be enforced is here. A money guard that exists in a comment but
+  // not in code is worse than none — it reads as covered, and it discourages writing the real one.
+  const { chain, ref } = exhaustiveRequested
+    ? resolveVendorChain(
+        'entity.labels (exhaustive)',
+        args['chain'],
+        chains,
+        (candidate) =>
+          nansenServesChain(candidate, 'entity.labels') &&
+          NANSEN_EXHAUSTIVE_LABELS_CHAINS.includes(candidate.vendors['nansen'] as string),
+        // The tier-specific way out (vdd-multi cycle 6, M-6). Without it the message says
+        // `entity.labels` is unavailable here, which is wrong for the DEFAULT tier on most of
+        // these chains — and an agent reading it abandons a call that would have succeeded.
+        'This is the opt-in exhaustive tier; retry with exhaustive:false for the default tier.',
+      )
+    : resolveVendorChain('entity.labels', args['chain'], chains, (candidate) =>
+        nansenServesChain(candidate, 'entity.labels'),
+      );
   const query = typeof args['query'] === 'string' ? args['query'] : undefined;
   const tokenAddress = typeof args['tokenAddress'] === 'string' ? args['tokenAddress'] : undefined;
-  const exhaustive = args['exhaustive'] === true;
+  const exhaustive = exhaustiveRequested;
   if (!query && !tokenAddress) {
     throw new Error(
       `nansen.fetch(entity.labels): invalid args ${JSON.stringify(args)} (expected query and/or tokenAddress)`,
@@ -129,7 +275,7 @@ function extractEntityLabelArgs(args: Record<string, unknown>): {
       `nansen.fetch(entity.labels): invalid args ${JSON.stringify(args)} (exhaustive:true requires tokenAddress)`,
     );
   }
-  return { chain, query, tokenAddress, exhaustive };
+  return { chain, ref, query, tokenAddress, exhaustive };
 }
 
 /**
@@ -142,16 +288,16 @@ function extractEntityLabelArgs(args: Record<string, unknown>): {
  * handled here (`default: return`) — that stays the existing fail-closed `costOf()`/`ensureBudget()`
  * path's job (`NansenBudgetExceededError`), unchanged by this fix.
  */
-function validateArgs(cap: string, args: Record<string, unknown>): void {
+function validateArgs(cap: string, args: Record<string, unknown>, chains: ChainRegistry): void {
   switch (cap) {
     case 'smart-money.flows':
     case 'token.risk': {
-      const { chain, tokenAddress } = extractChainTokenAddress(cap, args);
+      const { chain, tokenAddress } = extractChainTokenAddress(cap, args, chains);
       normalizeAddress(chain, tokenAddress);
       return;
     }
     case 'entity.labels': {
-      const { chain, tokenAddress } = extractEntityLabelArgs(args);
+      const { chain, tokenAddress } = extractEntityLabelArgs(args, chains);
       if (tokenAddress !== undefined) {
         normalizeAddress(chain, tokenAddress);
       }
@@ -191,15 +337,20 @@ async function performSubCalls(
   args: Record<string, unknown>,
   endpointDeps: NansenEndpointDeps,
   subResponses: NansenEndpointResult[],
+  chains: ChainRegistry,
 ): Promise<{ result: unknown }> {
   switch (cap) {
     case 'smart-money.flows': {
       // Always BOTH sub-calls, unconditionally (R-41 — system-architecture.md §3.2's capability
       // table, "netflow + tgm/holders, всегда оба").
-      const { chain, tokenAddress } = extractChainTokenAddress(cap, args);
+      //
+      // `ref` (the VENDOR's chain token) goes on the wire; `chain` (our `ChainInfo`) drives address
+      // normalization and is what the canonical result carries. Sending our slug where the vendor
+      // expects its own token is the H-1 defect in miniature — `bsc` is `bnb` at Nansen.
+      const { chain, ref, tokenAddress } = extractChainTokenAddress(cap, args, chains);
       const normalizedAddress = normalizeAddress(chain, tokenAddress);
       const netflow = await postSmartMoneyNetflow(
-        { chain, tokenAddress: normalizedAddress },
+        { chain: ref, tokenAddress: normalizedAddress },
         endpointDeps,
       );
       subResponses.push(netflow);
@@ -211,12 +362,17 @@ async function performSubCalls(
       // have succeeded. Unreachable today (no tool schema exposes it, all three are `.strict()`),
       // but price and request can no longer drift apart.
       const holders = await postTgmHolders(
-        { chain, tokenAddress: normalizedAddress, premiumLabels: args['premium_labels'] === true },
+        {
+          chain: ref,
+          tokenAddress: normalizedAddress,
+          premiumLabels: args['premium_labels'] === true,
+        },
         endpointDeps,
       );
       subResponses.push(holders);
       const result: SmartMoneyFlowsFetchResult = {
-        chain,
+        chain: chain.slug,
+        family: chain.family,
         tokenAddress: normalizedAddress,
         netflow,
         holders,
@@ -225,20 +381,20 @@ async function performSubCalls(
     }
     case 'token.risk': {
       // Always BOTH sub-calls, unconditionally (R-43 — same "always both" pattern).
-      const { chain, tokenAddress } = extractChainTokenAddress(cap, args);
+      const { chain, ref, tokenAddress } = extractChainTokenAddress(cap, args, chains);
       const normalizedAddress = normalizeAddress(chain, tokenAddress);
       const indicators = await postTgmIndicators(
-        { chain, tokenAddress: normalizedAddress },
+        { chain: ref, tokenAddress: normalizedAddress },
         endpointDeps,
       );
       subResponses.push(indicators);
       const tokenInformation = await postTgmTokenInformation(
-        { chain, tokenAddress: normalizedAddress },
+        { chain: ref, tokenAddress: normalizedAddress },
         endpointDeps,
       );
       subResponses.push(tokenInformation);
       const result: TokenRiskFetchResult = {
-        chain,
+        chain: chain.slug,
         address: normalizedAddress,
         indicators,
         tokenInformation,
@@ -246,7 +402,7 @@ async function performSubCalls(
       return { result };
     }
     case 'entity.labels': {
-      const { chain, query, tokenAddress, exhaustive } = extractEntityLabelArgs(args);
+      const { chain, ref, query, tokenAddress, exhaustive } = extractEntityLabelArgs(args, chains);
 
       if (exhaustive) {
         // "только /profiler/address/labels" — never alongside search/general or tgm/holders
@@ -254,12 +410,13 @@ async function performSubCalls(
         // guaranteed by extractEntityLabelArgs() above.
         const normalizedAddress = normalizeAddress(chain, tokenAddress as string);
         const profilerLabels = await postProfilerAddressLabels(
-          { chain, address: normalizedAddress },
+          { chain: ref, address: normalizedAddress },
           endpointDeps,
         );
         subResponses.push(profilerLabels);
         const result: EntityLabelsFetchResult = {
-          chain,
+          chain: chain.slug,
+          vendorChain: ref.token,
           tokenAddress: normalizedAddress,
           premiumRequested: true,
           search: undefined,
@@ -276,7 +433,7 @@ async function performSubCalls(
       // examples include a contract address) — falls back to it when no `query` text was given
       // (extractEntityLabelArgs() already guarantees at least one is present).
       const searchQuery = query ?? (tokenAddress as string);
-      const search = await postSearchGeneral({ chain, searchQuery }, endpointDeps);
+      const search = await postSearchGeneral({ chain: ref, searchQuery }, endpointDeps);
       subResponses.push(search);
       const entityName = await postSearchEntityName({ searchQuery }, endpointDeps);
       subResponses.push(entityName);
@@ -288,7 +445,7 @@ async function performSubCalls(
         // Same price/request coupling as above (cycle-3 3.3).
         holders = await postTgmHolders(
           {
-            chain,
+            chain: ref,
             tokenAddress: normalizedAddress,
             premiumLabels: args['premium_labels'] === true,
           },
@@ -300,7 +457,8 @@ async function performSubCalls(
       }
 
       const result: EntityLabelsFetchResult = {
-        chain,
+        chain: chain.slug,
+        vendorChain: ref.token,
         tokenAddress: normalizedAddress,
         premiumRequested: false,
         search,
@@ -352,6 +510,7 @@ async function performSubCalls(
  */
 export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapter {
   const accountState = createNansenAccountState();
+  const chains = deps.chains ?? loadChainRegistry();
   const now = deps.now ?? Date.now;
   const singleflight = createSingleflight();
   const budgetStore = deps.budgetStore;
@@ -381,15 +540,17 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
     //
     // `vendors.nansen` is the vendor's OWN chain token (`bnb`, not `bsc`; `optimism`, not
     // `op-mainnet`); a chain the registry cannot map is simply not covered.
-    chainSupport: (chain: ChainInfo, capability: string): boolean => {
-      const token = chain.vendors['nansen'];
-      if (token == null) return false;
-      return (NANSEN_CHAIN_COVERAGE[capability] ?? []).includes(token);
-    },
+    chainSupport: nansenServesChain,
+    // **No `chains` literal** (vdd-multi cycle 6, M-7). `CapabilityDescriptor.chains` is a
+    // documented part of the public `ProviderAdapter` contract ("narrows which chains the
+    // capability applies to"), and it still said `['ethereum','solana']` while `chainSupport`
+    // served 16–18. An adapter that answers the same question twice will eventually answer it two
+    // different ways — which is precisely cycle 5's H-1. `providers.config.ts` made this argument
+    // for the route-level literals already; it holds identically here.
     capabilities: () => [
-      { id: 'smart-money.flows', chains: ['ethereum', 'solana'] },
-      { id: 'entity.labels', chains: ['ethereum', 'solana'] },
-      { id: 'token.risk', chains: ['ethereum', 'solana'] },
+      { id: 'smart-money.flows' },
+      { id: 'entity.labels' },
+      { id: 'token.risk' },
     ],
     // Real from task 005-3: exact, table-driven price under the live plan
     // (accountState.get()?.plan ?? 'free' — cost-of.ts). Fail-closed for an unrecognized
@@ -448,13 +609,13 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
                 '__ungatedForTestsOnly: true (isolated HTTP-contract test only)',
             );
           }
-          const { result } = await performSubCalls(cap, args, endpointDeps, []);
+          const { result } = await performSubCalls(cap, args, endpointDeps, [], chains);
           return result;
         }
 
         // M-2(c) (adversarial review cycle 1): validated + normalized BEFORE ensureBudget() — a
         // malformed chain/address must throw before any credits are ever reserved, never after.
-        validateArgs(cap, args);
+        validateArgs(cap, args, chains);
 
         // M-2(a) (adversarial review cycle 1): `ensureBudget()` now runs INSIDE this try — a
         // post-commit throw from it (its own warn-block best-effort try/catch already absorbs the
@@ -479,7 +640,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
         const subResponses: NansenEndpointResult[] = [];
         try {
           reservation = await gate.ensureBudget(cap, args);
-          const { result } = await performSubCalls(cap, args, endpointDeps, subResponses);
+          const { result } = await performSubCalls(cap, args, endpointDeps, subResponses, chains);
           reconcileAttempted = true;
           try {
             await reconcile({

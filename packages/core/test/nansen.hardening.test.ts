@@ -137,6 +137,9 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       normalizeSmartMoneyFlow(
         {
           chain: 'ethereum',
+          // vdd-multi cycle 6 (L-3): the hand-off carries the address FAMILY, so case-folding a
+          // vendor address is decided by the encoding rather than by one chain's name.
+          family: 'evm' as const,
           tokenAddress: WANTED,
           netflow: { body: { data: rows }, creditsUsedHeader: '5' },
           holders: { body: { data: [] }, creditsUsedHeader: '5' },
@@ -176,6 +179,9 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       const flow = normalizeSmartMoneyFlow(
         {
           chain: 'ethereum',
+          // vdd-multi cycle 6 (L-3): the hand-off carries the address FAMILY, so case-folding a
+          // vendor address is decided by the encoding rather than by one chain's name.
+          family: 'evm' as const,
           tokenAddress: WANTED,
           netflow: {
             body: {
@@ -205,6 +211,9 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       const flow = normalizeSmartMoneyFlow(
         {
           chain: 'ethereum',
+          // vdd-multi cycle 6 (L-3): the hand-off carries the address FAMILY, so case-folding a
+          // vendor address is decided by the encoding rather than by one chain's name.
+          family: 'evm' as const,
           tokenAddress: WANTED,
           netflow: {
             body: {
@@ -238,6 +247,9 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       const flow = normalizeSmartMoneyFlow(
         {
           chain: 'ethereum',
+          // vdd-multi cycle 6 (L-3): the hand-off carries the address FAMILY, so case-folding a
+          // vendor address is decided by the encoding rather than by one chain's name.
+          family: 'evm' as const,
           tokenAddress: WANTED,
           netflow: {
             body: {
@@ -310,6 +322,9 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       const flow = normalizeSmartMoneyFlow(
         {
           chain: 'ethereum',
+          // vdd-multi cycle 6 (L-3): the hand-off carries the address FAMILY, so case-folding a
+          // vendor address is decided by the encoding rather than by one chain's name.
+          family: 'evm' as const,
           tokenAddress: WANTED,
           netflow: { body: { data: [null, netflowRow] }, creditsUsedHeader: '5' },
           holders: { body: { data: [] }, creditsUsedHeader: '5' },
@@ -323,6 +338,9 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       const flow = normalizeSmartMoneyFlow(
         {
           chain: 'ethereum',
+          // vdd-multi cycle 6 (L-3): the hand-off carries the address FAMILY, so case-folding a
+          // vendor address is decided by the encoding rather than by one chain's name.
+          family: 'evm' as const,
           tokenAddress: WANTED,
           netflow: { body: { data: [netflowRow] }, creditsUsedHeader: '5' },
           holders: {

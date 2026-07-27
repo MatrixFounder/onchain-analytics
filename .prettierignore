@@ -34,3 +34,7 @@ docs/BACKLOG.md
 docs/feedback/
 # generated chain registry — scripts/sync-chain-registry.ts owns its byte format (R-49c determinism)
 packages/core/src/chain/registry.data.json
+# transient python artefacts — git ignores them, prettier must too, otherwise running pytest at
+# the repo root turns `pnpm format:check` red for a file nobody authored
+.pytest_cache/
+__pycache__/

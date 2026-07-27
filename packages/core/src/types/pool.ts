@@ -7,12 +7,14 @@ import { ChainSchema } from './chain.js';
  */
 export const PoolSchema = z
   .object({
-    id: z.string(),
+    id: z.string().max(256),
     chain: ChainSchema,
-    dexId: z.string(),
-    baseTokenSymbol: z.string(),
-    quoteTokenSymbol: z.string(),
-    pairAddress: z.string(),
+    // Same vendor-authored backstops as `TokenSchema` (vdd-multi cycle 5, M-6) — on a
+    // permissionless DEX every one of these is chosen by whoever deployed the pair.
+    dexId: z.string().max(64),
+    baseTokenSymbol: z.string().max(64),
+    quoteTokenSymbol: z.string().max(64),
+    pairAddress: z.string().max(128),
     createdAt: z.number().int().optional(),
     liquidityUsd: z.number().nonnegative().optional(),
     volume24hUsd: z.number().nonnegative().optional(),

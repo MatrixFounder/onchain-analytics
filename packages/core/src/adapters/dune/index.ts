@@ -1,5 +1,4 @@
 import type { ProviderAdapter } from '../types.js';
-import type { ChainInfo } from '../../chain/registry-core.js';
 import { NotImplementedInM1Error } from '../not-implemented-error.js';
 
 /**
@@ -17,10 +16,15 @@ import { NotImplementedInM1Error } from '../not-implemented-error.js';
 export function createDuneAdapter(): ProviderAdapter {
   return {
     id: 'dune',
-    // TASK-006: unchanged scope — `dune` is still the interface/config stub whose `isAvailable()`
-    // is unconditionally false (§3.2), so its coverage answer is academic either way.
-    chainSupport: (chain: ChainInfo): boolean => chain.slug === 'ethereum',
-    capabilities: () => [{ id: 'token.holders', chains: ['ethereum'] }],
+    // **Serves no chain** (vdd-multi cycle 5, L-10). This used to answer `true` for ethereum on the
+    // reasoning that an unconditionally-false `isAvailable()` made the coverage answer academic. It
+    // is not academic: the coverage matrix is derived from routes × `chainSupport` and does NOT
+    // consult `isAvailable()`, so `onchain_list_chains` listed `token.holders` among ethereum's
+    // capabilities — advertising, to the one tool built to answer "what can I actually get here",
+    // a capability that in M1 can never be served by anything.
+    chainSupport: (): boolean => false,
+    // No `chains` literal — `chainSupport` owns that answer, and it serves none (M-7/L-10).
+    capabilities: () => [{ id: 'token.holders' }],
     costOf: () => ({ credits: 0 }),
     // Unreachable through CapabilityRegistry in M1 (isAvailable() below always skips this
     // adapter) — throws loudly rather than silently if ever called directly/out-of-band.

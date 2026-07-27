@@ -15,6 +15,11 @@ const ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 interface RpcSolanaFixture {
   chain: string;
   address: string;
+  // vdd-multi cycle 6 (H-1): the hand-off from `fetch()` to `normalize()` now carries the chain's
+  // own gas token, so `normalize()` cannot label a balance `SOL`/9 on a chain that pays in
+  // something else. The fixture carries it because the fixture IS that hand-off shape.
+  nativeSymbol: string;
+  nativeDecimals: number;
   raw: { jsonrpc: string; result: { context: { slot: number }; value: number }; id: number };
 }
 
@@ -48,8 +53,9 @@ describe('rpc-solana adapter (contract, R-16/R-17 backend, OQ-1)', () => {
     });
   });
 
-  it('capabilities() declares wallet.balances.native for solana only', () => {
-    expect(adapter.capabilities()).toEqual([{ id: 'wallet.balances.native', chains: ['solana'] }]);
+  // CHANGED EXPECTATION (vdd-multi cycle 6, M-7) — see `dune.test.ts` for the rationale.
+  it('capabilities() declares wallet.balances.native without re-declaring a chain set', () => {
+    expect(adapter.capabilities()).toEqual([{ id: 'wallet.balances.native' }]);
   });
 
   it('costOf() is free (0 credits) and isAvailable() is always ok (keyless JSON-RPC)', () => {
@@ -79,7 +85,13 @@ describe('rpc-solana adapter (contract, R-16/R-17 backend, OQ-1)', () => {
       method: 'getBalance',
       params: [ADDRESS],
     });
-    expect(result).toEqual({ chain: 'solana', address: ADDRESS, raw: fixture.raw });
+    expect(result).toEqual({
+      chain: 'solana',
+      address: ADDRESS,
+      nativeSymbol: 'SOL',
+      nativeDecimals: 9,
+      raw: fixture.raw,
+    });
   });
 
   it('throws when the endpoint fails (no fallback in M1 — a single confirmed host, §11)', async () => {

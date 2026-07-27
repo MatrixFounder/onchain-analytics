@@ -47,7 +47,9 @@ export async function chainTvlHandler(
   ctx: ChainTvlContext,
 ): Promise<ChainTvlOutcome> {
   // Canonicalize before `args` — same reasoning as every other tool (data-model.md §4.2.2).
-  const chain = canonicalizeChain(input.chain);
+  // Against the registry THIS `CapabilityRegistry` gates on, never a second copy — see
+  // `get-token.ts` for both reasons (vdd-multi cycle 5, H-4).
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, { chain });
   if (!outcome.ok) return outcome;
 

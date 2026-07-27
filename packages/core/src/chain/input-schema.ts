@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { loadChainRegistry } from './registry.js';
-import type { ChainRegistry } from './registry-core.js';
+import { MAX_CHAIN_INPUT_LENGTH, type ChainRegistry } from './registry-core.js';
 
 /**
  * `chain` as accepted at the MCP tool boundary (TASK-006 R-50, interfaces.md §5.1.3).
@@ -36,8 +36,16 @@ export function createChainInputSchema(deps: { chains?: ChainRegistry } = {}) {
   return z
     .string()
     .min(1)
-    .max(64)
+    .max(MAX_CHAIN_INPUT_LENGTH)
     .superRefine((raw, ctx) => {
+      // **`.max()` above does NOT short-circuit this refinement** (vdd-multi cycle 5, H-2). In
+      // zod 4 a `too_big` issue is raised with `continue: true`, so `superRefine` runs on a string
+      // of ANY length — and everything below it (registry lookup, then a ~1300-candidate
+      // Levenshtein) is linear in that length. Measured: 416 ms at 20 000 chars, i.e. a 1 MB
+      // argument buys seconds-to-minutes of total blockage of this single-threaded stdio server,
+      // for a request already known to be invalid. Returning here is not a second rejection —
+      // `too_big` has already failed the parse; this only declines to do work for it.
+      if (raw.length > MAX_CHAIN_INPUT_LENGTH) return;
       if (resolveRegistry().tryResolve(raw) !== null) return;
       // The registry builds its "did you mean" list only on the failure path, so the happy path
       // pays nothing for it.

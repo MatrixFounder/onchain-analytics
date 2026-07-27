@@ -28,6 +28,7 @@ function chainRow(caip2: string, slug: string, extra: Partial<ChainInfo> = {}): 
     family: 'evm',
     aliases: [slug],
     nativeSymbol: null,
+    nativeDecimals: null,
     vendors: {},
     rpcHosts: null,
     tvlUsdAtSync: null,
@@ -343,16 +344,16 @@ describe('coverage on the real providers.config (task 006-5)', () => {
     // `near`, `starknet`, `sui`, `ton`, `tron`); `hyperevm` and `hyperliquid` are two vendor tokens
     // for ONE chain of ours, and that chain IS covered for flows via `hyperevm`. Counting in vendor
     // tokens overstates our exposure by one.
+    //
+    // **CHANGED EXPECTATION (vdd-multi cycle 6, C-1): 2, not 7.** `near`, `starknet`, `sui`, `ton`
+    // and `tron` left BOTH sets — not because Nansen stopped covering them, but because they are
+    // `family: 'other'`, which has no address validator, and a PAID capability may no longer be
+    // served on such a family (`hasAddressValidator`). On those chains any string passed as a
+    // `tokenAddress` reserved credits, and two case variants of one real address were two cache
+    // entries. What remains here is the genuine intersection defect this test was written for:
+    // chains covered by `/tgm/*` but not by `/smart-money/netflow`.
     const halfSucceeding = risk.filter((slug) => !flows.includes(slug));
-    expect(halfSucceeding.sort()).toEqual([
-      'injective',
-      'mantra',
-      'near',
-      'starknet',
-      'sui',
-      'ton',
-      'tron',
-    ]);
+    expect(halfSucceeding.sort()).toEqual(['injective', 'mantra']);
     for (const slug of halfSucceeding) {
       expect(real.isCovered('smart-money.flows', realChains.resolve(slug)), slug).toBe(false);
       expect(real.isCovered('token.risk', realChains.resolve(slug)), slug).toBe(true);

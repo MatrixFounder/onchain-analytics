@@ -26,12 +26,24 @@ describe('composite capability = intersection, never union (the DF-1 failure cla
     expect(supports(slug, 'smart-money.flows')).toBe(false);
   });
 
-  it.each(HALF_SUCCEEDING)(
+  // CHANGED EXPECTATION (vdd-multi cycle 6, C-1). The spec still covers all seven for
+  // `token.risk`; the ADAPTER now serves only those whose address family has a real validator.
+  // The five below are `family: 'other'` — where `isValidAddress` accepts any 1–128-char string,
+  // so garbage reserved credits, and `normalizeAddress` returned its input verbatim, so two case
+  // variants of one address were two paid cache entries.
+  const VALIDATOR_LESS = ['near', 'starknet', 'sui', 'ton', 'tron'];
+
+  it.each(HALF_SUCCEEDING.filter((slug) => !VALIDATOR_LESS.includes(slug)))(
     '%s IS covered for token.risk (per-capability, not per-adapter)',
     (slug) => {
       expect(supports(slug, 'token.risk')).toBe(true);
     },
   );
+
+  it.each(VALIDATOR_LESS)('%s is refused: its family has no address validator (C-1)', (slug) => {
+    expect(CHAINS.resolve(slug).vendors['nansen']).not.toBeNull(); // the spec DOES cover it
+    expect(supports(slug, 'token.risk')).toBe(false); // we still refuse to spend there
+  });
 
   it('smart-money.flows is a strict subset of token.risk', () => {
     const flows = NANSEN_CHAIN_COVERAGE['smart-money.flows']!;

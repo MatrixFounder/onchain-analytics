@@ -67,6 +67,36 @@ export interface ListChainsContext {
   registry: CapabilityRegistry;
 }
 
+/**
+ * `chain → its covered capabilities`, computed once per `CapabilityRegistry` (vdd-multi cycle 5,
+ * M-8).
+ *
+ * `capabilitiesFor()` walks every route and every route's adapters, and the handler called it once
+ * per row of the page — while `list()` above had already re-scanned all 458 rows. All of it is a
+ * pure function of inputs that cannot change within a process: the committed registry snapshot and
+ * the constructed route/adapter tables. The `WeakMap` keys on the registry instance rather than
+ * living in module scope, so it holds no process-lifetime state of its own (ARCHITECTURE.md §8) and
+ * a test that builds its own `CapabilityRegistry` gets its own entry.
+ */
+const capabilityCache = new WeakMap<CapabilityRegistry, Map<string, string[]>>();
+
+function capabilitiesOf(ctx: ListChainsContext, chain: ChainInfo): string[] {
+  let perRegistry = capabilityCache.get(ctx.registry);
+  if (!perRegistry) {
+    perRegistry = new Map<string, string[]>();
+    capabilityCache.set(ctx.registry, perRegistry);
+  }
+  let capabilities = perRegistry.get(chain.caip2);
+  if (!capabilities) {
+    capabilities = ctx.registry.getCoverage().capabilitiesFor(chain);
+    perRegistry.set(chain.caip2, capabilities);
+  }
+  // A COPY (vdd-multi cycle 6, L): the memo exists for the computation, not for object identity.
+  // Handing out the cached array put it straight into the response, where any consumer that sorts
+  // or pushes in place would corrupt the memo for every later call on this registry.
+  return [...capabilities];
+}
+
 export function listChainsHandler(
   input: ListChainsInput,
   ctx: ListChainsContext,
@@ -104,7 +134,7 @@ export function listChainsHandler(
       name: chain.name,
       family: chain.family,
       nativeSymbol: chain.nativeSymbol,
-      capabilities: coverage.capabilitiesFor(chain),
+      capabilities: capabilitiesOf(ctx, chain),
       tvlUsdAtRegistrySync: chain.tvlUsdAtSync,
     })),
     total: ranked.length,

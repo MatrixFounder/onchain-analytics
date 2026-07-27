@@ -23,10 +23,18 @@ const SUPPORTED_CHAIN = ChainInputSchema;
  * non-positive `limit` to `DEFAULT_LIMIT` (task 003-4), this schema just keeps a caller-supplied
  * value honest (never zero/negative) before it reaches the adapter.
  */
+/** Upper bound on `limit` (vdd-multi cycle 5, M-6). Without one, `limit` was an unbounded knob on
+ * how much VENDOR-AUTHORED text (`baseTokenSymbol`/`quoteTokenSymbol`, attacker-choosable on a
+ * permissionless DEX) a single call pours into the model's context — and after TASK-006 this tool
+ * reaches 458 chains, where the long tail is exactly where adversarial pair names are cheap to
+ * create. `dexscreener`'s search response is a fixed page anyway, so a value above this bound could
+ * never return more rows; it could only enlarge the blast radius. */
+const MAX_LIMIT = 100;
+
 export const NewPairsInputSchema = z
   .object({
     chain: SUPPORTED_CHAIN,
-    limit: z.number().int().positive().optional(),
+    limit: z.number().int().positive().max(MAX_LIMIT).optional(),
   })
   .strict();
 export type NewPairsInput = z.infer<typeof NewPairsInputSchema>;
@@ -90,7 +98,9 @@ export async function newPairsHandler(
   // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
   // would hash to two different cache entries for one logical request, which on a paid route is
   // two charges (data-model.md §4.2.2).
-  const chain = canonicalizeChain(input.chain);
+  //
+  // Resolved against `ctx.registry`, never the default — see `get-token.ts` (vdd-multi cycle 5, H-4).
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const limit = input.limit ?? DEFAULT_LIMIT;
   const args: Record<string, unknown> = { chain, limit };
 
@@ -101,13 +111,26 @@ export async function newPairsHandler(
   // ONCE, as part of the single `NewPairsOutputSchema.parse(...)` below (its `pairs` field is
   // `z.array(PoolSchema)`) — this used to ALSO run a standalone `z.array(PoolSchema).parse(...)`
   // first, a redundant double-validation of the same data against the same schema.
-  const output = NewPairsOutputSchema.parse({
+  // `safeParse`, never `parse` (vdd-multi cycle 6, M): this handler declares
+  // `Promise<NewPairsOutcome>` and its six siblings all report a contract violation as
+  // `{ok:false, reason}`. A throw here escapes that contract and surfaces as a generic transport
+  // error instead of this tool's own message — see `protocol-tvl.ts` for the same argument.
+  const parsed = NewPairsOutputSchema.safeParse({
     chain,
     pairs: outcome.output,
     source: outcome.cache.provider,
     fetchedAt: Date.now(),
   });
-  return { ok: true, output, cache: outcome.cache };
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+    const path = firstIssue && firstIssue.path.length > 0 ? firstIssue.path.join('.') : '(root)';
+    const message = firstIssue?.message ?? 'invalid output shape';
+    return {
+      ok: false,
+      reason: `provider returned data violating the tool contract: ${path}: ${message}`,
+    };
+  }
+  return { ok: true, output: parsed.data, cache: outcome.cache };
 }
 
 /** Registers `onchain_new_pairs` — exactly this name (R-18). See `get-token.ts`'s
@@ -116,7 +139,11 @@ export function registerNewPairsTool(server: McpServer, ctx: NewPairsContext): v
   server.registerTool(
     'onchain_new_pairs',
     {
-      description: 'Recently active DEX trading pairs on ethereum or solana (DexScreener-backed).',
+      // See `get-token.ts` for the M-2 rationale.
+      description:
+        'Recently active DEX trading pairs on a chain. Call ' +
+        'onchain_list_chains({capability:"pairs.new"}) to see where it is served ' +
+        '(DexScreener-backed).',
       inputSchema: NewPairsInputSchema,
       outputSchema: NewPairsOutputSchema,
     },

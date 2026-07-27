@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { CapabilityNotCoveredOnChainError } from '../src/chain/errors.js';
 import { createDefillamaAdapter, loadChainRegistry } from '../src/index.js';
 
 // Golden fixture-based normalization tests (R-7, D11) — no network: fixtures were recorded ONCE
@@ -113,10 +114,18 @@ describe('defillama adapter (contract, R-7)', () => {
       });
     });
 
-    it('fails loudly when the chain is absent from the vendor list', () => {
+    // CHANGED EXPECTATION (vdd-multi cycle 6, L-9): still loud, but with the PERMANENT error
+    // class. The registry is deliberately stale (it is a build artifact), so a row the vendor no
+    // longer lists is a normal consequence of that design — not an outage. Reported as
+    // `CapabilityUnavailableError` it told the agent to retry a call that fails identically until
+    // the next sync, and negative-cached that verdict on the way.
+    it('reports a chain the vendor no longer lists as PERMANENTLY uncovered, not retryable', () => {
       expect(() =>
         adapter.normalize('chain.tvl', { chain: CHAINS.resolve('ethereum'), raw: [] }),
-      ).toThrow(/absent from \/v2\/chains/);
+      ).toThrow(CapabilityNotCoveredOnChainError);
+      expect(() =>
+        adapter.normalize('chain.tvl', { chain: CHAINS.resolve('ethereum'), raw: [] }),
+      ).toThrow(/no longer lists/);
     });
 
     it.each([[-1], [Number.NaN], [Number.POSITIVE_INFINITY], ['nope']])(
@@ -142,7 +151,14 @@ describe('defillama adapter (contract, R-7)', () => {
       });
       const result = await testAdapter.fetch('chain.tvl', { chain: 'berachain' });
       expect(calls).toEqual(['https://api.llama.fi/v2/chains']);
-      expect(result).toEqual({ chain: CHAINS.resolve('berachain'), raw: CHAINS_FIXTURE });
+      // `fetchedAt` rides along from the shared catalog memo (vdd-multi cycle 6, M-1) so
+      // `normalize()` reports the DATA's age rather than its own — see the adapter for why two
+      // TTL windows in series do not compose into one.
+      expect(result).toEqual({
+        chain: CHAINS.resolve('berachain'),
+        raw: CHAINS_FIXTURE,
+        fetchedAt: FIXED_NOW,
+      });
     });
   });
 

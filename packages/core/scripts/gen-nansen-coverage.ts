@@ -70,11 +70,33 @@ export function generateNansenCoverage(specPath = SPEC, outPath = OUT): void {
   });
   const exhaustive = enumOf(spec, EXHAUSTIVE_LABELS_SCHEMA);
 
+  /**
+   * Guards a VENDOR-supplied string before it is interpolated into a TypeScript source literal
+   * (vdd-multi cycle 6, L).
+   *
+   * The inputs are enum members read out of a downloaded OpenAPI document, and the emit below builds
+   * `'<value>'` by hand — so a value containing a quote, a backslash or a newline would close the
+   * literal early and inject arbitrary source into a COMMITTED `src/` module. Escaping would make
+   * that safe and silent; refusing makes it safe and visible. A chain token that is not
+   * `[a-z0-9._-]` is a vendor-drift signal worth a human's attention, not something to quietly
+   * encode — the same "vendor counters drift, verify rather than assume" discipline this generator
+   * exists to serve.
+   */
+  function safeToken(value: string): string {
+    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(value)) {
+      throw new Error(
+        `gen-nansen-coverage: refusing to emit an unexpected vendor token ${JSON.stringify(value)} — ` +
+          'expected /^[a-z0-9][a-z0-9._-]*$/i. Inspect the spec before widening this guard.',
+      );
+    }
+    return value;
+  }
+
   const rows = perCapability
     .map(
       ([capability, chains, schemas, sizes]) =>
         `  // ${schemas.join(' ∩ ')} — ${sizes.join(' ∩ ')} = ${chains.length}\n` +
-        `  '${capability}': [${chains.map((c) => `'${c}'`).join(', ')}],`,
+        `  '${safeToken(capability)}': [\n${chains.map((c) => `    '${safeToken(c)}',`).join('\n')}\n  ],`,
     )
     .join('\n');
 
@@ -96,7 +118,7 @@ ${rows}
 /** The opt-in exhaustive \`entity.labels\` tier (\`/profiler/address/labels\`), narrower than the
  * default tier — listed separately so a caller can be refused BEFORE the 100cr escalation. */
 export const NANSEN_EXHAUSTIVE_LABELS_CHAINS: readonly string[] = [
-  ${exhaustive.map((c) => `'${c}'`).join(', ')},
+${exhaustive.map((c) => `  '${safeToken(c)}',`).join('\n')}
 ];
 `;
 

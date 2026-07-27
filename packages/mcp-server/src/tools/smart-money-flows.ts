@@ -94,7 +94,11 @@ export async function smartMoneyFlowsHandler(
   // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
   // would hash to two different cache entries for one logical request, which on a paid route is
   // two charges (data-model.md §4.2.2).
-  const chain = canonicalizeChain(input.chain);
+  //
+  // Resolved against `ctx.registry`, never the default — see `get-token.ts` (vdd-multi cycle 5,
+  // H-4). It matters most on THIS route: it is paid, so a per-call registry rebuild sat on the
+  // cache-hit path that exists precisely to avoid paying twice.
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const tokenAddress = normalizeAddress(chain, input.tokenAddress);
   const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
     chain,
@@ -127,8 +131,13 @@ export function registerSmartMoneyFlowsTool(server: McpServer, ctx: SmartMoneyFl
   server.registerTool(
     'onchain_smart_money_flows',
     {
+      // See `get-token.ts` for the M-2 rationale. On a PAID route the discovery call is not a
+      // nicety: a wrong `chain` guess is refused before any credits are reserved, but only if the
+      // model knows to ask instead of guessing.
       description:
-        'Smart-money net-flow (1h/24h/7d/30d) and top holders for a token on ethereum or solana (Nansen-backed, paid).',
+        'Smart-money net-flow (1h/24h/7d/30d) and top holders for a token. ' +
+        'Coverage is per chain — call onchain_list_chains({capability:"smart-money.flows"}) ' +
+        'first (Nansen-backed, paid).',
       inputSchema: SmartMoneyFlowsInputSchema,
       outputSchema: SmartMoneyFlowsOutputSchema,
     },

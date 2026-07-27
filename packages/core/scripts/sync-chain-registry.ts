@@ -42,6 +42,23 @@ const SOLANA_CAIP2 = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp';
  * `nansen` (R-58d). Values below come from the 2026-07-26 live probe of `/latest/dex/search`.
  * Anything absent stays `null` and is carried forward from the previous snapshot if present.
  */
+/**
+ * Gas-token decimals for chains the EIP-155 registry cannot know about (vdd-multi cycle 6, H-1).
+ *
+ * `nativeDecimals` otherwise comes only from `nativeCurrency.decimals`, which exists for EVM chains
+ * and nowhere else — so every non-EVM row is `null`, and `rpc-solana` now REFUSES a chain whose
+ * decimals it does not know rather than labelling the balance with a literal. Solana's 9 is not a
+ * new claim: it is the `decimals: 9` that lived hardcoded in `rpc-solana/index.ts` since M1
+ * (lamports per SOL = 10^9, and the adapter's own docstring reasons about that constant). This
+ * moves it from code into data, which is the whole point of the registry.
+ *
+ * A curated column: the generator never overwrites a value it did not produce (see the row build),
+ * so an operator can add a chain here or in the previous snapshot and the sync will carry it.
+ */
+const CURATED_NATIVE_DECIMALS: Readonly<Record<string, number>> = {
+  [SOLANA_CAIP2]: 9,
+};
+
 const DEXSCREENER_OBSERVED: Readonly<Record<string, string>> = {
   'eip155:1': 'ethereum',
   [SOLANA_CAIP2]: 'solana',
@@ -87,8 +104,9 @@ interface CoingeckoPlatform {
 }
 interface Eip155Chain {
   chainId?: unknown;
+  name?: unknown;
   shortName?: unknown;
-  nativeCurrency?: { symbol?: unknown };
+  nativeCurrency?: { symbol?: unknown; decimals?: unknown };
   rpc?: unknown;
 }
 
@@ -106,6 +124,7 @@ interface SnapshotChain {
   family: 'evm' | 'svm' | 'move' | 'cosmos' | 'utxo' | 'other';
   aliases: string[];
   nativeSymbol: string | null;
+  nativeDecimals: number | null;
   vendors: {
     defillama: string | null;
     coingecko: string | null;
@@ -188,12 +207,28 @@ function asCatalogs(raw: { defillama: unknown; coingecko: unknown; eip155: unkno
   };
 }
 
+/**
+ * Reads the snapshot being replaced. `null` ONLY when there is no file yet (the genuine
+ * bootstrap case).
+ *
+ * **A parse failure is fatal, not `null`** (vdd-multi cycle 5, L-6). Every curated column —
+ * `rpcHosts` (the SSRF allowlist, §7.2.1) and `vendors.nansen` — exists only in this file and is
+ * carried forward from it. Swallowing a parse error turned "the snapshot is corrupt" into "there
+ * is no snapshot", and the very next write erased 458 rows of hand-curation with `null`s. The
+ * generator would report it as a clean run, because from its point of view nothing was lost.
+ * A truncated write or a bad merge conflict is exactly how that file gets malformed.
+ */
 function loadPrevious(out: string): Snapshot | null {
   if (!existsSync(out)) return null;
   try {
     return JSON.parse(readFileSync(out, 'utf8')) as Snapshot;
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(
+      `previous snapshot at ${out} exists but does not parse. ` +
+        'Refusing to run: continuing would silently discard every curated rpcHosts/vendors.nansen ' +
+        'value. Restore the file from git, or delete it deliberately to bootstrap from scratch.',
+      { cause: error },
+    );
   }
 }
 
@@ -231,10 +266,37 @@ function joinCatalogs(
     if (evmId !== null && !cgByEvmId.has(evmId)) cgByEvmId.set(evmId, platform);
   }
 
+  // **Testnet rows are excluded from the EIP-155 index** (vdd-multi cycle 5, M-1 follow-on).
+  //
+  // Our base list is DeFiLlama's MAINNET TVL catalog, so a testnet EIP-155 row can never be the
+  // correct match for one of our chains — but chain ids are not globally unique across the two
+  // catalogs, and where they collide the testnet wins by arriving first. Two rows were joined this
+  // way, and all three things this script derives from the EIP row were wrong for both:
+  //
+  //   - `hyperliquid-l1` (chainId 999, also Wanchain **Testnet**) → gas symbol `WAN`, alias `twan`,
+  //     and the RPC candidate `gwan-ssl.wandevs.org` — the same wrong-chain host that had to be
+  //     rejected by hand during the 006-8 curation, whose automated liveness check PASSED because
+  //     the endpoint really does answer `chainId 999`.
+  //   - `mantra` (MANTRACHAIN **Testnet**) → alias `dukong`.
+  //
+  // Dropping the row entirely is the honest outcome: no EIP data beats another chain's EIP data.
+  // A live chain that only appears in the registry as a testnet simply gets `nativeSymbol` from
+  // DeFiLlama and no `shortName` alias.
+  const isTestnet = (chain: Eip155Chain): boolean =>
+    /\b(testnet|devnet)\b/i.test(str(chain.name) ?? '');
+
+  // Reported only where a dropped row would ACTUALLY have been used — the catalog holds ~1000
+  // testnets and listing them all would bury the two lines a reviewer needs.
+  const droppedTestnets = new Map<number, string>();
   const eipById = new Map<number, Eip155Chain>();
   for (const chain of catalogs.eip155) {
     const id = num(chain.chainId);
-    if (id !== null && !eipById.has(id)) eipById.set(id, chain);
+    if (id === null || eipById.has(id)) continue;
+    if (isTestnet(chain)) {
+      if (!droppedTestnets.has(id)) droppedTestnets.set(id, str(chain.name) ?? '?');
+      continue;
+    }
+    eipById.set(id, chain);
   }
 
   const prevByCaip2 = new Map<string, SnapshotChain>();
@@ -242,6 +304,21 @@ function joinCatalogs(
 
   const takenSlugs = new Map<string, string>(); // slug → caip2
   const takenAliases = new Map<string, string>(); // alias → caip2
+
+  // **Every name the PREVIOUS snapshot used is reserved before the main loop runs** (vdd-multi
+  // cycle 6, M-2). Cycle 5 reserved deprecated rows' names, but did it AFTER the main loop had
+  // already handed out slugs — so it protected pass 2 and not slug assignment. A live chain could
+  // still take the slug of a row that was about to be re-emitted as deprecated, and the generator
+  // then produced a snapshot its OWN validator rejects (`duplicate slug`), aborting before
+  // `renderReport` ever ran: the operator saw a load error and no line explaining which name
+  // caused it — verbatim the failure the L-5 fix was written to eliminate.
+  //
+  // A reservation is RELEASED below the moment the same `caip2` reappears in the catalogs, so a
+  // chain keeps its own names across syncs; only a DIFFERENT chain is blocked from taking them.
+  for (const prev of prevByCaip2.values()) {
+    takenSlugs.set(prev.slug, prev.caip2);
+    for (const alias of prev.aliases) takenAliases.set(alias, prev.caip2);
+  }
   const aliasCandidates = new Map<string, string[]>(); // caip2 → proposed aliases (pass 2)
   const out: SnapshotChain[] = [];
   const seenCaip2 = new Set<string>();
@@ -315,10 +392,12 @@ function joinCatalogs(
     }
 
     // Slug collision: disambiguate deterministically where we can, otherwise skip and report.
-    // Never invent a silent suffix for a chain we cannot tell apart.
+    // Never invent a silent suffix for a chain we cannot tell apart. A reservation held by THIS
+    // chain's own previous row is not a collision — release it (see the seeding above).
     let slug = baseSlug;
     const slugOwner = takenSlugs.get(slug);
-    if (slugOwner !== undefined) {
+    if (slugOwner === caip2) takenSlugs.delete(slug);
+    if (slugOwner !== undefined && slugOwner !== caip2) {
       if (evmChainId !== null) {
         slug = `${baseSlug}-${evmChainId}`;
         report.slugConflicts.push(`${name}: slug '${baseSlug}' taken by ${slugOwner} → '${slug}'`);
@@ -337,6 +416,12 @@ function joinCatalogs(
     // same rejection is reported two or three times over.
     const aliases: string[] = [];
     const eip = evmChainId !== null ? eipById.get(evmChainId) : undefined;
+    if (evmChainId !== null && !eip && droppedTestnets.has(evmChainId)) {
+      report.ambiguousJoins.push(
+        `${slug}: eip155:${evmChainId} resolves to '${droppedTestnets.get(evmChainId) ?? '?'}' (a TESTNET) — ` +
+          'EIP row dropped; no gas symbol, shortName alias or RPC candidate derived from it',
+      );
+    }
     // The EIP-155 registry's `shortName` ('eth', 'arb1', 'bera') is how people actually write a
     // chain. Without it an agent typing `eth` gets "unknown chain" on the single most common
     // spelling there is — and this parameter exists precisely so an agent can type a chain name.
@@ -360,7 +445,27 @@ function joinCatalogs(
       name,
       family: evmChainId !== null ? 'evm' : caip2 === SOLANA_CAIP2 ? 'svm' : 'other',
       aliases,
-      nativeSymbol: str(dl.tokenSymbol) ?? str(eip?.nativeCurrency?.symbol),
+      // GAS token first, listed token second (vdd-multi cycle 5, M-1). DeFiLlama's `tokenSymbol`
+      // is the chain's *listed* asset, which for an L2 is usually its governance token, not what
+      // it charges gas in: `op-mainnet → OP`, `arbitrum → ARB`, `gnosis → GNO` — all three
+      // actually pay gas in ETH/xDAI. The EIP-155 registry's `nativeCurrency.symbol` is the gas
+      // token by definition, so it wins wherever it exists (i.e. for EVM chains). `tokenSymbol`
+      // remains the source for everything outside that registry, where it is right (`solana → SOL`,
+      // `bitcoin → BTC`).
+      //
+      // This is not cosmetic: `nativeSymbol` labels the balance `rpc-evm` returns and is the query
+      // `dexscreener` searches by. A wrong symbol here is a wrong ANSWER downstream — a BNB balance
+      // reported as OP — which is why the correction lands before the consumers (H-3).
+      nativeSymbol: str(eip?.nativeCurrency?.symbol) ?? str(dl.tokenSymbol),
+      // The EIP-155 registry's value, else a curated one, else whatever the previous snapshot
+      // carried. Never a guessed 18 — that is precisely the hardcode this column exists to remove
+      // (H-3). `null` where we do not know, which makes `wallet.balances.native` honestly uncovered
+      // rather than wrongly labelled.
+      nativeDecimals:
+        num(eip?.nativeCurrency?.decimals) ??
+        CURATED_NATIVE_DECIMALS[caip2] ??
+        prev?.nativeDecimals ??
+        null,
       vendors: {
         defillama: name,
         coingecko: str(cg?.id),
@@ -401,6 +506,15 @@ function joinCatalogs(
     out.push({ ...prev, deprecated: true });
     report.deprecated.push(prev.slug);
     newlyDeprecated.add(caip2);
+    // A deprecated row still OCCUPIES its slug and aliases (vdd-multi cycle 5, L-5). The loader
+    // rejects a collision regardless of the `deprecated` flag — the row is still resolvable, which
+    // is the whole reason it is kept — so leaving these names unclaimed let pass 2 hand a live
+    // chain an alias that a dead chain already owned. The generator then wrote a snapshot its own
+    // validator refuses, and the failure surfaced as a load error with no line in the report
+    // explaining which alias caused it.
+    // (Reservation already made before the main loop — see the seeding of `takenSlugs`/
+    // `takenAliases` above, which is what makes it effective for slug ASSIGNMENT and not just for
+    // pass 2.)
   }
 
   // --- pass 2: aliases, now that EVERY slug is known ------------------------------------------
@@ -416,6 +530,7 @@ function joinCatalogs(
         continue;
       }
       const aliasOwner = takenAliases.get(candidate);
+      if (aliasOwner === row.caip2) takenAliases.delete(candidate);
       if (aliasOwner !== undefined && aliasOwner !== row.caip2) {
         report.aliasDropped.push(
           `${row.slug}: alias '${candidate}' already claimed by ${aliasOwner}`,
@@ -501,6 +616,15 @@ export async function syncChainRegistry(argv: readonly string[] = []): Promise<v
     chains,
   };
 
+  // **The report is emitted BEFORE the validation gate** (vdd-multi cycle 6, M-2). It used to come
+  // after, so a rejected run printed a bare `duplicate slug 'foo'` and discarded the one artifact
+  // that says WHICH rows collided and why — the exact "failure with no diagnostics" the report
+  // exists to prevent. The report describes the run that was attempted; whether the snapshot was
+  // then accepted is a separate fact, stated below.
+  const rendered = renderReport(report);
+  if (args.report) writeFileSync(args.report, rendered, 'utf8');
+  else process.stdout.write(rendered);
+
   // The generator must never emit a document the RUNTIME loader would reject: the loader's
   // invariants (unique caip2/slug, globally non-overlapping aliases) are exactly what caught the
   // ambiguous-join defect, and re-running them here turns "the build breaks for every consumer"
@@ -508,9 +632,6 @@ export async function syncChainRegistry(argv: readonly string[] = []): Promise<v
   buildChainRegistry(snapshot);
 
   writeFileSync(args.out, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
-  const rendered = renderReport(report);
-  if (args.report) writeFileSync(args.report, rendered, 'utf8');
-  else process.stdout.write(rendered);
 }
 
 const invokedDirectly = process.argv[1]?.endsWith('sync-chain-registry.ts') ?? false;

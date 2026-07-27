@@ -98,7 +98,14 @@ export async function getTokenHandler(
   // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
   // would hash to two different cache entries for one logical request, which on a paid route is
   // two charges (data-model.md §4.2.2).
-  const chain = canonicalizeChain(input.chain);
+  //
+  // The registry is taken from `ctx.registry`, never left to default (vdd-multi cycle 5, H-4).
+  // Two defects in one line: (a) the default path REBUILDS the 458-row snapshot on every call —
+  // ~0.55 ms of zod parsing plus four indexes to perform a single `Map.get`, measured ×5500 the
+  // cost of the lookup itself, and paid even on a cache hit; (b) it canonicalizes against a
+  // DIFFERENT dictionary than the coverage gate one line below resolves with, so an injected
+  // registry made the two disagree silently.
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const address = normalizeAddress(chain, input.address);
   const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
     chain,
@@ -133,8 +140,16 @@ export function registerGetTokenTool(server: McpServer, ctx: GetTokenContext): v
   server.registerTool(
     'onchain_get_token',
     {
+      // TASK-006 / vdd-multi cycle 5, M-2: the description is now the ONLY chain signal the model
+      // sees while routing. Dropping the `z.enum` saved ~8.7k tokens of schema per request, and the
+      // enum was also what told the model which chains existed — so a description still naming two
+      // chains would make this task's headline capability invisible to its only consumer. Naming
+      // the discovery tool AND the capability id is what keeps it accurate without re-paying for
+      // the enum: `onchain_list_chains` answers from the same coverage matrix the engine gates on.
       description:
-        'Token metadata and USD price for a contract address on ethereum or solana (CoinGecko-backed).',
+        'Token metadata and USD price for a contract address, on any supported chain. ' +
+        'Call onchain_list_chains({capability:"token.price"}) to see where it is served ' +
+        '(CoinGecko-backed).',
       inputSchema: GetTokenInputSchema,
       outputSchema: GetTokenOutputSchema,
     },

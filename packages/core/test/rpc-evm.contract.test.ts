@@ -17,6 +17,11 @@ const ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
 interface RpcEvmFixture {
   chain: string;
   address: string;
+  // TASK-006 / vdd-multi cycle 5 (H-3): the hand-off from `fetch()` to `normalize()` now carries
+  // the chain's own gas token, so `normalize()` cannot label a balance `ETH` on a chain that pays
+  // in something else. The fixture carries it because the fixture IS that hand-off shape.
+  nativeSymbol: string;
+  nativeDecimals: number;
   raw: { jsonrpc: string; result: string; id: number };
 }
 
@@ -57,10 +62,11 @@ describe('rpc-evm adapter (contract, R-16/R-17 backend, OQ-1)', () => {
     ).toBe('string');
   });
 
-  it('capabilities() declares wallet.balances.native for ethereum only', () => {
-    expect(adapter.capabilities()).toEqual([
-      { id: 'wallet.balances.native', chains: ['ethereum'] },
-    ]);
+  // CHANGED EXPECTATION (vdd-multi cycle 6, M-7): the `chains: ['ethereum']` literal was false by
+  // 17 chains after TASK-006 — `servesChain()` owns that answer now. See `dune.test.ts` for the
+  // full rationale.
+  it('capabilities() declares wallet.balances.native without re-declaring a chain set', () => {
+    expect(adapter.capabilities()).toEqual([{ id: 'wallet.balances.native' }]);
   });
 
   it('costOf() is free (0 credits) and isAvailable() is always ok (keyless JSON-RPC)', () => {
@@ -90,7 +96,13 @@ describe('rpc-evm adapter (contract, R-16/R-17 backend, OQ-1)', () => {
       method: 'eth_getBalance',
       params: [ADDRESS, 'latest'],
     });
-    expect(result).toEqual({ chain: 'ethereum', address: ADDRESS, raw: fixture.raw });
+    expect(result).toEqual({
+      chain: 'ethereum',
+      address: ADDRESS,
+      nativeSymbol: 'ETH',
+      nativeDecimals: 18,
+      raw: fixture.raw,
+    });
   });
 
   it('falls back to the secondary endpoint (within-adapter retry) when the primary one fails', async () => {
@@ -111,7 +123,13 @@ describe('rpc-evm adapter (contract, R-16/R-17 backend, OQ-1)', () => {
     });
 
     expect(calls).toEqual(['https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org']);
-    expect(result).toEqual({ chain: 'ethereum', address: ADDRESS, raw: fixture.raw });
+    expect(result).toEqual({
+      chain: 'ethereum',
+      address: ADDRESS,
+      nativeSymbol: 'ETH',
+      nativeDecimals: 18,
+      raw: fixture.raw,
+    });
   });
 
   it('throws when both endpoints fail', async () => {

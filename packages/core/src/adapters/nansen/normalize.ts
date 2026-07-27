@@ -3,7 +3,9 @@ import { isValidAddress, normalizeAddress } from '../../chain/address.js';
 import { EntityLabelSchema, type EntityLabel } from '../../types/entity-label.js';
 import { SmartMoneyFlowSchema, type SmartMoneyFlow } from '../../types/smart-money-flow.js';
 import { TokenRiskScoreSchema, type TokenRiskScore } from '../../types/token-risk-score.js';
-import type { NansenChain, NansenEndpointResult } from './endpoints.js';
+import type { Chain } from '../../types/chain.js';
+import type { ChainFamily } from '../../chain/registry-core.js';
+import type { NansenEndpointResult } from './endpoints.js';
 
 /**
  * Upper bound on vendor rows mapped per response (adversarial cycle 1, performance + security).
@@ -93,7 +95,12 @@ const SOURCE = 'nansen';
  * has both sub-calls' headers available without a second fetch.
  */
 export interface SmartMoneyFlowsFetchResult {
-  chain: NansenChain;
+  chain: Chain;
+  /** The chain's address FAMILY, used to decide whether case-folding a vendor address is safe.
+   * Keyed on family rather than on the chain name (vdd-multi cycle 6, L-3) for the same reason
+   * `endpoints.ts`'s `netflowTokenAddressFilter` is: the rule is about the ENCODING, not the
+   * chain, and `smart-money.flows` already covers a non-EVM chain beyond `solana`. */
+  family: ChainFamily;
   tokenAddress: string;
   netflow: NansenEndpointResult;
   holders: NansenEndpointResult;
@@ -112,7 +119,20 @@ export interface SmartMoneyFlowsFetchResult {
  * `endpoints.ts`'s `postSearchEntityName` docstring for why).
  */
 export interface EntityLabelsFetchResult {
-  chain: NansenChain;
+  chain: Chain;
+  /**
+   * NANSEN's own chain token for `chain` (`bnb` for our `bsc`), i.e. exactly what the request sent
+   * and therefore exactly what the vendor echoes back in `GeneralSearchResponse.tokens[].chain`.
+   *
+   * **Carried because comparing the echo against OUR slug silently emptied the token half of a
+   * PAID response** (vdd-multi cycle 6, H-2). Cycle 5 widened the transport to send the vendor's
+   * token while `mapSearchGeneral` kept comparing against the slug — identical for `ethereum` and
+   * `solana`, different for every one of the ~20 chains where the two vocabularies diverge, so on
+   * those chains EVERY token row was dropped from a response we had already paid for. Non-empty,
+   * schema-valid, plausible, and missing half its data: the exact failure class this file's own
+   * comments describe as having cost 20 live credits to diagnose.
+   */
+  vendorChain: string;
   tokenAddress: string | undefined;
   premiumRequested: boolean;
   search: NansenEndpointResult | undefined;
@@ -133,7 +153,7 @@ export interface EntityLabelsFetchResult {
  * the implementation was the part that was wrong; `normalizeTokenRiskScore` now reads both.
  */
 export interface TokenRiskFetchResult {
-  chain: NansenChain;
+  chain: Chain;
   address: string;
   indicators: NansenEndpointResult;
   tokenInformation: NansenEndpointResult;
@@ -184,7 +204,7 @@ function requireFiniteNumber(value: unknown, field: string): number {
  * per the vendor schema, but this canonical schema's `address` is required); this never throws for
  * a token with zero holders in the response (`topHolders: []` is a valid result, same "empty array
  * is not an error" spirit as R-32). */
-function mapTopHolders(holdersBody: unknown, chain: NansenChain): SmartMoneyFlow['topHolders'] {
+function mapTopHolders(holdersBody: unknown, chain: Chain): SmartMoneyFlow['topHolders'] {
   const body = holdersBody as TgmHoldersResponseBody;
   if (!Array.isArray(body.data)) return [];
 
@@ -260,7 +280,7 @@ export function normalizeSmartMoneyFlow(
   // that differs only in case and then stamp OUR address onto its figures — schema-valid,
   // non-empty, cached 300s: a silently wrong paid financial signal, which is the precise failure
   // this whole row-matching block exists to prevent. Mirror of the `endpoints.ts` L-1 fix.
-  const fold = (value: string): string => (raw.chain === 'solana' ? value : value.toLowerCase());
+  const fold = (value: string): string => (raw.family === 'evm' ? value.toLowerCase() : value);
   const wanted = fold(raw.tokenAddress);
   const matched = rows.find(
     (r) => isRecord(r) && typeof r.token_address === 'string' && fold(r.token_address) === wanted,
@@ -347,7 +367,8 @@ interface ProfilerAddressLabelsResponseBody {
  * `EntitySearchResult` shape, not a modeling shortcut). */
 function mapSearchGeneral(
   searchBody: unknown,
-  chain: NansenChain,
+  chain: Chain,
+  vendorChain: string,
   now: () => number,
 ): EntityLabel[] {
   const body = searchBody as GeneralSearchResponseBody;
@@ -364,7 +385,9 @@ function mapSearchGeneral(
       // (see the DF-1 history in endpoints.ts's postSmartMoneyNetflow docstring).
       if (
         !isRecord(row) ||
-        String(row.chain).toLowerCase() !== chain ||
+        // Compared against the VENDOR's token, which is what we sent and what it echoes — never
+        // against our slug (vdd-multi cycle 6, H-2; see `EntityLabelsFetchResult.vendorChain`).
+        String(row.chain).toLowerCase() !== vendorChain.toLowerCase() ||
         typeof row.address !== 'string' ||
         !isValidAddress(chain, row.address)
       ) {
@@ -410,11 +433,7 @@ function mapSearchGeneral(
  * (data-model.md §4.1: "token-scoped обогащение через `TGMHolder.address_label`"). Each holder row
  * becomes ONE `EntityLabel` entry — `labels: []` (never omitted/undefined) when the row carries no
  * `address_label`, which is a VALID result (R-32 "0 labels is not an error"), not filtered out. */
-function mapHolderLabels(
-  holdersBody: unknown,
-  chain: NansenChain,
-  now: () => number,
-): EntityLabel[] {
+function mapHolderLabels(holdersBody: unknown, chain: Chain, now: () => number): EntityLabel[] {
   const body = holdersBody as TgmHoldersResponseBody;
   if (!Array.isArray(body.data)) return [];
 
@@ -491,7 +510,7 @@ export function normalizeEntityLabels(
   if (!raw.search) {
     throw new Error('nansen.normalize(entity.labels): missing search/general response');
   }
-  const entries = mapSearchGeneral(raw.search.body, raw.chain, now);
+  const entries = mapSearchGeneral(raw.search.body, raw.chain, raw.vendorChain, now);
   if (raw.holders) {
     entries.push(...mapHolderLabels(raw.holders.body, raw.chain, now));
   }

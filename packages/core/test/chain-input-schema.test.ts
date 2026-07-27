@@ -65,6 +65,7 @@ describe('ChainInputSchema', () => {
               family: 'evm',
               aliases: ['oc'],
               nativeSymbol: null,
+              nativeDecimals: null,
               vendors: {},
               rpcHosts: null,
               tvlUsdAtSync: null,

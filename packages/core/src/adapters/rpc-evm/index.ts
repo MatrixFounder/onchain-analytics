@@ -13,29 +13,28 @@ const REGISTRATION = adapterRegistrations.find((r) => r.id === 'rpc-evm');
 if (!REGISTRATION) {
   throw new Error('rpc-evm: no matching entry in adapterRegistrations (providers.config.ts)');
 }
-const HOSTS = REGISTRATION.hosts;
 const RATE_LIMIT = REGISTRATION.rateLimit;
 
-/** Both hosts of the SSRF allowlist double as this adapter's OWN primary/fallback endpoint
- * chain, in the same order `HOSTS` lists them (ARCHITECTURE.md §3.2/§5.3, OQ-1 resolved by a
- * live probe, 2026-07-22 — `ethereum-rpc.publicnode.com` primary, `eth.drpc.org` fallback; both
- * confirmed live — two other keyless candidates considered during OQ-1's probe were confirmed
- * DOWN and deliberately excluded from `hosts`, see ARCHITECTURE.md §3.2's reviewer note for their
- * names). This is a within-THIS-adapter fallback (retry across two JSON-RPC endpoints for the
- * same capability), distinct from `CapabilityRegistry`'s own cross-adapter fallback (R-11) —
- * `wallet.balances.native` on ethereum has only `rpc-evm` in its route's `adapterIds`
- * (`providers.config.ts`), so a fully dead JSON-RPC layer needs its own retry inside this one
- * adapter. */
-const ENDPOINTS = HOSTS.map((host) => `https://${host}`);
+/* Endpoints and the SSRF allowlist come from the requested chain's own curated `rpcHosts` row and
+ * from nowhere else (TASK-006 task 006-8, R-56; hardened in vdd-multi cycle 5, M-3). The
+ * per-adapter `REGISTRATION.hosts` list is deliberately NOT used as a fallback: those are
+ * ETHEREUM's endpoints, so falling back to them for any other chain answers with the wrong chain's
+ * balance — schema-valid, cached, and undetectable downstream. Within-chain primary→fallback retry
+ * still exists; it now walks that chain's own approved list, in the order a human approved it
+ * (ARCHITECTURE.md §3.2/§5.3, security.md §7.2.1). */
 
 /** `https://host/...` → `host`. The registry stores full URLs (a human approves a URL, not a bare
- * hostname); `safeFetch`'s allowlist is hostname-based. */
+ * hostname); `safeFetch`'s allowlist is hostname-based.
+ *
+ * **Fails CLOSED** (vdd-multi cycle 6, security M-1). This used to `catch { return url; }` — a
+ * security control defaulting to "trust the raw string" on malformed input. The value becomes an
+ * SSRF allowlist ENTRY, so a bare `evil.example` (no scheme) was unusable as an endpoint, and
+ * therefore never exercised by any test, while still widening the set of hosts a redirect could be
+ * followed to. Throwing makes a malformed row a loud failure of that one chain's request instead of
+ * a silent widening of the perimeter — and `ChainInfoSchema` now rejects such rows at load anyway,
+ * so this is the second of two gates, not the only one. */
 function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
+  return new URL(url).hostname;
 }
 
 /** Optional constructor dependencies (injectable — same DI convention as the 003-4 adapters:
@@ -53,6 +52,11 @@ export interface RpcEvmAdapterDeps {
 interface RpcEvmFetchResult {
   chain: Chain;
   address: string;
+  /** Carried from the registry through `fetch()` so `normalize()` labels the balance with THIS
+   * chain's gas token (vdd-multi cycle 5, H-3) — `normalize()` receives only this shape, so the
+   * alternative would be a second registry lookup with no way to prove it resolved the same row. */
+  nativeSymbol: string;
+  nativeDecimals: number;
   raw: unknown;
 }
 
@@ -74,15 +78,39 @@ function extractFetchArgs(
   const rawChain = args['chain'];
   const address = args['address'];
   const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
-  // TASK-006 (task 006-5): the same condition `chainSupport()` reports — family plus a CURATED
-  // RPC host. `rpcHosts: null` is not "misconfigured", it is "we never approved a host for this
-  // chain" (security.md §7.2.1), and the coverage gate should have refused long before here.
-  if (!chain || chain.family !== 'evm' || chain.rpcHosts === null || typeof address !== 'string') {
+  // TASK-006 (task 006-5): the same condition `chainSupport()` reports — family, a CURATED RPC
+  // host, and a known gas token. `rpcHosts: null` is not "misconfigured", it is "we never approved
+  // a host for this chain" (security.md §7.2.1), and the coverage gate should have refused long
+  // before here. Kept EXACTLY in step with `chainSupport()` below: the two conditions diverging is
+  // how a chain passes the gate and then fails in the transport — H-1's mechanism, one adapter over.
+  if (!chain || !servesChain(chain) || typeof address !== 'string') {
     throw new Error(
-      `rpc-evm.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a evm chain with a curated RPC host>, address: string})`,
+      `rpc-evm.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <an evm chain with a curated RPC host and a known native currency>, address: string})`,
     );
   }
   return { chain, address };
+}
+
+/**
+ * The single definition of "this adapter can serve that chain" — read by `chainSupport()` (what the
+ * coverage gate and `onchain_list_chains` advertise) AND by `extractFetchArgs()` (what the
+ * transport actually accepts).
+ *
+ * `nativeSymbol`/`nativeDecimals` are part of the condition, not an afterthought (vdd-multi cycle 5,
+ * H-3): `eth_getBalance` answers with a bare integer, so without both values there is no way to
+ * label the result. Returning it as `ETH`/18 anyway — which is what this adapter used to do for
+ * every chain, harmless while the route was ethereum-only and wrong for 17 chains the moment
+ * TASK-006 widened it — reports a BNB balance as ETH, and a downstream agent then multiplies it by
+ * the price of ETH. An uncovered chain is a refusal the caller can act on; a mislabelled balance is
+ * a wrong answer that looks right.
+ */
+function servesChain(chain: ChainInfo): boolean {
+  return (
+    chain.family === 'evm' &&
+    chain.rpcHosts !== null &&
+    chain.nativeSymbol !== null &&
+    chain.nativeDecimals !== null
+  );
 }
 
 /**
@@ -106,9 +134,11 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
     // TASK-006 (R-54/R-56b): any EVM chain, but ONLY if the registry carries a curated RPC host
     // for it. `rpcHosts: null` therefore means honestly uncovered — the coverage gate refuses
     // before any network attempt, instead of letting a request time out against a host we never
-    // approved (security.md §7.2.1). Curation itself is task 006-8.
-    chainSupport: (chain: ChainInfo): boolean => chain.family === 'evm' && chain.rpcHosts !== null,
-    capabilities: () => [{ id: 'wallet.balances.native', chains: ['ethereum'] }],
+    // approved (security.md §7.2.1). Curation itself is task 006-8. See `servesChain()` for why a
+    // known gas token is part of the same condition.
+    chainSupport: servesChain,
+    // No `chains` literal — `servesChain` owns that answer (vdd-multi cycle 6, M-7).
+    capabilities: () => [{ id: 'wallet.balances.native' }],
     costOf: () => ({ credits: 0 }),
     fetch: async (_cap: string, args: Record<string, unknown>): Promise<RpcEvmFetchResult> => {
       const { chain, address } = extractFetchArgs(args, chains);
@@ -129,12 +159,16 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
       // exactly the hosts a human approved for THIS chain, so one chain's endpoint can never be
       // used to reach another's (security.md §7.2.1).
       //
-      // `rpcHosts === null` cannot be reached here: `chainSupport()` reports it and the coverage
-      // gate refuses long before. The fallback to the registration hosts exists only so this
-      // adapter still behaves if constructed outside the registry-backed path.
-      const chainHosts = chain.rpcHosts !== null ? [...chain.rpcHosts] : [];
-      const allowlist = chainHosts.length > 0 ? chainHosts.map(hostOf) : HOSTS;
-      const endpoints = chainHosts.length > 0 ? chainHosts : ENDPOINTS;
+      // **No fallback to the registration hosts** (vdd-multi cycle 5, M-3). The previous
+      // `chainHosts.length > 0 ? … : HOSTS` had a comment asserting the else-branch was
+      // unreachable — and it was reachable, via `rpcHosts: []`, which passed both `chainSupport()`
+      // (`!== null`) and the load schema. That branch sent a `bsc` balance query to ETHEREUM's
+      // endpoints and cached the answer under `bsc`. The empty case is now rejected at load
+      // (`.min(1)`), and this code no longer carries a silent way to serve the wrong chain: if the
+      // list were somehow empty, the loop below simply has nothing to try and throws.
+      const chainHosts = [...(chain.rpcHosts ?? [])];
+      const allowlist = chainHosts.map(hostOf);
+      const endpoints = chainHosts;
 
       let lastError: unknown;
       for (const endpoint of endpoints) {
@@ -146,15 +180,26 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
             fetchImpl,
           );
           if (!response.ok) {
-            throw new Error(`rpc-evm: HTTP ${response.status} for ${endpoint}`);
+            // `hostOf`, not the full URL (vdd-multi cycle 6, security L-2): `rpcHosts` is a
+            // full-URL column and this message reaches the model via `tried[].reason`. A curated
+            // endpoint could one day carry a key in its path or query; `safeFetch`'s own errors
+            // already name only the hostname for exactly this reason.
+            throw new Error(`rpc-evm: HTTP ${response.status} for ${hostOf(endpoint)}`);
           }
           const raw = (await response.json()) as JsonRpcResponse;
           if (raw.error) {
             throw new Error(
-              `rpc-evm: JSON-RPC error from ${endpoint}: ${stringifyTruncated(raw.error)}`,
+              `rpc-evm: JSON-RPC error from ${hostOf(endpoint)}: ${stringifyTruncated(raw.error)}`,
             );
           }
-          return { chain: chain.slug, address: normalizedAddress, raw };
+          return {
+            chain: chain.slug,
+            address: normalizedAddress,
+            // Non-null by `servesChain()`, which `extractFetchArgs` enforced above.
+            nativeSymbol: chain.nativeSymbol as string,
+            nativeDecimals: chain.nativeDecimals as number,
+            raw,
+          };
         } catch (error) {
           // Try the next endpoint in the primary->fallback chain before giving up entirely.
           lastError = error;
@@ -162,10 +207,10 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
       }
       throw lastError instanceof Error
         ? lastError
-        : new Error(`rpc-evm: all endpoints failed (${endpoints.join(', ')})`);
+        : new Error(`rpc-evm: all endpoints failed for chain ${chain.slug}`);
     },
     normalize: (_cap: string, rawResult: unknown): Wallet => {
-      const { chain, address, raw } = rawResult as RpcEvmFetchResult;
+      const { chain, address, nativeSymbol, nativeDecimals, raw } = rawResult as RpcEvmFetchResult;
       const body = raw as JsonRpcResponse;
       if (typeof body.result !== 'string' || !HEX_BALANCE_RE.test(body.result)) {
         throw new Error(
@@ -181,8 +226,9 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
         balances: [
           {
             assetType: 'native',
-            symbol: 'ETH',
-            decimals: 18,
+            // From the registry row, never a literal (vdd-multi cycle 5, H-3 — see `servesChain()`).
+            symbol: nativeSymbol,
+            decimals: nativeDecimals,
             amountRaw,
             // Lossy display projection only (DB-SCHEMA-CONCEPT §1.7) — amountRaw is the source
             // of truth; Number() here may lose precision for very large balances, by design.

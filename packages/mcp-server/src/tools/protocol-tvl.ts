@@ -85,7 +85,9 @@ export async function protocolTvlHandler(
   // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
   // would hash to two different cache entries for one logical request, which on a paid route is
   // two charges (data-model.md §4.2.2).
-  const chain = canonicalizeChain(input.chain);
+  //
+  // Resolved against `ctx.registry`, never the default — see `get-token.ts` (vdd-multi cycle 5, H-4).
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
     chain,
     protocolSlug: input.protocolSlug,
@@ -111,8 +113,10 @@ export function registerProtocolTvlTool(server: McpServer, ctx: ProtocolTvlConte
   server.registerTool(
     'onchain_protocol_tvl',
     {
+      // See `get-token.ts` for the M-2 rationale.
       description:
-        'Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug on ethereum or solana.',
+        'Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug. Use ' +
+        'onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.',
       inputSchema: ProtocolTvlInputSchema,
       outputSchema: ProtocolTvlOutputSchema,
     },

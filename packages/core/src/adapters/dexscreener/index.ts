@@ -2,6 +2,7 @@ import { throttle } from '../../net/rate-limit.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { safeFetch } from '../../net/safe-fetch.js';
+import { truncateVendorText, MAX_VENDOR_SYMBOL_LENGTH } from '../truncate-vendor-text.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { PoolSchema, type Pool } from '../../types/pool.js';
 import type { ProviderAdapter } from '../types.js';
@@ -152,8 +153,10 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
           id: `${chain.slug}:${pairAddress}`,
           chain: chain.slug,
           dexId,
-          baseTokenSymbol: baseSymbol,
-          quoteTokenSymbol: quoteSymbol,
+          // Vendor-authored on a PERMISSIONLESS venue — anyone can deploy a pair and choose these
+          // two strings, and they land verbatim in the model's context (vdd-multi cycle 5, M-6).
+          baseTokenSymbol: truncateVendorText(baseSymbol, MAX_VENDOR_SYMBOL_LENGTH),
+          quoteTokenSymbol: truncateVendorText(quoteSymbol, MAX_VENDOR_SYMBOL_LENGTH),
           pairAddress,
           source: 'dexscreener',
           fetchedAt: now(),
@@ -171,13 +174,16 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
 
       if (malformedCount > 0) {
         process.stderr.write(
-          `dexscreener.normalize: skipped ${malformedCount} malformed pair(s) of ${candidates.length} for chain=${chain}\n`,
+          // `chain.slug`, not `chain` (vdd-multi cycle 5, L-1): `chain` is a `ChainInfo` since
+          // TASK-006, and interpolating an object renders `[object Object]` — a diagnostic that
+          // names no chain at all, in the one line an operator reads to find out which one broke.
+          `dexscreener.normalize: skipped ${malformedCount} malformed pair(s) of ${candidates.length} for chain=${chain.slug}\n`,
         );
       }
 
       if (candidates.length > 0 && pools.length === 0) {
         throw new Error(
-          `dexscreener.normalize: all ${candidates.length} candidate pair(s) for chain=${chain} were malformed`,
+          `dexscreener.normalize: all ${candidates.length} candidate pair(s) for chain=${chain.slug} were malformed`,
         );
       }
 

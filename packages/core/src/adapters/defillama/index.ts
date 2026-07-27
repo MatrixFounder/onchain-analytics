@@ -2,6 +2,7 @@ import { throttle } from '../../net/rate-limit.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { safeFetch } from '../../net/safe-fetch.js';
+import { CapabilityNotCoveredOnChainError } from '../../chain/errors.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import type { ProviderAdapter } from '../types.js';
 
@@ -68,6 +69,10 @@ export interface DefillamaAdapterDeps {
 interface DefillamaFetchResult {
   chain: ChainInfo;
   raw: unknown;
+  /** `chain.tvl` only: when the shared `/v2/chains` catalog this row came from was actually
+   * fetched. Present so `normalize()` reports the DATA's age rather than its own (vdd-multi
+   * cycle 6, M-1). Absent for `protocol.tvl`, which fetches per call. */
+  fetchedAt?: number;
 }
 
 interface DefillamaTvlPoint {
@@ -105,7 +110,17 @@ function normalizeChainTvl(chain: ChainInfo, raw: unknown, fetchedAt: number): C
   const rows = Array.isArray(raw) ? (raw as DefillamaChainRow[]) : [];
   const row = rows.find((candidate) => candidate.name === vendorName);
   if (!row) {
-    throw new Error(`defillama.normalize(chain.tvl): '${vendorName}' absent from /v2/chains`);
+    // NOT a retryable failure (vdd-multi cycle 6, logic L-9). The registry is DELIBERATELY stale
+    // (it is a build artifact), so a row the vendor no longer lists is a normal consequence of
+    // that design, not an outage — and reporting it as `CapabilityUnavailableError` tells the
+    // agent to retry a call that will fail identically until the next registry sync, and
+    // negative-caches that verdict on the way.
+    throw new CapabilityNotCoveredOnChainError({
+      capability: 'chain.tvl',
+      chain: chain.slug,
+      availableChains: [],
+      hint: `DeFiLlama no longer lists '${vendorName}'; the chain registry snapshot is older than the vendor's catalog.`,
+    });
   }
   const tvlUsd = row.tvl;
   // Same guard as `protocol.tvl` (adversarial cycle 2, finding 1b): a bad vendor value must be
@@ -152,6 +167,45 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
   const now = deps.now ?? Date.now;
   const chains = deps.chains ?? loadChainRegistry();
 
+  /**
+   * One shared, short-lived copy of `/v2/chains` (vdd-multi cycle 5, L-9).
+   *
+   * `chain.tvl` reads ONE row out of a catalog that carries all 458, but the `CapabilityRegistry`
+   * cache is keyed per chain — so the engine's own cache cannot deduplicate this, and asking for
+   * the TVL of ten chains downloaded the identical document ten times. TASK-006 turned that from a
+   * two-chain curiosity into a 458-chain one.
+   *
+   * Per adapter INSTANCE, never a module singleton (ARCHITECTURE.md §8) — the same shape as
+   * `nansen`'s `accountState`/`singleflight`. The window matches `chain.tvl`'s own cache TTL
+   * (`cache/ttl.ts`: 300 s), so this can never serve data staler than what the cache would have
+   * returned anyway. The promise is stored, not just its value, so concurrent callers share one
+   * in-flight request instead of racing; a rejection is cleared so the next call retries.
+   */
+  let chainsCatalog: { at: number; body: Promise<unknown> } | null = null;
+  const CHAINS_CATALOG_TTL_MS = 300_000;
+
+  const fetchChainsCatalog = async (): Promise<{ body: unknown; fetchedAt: number }> => {
+    const cached = chainsCatalog;
+    if (cached && now() - cached.at < CHAINS_CATALOG_TTL_MS) {
+      return { body: await cached.body, fetchedAt: cached.at };
+    }
+    const body = (async (): Promise<unknown> => {
+      await throttle('defillama', RATE_LIMIT);
+      const response = await safeFetch(CHAINS_URL, {}, HOSTS, fetchImpl);
+      if (!response.ok) throw new Error(`defillama: HTTP ${response.status} for ${CHAINS_URL}`);
+      return (await response.json()) as unknown;
+    })();
+    const entry = { at: now(), body };
+    chainsCatalog = entry;
+    // A failed fetch must not be remembered for 5 minutes — that would turn one blip into a
+    // self-inflicted outage, the same reasoning `registry.ts` uses for never negative-caching a
+    // `fetch()` failure. Only evict if this entry is still the current one.
+    body.catch(() => {
+      if (chainsCatalog === entry) chainsCatalog = null;
+    });
+    return { body: await body, fetchedAt: entry.at };
+  };
+
   return {
     id: 'defillama',
     // TASK-006 (R-54): "does DeFiLlama know this chain" is a fact the registry already records —
@@ -163,10 +217,14 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
     fetch: async (cap: string, args: Record<string, unknown>): Promise<DefillamaFetchResult> => {
       if (cap === 'chain.tvl') {
         const chain = extractChainArg(args, chains);
-        await throttle('defillama', RATE_LIMIT);
-        const response = await safeFetch(CHAINS_URL, {}, HOSTS, fetchImpl);
-        if (!response.ok) throw new Error(`defillama: HTTP ${response.status} for ${CHAINS_URL}`);
-        return { chain, raw: (await response.json()) as unknown };
+        // `fetchedAt` is the CATALOG's timestamp, not `normalize()`'s (vdd-multi cycle 6, M-1).
+        // Two windows in series do not compose into one: a catalog fetched at t=0 and served to a
+        // new chain at t=299 s was then cached under `chain.tvl`'s own 300 s TTL, so a caller at
+        // t=598 s received 598-second-old TVL while every freshness signal it can read — `ageMs`
+        // and `fetchedAt` — claimed ≤300 s. Reporting the catalog's own age makes the staleness
+        // visible rather than removing it.
+        const catalog = await fetchChainsCatalog();
+        return { chain, raw: catalog.body, fetchedAt: catalog.fetchedAt };
       }
       const { chain, protocolSlug } = extractFetchArgs(args, chains);
       const url = `https://api.llama.fi/protocol/${encodeURIComponent(protocolSlug)}`;
@@ -180,8 +238,8 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
       return { chain, raw };
     },
     normalize: (cap: string, rawResult: unknown): ProtocolTvlResult | ChainTvlResult => {
-      const { chain, raw } = rawResult as DefillamaFetchResult;
-      if (cap === 'chain.tvl') return normalizeChainTvl(chain, raw, now());
+      const { chain, raw, fetchedAt } = rawResult as DefillamaFetchResult;
+      if (cap === 'chain.tvl') return normalizeChainTvl(chain, raw, fetchedAt ?? now());
       const body = raw as DefillamaProtocolResponse;
 
       const chainKey = chain.vendors['defillama'] ?? chain.name;

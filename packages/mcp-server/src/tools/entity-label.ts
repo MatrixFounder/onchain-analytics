@@ -93,7 +93,13 @@ export type EntityLabelInput = z.infer<typeof EntityLabelInputSchema>;
 export const EntityLabelOutputSchema = z
   .object({
     chain: SUPPORTED_CHAIN,
-    entities: z.array(EntityLabelSchema),
+    // **Bounded in aggregate, not only per field** (vdd-multi cycle 6, security L-5). The
+    // per-field caps compose badly: the default tier can emit up to 200 token rows + 200 entity
+    // rows + 200 holder rows, and each entry allows `tags`/`labels` of 64 × 256 chars — a product
+    // in the megabytes, in one `structuredContent`, one JSON-RPC frame and one SQLite row, on a
+    // single-threaded stdio server. Every individual cap was defended in a comment; the product of
+    // them was not.
+    entities: z.array(EntityLabelSchema).max(600),
     source: z.string(),
     fetchedAt: z.number().int(),
   })
@@ -134,7 +140,10 @@ export async function entityLabelHandler(
   // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
   // would hash to two different cache entries for one logical request, which on a paid route is
   // two charges (data-model.md §4.2.2).
-  const chain = canonicalizeChain(input.chain);
+  //
+  // Resolved against `ctx.registry`, never the default — see `get-token.ts` (vdd-multi cycle 5,
+  // H-4); the paid-route note in `smart-money-flows.ts` applies here identically.
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const args: Record<string, unknown> = { chain, exhaustive: input.exhaustive };
   if (input.query !== undefined) {
     args['query'] = input.query;
@@ -173,9 +182,14 @@ export function registerEntityLabelTool(server: McpServer, ctx: EntityLabelConte
   server.registerTool(
     'onchain_entity_label',
     {
+      // See `get-token.ts` (M-2) and `smart-money-flows.ts` (paid route). The exhaustive tier is
+      // called out separately because its chain set is genuinely NARROWER than the default tier's
+      // (`NANSEN_EXHAUSTIVE_LABELS_CHAINS`), and it is the 100cr call — the one place where a
+      // wrong chain guess is worth a sentence of schema.
       description:
-        'Entity/address labels for a search query and/or token address on ethereum or solana ' +
-        '(Nansen-backed, paid; exhaustive escalation is opt-in).',
+        'Entity/address labels for a search query and/or token address. Coverage is per chain — ' +
+        'call onchain_list_chains({capability:"entity.labels"}) first (Nansen-backed, paid; ' +
+        'the opt-in exhaustive escalation costs more and is served on fewer chains).',
       inputSchema: EntityLabelInputSchema,
       outputSchema: EntityLabelOutputSchema,
     },
