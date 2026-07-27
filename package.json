@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "verify:provenance": "node scripts/verify-provenance.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

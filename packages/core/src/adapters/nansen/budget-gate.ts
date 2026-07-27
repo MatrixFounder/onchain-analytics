@@ -134,6 +134,40 @@ export function deriveVelocityCap(effectiveCeiling: number): number {
 export const VELOCITY_OFF = 'off';
 export type VelocityCapConfig = number | typeof VELOCITY_OFF | undefined;
 
+/**
+ * Calls one window may hold (Q-3) — the SECOND denominator, and the only one that can see a call
+ * costing zero credits.
+ *
+ * `entity.labels`' query tier is priced `{free: 0, pro: 0}`, so `used + 0 > ceiling` is false for
+ * the entire life of any bucket under any cap: the credit gate three review rounds hardened can
+ * never refuse it. The calls are still two real HTTPS round trips against the operator's own vendor
+ * account, and each carries up to 200 characters of free text, so every one is a fresh `args_hash`
+ * — a guaranteed cache miss and a new `cache_entries` row with an attacker-selectable key.
+ *
+ * **A FIXED number, not derived — the asymmetry from `deriveVelocityCap` is deliberate.** The
+ * credit limits are derived because credits differ by orders of magnitude between `free` and `Pro`,
+ * and owner decision #1 requires both to work unchanged. A call is a call on either plan: neither
+ * the vendor's rate limits nor the row-growth pressure scales with the balance, so there is nothing
+ * to derive FROM. 60 per minute is one sustained call per second — comfortably above anything an
+ * interactive session produces, and ~5x below what the throttle alone would permit.
+ *
+ * It also bounds consequence #2 of Q-3 without a separate mechanism: at 60 calls/min against a
+ * 3600s TTL, cache rows for this capability reach a steady state of ~3600 instead of growing
+ * without limit.
+ */
+const DEFAULT_MAX_CALLS_PER_WINDOW = 60;
+
+/** Sentinel switching the CALL limit off — same word-not-zero reasoning as the two above. */
+export const MAX_CALLS_OFF = 'off';
+export type MaxCallsConfig = number | typeof MAX_CALLS_OFF | undefined;
+
+/** The call allowance in force: an explicit number, the fixed default, or `undefined` when off. */
+export function resolveMaxCalls(configured: MaxCallsConfig): number | undefined {
+  if (configured === MAX_CALLS_OFF) return undefined;
+  if (typeof configured === 'number') return configured;
+  return DEFAULT_MAX_CALLS_PER_WINDOW;
+}
+
 /** Epoch-ms UTC start of the velocity window `ts` falls in — the same flooring discipline as
  * `dayBucketMs`, just a different width (DB-SCHEMA-CONCEPT §1.2: no `Date` objects, no local time). */
 export function velocityWindowMs(ts: number): number {
@@ -201,6 +235,9 @@ export interface NansenBudgetGateDeps {
   /** Credits per `VELOCITY_WINDOW_MS` (SEC-1). Unset ⇒ derived from the ceiling in force;
    * `VELOCITY_OFF` ⇒ no rate brake, leaving only the daily ceiling. */
   velocityCap?: VelocityCapConfig;
+  /** CALLS per `VELOCITY_WINDOW_MS` (Q-3) — the denominator that can bound a zero-credit call.
+   * Unset => 60; `MAX_CALLS_OFF` => unbounded, the pre-Q-3 behaviour. */
+  maxCallsPerWindow?: MaxCallsConfig;
   budgetWarnRatio?: number;
   now?: () => number;
   fetchImpl?: typeof fetch;
@@ -477,22 +514,43 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
         : typeof deps.velocityCap === 'number'
           ? deps.velocityCap
           : deriveVelocityCap(effectiveCeiling);
+    // Q-3 — the CALL limit is independent of the credit one: it applies even when the credit brake
+    // is switched off, because a zero-cost call is invisible to any credit-denominated limit.
+    const maxCalls = resolveMaxCalls(deps.maxCallsPerWindow);
     const window = velocityWindowMs(now());
+    const velocity =
+      velocityCeiling === undefined && maxCalls === undefined
+        ? undefined
+        : {
+            windowStartMs: window,
+            // `Infinity` when only the CALL limit is on: the credit comparison then always passes,
+            // which is exactly "this denominator is not in force" without a second code path.
+            ceiling: velocityCeiling ?? Number.POSITIVE_INFINITY,
+            ...(maxCalls === undefined ? {} : { maxCalls }),
+          };
 
     const result = await deps.budgetStore.checkAndReserve(
       'nansen',
       bucket,
       cost,
       effectiveCeiling,
-      velocityCeiling === undefined
-        ? undefined
-        : { windowStartMs: window, ceiling: velocityCeiling },
+      velocity,
     );
     if (!result.ok) {
       // The velocity refusal must be distinguishable from the daily one (SEC-1): they call for
       // opposite responses — wait out the window versus raise a ceiling — and an operator who
       // cannot tell them apart will "fix" the wrong one. `BudgetStore` already labels its own
       // reason; this branch keeps that label and adds the actionable half.
+      if (result.reason.startsWith('call rate limit reached')) {
+        const origin = typeof deps.maxCallsPerWindow === 'number' ? 'configured' : 'default';
+        throw new NansenBudgetExceededError(
+          `call rate limit (${origin}): ${maxCalls} calls per ${VELOCITY_WINDOW_MS / 1000}s — ` +
+            `this bound counts CALLS, not credits, so it applies to zero-credit tiers too and ` +
+            `raising a credit ceiling will not move it. Retry after the window rolls over, or set ` +
+            `NANSEN_MAX_CALLS_PER_MIN to raise it, or ${MAX_CALLS_OFF} to disable it. ` +
+            `(${result.reason})`,
+        );
+      }
       if (result.reason.startsWith('velocity limit reached')) {
         const capOrigin = typeof deps.velocityCap === 'number' ? 'configured' : 'derived';
         throw new NansenBudgetExceededError(
@@ -542,7 +600,7 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
     }
 
     // `window` only when the guard is on — reconciliation refunds into THIS window or none.
-    return { reservedTotal: cost, bucket, ...(velocityCeiling === undefined ? {} : { window }) };
+    return { reservedTotal: cost, bucket, ...(velocity === undefined ? {} : { window }) };
   }
 
   return { ensureBudget };

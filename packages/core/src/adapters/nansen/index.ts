@@ -15,6 +15,7 @@ import { createNansenAccountState } from './account-state.js';
 import {
   createNansenBudgetGate,
   type DailyCreditCapConfig,
+  type MaxCallsConfig,
   type NansenBudgetReservation,
   type VelocityCapConfig,
 } from './budget-gate.js';
@@ -83,6 +84,8 @@ export interface NansenAdapterDeps {
   /** Credits per velocity window (SEC-1) — the rate brake in front of the daily ceiling. Unset ⇒
    * derived; `'off'` ⇒ disabled. */
   velocityCap?: VelocityCapConfig;
+  /** Calls per velocity window (Q-3) — the denominator that can bound a zero-credit tier. */
+  maxCallsPerWindow?: MaxCallsConfig;
   budgetWarnRatio?: number;
   now?: () => number;
   fetchImpl?: typeof fetch;
@@ -531,6 +534,9 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
         accountState,
         ...(deps.dailyCreditCap !== undefined ? { dailyCreditCap: deps.dailyCreditCap } : {}),
         ...(deps.velocityCap !== undefined ? { velocityCap: deps.velocityCap } : {}),
+        ...(deps.maxCallsPerWindow !== undefined
+          ? { maxCallsPerWindow: deps.maxCallsPerWindow }
+          : {}),
         ...(deps.budgetWarnRatio !== undefined ? { budgetWarnRatio: deps.budgetWarnRatio } : {}),
         now,
         fetchImpl: deps.fetchImpl ?? fetch,

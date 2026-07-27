@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import type { AdapterRegistration } from '../adapters/types.js';
 import { cacheDbPath } from './data-dir.js';
-import { CACHE_DDL } from './ddl.js';
+import { CACHE_DDL, USAGE_WINDOW_COLUMNS } from './ddl.js';
 import { adapterRegistrations } from '../providers.config.js';
 
 /**
@@ -32,6 +32,15 @@ export interface VelocityLimit {
   readonly windowStartMs: number;
   /** Credits this window may hold in total. */
   readonly ceiling: number;
+  /**
+   * Calls this window may hold in total (Q-3) — a SECOND denominator, not a variant of the first.
+   *
+   * A credit-denominated limit cannot refuse a call that costs zero credits: `used + 0 > ceiling`
+   * is false for the entire life of any bucket, under any cap. That is not a bug in the ceiling,
+   * it is what "denominated in credits" means — so the fix is a different unit, not a tighter
+   * number. Omitted ⇒ calls are not bounded (the pre-Q-3 behaviour).
+   */
+  readonly maxCalls?: number;
 }
 
 export interface BudgetStore {
@@ -79,6 +88,8 @@ export interface BudgetStore {
   /** Read-only — the accumulated `credits_used` for `(provider, windowStartMs)`. Observability and
    * tests; the gate itself never needs it (the check lives inside the reservation transaction). */
   getWindowUsage(provider: string, windowStartMs: number): Promise<number>;
+  /** Read-only — the accumulated `calls_made` for `(provider, windowStartMs)` (Q-3). */
+  getWindowCalls(provider: string, windowStartMs: number): Promise<number>;
 }
 
 /** Constructor options for `SqliteBudgetStore` (task 005-2). */
@@ -92,6 +103,11 @@ export interface SqliteBudgetStoreOptions {
 
 interface UsageRow {
   credits_used: number;
+}
+
+interface WindowRow {
+  credits_used: number;
+  calls_made: number;
 }
 
 /**
@@ -160,23 +176,29 @@ export class SqliteBudgetStore implements BudgetStore {
       // Idempotent — IF NOT EXISTS guards every table, including a co-located SqliteCacheStore's
       // providers/cache_entries (no migration of either, R-34 acceptance).
       this.db.exec(CACHE_DDL);
+      this.migrateUsageWindow();
       this.bootstrapProviders(options.providers ?? adapterRegistrations);
 
       this.selectUsageStmt = this.db.prepare(
         `SELECT credits_used FROM usage WHERE provider = ? AND day = ?`,
       );
       this.selectWindowStmt = this.db.prepare(
-        `SELECT credits_used FROM usage_window WHERE provider = ? AND window_start = ?`,
+        `SELECT credits_used, calls_made FROM usage_window WHERE provider = ? AND window_start = ?`,
       );
       // Same additive-upsert shape as `usage`, and for the same reasons — see the long note on
       // `upsertUsageStmt` below for why the DO UPDATE branch binds `@delta` rather than
       // `excluded.credits_used` (clamping the VALUES expression would make the update branch
       // unable to subtract, silently breaking every reconciliation refund).
       this.upsertWindowStmt = this.db.prepare(
-        `INSERT INTO usage_window (provider, window_start, credits_used, updated_at)
-         VALUES (@provider, @window, MAX(0, @delta), @now)
+        // `calls` is 1 on a reservation and 0 on a reconciliation delta — a CALL is not refundable
+        // the way a credit is (Q-3). The vendor round trip happened; refunding it would let a
+        // sequence of cheap-then-refunded calls walk straight past the limit that exists to bound
+        // exactly that traffic.
+        `INSERT INTO usage_window (provider, window_start, credits_used, calls_made, updated_at)
+         VALUES (@provider, @window, MAX(0, @delta), MAX(0, @calls), @now)
          ON CONFLICT (provider, window_start) DO UPDATE SET
            credits_used = MAX(0, credits_used + @delta),
+           calls_made = MAX(0, calls_made + @calls),
            updated_at = @now`,
       );
       // Windows are 60s-ish and only the CURRENT one is ever read, so old rows are pure dead
@@ -217,6 +239,24 @@ export class SqliteBudgetStore implements BudgetStore {
         // ORIGINAL error being rethrown below.
       }
       throw error;
+    }
+  }
+
+  /**
+   * Applies every additive column `usage_window` has gained since it shipped (Q-3).
+   *
+   * `CREATE TABLE IF NOT EXISTS` does nothing to a file that already has the table, so a new column
+   * needs an explicit `ALTER`. SQLite has no `ADD COLUMN IF NOT EXISTS`, so the presence check is
+   * `PRAGMA table_info` — which is what makes this idempotent on every open, and what keeps the
+   * migration MECHANICAL rather than a project (DB-SCHEMA-CONCEPT §1). Additive only: nothing is
+   * dropped or retyped, so an older process still reading this file keeps working.
+   */
+  private migrateUsageWindow(): void {
+    const existing = new Set(
+      (this.db.pragma('table_info(usage_window)') as { name: string }[]).map((c) => c.name),
+    );
+    for (const column of USAGE_WINDOW_COLUMNS) {
+      if (!existing.has(column.name)) this.db.exec(column.ddl);
     }
   }
 
@@ -299,8 +339,9 @@ export class SqliteBudgetStore implements BudgetStore {
       // responses: wait a minute versus raise a ceiling.
       if (velocity !== undefined) {
         const windowRow = this.selectWindowStmt.get(provider, velocity.windowStartMs) as
-          UsageRow | undefined;
+          WindowRow | undefined;
         const windowUsed = windowRow?.credits_used ?? 0;
+        const windowCalls = windowRow?.calls_made ?? 0;
         // Fail closed on an undecidable comparison, exactly as the daily check above does and for
         // the same reason: `>` answers `false` for `NaN`, and `false` here means "approved".
         if (typeof windowUsed !== 'number' || !Number.isFinite(windowUsed)) {
@@ -323,10 +364,31 @@ export class SqliteBudgetStore implements BudgetStore {
               `of ${velocity.ceiling} in the current window (window starts ${velocity.windowStartMs})`,
           };
         }
+        // Q-3 — the call limit, checked here so a ZERO-cost call is bounded by something. Its own
+        // reason prefix, because it is a different DENOMINATOR and not a tighter ceiling: raising
+        // the credit allowance would not move it at all.
+        if (velocity.maxCalls !== undefined) {
+          if (typeof windowCalls !== 'number' || !Number.isFinite(windowCalls)) {
+            return {
+              ok: false,
+              reason: `call-rate check failed closed for provider=${provider}: window ledger value is not a finite number (calls ${String(windowCalls)})`,
+            };
+          }
+          if (Number.isNaN(velocity.maxCalls) || windowCalls + 1 > velocity.maxCalls) {
+            return {
+              ok: false,
+              reason:
+                `call rate limit reached for provider=${provider}: ${windowCalls} of ` +
+                `${velocity.maxCalls} calls already made in the current window ` +
+                `(window starts ${velocity.windowStartMs})`,
+            };
+          }
+        }
         this.upsertWindowStmt.run({
           provider,
           window: velocity.windowStartMs,
           delta: cost,
+          calls: 1,
           now,
         });
         // Opportunistic prune of windows that can never be read again. Inside the transaction so
@@ -358,10 +420,14 @@ export class SqliteBudgetStore implements BudgetStore {
     const write = this.db.transaction(() => {
       this.upsertUsageStmt.run({ provider, day: dayBucketMs, delta: signedDelta, now });
       if (windowStartMs !== undefined) {
+        // `calls: 0` — a reconciliation adjusts CREDITS, never the call count (Q-3). The vendor
+        // round trip already happened; "refunding" it would let a run of cheap-then-refunded calls
+        // walk past the very limit that exists to bound that traffic.
         this.upsertWindowStmt.run({
           provider,
           window: windowStartMs,
           delta: signedDelta,
+          calls: 0,
           now,
         });
       }
@@ -375,8 +441,13 @@ export class SqliteBudgetStore implements BudgetStore {
   }
 
   async getWindowUsage(provider: string, windowStartMs: number): Promise<number> {
-    const row = this.selectWindowStmt.get(provider, windowStartMs) as UsageRow | undefined;
+    const row = this.selectWindowStmt.get(provider, windowStartMs) as WindowRow | undefined;
     return row?.credits_used ?? 0;
+  }
+
+  async getWindowCalls(provider: string, windowStartMs: number): Promise<number> {
+    const row = this.selectWindowStmt.get(provider, windowStartMs) as WindowRow | undefined;
+    return row?.calls_made ?? 0;
   }
 
   /** Closes the underlying connection — callers (tests, process shutdown) own the lifecycle. */

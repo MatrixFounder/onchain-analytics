@@ -1,12 +1,19 @@
 ---
 id: RF-2
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-07-25
 category: workflow-docs
 severity: SEV-3
 slug: rf-2-m2-evidence-records-drifted-from-the-shipped-commit
+resolved_at: 2026-07-27
+resolved_by: provenance manifest + verifier, gated on both the working tree and the staged blobs
 ---
+
+> **RESOLVED 2026-07-27.** Item 1 — the last open one — is closed by the mechanism this file said it
+> would need: "a provenance mechanism that cannot silently skip an edit". The recorded hash is no
+> longer something a human remembers to paste; it is a manifest a gate compares on every test run
+> and every commit. Details at the end of this file.
 
 # RF-2 — M2's own evidence records describe an earlier tree than the one that shipped
 
@@ -79,8 +86,9 @@ the PLAN/TASK status observation.
   (`git show <sha>:<path> | shasum -a 256`), not the working tree — which is what made the original
   break invisible. Verified for `403441c`: recorded `e24d077a…` equals the committed blob.
 
-This issue stays `open` on the strength of item 1 alone. Closing it would require a provenance
-mechanism that cannot silently skip an edit — e.g. hashing in a pre-commit hook rather than by hand.
+~~This issue stays `open` on the strength of item 1 alone. Closing it would require a provenance
+mechanism that cannot silently skip an edit — e.g. hashing in a pre-commit hook rather than by
+hand.~~ — **done 2026-07-27, see Resolution below.**
 
 ## Related
 
@@ -88,3 +96,40 @@ mechanism that cannot silently skip an edit — e.g. hashing in a pre-commit hoo
   annotation for item 1 and the new post-cycle-4 SHA.
 - `docs/tasks/task-005-7-fixtures-live-verification.md` — declares `TC-VERIFY-06/08/09`, whose
   acceptance is what drifted.
+
+
+## Resolution (2026-07-27) — item 1
+
+**The old mechanism failed structurally, not carelessly.** It required a human to re-run `shasum`
+and paste the result into a doc header, and there is no way to test that a human remembered. Any
+fix that still ends in "remember to update the hash" reproduces the same break.
+
+**What replaced it.**
+
+- `docs/provenance.json` — a manifest pinning `path → sha256` for the golden test
+  (`nansen.contract.test.ts`) and all nine live-recorded Nansen fixtures. Files are listed
+  EXPLICITLY, not globbed: adding a live-recorded artefact to the pinned set is itself a decision
+  someone makes and a reviewer sees.
+- `scripts/verify-provenance.mjs` — recomputes and compares. Three sources, because they close
+  different gaps: `worktree` (what every local gate sees), `index` (what is actually being
+  committed), `head` (after-the-fact audit).
+- `packages/core/test/provenance.test.ts` — runs the worktree check on every `pnpm test`, so drift
+  is caught within seconds of the edit rather than at review time.
+- `.githooks/pre-commit` — runs the **index** check. This is the half that closes the original gap
+  specifically: the working tree and the staged content can differ, and that difference is exactly
+  how the first break happened. Enable per clone with `git config core.hooksPath .githooks` (git
+  hooks are local and cannot be shipped enabled).
+
+**Re-baselining is deliberate, never automatic.** `--update` exists but is in no gate. A check that
+silently re-recorded the hash it just found wrong would be worse than no check: it would turn every
+silent edit into a green build. Updating the manifest puts both halves — the edit and the new hash
+— in the same diff, which is the property the hand-copied hash was supposed to have and never did.
+
+**Honest bound on the guarantee.** A git hook is local: someone can commit with `--no-verify`, or on
+a clone that never ran the `core.hooksPath` line. What survives that is the test — a bypassed commit
+lands red on the next `pnpm test` anyone runs — and the manifest itself, whose absence from a diff
+that touches a pinned file is visible to a reviewer. The mechanism makes a skipped update *loud*;
+it does not make it *impossible*, and no local-only mechanism can.
+
+**Verified by tampering:** appending one line to the golden test turns the verifier red with the
+exact path and both hashes; reverting turns it green.

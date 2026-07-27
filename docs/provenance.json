@@ -1,0 +1,45 @@
+{
+  "$comment": "RF-2 \u2014 provenance manifest. Each entry pins the sha256 of a file whose silent edit would invalidate a recorded, live-verified assertion. Verified by scripts/verify-provenance.mjs on every test run (working tree) and by .githooks/pre-commit (index). Re-baseline ONLY with --update, in the same commit as the change, so a reviewer sees both halves.",
+  "files": {
+    "packages/core/test/nansen.contract.test.ts": {
+      "sha256": "8652a140ac52d4bc528de2ec552e3eaba3e2dd0ae94b1e0194b6339295eb9d6c",
+      "note": "The original GOLDEN_TEST_SHA subject: golden assertions against live-recorded Nansen responses. Silent tuning here is indistinguishable from the vendor changing its answer."
+    },
+    "packages/core/test/fixtures/nansen/account.free.json": {
+      "sha256": "c31e0ae2f9c801f343f7c7199875c71c8200cc2214133c5921cd12eccf38bb77",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "packages/core/test/fixtures/nansen/account.pro.json": {
+      "sha256": "939ff87647cacf262cda317dcf921006652c81a3840c295601ba3b7cbc27ba44",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "packages/core/test/fixtures/nansen/search-general.empty.json": {
+      "sha256": "75241e2bb5e2763342860228cef062873617ff0de35453d106430eba9c1fef8c",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "packages/core/test/fixtures/nansen/search-general.json": {
+      "sha256": "6d537d0463e1fb33b4821cd28af8f2dc0810e816cb50615feaa11f0846067ed5",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "packages/core/test/fixtures/nansen/smart-money-netflow.json": {
+      "sha256": "3f12872d4710ddb2533c58c43064d101f5607671730d9eba6c797a36fe289454",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "packages/core/test/fixtures/nansen/tgm-holders.empty-labels.json": {
+      "sha256": "6d763df8a8a157a30fac2bca0fcee37b4e19e6f876c448070c235e7e16265be1",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "packages/core/test/fixtures/nansen/tgm-holders.json": {
+      "sha256": "36892eadda258901b43c8ef1e8bb2ba58c77e09a243285d7fd54e46e3d8f2100",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "packages/core/test/fixtures/nansen/tgm-indicators.json": {
+      "sha256": "1a2d790070bcc84e9051c2509939f475134a9f232f473e23fc7bbe56e14c2b2b",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    },
+    "packages/core/test/fixtures/nansen/tgm-token-information.json": {
+      "sha256": "c990f52e2b5315326b78a51d664b952cb753c6957a5f4cf4a41b1f5532d716e6",
+      "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
+    }
+  }
+}

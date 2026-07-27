@@ -49,6 +49,9 @@ function createProductionNansenAdapter(env: Env, budgetStore: BudgetStore): Prov
     ...(env.NANSEN_VELOCITY_CREDITS_PER_MIN !== undefined
       ? { velocityCap: env.NANSEN_VELOCITY_CREDITS_PER_MIN }
       : {}),
+    ...(env.NANSEN_MAX_CALLS_PER_MIN !== undefined
+      ? { maxCallsPerWindow: env.NANSEN_MAX_CALLS_PER_MIN }
+      : {}),
     ...(env.NANSEN_DAILY_CREDIT_CAP !== undefined
       ? { dailyCreditCap: env.NANSEN_DAILY_CREDIT_CAP }
       : {}),

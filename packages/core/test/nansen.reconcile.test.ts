@@ -522,6 +522,7 @@ describe('fetch() — OQ-2 structural non-bypassability (code review round 2, ta
       },
       getUsage: async () => 0,
       getWindowUsage: async () => 0,
+      getWindowCalls: async () => 0,
     };
     let unreconciled = false;
     const accountState = {
@@ -560,6 +561,7 @@ describe('fetch() — OQ-2 structural non-bypassability (code review round 2, ta
       },
       getUsage: async () => 0,
       getWindowUsage: async () => 0,
+      getWindowCalls: async () => 0,
     };
     const accountState = {
       get: () => undefined,

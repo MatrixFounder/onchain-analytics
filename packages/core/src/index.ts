@@ -97,11 +97,14 @@ export { createNansenAdapter, type NansenAdapterDeps } from './adapters/nansen/i
 export {
   DAILY_CAP_OFF,
   deriveDailyCap,
+  MAX_CALLS_OFF,
   VELOCITY_OFF,
   VELOCITY_WINDOW_MS,
   deriveVelocityCap,
   velocityWindowMs,
+  resolveMaxCalls,
   type DailyCreditCapConfig,
+  type MaxCallsConfig,
   type VelocityCapConfig,
 } from './adapters/nansen/budget-gate.js';
 

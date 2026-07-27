@@ -94,12 +94,42 @@ CREATE TABLE IF NOT EXISTS usage (
 --
 -- Rows are disposable: the guard only ever reads the CURRENT window, so anything older is dead
 -- weight kept solely for after-the-fact inspection. \`SqliteBudgetStore\` prunes them opportunistically.
+--
+-- \`calls_made\` is the SECOND denominator (Q-3). A credit-denominated gate — including the
+-- credits-per-window one above — can never refuse a call that costs ZERO credits: \`used + 0 >
+-- ceiling\` is false for the entire life of any bucket, under any cap. \`entity.labels\`' query tier
+-- is exactly that, and each call still costs two real HTTPS round trips against the operator's own
+-- vendor account plus a fresh cache row with an attacker-selectable key. Counting CALLS is the only
+-- denominator that can see it.
+--
+-- Deliberately a COLUMN on the same row, not another table: same provider, same window, same
+-- transaction, and one row read instead of two.
 CREATE TABLE IF NOT EXISTS usage_window (
   provider     TEXT NOT NULL REFERENCES providers(id),
   window_start INTEGER NOT NULL,           -- epoch-ms UTC bucket start: floor(ts/width)*width
   credits_used INTEGER NOT NULL DEFAULT 0, -- ADDITIVE, same signed-delta discipline as usage
+  calls_made   INTEGER NOT NULL DEFAULT 0, -- ADDITIVE and MONOTONIC — never refunded, see below
   updated_at   INTEGER NOT NULL,           -- epoch-ms UTC of the last write
   PRIMARY KEY (provider, window_start),
-  CHECK (credits_used >= 0)
+  CHECK (credits_used >= 0),
+  CHECK (calls_made >= 0)
 );
 `;
+
+/**
+ * Additive column migrations for `usage_window` (Q-3).
+ *
+ * `CREATE TABLE IF NOT EXISTS` is a no-op on a file that already has the table, so a column added
+ * after the table shipped needs an explicit `ALTER`. SQLite has no `ADD COLUMN IF NOT EXISTS`, so
+ * the store checks `PRAGMA table_info` first — which is what makes this idempotent, and what makes
+ * the migration MECHANICAL rather than a project (DB-SCHEMA-CONCEPT §1: portable types, additive
+ * shape, nothing engine-specific). `DEFAULT 0` means existing rows are correct without a backfill:
+ * a window row that predates the column has, by definition, no counted calls, and every window row
+ * is discarded within the hour anyway.
+ */
+export const USAGE_WINDOW_COLUMNS: readonly { name: string; ddl: string }[] = [
+  {
+    name: 'calls_made',
+    ddl: 'ALTER TABLE usage_window ADD COLUMN calls_made INTEGER NOT NULL DEFAULT 0',
+  },
+];

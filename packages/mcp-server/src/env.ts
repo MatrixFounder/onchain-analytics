@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DAILY_CAP_OFF, VELOCITY_OFF } from '@onchain-intel/core';
+import { DAILY_CAP_OFF, MAX_CALLS_OFF, VELOCITY_OFF } from '@onchain-intel/core';
 
 /**
  * Wraps an optional zod schema so an empty string is treated identically to the key being unset
@@ -70,6 +70,12 @@ export const EnvSchema = z.object({
   NANSEN_VELOCITY_CREDITS_PER_MIN: emptyAsUndefined(
     z.union([z.literal(VELOCITY_OFF), z.coerce.number().int().positive()]).optional(),
   ),
+  // Q-3 — the CALL limit. A different DENOMINATOR from the two above, not a tighter number: it is
+  // the only bound that can see a tier priced at zero credits. Fixed default (60), not derived —
+  // see `DEFAULT_MAX_CALLS_PER_WINDOW` for why a call does not scale with the plan.
+  NANSEN_MAX_CALLS_PER_MIN: emptyAsUndefined(
+    z.union([z.literal(MAX_CALLS_OFF), z.coerce.number().int().positive()]).optional(),
+  ),
   NANSEN_BUDGET_WARN_RATIO: emptyAsUndefined(z.coerce.number().min(0).max(1).optional()),
 });
 
@@ -93,11 +99,13 @@ export function toProcessEnv(env: Env): NodeJS.ProcessEnv {
   const {
     NANSEN_DAILY_CREDIT_CAP,
     NANSEN_VELOCITY_CREDITS_PER_MIN,
+    NANSEN_MAX_CALLS_PER_MIN,
     NANSEN_BUDGET_WARN_RATIO,
     ...rest
   } = env;
   void NANSEN_DAILY_CREDIT_CAP;
   void NANSEN_VELOCITY_CREDITS_PER_MIN;
+  void NANSEN_MAX_CALLS_PER_MIN;
   void NANSEN_BUDGET_WARN_RATIO;
   return rest;
 }

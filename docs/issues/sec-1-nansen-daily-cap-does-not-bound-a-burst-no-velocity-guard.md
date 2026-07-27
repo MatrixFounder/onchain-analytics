@@ -103,7 +103,7 @@ not a rewrite of this one.
 call outliving its window would otherwise refund into a window that never spent — the one way a
 rate brake can hand a runaway loop extra headroom.
 
-**Related, and deliberately still open:** [Q-3](q-3-nansen-zero-credit-entity-labels-tier-is-unrefusable-by-the-gate.md)
-— a 0-credit tier is unrefusable by ANY credit-denominated limiter, this one included. A velocity
-guard counted in credits cannot bound a call that costs none; that needs a call-denominated limit,
-which is a different mechanism and a separate decision.
+**Related:** [Q-3](q-3-nansen-zero-credit-entity-labels-tier-is-unrefusable-by-the-gate.md) — a
+0-credit tier is unrefusable by ANY credit-denominated limiter, this one included. **Closed
+2026-07-27** by the call-denominated limit, which reuses the very `usage_window` row this issue
+introduced: `calls_made` alongside `credits_used`.

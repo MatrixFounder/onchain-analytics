@@ -477,6 +477,60 @@ NANSEN_VELOCITY_CREDITS_PER_MIN to raise it, or off to disable it.
 **Known limitation:** the window is tumbling, not sliding, so a burst straddling a boundary can
 reach 2× the allowance. That does not undermine the goal of buying a human time to notice.
 
+### `NANSEN_MAX_CALLS_PER_MIN` — the limit that can see a free call
+
+Both limits above count **credits**, and `entity.labels`' query tier costs **zero** of them. For a
+0-credit call, `used + 0 > ceiling` is false for the entire life of any bucket, under any cap — so
+no credit-denominated guard can ever refuse it, however low you set it. That is not a bug in the
+ceiling; it is what "denominated in credits" means. The fix is a different unit
+([Q-3](docs/issues/q-3-nansen-zero-credit-entity-labels-tier-is-unrefusable-by-the-gate.md), fixed).
+
+| Value              | Behaviour                                          |
+| ------------------ | -------------------------------------------------- |
+| unset (default)    | 60 calls per 60s window                            |
+| a positive integer | your explicit allowance                            |
+| `off`              | calls are unbounded — only the credit limits apply |
+
+**A fixed default, not a derived one** — the asymmetry from the two credit limits is deliberate.
+Credit limits are derived because a `free` balance and a `Pro` balance differ by orders of
+magnitude. A call is a call on either plan: neither the vendor's rate limits nor cache-row pressure
+scales with your balance, so there is nothing to derive from. 60/minute is one sustained call per
+second — well above any interactive session, ~5× below what the throttle alone would permit.
+
+It also bounds cache growth as a side effect: at 60 calls/min against a 3600s TTL, rows for that
+capability settle at ~3600 instead of growing without limit.
+
+**A call is never refunded.** Reconciliation adjusts credits; the call count only goes up. The
+vendor round trip happened, and refunding it would let cheap-then-refunded calls walk past the
+limit that exists to bound exactly that traffic.
+
+The refusal says so explicitly, because the credit knob will not help here:
+
+```
+nansen budget gate refused: call rate limit (default): 60 calls per 60s — this bound counts
+CALLS, not credits, so it applies to zero-credit tiers too and raising a credit ceiling will
+not move it.
+```
+
+### Provenance gate
+
+`docs/provenance.json` pins the sha256 of the golden test and every live-recorded vendor fixture.
+`pnpm test` checks the working tree; `.githooks/pre-commit` checks what is actually **staged**.
+Editing a pinned file without re-baselining in the same commit turns both red
+([RF-2](docs/issues/rf-2-m2-evidence-records-drifted-from-the-shipped-commit.md), fixed).
+
+Enable the hook once per clone — git hooks are local and cannot ship enabled:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Re-baseline deliberately, in the same commit as the change, so a reviewer sees both halves:
+
+```sh
+node scripts/verify-provenance.mjs --update
+```
+
 ---
 
 ## Behaviour without API keys

@@ -1,0 +1,10 @@
+#!/bin/sh
+# RF-2 — provenance gate on what is actually being COMMITTED, not on the working tree.
+#
+# The original break was exactly that gap: a hash recorded from the working tree, an edit after it,
+# and a commit that matched neither. `--source=index` reads the staged blobs, so this cannot be
+# true-at-check-time and false-at-commit-time.
+#
+# Install once per clone (git hooks are local and cannot be shipped enabled):
+#   git config core.hooksPath .githooks
+exec node scripts/verify-provenance.mjs --source=index

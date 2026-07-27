@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SqliteBudgetStore } from '../src/cache/budget-store.js';
 import {
   DAILY_CAP_OFF,
+  MAX_CALLS_OFF,
   VELOCITY_OFF,
   VELOCITY_WINDOW_MS,
   createNansenBudgetGate,
@@ -245,15 +246,53 @@ describe('ensureBudget — the refusal is distinguishable and actionable', () =>
     }
   });
 
-  it('is switchable off, leaving exactly the pre-SEC-1 behaviour', async () => {
+  it('the CREDIT brake is switchable off without switching off the CALL limit', async () => {
+    // CHANGED EXPECTATION (Q-3): turning the credit brake off no longer means "no window row".
+    // The two denominators are independent — the call counter still writes, because a zero-credit
+    // call is invisible to any credit-denominated limit and the call limit is the only bound that
+    // can see it. What `VELOCITY_OFF` buys is that the CREDIT comparison never refuses.
     const budget = store();
     try {
       const { ensureBudget } = gate(VELOCITY_OFF, budget);
       for (let i = 0; i < 40; i += 1) {
         await ensureBudget('token.risk', { chain: 'ethereum', tokenAddress: '0xabc' });
       }
-      // No window row is written at all when the guard is off — not a row with a large count.
+      // 40 × 6cr = 240, far past any derived credit allowance — and not refused.
+      expect(await budget.getWindowUsage(PROVIDER, WINDOW)).toBe(240);
+      expect(await budget.getWindowCalls(PROVIDER, WINDOW)).toBe(40);
+    } finally {
+      budget.close();
+    }
+  });
+
+  it('with BOTH off, nothing is written to the window at all (pre-guard behaviour)', async () => {
+    const budget = store();
+    try {
+      const accountState = createNansenAccountState();
+      const { ensureBudget } = createNansenBudgetGate({
+        budgetStore: budget,
+        accountState,
+        dailyCreditCap: DAILY_CAP_OFF,
+        velocityCap: VELOCITY_OFF,
+        maxCallsPerWindow: MAX_CALLS_OFF,
+        now: () => 1_784_800_000_000,
+        env: { NANSEN_API_KEY: 'not-a-real-key' },
+        throttle: createThrottle(),
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ plan: 'pro', credits_remaining: 100_000 }), {
+            status: 200,
+          }),
+      });
+      const reservation = await ensureBudget('token.risk', {
+        chain: 'ethereum',
+        tokenAddress: '0xabc',
+      });
+
+      expect(reservation.window).toBeUndefined();
       expect(await budget.getWindowUsage(PROVIDER, WINDOW)).toBe(0);
+      expect(await budget.getWindowCalls(PROVIDER, WINDOW)).toBe(0);
+      // The DAY ledger still records it — the two window guards being off changes nothing there.
+      expect(await budget.getUsage(PROVIDER, DAY)).toBe(6);
     } finally {
       budget.close();
     }
@@ -268,6 +307,143 @@ describe('ensureBudget — the refusal is distinguishable and actionable', () =>
         tokenAddress: '0xabc',
       });
       expect(reservation.window).toBe(velocityWindowMs(1_784_800_000_000));
+    } finally {
+      budget.close();
+    }
+  });
+});
+
+describe('Q-3 — the call limit is the only bound a ZERO-credit tier can hit', () => {
+  it('the premise: a 0-cost call passes ANY credit ceiling, however low', async () => {
+    const budget = store();
+    try {
+      // The mechanism, asserted directly. `used + 0 > ceiling` is false even against a ceiling of
+      // zero, for the whole life of the bucket. This is not a bug in the ceiling — it is what
+      // "denominated in credits" means, which is why the fix had to be a different unit.
+      for (let i = 0; i < 50; i += 1) {
+        const result = await budget.checkAndReserve(PROVIDER, DAY, 0, 0, {
+          windowStartMs: WINDOW,
+          ceiling: 0,
+        });
+        expect(result.ok, `call ${i}`).toBe(true);
+      }
+    } finally {
+      budget.close();
+    }
+  });
+
+  it('bounds exactly that traffic once a call limit is supplied', async () => {
+    const budget = store();
+    try {
+      const limit = { windowStartMs: WINDOW, ceiling: 0, maxCalls: 5 };
+      for (let i = 0; i < 5; i += 1) {
+        expect((await budget.checkAndReserve(PROVIDER, DAY, 0, 0, limit)).ok, `call ${i}`).toBe(
+          true,
+        );
+      }
+      const refused = await budget.checkAndReserve(PROVIDER, DAY, 0, 0, limit);
+      expect(refused.ok).toBe(false);
+      expect(refused.ok ? '' : refused.reason).toContain('call rate limit reached');
+      expect(await budget.getWindowCalls(PROVIDER, WINDOW)).toBe(5);
+    } finally {
+      budget.close();
+    }
+  });
+
+  it('a CALL is not refundable, unlike a credit', async () => {
+    // The vendor round trip happened. Refunding the count would let a run of cheap-then-refunded
+    // calls walk straight past the limit that exists to bound that traffic.
+    const budget = store();
+    try {
+      await budget.checkAndReserve(PROVIDER, DAY, 10, 2500, {
+        windowStartMs: WINDOW,
+        ceiling: 1000,
+        maxCalls: 5,
+      });
+      await budget.recordDelta(PROVIDER, DAY, -10, WINDOW);
+
+      expect(await budget.getWindowUsage(PROVIDER, WINDOW)).toBe(0); // credits fully refunded
+      expect(await budget.getWindowCalls(PROVIDER, WINDOW)).toBe(1); // the call still counted
+    } finally {
+      budget.close();
+    }
+  });
+
+  it('refuses without writing either counter', async () => {
+    const budget = store();
+    try {
+      const limit = { windowStartMs: WINDOW, ceiling: 1000, maxCalls: 1 };
+      await budget.checkAndReserve(PROVIDER, DAY, 7, 2500, limit);
+      const refused = await budget.checkAndReserve(PROVIDER, DAY, 7, 2500, limit);
+
+      expect(refused.ok).toBe(false);
+      expect(await budget.getWindowCalls(PROVIDER, WINDOW)).toBe(1);
+      expect(await budget.getWindowUsage(PROVIDER, WINDOW)).toBe(7);
+      expect(await budget.getUsage(PROVIDER, DAY)).toBe(7);
+    } finally {
+      budget.close();
+    }
+  });
+
+  it('the additive column migration is idempotent and preserves existing rows', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const dir = mkdtempSync(path.join(tmpdir(), 'q3-'));
+    const dbPath = path.join(dir, 'cache.sqlite3');
+    const providers = [{ id: PROVIDER, hosts: ['api.nansen.ai'], rateLimit: { rps: 1 } }] as never;
+    try {
+      const first = new SqliteBudgetStore({ dbPath, providers });
+      await first.checkAndReserve(PROVIDER, DAY, 12, 2500, {
+        windowStartMs: WINDOW,
+        ceiling: 1000,
+        maxCalls: 10,
+      });
+      first.close();
+
+      // Re-opening runs the DDL and the migration again on a file that already has both.
+      const second = new SqliteBudgetStore({ dbPath, providers });
+      expect(await second.getWindowUsage(PROVIDER, WINDOW)).toBe(12);
+      expect(await second.getWindowCalls(PROVIDER, WINDOW)).toBe(1);
+      second.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the ensureBudget refusal says it counts CALLS and that credits will not help', async () => {
+    const budget = store();
+    try {
+      const accountState = createNansenAccountState();
+      const { ensureBudget } = createNansenBudgetGate({
+        budgetStore: budget,
+        accountState,
+        dailyCreditCap: DAILY_CAP_OFF,
+        velocityCap: VELOCITY_OFF,
+        maxCallsPerWindow: 2,
+        now: () => 1_784_800_000_000,
+        env: { NANSEN_API_KEY: 'not-a-real-key' },
+        throttle: createThrottle(),
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ plan: 'pro', credits_remaining: 100_000 }), {
+            status: 200,
+          }),
+      });
+
+      await ensureBudget('entity.labels', { chain: 'ethereum', query: 'a' });
+      await ensureBudget('entity.labels', { chain: 'ethereum', query: 'b' });
+      const thrown = await ensureBudget('entity.labels', { chain: 'ethereum', query: 'c' }).then(
+        () => null,
+        (error: unknown) => error as Error,
+      );
+
+      expect(thrown).toBeInstanceOf(NansenBudgetExceededError);
+      expect(thrown!.message).toContain('call rate limit');
+      expect(thrown!.message).toContain('counts CALLS, not credits');
+      expect(thrown!.message).toContain('NANSEN_MAX_CALLS_PER_MIN');
+      // The whole point: these three calls cost ZERO credits, so no credit ledger moved at all.
+      expect(await budget.getUsage(PROVIDER, DAY)).toBe(0);
+      expect(await budget.getWindowCalls(PROVIDER, WINDOW)).toBe(2);
     } finally {
       budget.close();
     }
