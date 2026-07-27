@@ -1,0 +1,19 @@
+{
+  // WI-10 — used ONLY by `test/e2e.stdio.test.ts`, passed to the spawned child as
+  // `tsx --tsconfig tsconfig.e2e.json`. It maps `@onchain-intel/core` to core's SOURCE so the child
+  // process resolves the same code the in-process tests do (those go through `resolve.alias` in
+  // vitest.config.ts, which a child process cannot receive).
+  //
+  // Not referenced by `pnpm typecheck` (tsconfig.json) or `pnpm build` (tsconfig.build.json) — the
+  // production entry point stays `packages/core/dist`, and `scripts/smoke-dist.mjs` is what proves
+  // the built artifact runs.
+  //
+  // No `baseUrl`: TS resolves `paths` relative to this file's directory, and `baseUrl` is
+  // deprecated (TS5101).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@onchain-intel/core": ["../core/src/index.ts"]
+    }
+  }
+}

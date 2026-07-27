@@ -1,0 +1,123 @@
+// The CAPABILITY axis of the live eval, and the rule that keeps it honest (RF-5).
+//
+// The CHAIN axis is derived from the live registry, so a chain added later is exercised
+// automatically. The capability axis cannot be derived: a capability needs a tool name and an
+// argument shape that only a human knows. What CAN be automatic — and what did not exist — is
+// noticing that the two axes disagree. `dex.volume.history` shipped, this list did not grow, and
+// the newest provider surface had no live coverage while the report showed nothing at all: not a
+// failure, not a `no-probe` row, no trace. A green run read as "the free contour is verified".
+//
+// So every capability the registry declares must appear in exactly one of three places here:
+// exercised (`CAPABILITY_TOOLS`), excluded on the record (`CAPABILITY_EXCLUSIONS`), or named as a
+// known hole (`CAPABILITY_KNOWN_GAPS`). Anything else is reported by `unwiredCapabilities()` at run
+// time and fails `eval-capability-coverage.test.ts` offline — the offline half matters more,
+// because this eval is deliberately not part of CI and a capability can ship between two runs of it.
+//
+// This module is data + pure functions on purpose: importing it must never start a server, so the
+// test suite can read it without touching the network.
+
+/** capability → the tool that serves it, and how to build its arguments from a probe row.
+ * `args` returning null means "no probe input curated for this chain" → reported as `no-probe`. */
+export const CAPABILITY_TOOLS = [
+  { capability: 'chain.tvl', tool: 'onchain_chain_tvl', args: (c) => ({ chain: c }) },
+  {
+    capability: 'protocol.tvl',
+    tool: 'onchain_protocol_tvl',
+    args: (c, p) => (p.protocolSlug ? { chain: c, protocolSlug: p.protocolSlug } : null),
+  },
+  { capability: 'pairs.new', tool: 'onchain_new_pairs', args: (c) => ({ chain: c, limit: 5 }) },
+  {
+    capability: 'token.price',
+    tool: 'onchain_get_token',
+    args: (c, p) => (p.token ? { chain: c, address: p.token } : null),
+  },
+  {
+    capability: 'wallet.balances.native',
+    tool: 'onchain_wallet_balances',
+    args: (c, p) => (p.wallet ? { chain: c, address: p.wallet } : null),
+  },
+  {
+    // Needs no curated probe data at all — the tool takes a chain and nothing else — so every chain
+    // that declares it is exercised for free. 7 days keeps the payload small; the window is what
+    // makes `gapDays` meaningful, so this is where a vendor that stops publishing shows up.
+    capability: 'dex.volume.history',
+    tool: 'onchain_dex_volume',
+    args: (c) => ({ chain: c, days: 7 }),
+  },
+];
+
+/** Capabilities deliberately NOT exercised, each with the reason it is out of scope. */
+export const CAPABILITY_EXCLUSIONS = new Map([
+  ['entity.labels', 'paid — spends Nansen credits, and an eval that bills you gets turned off'],
+  ['smart-money.flows', 'paid — spends Nansen credits'],
+  ['token.risk', 'paid — spends Nansen credits'],
+]);
+
+/** Known gaps between what the registry declares and what any MCP tool serves. These are NOT
+ * exclusions — they are real holes, kept named rather than hidden so the count stays honest and a
+ * NEW hole (the RF-5 case) is distinguishable from these two at a glance. */
+export const CAPABILITY_KNOWN_GAPS = new Map([
+  [
+    'token.metadata',
+    'no tool calls it: onchain_get_token routes through token.price on purpose (a token.metadata ' +
+      'cache entry would legally serve an hour-stale price), so the coingecko path is covered and ' +
+      'this capability id is not',
+  ],
+  ['pool.info', 'declared by the registry, served by no MCP tool at all'],
+]);
+
+/** Every capability with an eval case or a recorded reason not to have one. */
+export function accountedCapabilities() {
+  return new Set([
+    ...CAPABILITY_TOOLS.map((c) => c.capability),
+    ...CAPABILITY_EXCLUSIONS.keys(),
+    ...CAPABILITY_KNOWN_GAPS.keys(),
+  ]);
+}
+
+/**
+ * The two axes, compared: every capability the SELECTED chains declare, minus the ones
+ * `CAPABILITY_TOOLS` exercises, minus the ones excluded on the record. What is left is a capability
+ * nothing asked a provider about — reported once per capability (not once per chain, which would
+ * bury it under a dozen identical rows) together with the chains that declare it.
+ *
+ * `no-probe`, not `error`: a missing eval case is our gap, not a provider defect, and the verdict
+ * that means "untested" already exists. It stays out of the failure count for the same reason the
+ * other `no-probe` rows do — but a new capability can no longer be invisible, which is the property
+ * that failed when `dex.volume.history` shipped.
+ *
+ * @param selected chain slugs being evaluated
+ * @param declaredFor (chain) => capability list, as the live registry reports it
+ * @returns rows shaped `[chain, capability, tool, outcome]` for the caller's `record()`
+ */
+export function unwiredCapabilities(selected, declaredFor) {
+  const wired = new Set(CAPABILITY_TOOLS.map((c) => c.capability));
+  const byCapability = new Map();
+  for (const chain of selected) {
+    for (const capability of declaredFor(chain) ?? []) {
+      if (wired.has(capability) || CAPABILITY_EXCLUSIONS.has(capability)) continue;
+      byCapability.set(capability, [...(byCapability.get(capability) ?? []), chain]);
+    }
+  }
+  return [...byCapability]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([capability, chains]) => {
+      const known = CAPABILITY_KNOWN_GAPS.get(capability);
+      return [
+        '—',
+        capability,
+        '—',
+        {
+          verdict: 'no-probe',
+          ms: 0,
+          problems: [
+            known
+              ? `no eval case wired — ${known} (declared by ${chains.length}: ${chains.join(', ')})`
+              : `NO EVAL CASE WIRED and no recorded reason — declared by ${chains.length} chain(s) ` +
+                `(${chains.join(', ')}) and never called. Add it to CAPABILITY_TOOLS, or to ` +
+                `CAPABILITY_EXCLUSIONS with the reason.`,
+          ],
+        },
+      ];
+    });
+}

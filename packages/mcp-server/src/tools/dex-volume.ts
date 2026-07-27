@@ -57,7 +57,9 @@ export const DexVolumeOutputSchema = z
     ),
     points: z.number().int().nonnegative(),
     /** Daily steps missing inside the covered window. Counted, never stitched. Invariant when a
-     * series was requested: `points + gapDays === window.days`. */
+     * series was requested: `points + gapDays === window.days` — a chain the vendor covers but
+     * publishes nothing for reports the whole window as missing, not `0` (L-5). With
+     * `includeSeries: false` the invariant does not apply and `points: 0` is the signal. */
     gapDays: z.number().int().nonnegative(),
     totals: z
       .object({

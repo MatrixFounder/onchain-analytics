@@ -1,0 +1,13 @@
+{
+  "$comment": "L-5 — live-recorded response for a chain the capability COVERS and the vendor publishes NOTHING for, with the chart REQUESTED (no excludeTotalDataChart). Recorded 2026-07-28, keyless, HTTP 200. `doge` is one of the five such chains named in raw/defillama-dex-echo-probe-2026-07-28.json (`echoMatchedButNoVolume`: bchyper, bsquared, camp-network, doge, zigchain): the echo matches, the aggregates are null/zero, and totalDataChart is an EMPTY ARRAY. Distinct from dexs-ethereum-no-chart.json, which is the same empty array produced BY OUR OWN excludeTotalDataChart request — there the emptiness is asked for, here it is the vendor's answer, and only here does gapDays have anything to say. Note which keys the vendor OMITS entirely (total7d, total30d) against those it sends as null (total24h) and as a real zero (total1y, totalAllTime) — the nullable contract must keep those three cases apart. protocols[]/allChains[] dropped as in the sibling fixtures; the adapter never reads them.",
+  "recordedAt": "2026-07-28",
+  "url": "https://api.llama.fi/overview/dexs/doge?excludeTotalDataChartBreakdown=true",
+  "httpStatus": 200,
+  "auth": "none (keyless)",
+  "chain": "Doge",
+  "totalDataChart": [],
+  "total24h": null,
+  "total1y": 0,
+  "totalAllTime": 0,
+  "change_1d": null
+}

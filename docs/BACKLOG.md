@@ -42,6 +42,17 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 Закрытая запись **сохраняет файл** и переезжает в раздел «Закрытые» с `resolved_at`/`resolved_by`.
 Ничего не удаляется: закрытая запись — это ответ на вопрос, который кто-то ещё задаст.
 
+> ### Где закрываются процессные записи
+>
+> Часть work-item'ов — уроки о том, **как** работает пайплайн, а не о коде этого проекта. Их
+> «место жительства» — скиллы и промпты, а те лежат в **отдельном репозитории**
+> `agentic-development` (здесь подключён симлинками `System/` и `.agent/skills/` и внесён в
+> `.gitignore`). Такие записи закрываются правкой ТАМ и несут `resolved_by: framework edit
+> (agentic-development)` — искать `developer-guidelines` или `vdd-enhanced.md` внутри этого
+> репозитория бессмысленно, их здесь нет. Радиус у таких правок шире проекта: фреймворк делят
+> четыре репозитория, поэтому правка сопровождается мета-аудитом
+> (`skill-self-improvement-verificator` → `docs/reviews/framework-audit-*.md` в том репозитории).
+
 > ### ⚠️ Про `run_feedback.py file --as work-item`
 >
 > Скрипт дописывает **весь текст тела одним буллетом** сразу после якоря
@@ -56,19 +67,23 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 
 <!-- feedback:discovered-issues -->
 
-- **WI-10** [mcp-server тесты резолвят `@onchain-intel/core` в `dist`, поэтому правки в `src` невидимы до `pnpm build`](backlog/wi-10-mcp-server-tests-resolve-core-to-dist.md) — effort `S`, opened 2026-07-27
-- **WI-9** [«Один коммит на задачу» не оговаривает задачи с пересекающимися файлами](backlog/wi-9-one-commit-per-task-vs-overlapping-files.md) — effort `S`, opened 2026-07-26
-- **WI-8** [R-47 carry-over: `rpc-solana` теряет точность на балансе выше 2^53](backlog/wi-8-r47-carryover-rpc-solana-exact-lamports.md) — opened 2026-07-24
-- **WI-7** [Устойчивость субагентов к обрыву: инкрементальная запись и resume](backlog/wi-7-subagent-stall-resilience.md) — opened 2026-07-24
-- **WI-6** [Правки, применённые оркестратором, нуждаются в собственном ревью](backlog/wi-6-orchestrator-applied-fixes-need-their-own-review-pass.md) — opened 2026-07-24
-- **WI-5** [Проверять зависимости тестов, прежде чем удалять «мёртвый код»](backlog/wi-5-check-test-deps-before-removing-dead-code.md) — opened 2026-07-24
-- **WI-4** [Развести две причины `markUnreconciled`, чтобы cooldown не ломал UC-6](backlog/wi-4-split-markunreconciled-two-causes.md) — opened 2026-07-24
-- **WI-3** [Триаж непроверенных кандидатов цикла 3 M1 (10 MINOR + 4 bikeshed)](backlog/wi-3-triage-m1-cycle3-unverified-candidates.md) — opened 2026-07-23
-- **WI-2** [Пересмотреть пин typescript ^6.0.3, когда tsup научится TS7 dts](backlog/wi-2-typescript-pin-revisit-when-tsup-supports-ts7-dts.md) — opened 2026-07-22
-- **WI-1** [Расширение гейта форматтера требует проверки блэст-радиуса](backlog/wi-1-formatter-gate-blast-radius-guard.md) — opened 2026-07-22
+- **WI-2** [Пересмотреть пин typescript ^6.0.3](backlog/wi-2-typescript-pin-revisit-when-tsup-supports-ts7-dts.md) — effort `M`, opened 2026-07-22, перемерено 2026-07-28
+
+> Единственная открытая запись. Разобрана на две половины: сборка в один шаг по-прежнему заблокирована
+> (виновник — `rollup-plugin-dts@6.1.1`, а не tsup), а сам пин уже ничем не обоснован — оба пакета
+> компилируются чисто под TS 7.0.2. Осталось решение владельца, не ожидание апстрима.
 
 ## Закрытые
 
+- **WI-10** [mcp-server тесты резолвят `@onchain-intel/core` в `dist`, поэтому правки в `src` невидимы до `pnpm build`](backlog/wi-10-mcp-server-tests-resolve-core-to-dist.md) — opened 2026-07-27, **done 2026-07-28**: `vitest.config.ts` алиасит core на `src` + guard-тест по стек-фрейму; `assertCoreDistFresh()` закрывает spawn-половину
+- **WI-9** [«Один коммит на задачу» не оговаривает задачи с пересекающимися файлами](backlog/wi-9-one-commit-per-task-vs-overlapping-files.md) — opened 2026-07-26, **done 2026-07-28**: `skill-planning-format` §4.1 — планировщик выбирает заранее
+- **WI-8** [R-47 carry-over: `rpc-solana` теряет точность на балансе выше 2^53](backlog/wi-8-r47-carryover-rpc-solana-exact-lamports.md) — opened 2026-07-24, **done 2026-07-28**: точные цифры снимаются с самого парсера (`parseGetBalance`), `amountRaw` больше не отказывает выше 2^53
+- **WI-7** [Устойчивость субагентов к обрыву: инкрементальная запись и resume](backlog/wi-7-subagent-stall-resilience.md) — opened 2026-07-24, **done 2026-07-28**: `08_developer` Step 2b, `04_architect` перед Step 3, `01_orchestrator` §7 случай 15
+- **WI-6** [Правки, применённые оркестратором, нуждаются в собственном ревью](backlog/wi-6-orchestrator-applied-fixes-need-their-own-review-pass.md) — opened 2026-07-24, **done 2026-07-28**: `vdd-enhanced.md` §4 пункты 4–5 (переревью + независимые критики против самокритики)
+- **WI-5** [Проверять зависимости тестов, прежде чем удалять «мёртвый код»](backlog/wi-5-check-test-deps-before-removing-dead-code.md) — opened 2026-07-24, **done 2026-07-28**: `code-review-checklist` §6 под «Law of Minimalism»
+- **WI-4** [Развести две причины `markUnreconciled`, чтобы cooldown не ломал UC-6](backlog/wi-4-split-markunreconciled-two-causes.md) — opened 2026-07-24, **done 2026-07-28**: формулировка перенесена в докстринг `needsResync()`; сама правка осознанно не делается
+- **WI-3** [Триаж непроверенных кандидатов цикла 3 M1 (10 MINOR + 4 bikeshed)](backlog/wi-3-triage-m1-cycle3-unverified-candidates.md) — opened 2026-07-23, **done**: триаж проведён 2026-07-23, все три отложенных в M2 пункта проверены 2026-07-28
+- **WI-1** [Расширение гейта форматтера требует проверки блэст-радиуса](backlog/wi-1-formatter-gate-blast-radius-guard.md) — opened 2026-07-22, **done 2026-07-28**: `developer-guidelines` §5.1 Safety Boundaries
 - **WI-15** [Цена `MAX_DAYS` в контексте модели](backlog/wi-15-max-days-context-cost-and-includeseries-key.md) — opened 2026-07-28, **by-design 2026-07-28**: владелец оставил 1825; второй ключ кэша исправлен
 - **WI-17** [Тест-долг: четыре теста зелены по неверной причине](backlog/wi-17-test-quality-debt-green-for-the-wrong-reason.md) — opened 2026-07-28, **done 2026-07-28**: T-1 переписан, T-2 переименован, T-4 усилен, D-2 закрыт записью фикстуры
 - **WI-14** [Переразбор на каждое окно и zod на попаданиях в кэш](backlog/wi-14-per-window-reparse-and-zod-on-cache-hits.md) — opened 2026-07-28, **dropped 2026-07-28**: замерено — 112 мкс и 232 мкс против оценок 0.4–0.8 мс и 1–3 мс; правка не окупается

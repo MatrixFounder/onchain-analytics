@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createRpcSolanaAdapter } from '../src/index.js';
+import { createRpcSolanaAdapter, type Wallet } from '../src/index.js';
 
 // Golden fixture-based normalization tests (R-16/R-17 backend, D11) — no network: the fixture was
 // recorded ONCE live via `scripts/record-fixture.mjs rpc-solana solana <address>` (2026-07-22,
@@ -91,6 +91,10 @@ describe('rpc-solana adapter (contract, R-16/R-17 backend, OQ-1)', () => {
       nativeSymbol: 'SOL',
       nativeDecimals: 9,
       raw: fixture.raw,
+      // WI-8: the hand-off now also carries `result.value`'s exact wire digits. For this
+      // ordinary-sized fixture they are simply the decimal form of the parsed number — the field
+      // earns its keep only past 2^53, which the WI-8 describe block below covers.
+      lamportsRaw: String(fixture.raw.result.value),
     });
   });
 
@@ -107,13 +111,76 @@ describe('rpc-solana adapter (contract, R-16/R-17 backend, OQ-1)', () => {
     it.each([
       ['a fractional value', 1.5],
       ['a negative value', -1],
-      ['a value past Number.MAX_SAFE_INTEGER', 1e21],
+      // Still rejected, for a NARROWER reason since WI-8: `normalize()` is driven directly here, so
+      // no exact wire digits accompany the number and a value past the safe range genuinely cannot
+      // be recovered. Through `fetch()` the same magnitude now succeeds — see the WI-8 block below.
+      ['a value past Number.MAX_SAFE_INTEGER with no wire digits', 1e21],
     ])('normalize() rejects %s with a clean, documented error', (_label, badLamports) => {
       expect(() =>
         adapter.normalize('wallet.balances.native', {
           chain: 'solana',
           address: ADDRESS,
           raw: { jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: badLamports } },
+        }),
+      ).toThrow(/invalid lamports value/);
+    });
+  });
+
+  /**
+   * WI-8 — exact lamports past 2^53. The body is written as a STRING LITERAL on purpose: building
+   * it with `JSON.stringify({ value: 12345678901234567 })` would round-trip the number through a
+   * double in the test itself, so the fixture could never carry digits the production path is
+   * asked to preserve. This is the one place where hand-writing JSON is the point, not laziness.
+   */
+  describe('exact lamports past Number.MAX_SAFE_INTEGER (WI-8)', () => {
+    // 12345678901234567 has no exact double; the nearest is 12345678901234568.
+    const BIG = '12345678901234567';
+    const bodyWith = (lamports: string) =>
+      `{"jsonrpc":"2.0","result":{"context":{"apiVersion":"2.0.15","slot":1},"value":${lamports}},"id":1}`;
+
+    async function balanceFor(lamports: string) {
+      const testAdapter = createRpcSolanaAdapter({
+        fetchImpl: async () => new Response(bodyWith(lamports), { status: 200 }),
+        now: () => FIXED_NOW,
+      });
+      const fetched = await testAdapter.fetch('wallet.balances.native', {
+        chain: 'solana',
+        address: ADDRESS,
+      });
+      const wallet = testAdapter.normalize('wallet.balances.native', fetched) as Wallet;
+      return wallet.balances[0]!;
+    }
+
+    it('TC-UNIT-04: amountRaw is the exact wire digit sequence, compared as a STRING', async () => {
+      const balance = await balanceFor(BIG);
+
+      expect(balance.amountRaw).toBe(BIG);
+      // The assertion that proves the fix rather than restating it: the double-valued projection
+      // and the exact string DISAGREE here. Before WI-8 this balance was refused outright, and the
+      // only value the adapter could have offered is the wrong one on the right-hand side.
+      expect(String(balance.amountNum)).not.toBe(balance.amountRaw);
+      expect(balance.amountNum).toBe(12345678901234568);
+    });
+
+    it('TC-UNIT-05: an ordinary balance is unchanged — amountRaw and amountNum still agree', async () => {
+      const balance = await balanceFor('123456789');
+
+      expect(balance.amountRaw).toBe('123456789');
+      expect(balance.amountNum).toBe(123456789);
+      expect(String(balance.amountNum)).toBe(balance.amountRaw);
+    });
+
+    it('refuses rather than guesses when the digits do not belong to the parsed number', async () => {
+      // A hand-built DTO whose `lamportsRaw` contradicts `result.value`: the self-check rejects the
+      // digits, and with the number past the safe range there is nothing left to fall back on.
+      expect(() =>
+        adapter.normalize('wallet.balances.native', {
+          chain: 'solana',
+          address: ADDRESS,
+          nativeSymbol: 'SOL',
+          nativeDecimals: 9,
+          raw: { jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: 1e21 } },
+          lamportsRaw: '42',
         }),
       ).toThrow(/invalid lamports value/);
     });

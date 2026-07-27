@@ -42,6 +42,38 @@ const CALL_TIMEOUT_MS = 10_000;
 const TEST_TIMEOUT_MS = CONNECT_TIMEOUT_MS + CALL_TIMEOUT_MS;
 const INVALID_ENV_TIMEOUT_MS = 10_000;
 
+/**
+ * WI-10 — the half of the stale-`dist` trap that a Vite alias structurally cannot close.
+ *
+ * `vitest.config.ts` aliases `@onchain-intel/core` to its source for every IN-PROCESS test here,
+ * but this suite spawns `src/index.ts` as a **child process** via `tsx`: the child resolves modules
+ * through Node and the workspace symlink, which points at `packages/core/dist`. A child process
+ * cannot receive a Vite alias, so it used to read the BUILT core — meaning a correct change in
+ * `packages/core/src` surfaced here as an initialize timeout or a tool missing from `tools/list`,
+ * symptoms naming everything except the cause.
+ *
+ * `tsx --tsconfig tsconfig.e2e.json` (a `paths` mapping to `../core/src/index.ts`) makes the child
+ * resolve source too, which also restores the property this file's own header claims: it depends on
+ * no build artifact. The built artifact keeps its end-to-end coverage in `scripts/smoke-dist.mjs`,
+ * which runs `dist/index.js` for real.
+ *
+ * **Rejected first attempt, recorded so it is not re-tried:** an mtime freshness check ("is
+ * dist/index.js newer than the newest file under core/src? if not, tell the developer to rebuild").
+ * It is unsound. `tsc` does not rewrite an output whose content did not change, so any edit that
+ * leaves `dist/index.js` byte-identical — or a plain `touch` — leaves the check permanently
+ * tripped, and the suite red with a message telling you to run a build that cannot clear it.
+ * Observed exactly that, after a build.
+ *
+ * The residual risk of the chosen fix is silent: were a future tsx to stop honouring `--tsconfig`,
+ * resolution would fall back to `dist` and this suite would pass against a stale build again.
+ * `test/fixtures/core-resolution-probe.ts` closes that — it is run below under the identical
+ * invocation and asserts which copy was resolved.
+ */
+const E2E_TSCONFIG = path.resolve(packageRoot, 'tsconfig.e2e.json');
+const CORE_RESOLUTION_PROBE = path.resolve(packageRoot, 'test/fixtures/core-resolution-probe.ts');
+/** Exactly what every child in this file is launched with. One definition, no drift. */
+const tsxArgs = (entry: string): string[] => [tsxCli, '--tsconfig', E2E_TSCONFIG, entry];
+
 describe('onchain_ping — stdio E2E', () => {
   let client: Client | undefined;
   let dataDir: string | undefined;
@@ -67,7 +99,7 @@ describe('onchain_ping — stdio E2E', () => {
     dataDir = mkdtempSync(path.join(tmpdir(), 'onchain-intel-e2e-stdio-'));
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: [tsxCli, serverEntry],
+      args: tsxArgs(serverEntry),
       cwd: packageRoot,
       stderr: 'pipe',
       // Real `process.env` (not the SDK's curated safe-subset default) so tsx/module resolution
@@ -179,13 +211,59 @@ describe('onchain_ping — stdio E2E', () => {
   );
 
   it(
+    'the spawned child resolves @onchain-intel/core from src, not from the built dist (WI-10)',
+    async () => {
+      // Runs the probe under the SAME `tsxArgs(...)` every server child above is launched with, so
+      // this asserts the mechanism those four tests depend on rather than a copy of it. Without it,
+      // a tsx that stopped honouring `--tsconfig` would silently return this suite to reading a
+      // stale build while still passing.
+      const child = spawn(process.execPath, tsxArgs(CORE_RESOLUTION_PROBE), {
+        cwd: packageRoot,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8');
+      });
+
+      const exitCode = await new Promise<number | null>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          child.kill('SIGKILL');
+          reject(new Error('the resolution probe did not exit within the bounded timeout'));
+        }, INVALID_ENV_TIMEOUT_MS);
+        child.on('exit', (code) => {
+          clearTimeout(timer);
+          resolve(code);
+        });
+        child.on('error', (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+      });
+
+      expect(exitCode, `probe failed to run. stderr: ${stderr}`).toBe(0);
+      expect(
+        stdout.trim(),
+        'the spawned child resolved @onchain-intel/core through the BUILT dist. tsx is no longer ' +
+          'honouring `--tsconfig tsconfig.e2e.json`, so this suite is silently testing a stale ' +
+          'build again (WI-10).',
+      ).toBe('resolved:src');
+    },
+    INVALID_ENV_TIMEOUT_MS + 5_000,
+  );
+
+  it(
     'invalid LOG_LEVEL fails startup fast: exit 1, stderr names the key but never the value, stdout stays empty',
     async () => {
       // Plain child_process spawn (no MCP client/transport needed here — the server never gets
       // far enough to speak the protocol) so this test is self-contained: kill-on-timeout is the
       // only reaping mechanism, independent of the Client/StdioClientTransport machinery used by
       // the tests above.
-      const child = spawn(process.execPath, [tsxCli, serverEntry], {
+      const child = spawn(process.execPath, tsxArgs(serverEntry), {
         cwd: packageRoot,
         env: { ...process.env, LOG_LEVEL: 'bogus' },
         stdio: ['ignore', 'pipe', 'pipe'],

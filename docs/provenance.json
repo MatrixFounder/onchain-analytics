@@ -60,6 +60,10 @@
     "packages/core/test/fixtures/defillama/dexs-ethereum-no-chart.json": {
       "sha256": "aa10a0e1f2b50ab47409c766c06b03bb02280fd6c60bf1b2020b17050294d09a",
       "note": "TASK-007 / WI-17 (D-2) — live-recorded response for the includeSeries:false mode (excludeTotalDataChart=true), 2026-07-28. It answers a question that was previously a guess: the vendor KEEPS `totalDataChart` and sets it to an empty array rather than omitting it or sending null. That is what decides window/points/gapDays in that mode, so a silent edit here would rewrite a measured vendor behaviour into an assumption."
+    },
+    "packages/core/test/fixtures/defillama/dexs-doge-no-history.json": {
+      "sha256": "ddf9d81ba0245343af2657ef4f3472026240a54e3cdeba18e809f67302a7e59e",
+      "note": "L-5 — live-recorded response for a COVERED chain the vendor publishes nothing for, chart requested, 2026-07-28. It is the evidence that an empty chart with a series REQUESTED must count the whole window as missing (the five chains listed as `echoMatchedButNoVolume` in the echo probe), and that the vendor's three absence cases — key omitted, explicit null, real zero — are distinct and must stay so. Editing it would turn that measurement back into an assumption."
     }
   }
 }

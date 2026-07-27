@@ -12,9 +12,10 @@
 // no package.json `dependencies` entry to maintain here).
 //
 // Sequence: initialize -> notifications/initialized -> tools/list -> tools/call onchain_ping.
-// Asserts (a) tools/list returns exactly 8 tools (onchain_ping + the 4 M1 tools from task 003-7 +
-// the 3 M2 (Nansen-backed, paid) tools from task 005-6, checked by name — task 005-8's own
-// exit-criteria trace, "8 tools видны в tools/list"); (b) the call's structuredContent.version
+// Asserts (a) tools/list returns exactly the expected tool set BY NAME — onchain_ping + the 4 M1
+// tools (task 003-7) + the 3 M2 Nansen-backed paid tools (task 005-6) + the 2 discovery/chain-TVL
+// tools (TASK-006 task 006-7) + onchain_dex_volume (TASK-007 task 007-6), 11 in total; the count is
+// derived from that list rather than written twice (Q-6); (b) the call's structuredContent.version
 // matches package.json's version (read here, never hardcoded); (c) every line the child writes to
 // stdout parses as JSON
 // (a non-JSON line would mean something other than MCP protocol touched stdout, ARCHITECTURE
@@ -190,9 +191,16 @@ async function run() {
 
   const listResult = await sendRequest('tools/list', {});
   const tools = listResult && listResult.tools;
+  // Kept sorted; the count below is DERIVED from this list, never written again as a literal.
+  // A hardcoded `!== 8` sitting beside the names is what let this gate rot: TASK-006 added two
+  // tools and TASK-007 a third, both updated the in-process suites, and this one stayed red in CI
+  // because nothing local runs it (`pnpm test` does not; only the CI step after `pnpm build`).
   const expectedNames = [
+    'onchain_chain_tvl',
+    'onchain_dex_volume',
     'onchain_entity_label',
     'onchain_get_token',
+    'onchain_list_chains',
     'onchain_new_pairs',
     'onchain_ping',
     'onchain_protocol_tvl',
@@ -208,11 +216,18 @@ async function run() {
     : [];
   if (
     !Array.isArray(tools) ||
-    tools.length !== 8 ||
+    tools.length !== expectedNames.length ||
     JSON.stringify(actualNames) !== JSON.stringify(expectedNames)
   ) {
+    // Name the DIFFERENCE, not the haystack: the old message interpolated the whole `tools` array
+    // — every tool's full JSON Schema, ~20KB of output in which the one changed name was invisible.
+    const missing = expectedNames.filter((name) => !actualNames.includes(name));
+    const unexpected = actualNames.filter((name) => !expectedNames.includes(name));
     throw new Error(
-      `tools/list did not return exactly the 8 expected tools ${JSON.stringify(expectedNames)}: got ${JSON.stringify(tools)}`,
+      `tools/list did not return exactly the ${expectedNames.length} expected tools ` +
+        `(got ${actualNames.length}). Missing: ${missing.length ? missing.join(', ') : '(none)'}. ` +
+        `Unexpected: ${unexpected.length ? unexpected.join(', ') : '(none)'}. ` +
+        'If a tool was added deliberately, add its name to `expectedNames` in this script.',
     );
   }
 

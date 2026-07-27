@@ -28,6 +28,9 @@ const EMPTY_CHAIN_DOC = loadDexFixture('dexs-empty-chain');
  * every test of that mode fed the FULL-chart document, so the vendor's actual behaviour there was
  * unmeasured — and it is what decides `window`/`points`/`gapDays` in that mode. */
 const NO_CHART_DOC = loadDexFixture('dexs-ethereum-no-chart');
+/** A COVERED chain the vendor publishes nothing for, chart REQUESTED (L-5). The same empty array as
+ * `NO_CHART_DOC` and a different question: there we asked for no chart, here the vendor has none. */
+const NO_HISTORY_DOC = loadDexFixture('dexs-doge-no-history');
 
 /** `now` is pinned one day past the fixture's newest point, so the plausibility bound never rejects
  * recorded history and the window anchors on the vendor's data rather than on the wall clock. */
@@ -735,6 +738,42 @@ describe('defillama dex.volume.history — adversarial cycle 1 regressions', () 
     expect(result.truncated.reason).toMatch(/folded to one/);
     // ...and no two returned points share a day.
     expect(new Set(result.series.map((p) => p.ts)).size).toBe(result.series.length);
+  });
+
+  it('L-5: a covered chain the vendor publishes NOTHING for reports the whole window as missing', async () => {
+    // Measured, not imagined: `raw/defillama-dex-echo-probe-2026-07-28.json` lists five covered
+    // chains answering HTTP 200 with an empty chart (`echoMatchedButNoVolume`), and this is one of
+    // them recorded in full. The answer used to be `points: 0, gapDays: 0, window.days: 5` — five
+    // unmeasured days reported as "nothing is missing", which is the L-2 shape (a health signal
+    // that reads clean while the data is gone) and broke the invariant the tool publishes.
+    const result = await resolveDex(NO_HISTORY_DOC, { chain: 'doge', days: 5 });
+
+    expect(result.points).toBe(0);
+    expect(result.gapDays).toBe(5);
+    expect(result.window.days).toBe(5);
+    expect(result.points + result.gapDays).toBe(result.window.days);
+    // Nothing is stitched in to fill them: a gap is COUNTED, never invented.
+    expect(result.series).toEqual([]);
+    // The three vendor cases stay apart — omitted key, explicit null, and a real zero.
+    expect(result.totals.h24).toBeNull(); // sent as null
+    expect(result.totals.d7).toBeNull(); // key absent entirely
+    expect(result.totals.d1y).toBe(0); // a measured zero
+    expect(result.totals.allTime).toBe(0);
+  });
+
+  it('L-5: with includeSeries:false the same document still reports gapDays 0', async () => {
+    // The invariant is scoped to "a series was requested" on purpose, and the fix must not leak
+    // into the aggregates-only mode: there is no series to judge there, `points: 0` is the honest
+    // signal, and counting the window as missing would invent a defect out of a cheaper request.
+    const result = await resolveDex(NO_HISTORY_DOC, {
+      chain: 'doge',
+      days: 5,
+      includeSeries: false,
+    });
+
+    expect(result.points).toBe(0);
+    expect(result.gapDays).toBe(0);
+    expect(result.window.days).toBe(5);
   });
 
   it('C3-L7: maxDocuments that would disable the bound is refused, not accepted', async () => {

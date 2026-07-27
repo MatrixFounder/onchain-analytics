@@ -27,10 +27,28 @@ JSON-RPC, the production `buildRegistry()` wiring, real adapters, real network. 
 `fetchImpl`, no fixture registry, no importing internals. If it passes here, it works for a client —
 which is the only claim worth making.
 
-The matrix is **derived from the live registry**, not hand-written: for each chain the eval asks
-`onchain_list_chains` which capabilities that chain declares, and exercises exactly those. A chain or
-capability added later is covered automatically, and a chain the registry _stops_ declaring stops
-being tested rather than failing noisily.
+The **chain** axis is derived from the live registry: for each chain the eval asks
+`onchain_list_chains` which capabilities that chain declares, and exercises exactly those. A chain
+added later is covered automatically, and a chain the registry _stops_ declaring stops being tested
+rather than failing noisily.
+
+The **capability** axis cannot be derived — a capability needs a tool name and an argument shape that
+only a human knows — so it lives in `capabilities.mjs` as `CAPABILITY_TOOLS`. This README used to
+claim it was automatic too, and it was not: `dex.volume.history` shipped, the list did not grow, and
+the newest provider surface had no live coverage while the report showed nothing at all — not a
+failure, not a `no-probe` row, no trace (RF-5). What is automatic now is noticing the two axes
+disagree:
+
+- at **run time**, every capability the selected chains declare and no case exercises is printed as
+  its own `no-probe` row, with the chains that declare it;
+- at **CI time**, `test/eval-capability-coverage.test.ts` fails when a tool serves a capability that
+  is neither wired into `CAPABILITY_TOOLS` nor recorded in `CAPABILITY_EXCLUSIONS`. That half matters
+  more, because this eval is deliberately not part of CI and a tool can ship between two runs of it.
+
+**Free providers only** — DeFiLlama, CoinGecko, DexScreener, rpc-evm, rpc-solana. The three
+Nansen-backed capabilities are excluded because calling them spends credits; the exclusion is data
+(`CAPABILITY_EXCLUSIONS`, printed at the end of every run) rather than an omission, because an
+exclusion nobody is reminded of is indistinguishable from an oversight.
 
 **Free providers only** — DeFiLlama, CoinGecko, DexScreener, rpc-evm, rpc-solana. The three
 Nansen-backed tools are excluded because calling them spends credits; an eval that bills you every
@@ -45,7 +63,7 @@ run gets turned off, and a monitor that is off is worse than no monitor.
 | ❌ `error`        | the call failed outright                                                        |
 | ⏳ `rate-limited` | the provider throttled us — **not tested**, not broken                          |
 | `·` `unsupported` | the registry does not declare this capability here — a pass, hidden from output |
-| `?` `no-probe`    | no probe input curated — fix `probes.json`, not the code                        |
+| `?` `no-probe`    | untested: no probe input curated, or no eval case wired for the capability      |
 
 `degraded` exists separately from `error` on purpose: it is the class that cost us four days. A
 provider that is _down_ is loud and obvious; a provider that quietly stops sending a field returns
@@ -80,17 +98,26 @@ provider error and blames the server for a defect in the test data. (`babylon` v
 on bitcoin was exactly that, caught on the first run.)
 
 A chain with no curated input for a capability reports `no-probe`. That is the honest state and is
-better than a guess.
+better than a guess. `dex.volume.history` needs no curated input at all — the tool takes a chain and
+nothing else — so every chain in the file is exercised for it automatically.
 
 ## Known-good baseline
 
-Full run, 2026-07-27: **0 error, 0 degraded** — 44–45 ok, 14 unsupported, 2 no-probe, and 0–2
-rate-limited. The `ok`/`rate-limited` split moves between runs because CoinGecko's keyless tier
-throttles unpredictably; that is why `rate-limited` is a verdict of its own and stays out of the
-failure count. Exit code was 0.
+Full run, 2026-07-28 (after RF-5 wired `dex.volume.history`): **0 error, 0 degraded** — 55–57 ok, 15
+unsupported, 4 no-probe, and 0–2 rate-limited. The `ok`/`rate-limited` split moves between runs
+because CoinGecko's keyless tier throttles unpredictably; that is why `rate-limited` is a verdict of
+its own and stays out of the failure count. Exit code was 0. (The previous baseline, 2026-07-27, read
+44–45 ok / 14 unsupported / 2 no-probe — it was taken while the DEX-volume capability existed and was
+never called, which is the defect, not a change in the providers.)
 
-The two `no-probe` rows are stable and worth knowing:
+The four `no-probe` rows are stable and worth knowing. The first two are missing probe DATA; the last
+two are capabilities with no eval case at all, and they are printed precisely so that a THIRD one
+appearing is visible immediately:
 
 - `bitcoin/token.price` — the registry declares the capability, but the tool needs a contract
   address and Bitcoin has none. The probe is not missing; the registry's claim is questionable.
 - `zcash/protocol.tvl` — no DeFiLlama protocol curated for it.
+- `—/token.metadata` — no tool calls it: `onchain_get_token` routes through `token.price` on purpose
+  (a `token.metadata` cache entry would legally serve an hour-stale price), so the CoinGecko path is
+  covered and this capability id is not.
+- `—/pool.info` — declared by the registry and served by no MCP tool at all.

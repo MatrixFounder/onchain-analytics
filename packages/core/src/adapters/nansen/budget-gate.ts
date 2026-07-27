@@ -324,9 +324,26 @@ interface AccountResponseBody {
  *
  * Accepted residual: under a persistent degrade the `reconcile()` stderr line repeats per call
  * (log noise only — `/account` is free and the budget stays correct). Left as-is deliberately
- * rather than adding a second dedup flag to `NansenAccountState`; if request pressure ever becomes
- * a real problem the right fix is a circuit breaker around the capability itself, not a blindfold
- * on the ledger. Tracked as a known-issue rather than silently dropped.
+ * rather than adding a second dedup flag to `NansenAccountState`. Tracked as a known-issue rather
+ * than silently dropped (`docs/issues/q-1-*.md`, `status: by-design`).
+ *
+ * **If this is ever picked up, here is the design that works** (cycle-3 formulation, WI-8's sibling
+ * WI-4, recorded here rather than in a backlog file because this is where the decision gets made).
+ * The reason the cooldown attempt failed is that `markUnreconciled()` collapses TWO causes into one
+ * flag:
+ *
+ * - **(a) a `402` or a transport failure** — the vendor has just made a statement about our ledger,
+ *   so the next-entry resync is the mandatory correction. This is what UC-6's three tests encode,
+ *   and it must never be suppressed.
+ * - **(b) `reconcile()`'s header-degrade branch** — no such statement, merely a missing
+ *   `X-Nansen-Credits-Used`. This is the only cause that can persist indefinitely, i.e. the actual
+ *   storm driver, and the only one worth rate-limiting.
+ *
+ * Splitting the flag and applying a minimum-interval cooldown to **(b) alone** preserves all three
+ * UC-6 tests. A blanket cooldown — the thing that was tried — cannot, because it necessarily
+ * suppresses (a) too. Do not re-attempt the blanket version; it will fail the same three tests for
+ * the same reason. Worth doing only if request pressure becomes real; it is availability polish,
+ * not a correctness fix.
  */
 function needsResync(
   snapshot: NansenAccountSnapshot | undefined,

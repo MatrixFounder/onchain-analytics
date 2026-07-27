@@ -67,7 +67,10 @@ export interface DexVolumeResult {
   points: number;
   /** Daily steps MISSING inside the covered window. Counted, never stitched — an interpolated point
    * is a number nobody measured. Invariant: `points + gapDays === window.days` whenever a series was
-   * requested. */
+   * requested — INCLUDING the case where the vendor published no day at all, which counts the whole
+   * requested window as missing rather than reporting a clean zero (L-5). With
+   * `includeSeries: false` the invariant does not apply: there is no series to judge and `points: 0`
+   * is the honest signal. */
   gapDays: number;
   /** The vendor's own aggregates, passed through rather than recomputed. `null` means the key was
    * absent or explicitly null, never `0` — rendering a missing measurement as a zero one would
@@ -463,12 +466,28 @@ function normalizeDexVolume(
   //    the chain's lifetime and a missing first day is a real gap. If it does not, the history
   //    simply begins later and there is nothing to report as missing. Clamping on the returned
   //    series alone would swallow exactly the leading-edge gap this fix exists to expose.
+  //    A series that was REQUESTED and came back EMPTY is the one case the two rules above do not
+  //    meet (L-5). `deduped` is empty only when the vendor published nothing at all for this chain —
+  //    measured live 2026-07-28 on 5 of the 274 covered chains (`bchyper`, `bsquared`,
+  //    `camp-network`, `doge`, `zigchain`), which answer HTTP 200 with `totalDataChart: []`. The
+  //    covered window used to collapse to 0 there while `window.days` fell back to `args.days`, so
+  //    the two halves of the invariant were computed in different frames and N unmeasured days
+  //    reported `gapDays: 0` — "nothing is missing" over a window where nothing exists. The whole
+  //    requested window is the honest count: the vendor claims to cover this chain (it is in the
+  //    generated `DEFILLAMA_DEX_CHAINS` set) and published no day of it. The leading-edge clamp does
+  //    NOT apply — it exists for a chain whose history starts later, and a chain with no point
+  //    anywhere gives no evidence of when its history starts.
   const earliestKnown = deduped[0];
   const historyStartsInsideWindow =
     earliestKnown !== undefined && earliestKnown.ts > requestedFromMs;
   const fromMs =
     returnedSeries.length > 0 && historyStartsInsideWindow ? earliestKnown.ts : requestedFromMs;
-  const coveredDays = returnedSeries.length > 0 ? Math.round((toMs - fromMs) / DAY_MS) + 1 : 0;
+  const coveredDays =
+    returnedSeries.length > 0
+      ? Math.round((toMs - fromMs) / DAY_MS) + 1
+      : args.includeSeries
+        ? args.days
+        : 0;
   const gapDays = Math.max(0, coveredDays - returnedSeries.length);
 
   return {
@@ -477,7 +496,9 @@ function normalizeDexVolume(
     // `days` reports the window ACTUALLY covered, which is `args.days` whenever the chain has that
     // much history and less when it does not. A caller comparing `window.days` with what it asked
     // for learns the difference; a caller that does not still gets an internally consistent answer
-    // where `points + gapDays === days`.
+    // where `points + gapDays === days`. With a requested series and no vendor points at all the
+    // two expressions agree by construction (`coveredDays === args.days`, L-5); with
+    // `includeSeries: false` the request is reported unchanged and the invariant does not apply.
     window: { fromMs, toMs, days: returnedSeries.length > 0 ? coveredDays : args.days },
     series: returnedSeries,
     points: returnedSeries.length,

@@ -88,6 +88,8 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 - **RF-1** [task-001-3 acceptance snippets not runnable (pnpm 11 '--' forwarding; macOS lacks timeout)](issues/rf-1-task-001-3-acceptance-snippets-not-runnable-pnpm-11-forwarding-macos-lacks-timeout.md) — severity `SEV-4`, status `fixed`, opened 2026-07-22
 - **RF-2** [M2's own evidence records describe an earlier tree than the one that shipped](issues/rf-2-m2-evidence-records-drifted-from-the-shipped-commit.md) — severity `SEV-3`, status `fixed`, opened 2026-07-25
 - **RF-3** [pnpm lint and format:check were left red on main by two merged commits, blocking the next task's regression exit](issues/rf-3-pnpm-lint-and-format-check-were-left-red-on-main-by-two-merged-commits-blocking-the-next-task-s-regression-exit.md) — severity `SEV-3`, status `fixed`, opened 2026-07-27
+- **RF-4** [the smoke:dist CI gate still asserts 8 tools, so it has been red on main since TASK-006](issues/rf-4-smoke-dist-ci-gate-still-asserts-8-tools-so-it-has-been-red-on-main-since-task-006.md) — severity `SEV-2`, status `fixed`, opened 2026-07-28
+- **RF-5** [the live eval derives chains from the registry but capabilities from a hand-written list, so dex.volume.history ships untested](issues/rf-5-live-eval-capability-axis-is-hand-written-so-dex-volume-history-ships-untested.md) — severity `SEV-3`, status `fixed`, opened 2026-07-28
 
 ## logic
 
@@ -95,6 +97,7 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 - **L-2** [the snapshotter drops a metric silently: `dropped[]` is computed and then discarded](issues/l-2-snapshotter-drops-a-metric-silently-dropped-array-never-leaves-the-node.md) — severity `SEV-3`, status `fixed`, opened 2026-07-27
 - **L-3** [`onchain-verify`'s staleness detector is permanently red by construction, and names no metric](issues/l-3-verify-staleness-detector-is-permanently-red-and-names-no-metric.md) — severity `SEV-2`, status `fixed`, opened 2026-07-27
 - **L-4** [Telegram entity parsing 400s on snake_case metric names, so the alert is never delivered](issues/l-4-telegram-entity-parsing-400s-on-snake-case-metric-names-no-alert-delivered.md) — severity `SEV-2`, status `fixed`, opened 2026-07-27
+- **L-5** [onchain_dex_volume reports gapDays: 0 for a window with no data at all — the empty-chart case breaks its own invariant](issues/l-5-dex-volume-empty-chart-reports-zero-gapdays-breaking-its-own-invariant.md) — severity `SEV-3`, status `fixed`, opened 2026-07-28
 
 ## security
 

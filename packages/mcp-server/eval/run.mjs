@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { crossChecks, grade } from './checks.mjs';
+import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS, unwiredCapabilities } from './capabilities.mjs';
 
 const evalDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(evalDir, '..');
@@ -39,30 +40,6 @@ const THROTTLE_MS = Number(process.env.ONCHAIN_EVAL_THROTTLE_MS ?? 350);
 const COINGECKO_THROTTLE_MS = Number(process.env.ONCHAIN_EVAL_CG_THROTTLE_MS ?? 6000);
 
 const probes = JSON.parse(readFileSync(path.join(evalDir, 'probes.json'), 'utf8'));
-
-// capability → the tool that serves it, and how to build its arguments from a probe.
-// Deriving cases from the LIVE registry rather than a hand-written list is the point: a chain or
-// capability added later is exercised automatically, the same way onchain-verify treats a metric
-// with no declared cadence as a defect rather than as absent.
-const CAPABILITY_TOOLS = [
-  { capability: 'chain.tvl', tool: 'onchain_chain_tvl', args: (c) => ({ chain: c }) },
-  {
-    capability: 'protocol.tvl',
-    tool: 'onchain_protocol_tvl',
-    args: (c, p) => (p.protocolSlug ? { chain: c, protocolSlug: p.protocolSlug } : null),
-  },
-  { capability: 'pairs.new', tool: 'onchain_new_pairs', args: (c) => ({ chain: c, limit: 5 }) },
-  {
-    capability: 'token.price',
-    tool: 'onchain_get_token',
-    args: (c, p) => (p.token ? { chain: c, address: p.token } : null),
-  },
-  {
-    capability: 'wallet.balances.native',
-    tool: 'onchain_wallet_balances',
-    args: (c, p) => (p.wallet ? { chain: c, address: p.wallet } : null),
-  },
-];
 
 // ── minimal JSON-RPC-over-stdio client (no SDK dependency, matching scripts/ house style) ────────
 function startServer() {
@@ -274,6 +251,10 @@ async function main() {
         await sleep(tool === 'onchain_get_token' ? COINGECKO_THROTTLE_MS : THROTTLE_MS);
       }
     }
+
+    // The two axes, compared. Everything above walks CAPABILITY_TOOLS; this walks what the chains
+    // actually declare and names what nothing above touched.
+    for (const row of unwiredCapabilities(selected, (c) => registry.get(c))) record(...row);
   } finally {
     server.stop();
   }
@@ -335,8 +316,15 @@ function report(results, stderrLines) {
   }
   const noProbe = results.filter((r) => r.verdict === 'no-probe');
   if (noProbe.length) {
-    console.log('\n  Untested for lack of probe data (fix probes.json, not the code):');
-    for (const n of noProbe) console.log(`   ? ${n.chain}/${n.capability}`);
+    console.log('\n  Untested — no probe input, or no eval case wired at all:');
+    for (const n of noProbe)
+      console.log(`   ? ${n.chain}/${n.capability}: ${n.problems.join('; ')}`);
+  }
+  // Printed every run, unconditionally: an exclusion nobody is reminded of is indistinguishable
+  // from an oversight, and this is the list that decides what the eval is allowed not to cover.
+  console.log('\n  Excluded from the free contour by contract:');
+  for (const [capability, reason] of CAPABILITY_EXCLUSIONS) {
+    console.log(`   · ${capability}: ${reason}`);
   }
   const stderrText = stderrLines.join('');
   if (stderrText.includes('NON-JSON ON STDOUT')) {

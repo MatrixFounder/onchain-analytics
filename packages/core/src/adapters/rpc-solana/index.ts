@@ -49,11 +49,69 @@ interface RpcSolanaFetchResult {
   nativeSymbol: string;
   nativeDecimals: number;
   raw: unknown;
+  /**
+   * WI-8 — `result.value`'s digits **exactly as they appeared on the wire**, before any conversion
+   * to a double. Optional on purpose: it is present for everything `fetch()` produces, and absent
+   * when `normalize()` is driven directly with a hand-built object (contract tests, and any future
+   * caller replaying a stored DTO). `normalize()` treats its absence as "exactness unknown" and
+   * falls back to the conservative pre-WI-8 rule rather than inventing digits.
+   */
+  lamportsRaw?: string;
 }
 
 interface JsonRpcGetBalanceResponse {
   result?: { context?: { slot?: unknown }; value?: unknown };
   error?: { code?: unknown; message?: unknown };
+}
+
+/**
+ * The third reviver argument from *JSON.parse source text access* (ES2025; measured available on
+ * this project's declared floor — Node v22.23.1 — and on CI's Node 22). Typed locally because the
+ * TypeScript lib bundled with this repo does not yet declare it.
+ */
+interface JsonParseContext {
+  source?: string;
+}
+
+/**
+ * WI-8 — parse a `getBalance` response while keeping `result.value`'s **exact** integer digits.
+ *
+ * Solana's JSON-RPC returns the lamport balance as a bare JSON **number**, unlike `eth_getBalance`
+ * which returns a hex string. Past `Number.MAX_SAFE_INTEGER` (~9.007e15 lamports ≈ 9.007M SOL) a
+ * double can no longer represent every integer, so `JSON.parse` alone loses the true value before
+ * any adapter code runs: `12345678901234567` comes back as `12345678901234568`.
+ *
+ * The recovery is to ask the parser what it *read*, not what it produced. The reviver's `context`
+ * carries `source` — the literal substring for each primitive — and `this` is the holder object, so
+ * the digits can be attributed to the specific object they came from. Keying a `WeakMap` on holder
+ * identity is what makes this exact rather than a heuristic: no regex over the body, no assumption
+ * that `"value"` occurs once, no ambiguity if the vendor ever nests another `value` elsewhere. The
+ * token is taken only from the holder that turns out to BE `result`.
+ */
+function parseGetBalance(text: string): {
+  raw: JsonRpcGetBalanceResponse;
+  lamportsRaw: string | undefined;
+} {
+  const valueSources = new WeakMap<object, string>();
+  const reviver = function (
+    this: unknown,
+    key: string,
+    value: unknown,
+    context?: JsonParseContext,
+  ): unknown {
+    if (key === 'value' && typeof context?.source === 'string' && typeof this === 'object') {
+      if (this !== null) valueSources.set(this, context.source);
+    }
+    return value;
+  } as (key: string, value: unknown) => unknown;
+
+  const raw = JSON.parse(text, reviver) as JsonRpcGetBalanceResponse;
+  const holder = raw.result;
+  return {
+    raw,
+    lamportsRaw:
+      typeof holder === 'object' && holder !== null ? valueSources.get(holder) : undefined,
+  };
 }
 
 function extractFetchArgs(
@@ -94,15 +152,18 @@ function servesChain(chain: ChainInfo): boolean {
  * failure with retry" until a second candidate gets its own live probe); this adapter therefore
  * has exactly one endpoint, unlike `rpc-evm`'s two.
  *
- * **Known vendor limitation, not an engine bug (documented, not silently accepted):** unlike
- * `eth_getBalance` (which returns hex-wei as a STRING, preserving arbitrary precision),
- * `getBalance`'s `result.value` is a JSON **number** in the wire response itself — so any lamport
- * balance above `Number.MAX_SAFE_INTEGER` (~9.007 x 10^15, i.e. ~9.007M SOL) has already lost
- * precision by the time `response.json()` parses it, before this adapter ever sees it. This is a
- * limitation of Solana's own JSON-RPC wire format, not something a client-side string conversion
- * can recover — `amountRaw` is still emitted as a string (DB-SCHEMA-CONCEPT §1.7 convention), but
- * for values already-imprecise past that threshold, the string merely reflects the JSON-parsed
- * (already lossy) number, not a true arbitrary-precision integer.
+ * **Exact lamports past 2^53 (WI-8, closed 2026-07-28).** Unlike `eth_getBalance` (hex-wei as a
+ * STRING, arbitrary precision for free), `getBalance` returns `result.value` as a bare JSON
+ * **number**, so a balance above `Number.MAX_SAFE_INTEGER` (~9.007e15 lamports ≈ 9.007M SOL) is
+ * not representable as a double. This module used to record that as an unrecoverable vendor
+ * limitation and refuse such balances outright; that was true of `response.json()`, and false of
+ * the wire format. The response text still carries the exact digits — `parseGetBalance()` lifts
+ * them straight out of the parser (see its docstring), and `amountRaw` carries them verbatim
+ * (DB-SCHEMA-CONCEPT §1.7). `amountNum` remains the deliberately lossy projection.
+ *
+ * A refusal is still possible and still loud: when the exact digits are unavailable (a caller
+ * driving `normalize()` with a hand-built DTO rather than a `fetch()` result) a value past the safe
+ * range throws instead of emitting a plausible-looking wrong number.
  *
  * **Bounded error messages (post-M1 polish, cheap-fix backlog item 5):** the JSON-RPC error
  * payload and the invalid-response envelope are embedded via `stringifyTruncated()`
@@ -156,7 +217,9 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
             // day carry a key in its path or query. `safeFetch`'s own errors already do this.
             throw new Error(`rpc-solana: HTTP ${response.status} for ${hostOf(endpoint)}`);
           }
-          const raw = (await response.json()) as JsonRpcGetBalanceResponse;
+          // `.text()` then `parseGetBalance`, never `.json()` (WI-8): `response.json()` hands back
+          // only the parsed double, discarding the digits needed to stay exact past 2^53.
+          const { raw, lamportsRaw } = parseGetBalance(await response.text());
           if (raw.error) {
             throw new Error(
               `rpc-solana: JSON-RPC error from ${hostOf(endpoint)}: ${stringifyTruncated(raw.error)}`,
@@ -169,6 +232,7 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
             nativeSymbol: chain.nativeSymbol as string,
             nativeDecimals: chain.nativeDecimals as number,
             raw,
+            lamportsRaw,
           };
         } catch (error) {
           lastError = error;
@@ -179,24 +243,42 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
         : new Error(`rpc-solana: all endpoints failed for chain ${chain.slug}`);
     },
     normalize: (_cap: string, rawResult: unknown): Wallet => {
-      const { chain, address, nativeSymbol, nativeDecimals, raw } =
+      const { chain, address, nativeSymbol, nativeDecimals, raw, lamportsRaw } =
         rawResult as RpcSolanaFetchResult;
       const body = raw as JsonRpcGetBalanceResponse;
       const lamports = body.result?.value;
-      // Adversarial cycle 1, fix F: `lamports` must be a non-negative SAFE integer before it's
-      // ever handed to `String()` — a fractional value (e.g. `1.5`, never a valid lamport count),
-      // a negative value, or a value already past `Number.MAX_SAFE_INTEGER` (silently imprecise,
-      // per this module's own docstring on Solana's lossy JSON-number wire format) all get a
-      // loud, clear error here instead of silently propagating a wrong/misleading `amountRaw`.
-      if (
-        typeof lamports !== 'number' ||
-        !Number.isInteger(lamports) ||
-        lamports < 0 ||
-        lamports > Number.MAX_SAFE_INTEGER
-      ) {
+      // Adversarial cycle 1, fix F: `lamports` must be a non-negative integer before it is ever
+      // handed to `String()` — a fractional value (`1.5`, never a valid lamport count) or a
+      // negative one gets a loud, clear error instead of a silently wrong `amountRaw`.
+      if (typeof lamports !== 'number' || !Number.isInteger(lamports) || lamports < 0) {
         throw new Error(
           `rpc-solana.normalize: invalid lamports value in "result.value": ${stringifyTruncated(raw)}`,
         );
+      }
+
+      // WI-8 — exactness, in three cases and no fourth. `lamportsRaw` carries the wire digits when
+      // `fetch()` produced this result (`parseGetBalance`), so a balance past 2^53 is now exact
+      // rather than refused. Its ABSENCE is not treated as permission to guess: without the
+      // digits, anything past the safe range is unrepresentable and the call is refused, which is
+      // exactly the pre-WI-8 behaviour for that path. `String(lamports)` is used only where it is
+      // provably lossless.
+      let amountRaw: string;
+      if (
+        typeof lamportsRaw === 'string' &&
+        /^(0|[1-9][0-9]*)$/.test(lamportsRaw) &&
+        // Self-check: the digits must be the ones this very number was parsed from. Cheap, and it
+        // makes a future mis-attribution a loud failure rather than a wrong balance.
+        Number(lamportsRaw) === lamports
+      ) {
+        amountRaw = lamportsRaw;
+      } else if (lamports > Number.MAX_SAFE_INTEGER) {
+        throw new Error(
+          `rpc-solana.normalize: invalid lamports value in "result.value" — past ` +
+            `Number.MAX_SAFE_INTEGER with no exact wire digits available, so the true balance ` +
+            `cannot be recovered: ${stringifyTruncated(raw)}`,
+        );
+      } else {
+        amountRaw = String(lamports);
       }
 
       const wallet: Wallet = {
@@ -208,9 +290,12 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
             // From the registry, never a literal (vdd-multi cycle 6, H-1 — see `servesChain()`).
             symbol: nativeSymbol,
             decimals: nativeDecimals,
-            // Exact integer as a string (DB-SCHEMA-CONCEPT §1.7) — see this module's docstring for
-            // the vendor-side precision caveat above ~9.007M SOL.
-            amountRaw: String(lamports),
+            // Exact integer as a string (DB-SCHEMA-CONCEPT §1.7) — carrying the wire digits
+            // verbatim past 2^53, where `amountNum` below cannot (WI-8).
+            amountRaw,
+            // The lossy projection, kept deliberately (§1.7): convenient for charts/comparisons,
+            // never the source of truth. Above ~9.007M SOL it differs from `amountRaw`, which is
+            // the whole reason `amountRaw` is a string.
             amountNum: lamports,
           },
         ],
