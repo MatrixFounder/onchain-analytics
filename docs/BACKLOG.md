@@ -56,7 +56,6 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 
 <!-- feedback:discovered-issues -->
 
-- **WI-15** [Цена `MAX_DAYS` в контексте модели](backlog/wi-15-max-days-context-cost-and-includeseries-key.md) — effort `S`, opened 2026-07-28 · **решает владелец** (второй ключ кэша закрыт 2026-07-28)
 - **WI-10** [mcp-server тесты резолвят `@onchain-intel/core` в `dist`, поэтому правки в `src` невидимы до `pnpm build`](backlog/wi-10-mcp-server-tests-resolve-core-to-dist.md) — effort `S`, opened 2026-07-27
 - **WI-9** [«Один коммит на задачу» не оговаривает задачи с пересекающимися файлами](backlog/wi-9-one-commit-per-task-vs-overlapping-files.md) — effort `S`, opened 2026-07-26
 - **WI-8** [R-47 carry-over: `rpc-solana` теряет точность на балансе выше 2^53](backlog/wi-8-r47-carryover-rpc-solana-exact-lamports.md) — opened 2026-07-24
@@ -70,6 +69,7 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 
 ## Закрытые
 
+- **WI-15** [Цена `MAX_DAYS` в контексте модели](backlog/wi-15-max-days-context-cost-and-includeseries-key.md) — opened 2026-07-28, **by-design 2026-07-28**: владелец оставил 1825; второй ключ кэша исправлен
 - **WI-17** [Тест-долг: четыре теста зелены по неверной причине](backlog/wi-17-test-quality-debt-green-for-the-wrong-reason.md) — opened 2026-07-28, **done 2026-07-28**: T-1 переписан, T-2 переименован, T-4 усилен, D-2 закрыт записью фикстуры
 - **WI-14** [Переразбор на каждое окно и zod на попаданиях в кэш](backlog/wi-14-per-window-reparse-and-zod-on-cache-hits.md) — opened 2026-07-28, **dropped 2026-07-28**: замерено — 112 мкс и 232 мкс против оценок 0.4–0.8 мс и 1–3 мс; правка не окупается
 - **WI-13** [В кэш кладётся 74% документа, которые мы контрактно не читаем](backlog/wi-13-project-document-before-caching.md) — opened 2026-07-28, **done 2026-07-28**: документ проецируется на семь читаемых полей до кэширования
