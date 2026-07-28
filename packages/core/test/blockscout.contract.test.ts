@@ -1,0 +1,144 @@
+import { describe, expect, it } from 'vitest';
+import {
+  CapabilityRegistry,
+  createBlockscoutAdapter,
+  loadChainRegistry,
+  routes,
+  type ProviderAdapter,
+} from '../src/index.js';
+import { BLOCKSCOUT_CHAIN_IDS } from '../src/adapters/blockscout/chains.js';
+
+/**
+ * TASK-008 task 008-2 (R-73/R-74/R-75) — Stub-First phase 1.
+ *
+ * Everything asserted here holds while `fetch()`/`normalize()` are still stubs, which is the point:
+ * routing, coverage and cost are decided by configuration, and configuration mistakes are exactly
+ * the class this project has been bitten by (a capability advertised on 458 chains and served on
+ * 274; a capability advertised everywhere and served nowhere). None of it needs a transport, so
+ * none of it should wait for one.
+ */
+const adapter = createBlockscoutAdapter();
+const registryChains = loadChainRegistry();
+const allChains = registryChains.list();
+
+const bySlug = (slug: string) => {
+  // `resolve()`, not `get()` — the latter is keyed on caip2, not on a slug.
+  const found = registryChains.tryResolve(slug);
+  if (!found) throw new Error(`fixture chain missing from the registry: ${slug}`);
+  return found;
+};
+
+describe('blockscout adapter (contract, R-73)', () => {
+  it('declares both capabilities and charges nothing for them', () => {
+    expect(adapter.capabilities()).toEqual([{ id: 'token.holders' }, { id: 'entity.labels' }]);
+    expect(adapter.costOf('token.holders', {})).toEqual({ credits: 0 });
+    expect(adapter.costOf('entity.labels', {})).toEqual({ credits: 0 });
+  });
+
+  it('is available without any key — the grace period is a working state, not a degraded one', () => {
+    // Measured 2026-07-28: the facade answers HTTP 200 with no key at all. Declaring
+    // `requiresEnv: ['BLOCKSCOUT_PRO_API_KEY']` would disable a working capability on a stock
+    // install, so availability must not depend on the key being present.
+    expect(adapter.isAvailable?.()).toEqual({ ok: true });
+  });
+
+  describe('coverage (R-77)', () => {
+    it('serves ethereum and refuses a chain the vendor has no explorer for', () => {
+      expect(adapter.chainSupport?.(bySlug('ethereum'), 'token.holders')).toBe(true);
+      // In the registry, absent from Blockscout's mainnet list.
+      expect(adapter.chainSupport?.(bySlug('zcash'), 'token.holders')).toBe(false);
+    });
+
+    it('refuses every non-EVM chain, whatever the vendor calls its ecosystem', () => {
+      // The over-claim guard. The vendor's `ecosystem` field says "Solana" for Neon and
+      // "Bitcoin/BCH" for Rootstock — both EVM chains — so a family answer derived from that field
+      // would advertise svm/utxo coverage that does not exist (TASK-006 H-1).
+      const nonEvm = allChains.filter((row) => row.family !== 'evm');
+      expect(nonEvm.length).toBeGreaterThan(0);
+      for (const row of nonEvm) {
+        expect(adapter.chainSupport?.(row, 'token.holders'), row.slug).toBe(false);
+      }
+    });
+
+    it('covers strictly fewer chains than the registry holds, and more than none', () => {
+      // A relation, not a count: the vendor list and our registry both move, and a literal here
+      // would be "fixed" by editing it on the next sync.
+      const covered = allChains.filter((row) => adapter.chainSupport?.(row, 'token.holders'));
+      expect(covered.length).toBeGreaterThan(0);
+      expect(covered.length).toBeLessThan(allChains.length);
+      // Every covered chain must be one the vendor actually lists — coverage cannot exceed the
+      // generated evidence, only fall short of it where our registry lacks the row.
+      expect(covered.length).toBeLessThanOrEqual(BLOCKSCOUT_CHAIN_IDS.length);
+    });
+
+    it('answers identically for both capabilities — coverage here does not vary by capability', () => {
+      // Unlike `nansen`, whose composite capabilities reach different chain counts. Stated as a
+      // test so that a future capability with narrower reach cannot be added silently.
+      for (const row of allChains.slice(0, 100)) {
+        expect(adapter.chainSupport?.(row, 'token.holders'), row.slug).toBe(
+          adapter.chainSupport?.(row, 'entity.labels'),
+        );
+      }
+    });
+  });
+
+  describe('routing (R-74/R-75)', () => {
+    const registry = () =>
+      new CapabilityRegistry(
+        [...routes],
+        new Map<string, ProviderAdapter>([['blockscout', adapter]]),
+      );
+
+    it('token.holders reaches blockscout instead of the dead dune stub', async () => {
+      // The stub throws from fetch(); reaching that throw is the proof the route resolved here.
+      await expect(registry().resolve('token.holders', 'ethereum', {})).rejects.toMatchObject({
+        tried: [{ adapterId: 'blockscout' }],
+      });
+    });
+
+    it('token.holders is refused on an uncovered chain BEFORE any transport is attempted', async () => {
+      // Coverage is a gate, not a filter applied to a response: on an uncovered chain the call must
+      // not reach fetch() at all, which is what keeps a wrong answer from being paid for.
+      await expect(registry().resolve('token.holders', 'zcash', {})).rejects.toThrow(
+        /token\.holders/,
+      );
+    });
+
+    it('entity.labels tries blockscout first and nansen only after it', async () => {
+      // M-8.4: the assertions used to live inside a bare `.catch()`, which makes them vacuous the
+      // moment the promise RESOLVES — i.e. exactly when the adapter starts working. `rejects`
+      // makes the rejection itself part of the contract.
+      const error = await registry()
+        .resolve('entity.labels', 'ethereum', {})
+        .then(() => undefined)
+        .catch((caught: unknown) => caught as { tried: { adapterId: string }[] });
+
+      expect(
+        error,
+        'resolve() unexpectedly succeeded — the assertions below would be skipped',
+      ).toBeDefined();
+      const tried = error!.tried.map((e) => e.adapterId);
+      expect(tried[0]).toBe('blockscout');
+      expect(tried).toContain('nansen');
+    });
+  });
+
+  it('refuses an unsupported capability instead of guessing what was meant', async () => {
+    // Replaced the Stub-First "not implemented yet" assertion when 008-4 landed the transport. The
+    // property worth keeping is the same one: an unknown request fails loudly rather than returning
+    // something plausible-looking.
+    await expect(adapter.fetch('token.price', { chain: 'ethereum' })).rejects.toThrow(
+      /unsupported capability/,
+    );
+    expect(() => adapter.normalize('token.price', {})).toThrow(/unsupported capability/);
+  });
+
+  it('requires its arguments rather than building a URL with "undefined" in it', async () => {
+    await expect(adapter.fetch('token.holders', { chain: 'ethereum' })).rejects.toThrow(
+      /"tokenAddress" is required/,
+    );
+    await expect(adapter.fetch('entity.labels', { chain: 'ethereum' })).rejects.toThrow(
+      /needs a tokenAddress/,
+    );
+  });
+});

@@ -88,6 +88,11 @@ export {
   type DashPlatformAdapterDeps,
 } from './adapters/dash-platform/index.js';
 export { createDuneAdapter } from './adapters/dune/index.js';
+// TASK-008 (R-73): free tier for token.holders + entity.labels, two hosts behind one adapter.
+export {
+  createBlockscoutAdapter,
+  servesChain as blockscoutServesChain,
+} from './adapters/blockscout/index.js';
 export { createPgHistoryAdapter, type PgHistoryAdapterDeps } from './adapters/pg-history/index.js';
 export { NotImplementedInM1Error } from './adapters/not-implemented-error.js';
 

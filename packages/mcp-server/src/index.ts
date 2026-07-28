@@ -9,6 +9,7 @@ import {
   createDashPlatformAdapter,
   createDefillamaAdapter,
   createDexscreenerAdapter,
+  createBlockscoutAdapter,
   createDuneAdapter,
   createNansenAdapter,
   createPgHistoryAdapter,
@@ -89,6 +90,7 @@ function buildRegistry(env: Env, budgetStore: BudgetStore): CapabilityRegistry {
     ['dash-platform', createDashPlatformAdapter()],
     ['platform-explorer', createPlatformExplorerAdapter()],
     ['dune', createDuneAdapter()],
+    ['blockscout', createBlockscoutAdapter()],
     ['pg-history', createPgHistoryAdapter({ env: toProcessEnv(env) })],
     ['nansen', createProductionNansenAdapter(env, budgetStore)],
   ]);

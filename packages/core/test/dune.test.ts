@@ -11,8 +11,13 @@ describe('dune adapter (config-stub, R-8)', () => {
   // set. `CapabilityDescriptor.chains` is a documented part of the public `ProviderAdapter`
   // contract, and an adapter that answers "which chains" twice will eventually answer it two
   // different ways — which is exactly what cycle 5's H-1 was. `chainSupport` owns the answer.
-  it('capabilities() declares token.holders without re-declaring a chain set', () => {
-    expect(adapter.capabilities()).toEqual([{ id: 'token.holders' }]);
+  it('declares NO capability — a stub that serves nothing advertises nothing (TASK-008)', () => {
+    // It used to declare `token.holders`, so the route for it had a registered adapter to produce
+    // an explicit unavailability reason instead of the generic "no adapter registered". That
+    // argument expired when the capability got a real provider: it now routes to `blockscout`
+    // (R-74), and a second adapter declaring it while covering zero chains would only add a dead
+    // entry to the route walk.
+    expect(adapter.capabilities()).toEqual([]);
   });
 
   it('chainSupport() serves NO chain while the capability is deferred to M2 (cycle 5, L-10)', () => {

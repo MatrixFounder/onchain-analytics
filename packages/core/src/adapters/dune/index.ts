@@ -3,15 +3,15 @@ import { NotImplementedInM1Error } from '../not-implemented-error.js';
 
 /**
  * `dune` adapter (ARCHITECTURE.md §3.2/§11, R-8 — amended scope, architecture review cycle 1):
- * interface/config-stub only in M1. `capabilities()` declares `token.holders` (the one capability
- * no other of the nine adapters covers) so `providers.config.ts`'s route/registration for it has
- * a real, registered `ProviderAdapter` to resolve to a definite, explicit unavailability reason —
- * rather than the generic "no adapter registered for this id" `CapabilityRegistry` would otherwise
- * report. The HTTP step and normalization are NOT implemented (no live query authoring, no
- * fixture, no contract test beyond registration/availability — that lands in M2 alongside
- * `onchain_token_risk`, this capability's first real tool consumer). None of the four M1 Must
- * tools depends on `token.holders`, so an empty `.env` stays fully functional regardless of this
- * adapter's state (UC-1).
+ * interface/config-stub only, and since TASK-008 it declares **no capability at all**.
+ *
+ * It used to declare `token.holders` so that the route for it resolved to a real registered adapter
+ * with an explicit unavailability reason rather than the generic "no adapter registered". That
+ * argument expired the moment the capability got a working provider: `token.holders` now routes to
+ * `blockscout` (R-74), and a second adapter declaring the same capability while covering zero
+ * chains only adds a dead entry to the route walk. Declaring nothing is the honest state of a stub
+ * — the registration itself remains, so the providers FK (§4.2) and the DUNE_API_KEY story are
+ * untouched, and a future real implementation re-declares whatever it actually serves.
  */
 export function createDuneAdapter(): ProviderAdapter {
   return {
@@ -23,8 +23,8 @@ export function createDuneAdapter(): ProviderAdapter {
     // capabilities — advertising, to the one tool built to answer "what can I actually get here",
     // a capability that in M1 can never be served by anything.
     chainSupport: (): boolean => false,
-    // No `chains` literal — `chainSupport` owns that answer, and it serves none (M-7/L-10).
-    capabilities: () => [{ id: 'token.holders' }],
+    // Empty since TASK-008 — see the docstring. An adapter that serves nothing declares nothing.
+    capabilities: () => [],
     costOf: () => ({ credits: 0 }),
     // Unreachable through CapabilityRegistry in M1 (isAvailable() below always skips this
     // adapter) — throws loudly rather than silently if ever called directly/out-of-band.

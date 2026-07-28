@@ -449,9 +449,12 @@ export const routes: CapabilityRoute[] = [
     chains: ['dash'],
     adapterIds: ['platform-explorer', 'pg-history'],
   },
-  // R-8 — Dune, Should: registered as an interface/config stub, consumed by no tool; no live
-  // fetch and no fixture (see the dune decision below).
-  { capability: 'token.holders', chains: ['ethereum'], adapterIds: ['dune'] },
+  // R-74 (TASK-008) — retargeted off the `dune` stub, which declared this capability while
+  // covering zero chains. Coverage now comes from the generated Blockscout chain list.
+  { capability: 'token.holders', adapterIds: ['blockscout'] },
+  // R-75 (TASK-008) — Blockscout FIRST, Nansen as the paid fallback in the same chain. Order is
+  // the whole point: a credit is spent only when the free source cannot answer.
+  { capability: 'entity.labels', adapterIds: ['blockscout', 'nansen'] },
 ];
 
 export const adapterRegistrations: AdapterRegistration[] = [
@@ -514,6 +517,17 @@ export const adapterRegistrations: AdapterRegistration[] = [
     rateLimit: { capacity: 2, refillPerSec: 0.2 },
     requiresEnv: ['ONCHAIN_PG_URL'],
   },
+  // R-73 (TASK-008). BOTH hosts on one registration — the allowlist is per adapter, and this
+  // adapter legitimately speaks to two (see "Two hosts, one adapter"). `requiresEnv` stays EMPTY
+  // on purpose: the facade answers without a key today, so demanding one would disable a working
+  // capability. The key is read inside fetch(), like COINGECKO_* — after the cache key is derived,
+  // so it can never enter it.
+  {
+    id: 'blockscout',
+    hosts: ['api.blockscout.com', 'mcp.blockscout.com'],
+    rateLimit: { capacity: 5, refillPerSec: 5 },
+    requiresEnv: [],
+  },
 ];
 ```
 
@@ -526,19 +540,20 @@ list would have to track 458 registry rows; a predicate cannot drift from them.
 Rate-limit values are conservative starting points (not vendor-documented limits, except for the
 Dune credits) and can be tuned by editing the config, with no change on the calling side (R-4).
 
-**The nine M1 adapters — summary:**
+**The adapters — summary** (nine from M1, plus `blockscout` from TASK-008):
 
-| id                  | Capabilities                                                | Transport                                                                  | Key                                                                                                                    | Note                                                                                                                                      |
-| ------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `coingecko`         | `token.price`, `token.metadata`                             | REST (`fetch`), `/coins/{platform}/contract/{address}`                     | optional `COINGECKO_API_KEY` (demo; free works without) / `COINGECKO_PRO_API_KEY` (Pro circuit: pro host + pro header) | R-5, **live**                                                                                                                             |
-| `dexscreener`       | `pairs.new`, `pool.info`                                    | REST (`fetch`)                                                             | none (keyless)                                                                                                         | R-6 Must requires both; `pool.info` has no tool consumer yet; exact endpoint confirmed when the fixture is recorded (R-22), §11; **live** |
-| `defillama`         | `protocol.tvl`, `chain.tvl`, `dex.volume.history`           | REST (`fetch`), `/protocol/{slug}`, `/v2/chains`, `/overview/dexs/{chain}` | none (keyless)                                                                                                         | R-7, R-53, **R-61 (TASK-007)**, **live**                                                                                                  |
-| `dune`              | `token.holders` (Should, no tool consumer)                  | REST Query API — **not implemented** (interface/config stub)               | `DUNE_API_KEY` (free tier), but `isAvailable()` is unconditionally `false`                                             | R-8, decision below                                                                                                                       |
-| `rpc-evm`           | `wallet.balances.native` (EVM)                              | JSON-RPC `eth_getBalance` (`fetch`)                                        | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                       |
-| `rpc-solana`        | `wallet.balances.native` (Solana)                           | JSON-RPC `getBalance` (`fetch`)                                            | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                       |
-| `dash-platform`     | `privacy.shielded_pool`, `platform.*`                       | **gRPC** — **not implemented** (interface + fixture contract only)         | none (keyless), but unreachable                                                                                        | R-9 via a mock; see below                                                                                                                 |
-| `platform-explorer` | the same (fallback) + `*.history`                           | REST (`fetch`)                                                             | none (keyless)                                                                                                         | R-10/R-11, **the only live Dash source**                                                                                                  |
-| `pg-history`        | `privacy.shielded_pool.history`, `platform.metrics.history` | Postgres wire (SELECT-only)                                                | `ONCHAIN_PG_URL` (optional)                                                                                            | R-12, **live, optional**                                                                                                                  |
+| id                  | Capabilities                                                   | Transport                                                                  | Key                                                                                                                    | Note                                                                                                                                          |
+| ------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coingecko`         | `token.price`, `token.metadata`                                | REST (`fetch`), `/coins/{platform}/contract/{address}`                     | optional `COINGECKO_API_KEY` (demo; free works without) / `COINGECKO_PRO_API_KEY` (Pro circuit: pro host + pro header) | R-5, **live**                                                                                                                                 |
+| `dexscreener`       | `pairs.new`, `pool.info`                                       | REST (`fetch`)                                                             | none (keyless)                                                                                                         | R-6 Must requires both; `pool.info` has no tool consumer yet; exact endpoint confirmed when the fixture is recorded (R-22), §11; **live**     |
+| `defillama`         | `protocol.tvl`, `chain.tvl`, `dex.volume.history`              | REST (`fetch`), `/protocol/{slug}`, `/v2/chains`, `/overview/dexs/{chain}` | none (keyless)                                                                                                         | R-7, R-53, **R-61 (TASK-007)**, **live**                                                                                                      |
+| `dune`              | **none** (config stub; `token.holders` moved away in TASK-008) | REST Query API — **not implemented** (interface/config stub)               | `DUNE_API_KEY` (free tier), but `isAvailable()` is unconditionally `false`                                             | R-8, decision below. Until TASK-008 it _declared_ `token.holders` while covering zero chains — an advertised capability that answered nowhere |
+| `blockscout`        | `token.holders`, `entity.labels`                               | REST (`fetch`) over **two hosts** — see "Two hosts, one adapter" below     | optional `BLOCKSCOUT_PRO_API_KEY`, passed as the **`apikey` query parameter** (not a header)                           | **R-73..R-80 (TASK-008)**, **live**                                                                                                           |
+| `rpc-evm`           | `wallet.balances.native` (EVM)                                 | JSON-RPC `eth_getBalance` (`fetch`)                                        | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                           |
+| `rpc-solana`        | `wallet.balances.native` (Solana)                              | JSON-RPC `getBalance` (`fetch`)                                            | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                           |
+| `dash-platform`     | `privacy.shielded_pool`, `platform.*`                          | **gRPC** — **not implemented** (interface + fixture contract only)         | none (keyless), but unreachable                                                                                        | R-9 via a mock; see below                                                                                                                     |
+| `platform-explorer` | the same (fallback) + `*.history`                              | REST (`fetch`)                                                             | none (keyless)                                                                                                         | R-10/R-11, **the only live Dash source**                                                                                                      |
+| `pg-history`        | `privacy.shielded_pool.history`, `platform.metrics.history`    | Postgres wire (SELECT-only)                                                | `ONCHAIN_PG_URL` (optional)                                                                                            | R-12, **live, optional**                                                                                                                      |
 
 **Input/response hardening per adapter — never trust a raw vendor response.**
 
@@ -582,6 +597,53 @@ Dune credits) and can be tuned by editing the config, with no change on the call
 - Both RPC adapters truncate error messages through the shared
   `src/adapters/stringify-truncated.ts` (500 characters + `…[truncated]`), so a raw JSON-RPC
   envelope cannot land in `Error.message` in full, up to `safeFetch`'s 10MB cap.
+
+- `blockscout.normalize()` (TASK-008, R-76): the vendor ships fields **addressed to a language
+  model**, so the response passes through a mandatory sanitizer before anything else looks at it.
+  This is a stronger requirement than the `defillama` rule above, and for a different reason: there
+  the risk was third-party-editable strings that _happen_ to reach a model; here the vendor
+  **intends** them to. `get_address_info` returns `instructions` — measured 2026-07-28 as seven
+  imperatives of the form "This is only the native coin balance. **You MUST also call**
+  `get_tokens_by_address`…", with the caller's own address interpolated verbatim — alongside `notes`
+  and `data_description`. These three are **dropped, never truncated**: a truncated instruction is
+  still an instruction. Label text that we do keep (`tags[].name`, `meta.main_entity`, `slug`) goes
+  through `truncate-vendor-text`; the URL-valued fields (`tooltipUrl`, `tagIcon`,
+  `tooltipAttribution`) are not emitted at all, since a URL in a model's context is a fetch
+  suggestion.
+
+**Two hosts, one adapter (TASK-008).** `blockscout` is the first adapter whose two capabilities do
+not share a transport, and the split is forced by measurement rather than taste:
+
+|                        | `api.blockscout.com/<chain_id>/api/v2/…`                  | `mcp.blockscout.com/v1/<tool>`                        |
+| ---------------------- | --------------------------------------------------------- | ----------------------------------------------------- |
+| auth                   | enforced — real key 200, bogus **401**, absent **402**    | ignored (grace period; a bogus key still returns 200) |
+| address labels         | **absent** (`metadata: null` even for Binance Hot Wallet) | present (`data.metadata.tags[]`)                      |
+| `instructions`/`notes` | absent                                                    | present                                               |
+| upstream cost          | one                                                       | fans out to three (~160 credits)                      |
+
+Both capabilities use the **facade**. Holders were briefly routed to the direct host (cheaper, no
+injection wrapper, key verifiable) until adversarial review pointed out the consequence: that host
+answers **402 without a key**, `token.holders` routes to `['blockscout']` alone with nothing to
+degrade to, and a stock install ships no key — so the capability was advertised on 39 chains and
+served on none, which is the very defect this task removed from `dune`. Labels have no alternative
+in any case: the enrichment is exactly what the three-way fan-out buys. The expensive path and the useful path are the same path; that is the trade, and it is
+why the ~625 calls/day ceiling (not ~5 000) is a design input rather than a footnote.
+
+**The key travels in the URL, which D10 forbids for logs and cache keys.** `apikey` is a query
+parameter, not a header — this is the case `rpc-solana` anticipated when it chose to report
+`hostOf(endpoint)` instead of the full URL, "because a curated endpoint could one day carry a key in
+its path or query". That day arrived. Consequences, each of which is a test rather than an
+intention: the full URL never reaches `Error.message`, stderr, or the cache key; the cache key is
+derived from `(provider, capability, normalizedArgs)` and the key is not an arg; and `safeFetch`'s
+own error path already reports host-only.
+
+**Coverage is keyed on the numeric `chain_id`, never on `ecosystem` or chain name.** The vendor's
+`get_chains_list` carries an `ecosystem` field that reads like a family and is not one:
+`ecosystem: "Solana"` is Neon (an **EVM** chain, id 245022934) and `ecosystem: "Bitcoin/BCH"` is
+Rootstock (an **EVM** sidechain, id 30). All 100 ids are numeric, i.e. the whole list is EVM.
+Mapping `ecosystem → family` would advertise `svm`/`utxo` coverage that does not exist — the H-1
+defect class from TASK-006, and the same over-claim `dex.volume.history` was built to avoid. The
+generated coverage list also drops the 47 testnets.
 
 **`dash-platform` is narrowed to an interface + fixture contract.** A live gRPC transport is the
 most expensive and least repaid item on the critical path: no tool consumes it (OQ-2 below), the

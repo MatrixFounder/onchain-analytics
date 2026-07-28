@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   CapabilityRegistry,
+  createBlockscoutAdapter,
   createDefillamaAdapter,
   createNansenAdapter,
   routes,
@@ -18,6 +19,7 @@ function ctx() {
   const adapters = new Map<string, ProviderAdapter>([
     ['defillama', createDefillamaAdapter()],
     ['nansen', createNansenAdapter()],
+    ['blockscout', createBlockscoutAdapter()],
   ]);
   return { registry: new CapabilityRegistry([...routes], adapters) };
 }
@@ -81,6 +83,47 @@ describe('onchain_list_chains', () => {
       } finally {
         fetchSpy.mockRestore();
       }
+    });
+  });
+
+  /**
+   * TASK-008 task 008-7 (AC-6) — the dead capability stops being advertised, and the live one
+   * starts being visible. Until now `token.holders` was routed to the `dune` stub, which covered
+   * zero chains: the one tool built to answer "what can I actually get here" listed a capability
+   * that answered nowhere.
+   */
+  describe('token.holders visibility (task 008-7)', () => {
+    it('is served on strictly FEWER chains than chain.tvl is', () => {
+      const holders = listChainsHandler({ capability: 'token.holders', limit: 200 }, ctx());
+      const tvl = listChainsHandler({ capability: 'chain.tvl', limit: 200 }, ctx());
+
+      // A relation, not a literal: both the vendor list and our registry move. Restoring the dune
+      // route makes `holders.total` zero, which is the regression this pins.
+      expect(holders.total).toBeGreaterThan(0);
+      expect(holders.total).toBeLessThan(tvl.total);
+    });
+
+    it('lists it on ethereum and omits it on a non-EVM chain', () => {
+      const c = ctx();
+      const ethereum = listChainsHandler({ query: 'ethereum', limit: 200 }, c).chains.find(
+        (row) => row.slug === 'ethereum',
+      );
+      expect(ethereum?.capabilities).toContain('token.holders');
+
+      // Blockscout runs EVM explorers only; the vendor's `ecosystem: "Solana"` rows are EVM chains
+      // (Neon), so a family answer derived from that field would advertise svm coverage that does
+      // not exist.
+      const solana = listChainsHandler({ query: 'solana', limit: 200 }, c).chains.find(
+        (row) => row.slug === 'solana',
+      );
+      expect(solana?.capabilities).not.toContain('token.holders');
+    });
+
+    it('shows entity.labels on more chains than the paid-only capabilities reach', () => {
+      // The point of the change: labels are no longer gated behind the paid provider's coverage.
+      const labels = listChainsHandler({ capability: 'entity.labels', limit: 200 }, ctx());
+      const paidOnly = listChainsHandler({ capability: 'smart-money.flows', limit: 200 }, ctx());
+      expect(labels.total).toBeGreaterThan(paidOnly.total);
     });
   });
 

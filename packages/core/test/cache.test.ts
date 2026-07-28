@@ -80,17 +80,18 @@ describe('SqliteCacheStore (R-13/R-14)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('bootstraps all 10 adapterRegistrations into providers before any cache_entries write', () => {
+  it('bootstraps EVERY adapterRegistration into providers before any cache_entries write', () => {
     const store = new SqliteCacheStore({ dbPath, providers: adapterRegistrations });
     const raw = new Database(dbPath, { readonly: true });
     const rows = raw.prepare('SELECT id FROM providers ORDER BY id').all() as { id: string }[];
     raw.close();
     store.close();
 
-    // M2 (TASK-005, task 005-1) grew the real adapterRegistrations count from 9 (M1) to 10 — this
-    // bootstraps-ALL-of-them behavior is unchanged, only the literal count tracks the config's
-    // real size (asserted dynamically right below too).
-    expect(rows).toHaveLength(10);
+    // DERIVED, not a literal (TASK-008). The count has moved twice — 9 at M1, 10 at M2, 11 with
+    // `blockscout` — and each time the fix was to edit a number, which is a change indistinguishable
+    // from breaking the property. The behaviour under test is "all of them", so the assertion says
+    // that; the id-set comparison below is what actually pins the contents.
+    expect(rows).toHaveLength(adapterRegistrations.length);
     expect(rows.map((r) => r.id).sort()).toEqual([...adapterRegistrations.map((a) => a.id)].sort());
   });
 

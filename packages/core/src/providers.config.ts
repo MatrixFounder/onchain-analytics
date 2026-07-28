@@ -69,14 +69,19 @@ export const routes: CapabilityRoute[] = [
     capability: 'platform.metrics.history',
     adapterIds: ['platform-explorer', 'pg-history'],
   },
-  // R-8 — Dune, Should, interface/config-stub in M1 (see §3.2's dune decision, F-2/minor):
-  // registered, not consumed by any of the 4 M1 tools; live fetch/fixture is out of M1's scope.
-  { capability: 'token.holders', adapterIds: ['dune'] },
+  // R-74 (TASK-008) — retargeted off `dune`. The old route pointed at an interface/config stub
+  // whose `chainSupport` covered ZERO chains, so `token.holders` was advertised by
+  // `onchain_list_chains` and answered nowhere: strictly worse than not having the capability,
+  // because the matrix an agent reads promised it.
+  { capability: 'token.holders', adapterIds: ['blockscout'] },
   // M2 (TASK-005, R-29/R-30, task 005-1) — 3 new nansen routes, no fallback adapter: there is no
   // free equivalent for any of these three capabilities. chains scope is literally the same
   // subset as every M1 tool (OQ-3, ARCHITECTURE.md §3.2 "Десятый адаптер").
   { capability: 'smart-money.flows', adapterIds: ['nansen'] },
-  { capability: 'entity.labels', adapterIds: ['nansen'] },
+  // R-75 (TASK-008) — `blockscout` FIRST, `nansen` as the paid fallback behind it. The order is the
+  // entire point of the change: a credit is spent only where the free source cannot answer. The
+  // registry walks the list in order, so this is not a preference hint — it is the spend rule.
+  { capability: 'entity.labels', adapterIds: ['blockscout', 'nansen'] },
   { capability: 'token.risk', adapterIds: ['nansen'] },
 ];
 
@@ -147,6 +152,20 @@ export const adapterRegistrations: AdapterRegistration[] = [
     hosts: ['api.dune.com'],
     rateLimit: { capacity: 2, refillPerSec: 0.1 },
     requiresEnv: ['DUNE_API_KEY'],
+  },
+  // R-73 (TASK-008). TWO hosts on one registration, because this adapter legitimately speaks to
+  // both and the SSRF allowlist is per adapter: `api.blockscout.com` serves `token.holders`
+  // (enforced auth, one upstream, no model-directed wrapper) while `mcp.blockscout.com` serves
+  // `entity.labels` (the only source of the label enrichment, bought with a three-way fan-out).
+  //
+  // `requiresEnv` is EMPTY on purpose. The facade answers without a key today, so demanding one
+  // would disable a working capability on a stock install; the key is read inside `fetch()` —
+  // AFTER the cache key is derived, like `COINGECKO_*` — so it can never enter a cache key.
+  {
+    id: 'blockscout',
+    hosts: ['api.blockscout.com', 'mcp.blockscout.com'],
+    rateLimit: { capacity: 5, refillPerSec: 5 },
+    requiresEnv: [],
   },
   {
     id: 'rpc-evm',

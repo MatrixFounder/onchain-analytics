@@ -89,7 +89,7 @@ describe('nansen adapter (config-stub skeleton, R-30)', () => {
     const CAPABILITIES = ['smart-money.flows', 'entity.labels', 'token.risk'];
 
     it.each(CAPABILITIES)(
-      '%s resolves to nansen on every declared chain, recorded unavailable with no key in scope',
+      '%s reaches nansen on every declared chain, recorded unavailable with no key in scope',
       async (capability) => {
         const registry = new CapabilityRegistry(
           routes,
@@ -98,13 +98,44 @@ describe('nansen adapter (config-stub skeleton, R-30)', () => {
         for (const chain of CHAINS) {
           const promise = registry.resolve(capability, chain, {});
           await expect(promise).rejects.toBeInstanceOf(CapabilityUnavailableError);
-          await expect(promise).rejects.toMatchObject({
-            capability,
-            chain,
-            tried: [{ adapterId: 'nansen', reason: 'needs NANSEN_API_KEY' }],
+          // `toContainEqual`, not a whole-array equality: since TASK-008 `entity.labels` is routed
+          // through `blockscout` FIRST, so nansen is no longer the only entry in `tried`. What this
+          // test is actually about — the paid adapter is reachable and reports the key precondition
+          // rather than failing opaquely — is unchanged.
+          await expect(promise).rejects.toMatchObject({ capability, chain });
+          const caught = await promise
+            .then(() => undefined)
+            .catch((error: unknown) => error as CapabilityUnavailableError);
+          expect(caught, 'resolve() unexpectedly succeeded').toBeDefined();
+          expect(caught!.tried).toContainEqual({
+            adapterId: 'nansen',
+            reason: 'needs NANSEN_API_KEY',
           });
         }
       },
     );
+
+    it('puts the FREE provider ahead of the paid one for entity.labels (TASK-008 R-75)', async () => {
+      // The spend rule, asserted as an ordering rather than a preference: the registry walks
+      // `tried` in route order, so blockscout preceding nansen is what makes a credit spendable
+      // only where the free source could not answer. Swap the two ids in providers.config.ts and
+      // this is the test that goes red — nothing else would notice.
+      const registry = new CapabilityRegistry(
+        routes,
+        new Map([['nansen', createNansenAdapter({ env: {} })]]),
+      );
+      // M-8.4: assertions inside a bare `.catch()` vanish if the promise resolves. Capture first,
+      // assert unconditionally.
+      const error = await registry
+        .resolve('entity.labels', 'ethereum', {})
+        .then(() => undefined)
+        .catch((caught: unknown) => caught as CapabilityUnavailableError);
+
+      expect(error, 'resolve() unexpectedly succeeded').toBeDefined();
+      const tried = error!.tried.map((entry) => entry.adapterId);
+      expect(tried).toContain('blockscout');
+      expect(tried).toContain('nansen');
+      expect(tried.indexOf('blockscout')).toBeLessThan(tried.indexOf('nansen'));
+    });
   });
 });
