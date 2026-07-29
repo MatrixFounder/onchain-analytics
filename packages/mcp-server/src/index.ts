@@ -90,7 +90,10 @@ function buildRegistry(env: Env, budgetStore: BudgetStore): CapabilityRegistry {
     ['dash-platform', createDashPlatformAdapter()],
     ['platform-explorer', createPlatformExplorerAdapter()],
     ['dune', createDuneAdapter()],
-    ['blockscout', createBlockscoutAdapter()],
+    // R-79(a): the VALIDATED env, like every other secret-bearing adapter. It used to be built with
+    // no `env` at all, so `deps.env ?? process.env` fell back to the raw process environment and the
+    // one secret TASK-008 introduced was the only one bypassing `EnvSchema` (vdd-multi i2, sec M-4).
+    ['blockscout', createBlockscoutAdapter({ env: toProcessEnv(env) })],
     ['pg-history', createPgHistoryAdapter({ env: toProcessEnv(env) })],
     ['nansen', createProductionNansenAdapter(env, budgetStore)],
   ]);

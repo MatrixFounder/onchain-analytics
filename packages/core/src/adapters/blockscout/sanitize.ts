@@ -54,9 +54,58 @@ export const DROPPED_KEYS: readonly string[] = [
   'tooltipUrl',
   'tagIcon',
   'tooltipAttribution',
+  // vdd-multi TASK-008, M-1: all three below are present in the COMMITTED fixtures and were not
+  // being dropped. `tool_name` is the `pagination.next_call` directive — a machine-readable "call
+  // this tool next", which is the same channel as `instructions` wearing a schema.
+  'tooltipAttributionIcon',
+  'tooltipDescription',
+  'tool_name',
 ];
 
-const DROPPED = new Set(DROPPED_KEYS);
+/**
+ * Key patterns dropped in addition to the literal list.
+ *
+ * vdd-multi TASK-008, M-1. The literal list was matched with an exact, case- and
+ * whitespace-sensitive `Set.has`, and the vendor's own recorded payload defeats it: every one of
+ * the four committed fixtures ships **`"tagIcon "` with a trailing space**. The list's test could
+ * not catch that, because it iterates `DROPPED_KEYS` and asserts each is absent — by construction
+ * it can only ever prove the list matches itself.
+ *
+ * So keys are normalized (`trim().toLowerCase()`) before matching, and the classes are expressed as
+ * patterns rather than as an enumeration the vendor is free to grow past. **A denylist in front of
+ * a model fails open**; patterns narrow how far open. The classes:
+ *
+ * - `tooltip*` / `*description` / `notes` — prose addressed to a reader, i.e. the channel.
+ * - `*url` / `*icon` — a URL in a model's context is a suggestion to go fetch it, and the
+ *   destination is chosen by whoever authored the label.
+ *
+ * None of these can collide with a field we read: the normalizers touch `hash`, `value`,
+ * `value_truncated`, `token_id`, `is_contract`, `is_scam`, `items`, `next_page_params`,
+ * `pagination`, `metadata`, `tags`, `name`, `tagType` and `ordinal` — checked against this list,
+ * and asserted by the round-trip tests on the real fixtures.
+ */
+const DROPPED_PATTERNS: readonly RegExp[] = [/^tooltip/, /description$/, /url$/, /icon$/];
+
+const DROPPED = new Set(DROPPED_KEYS.map((key) => key.toLowerCase()));
+
+/** Keys that must never be assigned during reconstruction, whatever the vendor sends (L-3). */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function isDropped(key: string): boolean {
+  // Iteration 2 (security M-1): `trim().toLowerCase()` alone left visually identical bypasses of
+  // every entry and every pattern — `"instructions\u200B"` (U+200B is NOT ECMAScript WhiteSpace, so
+  // `trim()` keeps it, unlike U+FEFF which it strips), `"in\u00ADstructions"` (soft hyphen),
+  // fullwidth `"ｉｎｓｔｒｕｃｔｉｏｎｓ"` (`toLowerCase` is not NFKC), `"İnstructions"` (U+0130 lowercases to
+  // `i` + U+0307). Each renders the same to a reader and carries the same imperative payload.
+  // NFKC folds the width/compatibility forms; stripping format and space characters folds the
+  // invisible ones — the same generalization that `"tagIcon "` should have prompted one level up.
+  const normalized = key
+    .normalize('NFKC')
+    .replace(/[\p{Cf}\p{Zs}\s]/gu, '')
+    .toLowerCase();
+  if (DROPPED.has(normalized)) return true;
+  return DROPPED_PATTERNS.some((pattern) => pattern.test(normalized));
+}
 
 /**
  * Depth bound. A pathological or hostile body cannot turn sanitization into a stack overflow; past
@@ -71,10 +120,21 @@ function strip(value: unknown, depth: number): unknown {
   if (Array.isArray(value)) return value.map((item) => strip(item, depth + 1));
   if (value === null || typeof value !== 'object') return value;
 
-  const out: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (DROPPED.has(key)) continue;
-    out[key] = strip(item, depth + 1);
+  // L-3: `Object.create(null)`, not `{}`. `JSON.parse` produces `__proto__` as an OWN property, so
+  // `Object.keys` enumerates it and `out[key] = …` on a plain object fires the INHERITED setter —
+  // the vendor would be choosing the reconstructed object's prototype instead of storing data
+  // there, and every read downstream is inherited-aware bracket access (`row['value']`). The repo
+  // already fixed this exact class in `net/args-hash.ts`; the reasoning transfers unchanged.
+  //
+  // M-11: `Object.keys` + indexed read rather than `Object.entries`, which allocates a 2-element
+  // array per key on top of the outer array. `strip()` rebuilds every node even when nothing is
+  // dropped, so at the response-size ceiling that is the difference between one and three
+  // allocations per node, all of it immediate garbage on a single-threaded stdio server.
+  const source = value as Record<string, unknown>;
+  const out = Object.create(null) as Record<string, unknown>;
+  for (const key of Object.keys(source)) {
+    if (FORBIDDEN_KEYS.has(key) || isDropped(key)) continue;
+    out[key] = strip(source[key], depth + 1);
   }
   return out;
 }
@@ -100,6 +160,11 @@ export function asPlain(body: SanitizedBlockscoutBody): unknown {
 export interface BlockscoutTag {
   name: string;
   tagType: string;
+  /**
+   * The vendor's own display rank, higher first — observed `10` on curated display labels and `0`
+   * on secondary OLI-sourced ones. Absent on rows that do not carry it (L-1).
+   */
+  ordinal: number;
 }
 
 function readString(source: Record<string, unknown>, key: string): string | undefined {
@@ -138,9 +203,15 @@ export function extractTags(
     const row = entry as Record<string, unknown>;
     const name = readString(row, 'name');
     if (name === undefined) continue;
+    const ordinal = row['ordinal'];
     tags.push({
       name: truncateVendorText(name, MAX_VENDOR_NAME_LENGTH),
       tagType: truncateVendorText(readString(row, 'tagType') ?? 'unknown', MAX_VENDOR_NAME_LENGTH),
+      // L-1: the vendor ranks its own tags and we were ignoring it, picking by array position while
+      // the docstring argued their order "is its business, not ours". It is — which is exactly why
+      // the rank it publishes is the thing to read. Rows without one sort last, never first, so a
+      // missing rank cannot outrank a stated one.
+      ordinal: typeof ordinal === 'number' && Number.isFinite(ordinal) ? ordinal : -1,
     });
   }
   return tags;

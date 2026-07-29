@@ -198,7 +198,79 @@ export class CapabilityRegistry {
       throw new CapabilityUnavailableError({ capability, chain, tried });
     }
 
-    const adapterIds = [...new Set(matching.flatMap((candidate) => candidate.adapterIds))];
+    /**
+     * The walk plan: each adapter paired with the answer policy of the route that CONTRIBUTED it.
+     *
+     * vdd-multi TASK-008 iteration 2 (M-2/M-3). The first version unioned every matching route's
+     * `adapterIds` and then took the policy from whichever route happened to declare one first —
+     * so a policy written for route B would silently judge route A's adapters, and a second route's
+     * own policy would be dropped without a diagnostic. `wallet.balances.native` already ships as
+     * two routes for one capability, so the multi-route shape is live; only the absence of a second
+     * policy kept it inert. Pairing at plan time makes the trap unrepresentable.
+     *
+     * De-duplicated by adapter id, first route wins — the pre-existing `new Set(...)` semantics.
+     */
+    const plan: { adapterId: string; isSatisfying?: (result: unknown) => boolean }[] = [];
+    const planned = new Set<string>();
+    for (const route of matching) {
+      for (const adapterId of route.adapterIds) {
+        if (planned.has(adapterId)) continue;
+        planned.add(adapterId);
+        plan.push({
+          adapterId,
+          ...(route.isSatisfying ? { isSatisfying: route.isSatisfying } : {}),
+        });
+      }
+    }
+
+    /**
+     * Applies a route's answer policy, FAILING OPEN.
+     *
+     * iteration 2 (M-1): the predicate used to be called inside the same `try` that treats a throw
+     * as a `normalize()` failure — so a bug in the ROUTE's policy was recorded as a defect of the
+     * PROVIDER, negative-cached under the provider's key for 60 s, and its message travelled into
+     * `tried[].reason` → the tool's isError text → the model. The cache-hit call site had the
+     * opposite flaw: outside every `try`, so the same throw aborted `resolve()` untyped.
+     *
+     * Failing open restores the pre-policy behaviour, which is the only safe direction: a broken
+     * policy must not be able to suppress a provider's real answer.
+     */
+    const satisfies = (
+      policy: ((result: unknown) => boolean) | undefined,
+      value: unknown,
+      adapterId: string,
+    ): boolean => {
+      if (!policy) return true;
+      try {
+        return policy(value);
+      } catch (error) {
+        process.stderr.write(
+          `route policy for ${capability} threw on ${adapterId}'s answer: ${
+            error instanceof Error ? error.message : String(error)
+          } — treating the answer as satisfying\n`,
+        );
+        return true;
+      }
+    };
+
+    /**
+     * The first truthful-but-unsatisfying answer, kept so the walk can end with it rather than with
+     * an outage. "No provider has labels for this address" is a fact, and turning it into a
+     * `CapabilityUnavailableError` would tell the caller to retry something that cannot change.
+     */
+    let unsatisfying: CapabilityResolution | undefined;
+    /**
+     * Whether any adapter FAILED, as opposed to answering unsatisfyingly (iteration 2, H-1).
+     *
+     * The distinction is the whole correctness of the fallback. "Everyone answered and nobody had
+     * labels" is a legitimate result. "The free source has nothing and the paid one could not be
+     * asked" is an outage wearing that result's clothes — and the first version returned the second
+     * as if it were the first, discarding `tried[]` on the way out. On a stock install with no
+     * `NANSEN_API_KEY` that turned R-40's explicit `isError` into a confident "this address has no
+     * entity labels", which on a mixer or sanctioned address is a false negative delivered with
+     * full authority.
+     */
+    let hadFailure = false;
 
     // GATE 2 — coverage (TASK-006 R-51d). Positioned deliberately: after the route is known, but
     // BEFORE the cache read, before `isAvailable()`, before the budget gate and before any HTTP.
@@ -227,9 +299,17 @@ export class CapabilityRegistry {
 
     const argsHash = deriveArgsHash(capability, args);
 
-    for (const adapterId of adapterIds) {
+    for (const { adapterId, isSatisfying } of plan) {
       const adapter = this.adapters.get(adapterId);
       if (!adapter) {
+        // NOT a failure for the H-1 distinction, deliberately. An id in the route with no adapter
+        // behind it is a CONFIGURATION fact — this method's own contract calls it "skip-to-next,
+        // `providers.config.ts`'s own documented contract for ids with no real adapter yet" — and in
+        // production every id has one. Counting it as a failure made every route containing a
+        // not-yet-built adapter unable to return a partial answer, which is how the first version of
+        // the H-1 fix broke R-32 ("an empty `entities[]` is a VALID success, not an error"): the M2
+        // suite registers only `nansen`, so `blockscout`'s absence turned nansen's legitimate empty
+        // answer into an outage. Recorded in `tried` as before, so it is still visible.
         tried.push({ adapterId, reason: 'no adapter registered for this id' });
         continue;
       }
@@ -243,6 +323,7 @@ export class CapabilityRegistry {
 
       const availability = adapter.isAvailable?.() ?? { ok: true };
       if (!availability.ok) {
+        hadFailure = true;
         tried.push({ adapterId, reason: availability.reason });
         continue;
       }
@@ -267,12 +348,25 @@ export class CapabilityRegistry {
         // the reason text so an operator debugging a just-fixed request bug can tell a cached
         // verdict from a fresh one instead of concluding the fix did not work.
         if (Date.now() < cached.value.expiresAtMs) {
+          hadFailure = true;
           tried.push({ adapterId, reason: `${cached.value.reason} [cached negative]` });
           continue;
         }
         // Expired negative: fall through and pay again, deliberately. The vendor may now have data.
       } else if (cached) {
-        return { result: cached.value, source: adapter.id, cache: 'hit', ageMs: cached.ageMs };
+        const hit: CapabilityResolution = {
+          result: cached.value,
+          source: adapter.id,
+          cache: 'hit',
+          ageMs: cached.ageMs,
+        };
+        // H-1: the policy applies to CACHE HITS too. Checking only fresh results would let the
+        // shadowing return through the cache the moment the first empty answer was stored —
+        // and stored answers outlive the deploy that fixed the code.
+        if (satisfies(isSatisfying, cached.value, adapterId)) return hit;
+        unsatisfying ??= hit;
+        tried.push({ adapterId, reason: 'answered, but not with what was asked for [cached]' });
+        continue;
       }
 
       let raw: unknown;
@@ -292,6 +386,7 @@ export class CapabilityRegistry {
         // refusal is transient by nature: the same call a second later can legitimately succeed.
         // Caching that verdict would turn a blip into a self-inflicted outage lasting the whole
         // negative TTL — strictly worse than paying twice. Only the deterministic half is cached.
+        hadFailure = true;
         tried.push({ adapterId, reason: error instanceof Error ? error.message : String(error) });
         continue;
       }
@@ -311,7 +406,14 @@ export class CapabilityRegistry {
             } — result still returned (best-effort cache write)\n`,
           );
         }
-        return { result, source: adapter.id, cache: 'miss' };
+        const answer: CapabilityResolution = { result, source: adapter.id, cache: 'miss' };
+        // H-1. The result is cached above REGARDLESS — it is this adapter's truthful answer, the
+        // cache key is scoped to `adapter.id`, and remembering "blockscout has nothing for X" is
+        // what makes the next identical call skip straight to the provider that might.
+        if (satisfies(isSatisfying, result, adapterId)) return answer;
+        unsatisfying ??= answer;
+        tried.push({ adapterId, reason: 'answered, but not with what was asked for' });
+        continue;
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         // NORMALIZE failed on a response we already have in hand (and, for a paid provider, already
@@ -330,9 +432,25 @@ export class CapabilityRegistry {
             } — the next identical call will pay again\n`,
           );
         }
+        hadFailure = true;
         tried.push({ adapterId, reason });
       }
     }
+
+    // H-1: nobody satisfied the route's policy — but the two ways that can happen are not the same
+    // answer, and iteration 2 found the first version conflating them.
+    //
+    // `!hadFailure` means EVERY adapter was asked and every one of them answered; none of them had
+    // what was requested. That is a fact about the data, and reporting it as
+    // `CapabilityUnavailableError` would tell the caller to retry something that cannot change.
+    //
+    // `hadFailure` means at least one adapter could not be asked or could not answer — no key, no
+    // budget, a 5xx, a rejected body. Returning the surviving partial answer there publishes "this
+    // address has no entity labels" when the truthful statement is "the source that would know was
+    // unreachable". On a stock install with no `NANSEN_API_KEY` that is the ORDINARY path, and it
+    // silently voided R-40's contract (an explicit `isError` naming the missing key). It also makes
+    // the `tried` entries below reachable, which is what a diagnostic has to be to be one.
+    if (unsatisfying && !hadFailure) return unsatisfying;
 
     throw new CapabilityUnavailableError({ capability, chain, tried });
   }

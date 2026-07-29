@@ -8,6 +8,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   CapabilityRegistry,
+  createBlockscoutAdapter,
   createBudgetStore,
   createCacheStore,
   createCoingeckoAdapter,
@@ -444,5 +445,92 @@ describe('TC-INT-02 (R-40, M-1b): NANSEN_API_KEY set, budget exhausted — 3 M2 
       await assertFiveM1PathsAnswerNormally(client);
     },
     CALL_TIMEOUT_MS * 4,
+  );
+});
+
+/**
+ * TC-INT-05 (vdd-multi TASK-008, iteration 2) — the free-tier provider must not mask the paid one's
+ * absence.
+ *
+ * **Why this exists, and why every suite in this package was blind to it.** No mcp-server test
+ * registered `blockscout` at all: `buildM1FixtureAdapters()` builds the five M1 adapters, and the
+ * TC-INT-01/02 blocks add only `nansen`. Production wiring (`src/index.ts`) registers blockscout
+ * FIRST on the `entity.labels` route. So the composition the server actually ships had zero
+ * integration coverage — deleting the blockscout registration from `src/index.ts` left this whole
+ * package green.
+ *
+ * That gap hid a real regression. TASK-008 taught the registry that an EMPTY answer does not satisfy
+ * an `entity.labels` request, so the route walks past blockscout to nansen. The first version of
+ * that change then returned blockscout's empty answer whenever nansen could not be reached —
+ * discarding `tried[]` — so R-40's explicit `isError` became a confident "this address has no entity
+ * labels". TC-INT-01 stayed green only because it asks with `query`, which blockscout declines
+ * outright; the ADDRESS-scoped form, which is the common one, was unguarded.
+ *
+ * The distinction this pins: **asked everyone and nobody had it** is a success (R-32), **somebody
+ * could not be asked** is an error (R-40). Both, in one session, with the real route table.
+ */
+describe('TC-INT-05: blockscout registered ahead of nansen — an empty free answer must not mask a missing key', () => {
+  let tempDir: string;
+  let client: Client;
+  let close: () => Promise<void>;
+
+  beforeAll(async () => {
+    tempDir = mkdtempSync(path.join(tmpdir(), 'onchain-intel-m2-blockscout-'));
+    const cache = createCacheStore({ dbPath: path.join(tempDir, 'cache.sqlite3') });
+    const adapters = buildM1FixtureAdapters();
+    // The free provider answers 200 with no tags — the ORDINARY case (the recorded `get_address_info`
+    // probe is USDC, tags empty).
+    adapters.set(
+      'blockscout',
+      createBlockscoutAdapter({
+        env: {},
+        fetchImpl: (() =>
+          Promise.resolve(
+            new Response(JSON.stringify({ data: { metadata: null } }), { status: 200 }),
+          )) as unknown as typeof fetch,
+      }),
+    );
+    // The paid provider has no key, exactly as on a stock install.
+    adapters.set(
+      'nansen',
+      createNansenAdapter({
+        env: {},
+        fetchImpl: (() => {
+          throw new Error('TC-INT-05: nansen fetchImpl must never be called without a key');
+        }) as unknown as typeof fetch,
+      }),
+    );
+    const registry = new CapabilityRegistry(routes, adapters, cache);
+    ({ client, close } = await connectLinked(registry));
+  }, CONNECT_TIMEOUT_MS);
+
+  afterAll(async () => {
+    await close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it(
+    'an ADDRESS-scoped entity.labels call still reports isError naming NANSEN_API_KEY (R-40)',
+    async () => {
+      const result = (await client.callTool(
+        {
+          name: 'onchain_entity_label',
+          arguments: { chain: 'ethereum', tokenAddress: ETH_ADDRESS, exhaustive: false },
+        },
+        undefined,
+        { timeout: CALL_TIMEOUT_MS },
+      )) as CallToolResult;
+
+      expect(result.isError, 'an unreachable paid provider was published as "no labels"').toBe(
+        true,
+      );
+      const [block] = result.content;
+      if (block?.type !== 'text') throw new Error('expected a text content block');
+      expect(block.text).toContain('NANSEN_API_KEY');
+      // The free provider's own reason must be visible too — otherwise an operator reading this
+      // cannot tell "blockscout was skipped" from "blockscout had nothing".
+      expect(block.text).toContain('blockscout');
+    },
+    CALL_TIMEOUT_MS,
   );
 });

@@ -490,3 +490,56 @@ describe('safeFetch [Phase 2, no real network — fetchImpl injected]', () => {
     });
   });
 });
+
+describe('M-14 — a secret in the query string never reaches an error message or `.url`', () => {
+  // vdd-multi TASK-008. `blockscout` authenticates with `?apikey=<key>` because that is the
+  // vendor's choice, and `safeFetch` used to interpolate the FULL url into three of its own errors
+  // AND store it on a public `url` property that `util.inspect`, a structured logger or a bare
+  // `console.error(err)` all print. The adapter wraps and re-messages, which closed the `.message`
+  // channel at one call site — the cause chain it attaches was never closed, and the next adapter
+  // to put a credential in a query string would have started from zero.
+  //
+  // Redaction lives in `safeFetch` so the class is closed for every caller. `pathname` is kept:
+  // it is built from our own routing, never from a secret, and it is what makes the error readable.
+  const SECRET = 'proapi_secretvalue0123456789';
+  const URL_WITH_SECRET = `https://mcp.blockscout.com/v1/get_address_info?address=0x1&apikey=${SECRET}`;
+
+  it('redacts it out of SafeFetchTimeoutError', async () => {
+    const error = await safeFetch(
+      URL_WITH_SECRET,
+      { method: 'GET' },
+      ['mcp.blockscout.com'],
+      () => new Promise(() => undefined),
+      { timeoutMs: 5 },
+    )
+      .then(() => undefined)
+      .catch((caught: unknown) => caught as SafeFetchTimeoutError);
+
+    expect(error).toBeInstanceOf(SafeFetchTimeoutError);
+    expect(error!.message).not.toContain(SECRET);
+    expect(error!.message).not.toContain('apikey');
+    expect(error!.url, 'the property is printed by inspectors too').not.toContain(SECRET);
+    // Still diagnosable: host and path survive.
+    expect(error!.message).toContain('mcp.blockscout.com/v1/get_address_info');
+  });
+
+  it('redacts it out of SafeFetchResponseTooLargeError', async () => {
+    const error = await safeFetch(
+      URL_WITH_SECRET,
+      { method: 'GET' },
+      ['mcp.blockscout.com'],
+      () =>
+        Promise.resolve(
+          new Response('{}', { status: 200, headers: { 'content-length': '99999999' } }),
+        ),
+      { maxResponseBytes: 1024 },
+    )
+      .then(() => undefined)
+      .catch((caught: unknown) => caught as SafeFetchResponseTooLargeError);
+
+    expect(error).toBeInstanceOf(SafeFetchResponseTooLargeError);
+    expect(error!.message).not.toContain(SECRET);
+    expect(error!.url).not.toContain(SECRET);
+    expect(error!.message).toContain('mcp.blockscout.com/v1/get_address_info');
+  });
+});

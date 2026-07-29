@@ -23,6 +23,8 @@ export {
   type EntityLabel,
   TokenRiskScoreSchema,
   type TokenRiskScore,
+  TokenHoldersSchema,
+  type TokenHolders,
 } from './types/index.js';
 
 export { normalizeAddress, isValidAddress } from './chain/address.js';

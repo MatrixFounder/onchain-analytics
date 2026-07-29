@@ -56,30 +56,68 @@ export interface SafeFetchOptions {
   maxResponseBytes?: number;
 }
 
+/**
+ * `https://host/path?apikey=SECRET#frag` → `https://host/path` (vdd-multi TASK-008, M-14).
+ *
+ * A query string can carry a credential, and at least one adapter's vendor requires exactly that:
+ * `blockscout` authenticates with `?apikey=<key>` because that is the vendor's choice, not ours.
+ * Every error below used to interpolate the FULL url — into `.message`, and into a `url` property
+ * that `util.inspect`, a structured logger, a crash reporter or a bare `console.error(err)` all
+ * print. `blockscout` wraps these errors and re-messages them by class, so the message channel was
+ * closed at that one call site; the **cause chain** it attaches was not, and neither would the next
+ * adapter's be.
+ *
+ * Redacting here rather than at each call site is the point: this removes the class for every
+ * present and future caller, and D10 ("secrets never in logs or error messages") stops depending on
+ * each adapter remembering to wrap. Nothing in the repo reads `.url` programmatically — checked.
+ *
+ * `pathname` is kept because it is what makes the error diagnosable at all, and it is ours: the
+ * path is built from our own capability routing, never from a secret.
+ */
+function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    // Not parseable as a URL — say so rather than echoing a string we could not inspect.
+    return '<unparseable url>';
+  }
+}
+
 /** Thrown when a `safeFetch` call (including any redirect hop) doesn't settle within
  * `timeoutMs` — lets a caller's own fallback loop (e.g. `rpc-evm`'s primary->secondary endpoint
- * retry) advance to the next candidate instead of hanging forever on a dead host. */
+ * retry) advance to the next candidate instead of hanging forever on a dead host.
+ *
+ * `url` is the REDACTED form (no query string) — see `redactUrl`. */
 export class SafeFetchTimeoutError extends Error {
+  public readonly url: string;
   constructor(
-    public readonly url: string,
+    url: string,
     public readonly timeoutMs: number,
   ) {
-    super(`safeFetch: timed out after ${timeoutMs}ms fetching ${url}`);
+    const safe = redactUrl(url);
+    super(`safeFetch: timed out after ${timeoutMs}ms fetching ${safe}`);
+    this.url = safe;
     this.name = 'SafeFetchTimeoutError';
   }
 }
 
 /** Thrown when a response's advertised `Content-Length` exceeds `maxResponseBytes` — rejected
- * BEFORE the caller ever reads the body (`.json()`/`.text()`). */
+ * BEFORE the caller ever reads the body (`.json()`/`.text()`).
+ *
+ * `url` is the REDACTED form (no query string) — see `redactUrl`. */
 export class SafeFetchResponseTooLargeError extends Error {
+  public readonly url: string;
   constructor(
-    public readonly url: string,
+    url: string,
     public readonly contentLength: number,
     public readonly maxBytes: number,
   ) {
+    const safe = redactUrl(url);
     super(
-      `safeFetch: response Content-Length ${contentLength} exceeds the ${maxBytes}-byte cap for ${url}`,
+      `safeFetch: response Content-Length ${contentLength} exceeds the ${maxBytes}-byte cap for ${safe}`,
     );
+    this.url = safe;
     this.name = 'SafeFetchResponseTooLargeError';
   }
 }
@@ -219,7 +257,7 @@ function capResponseStream(response: Response, url: string, maxBytes: number): R
       if (typeof chunkBytes !== 'number' || !Number.isFinite(chunkBytes)) {
         controller.error(
           new Error(
-            `safeFetch: non-binary chunk from ${url} (${typeof value}) — refusing to count`,
+            `safeFetch: non-binary chunk from ${redactUrl(url)} (${typeof value}) — refusing to count`,
           ),
         );
         void reader.cancel().catch(() => undefined);
@@ -349,7 +387,7 @@ export async function safeFetch(
     void response.body?.cancel().catch(() => undefined);
 
     if (redirectsFollowed >= MAX_REDIRECTS) {
-      throw new Error(`safeFetch: exceeded ${MAX_REDIRECTS} redirects following ${url}`);
+      throw new Error(`safeFetch: exceeded ${MAX_REDIRECTS} redirects following ${redactUrl(url)}`);
     }
 
     // Resolve a relative Location against the current hop's URL, exactly like a real browser

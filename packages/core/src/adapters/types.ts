@@ -80,4 +80,34 @@ export interface CapabilityRoute {
   capability: string;
   chains?: Chain[];
   adapterIds: string[]; // order = priority + fallback chain (R-11)
+  /**
+   * "Does this normalized result answer the request, or should the route keep walking?"
+   *
+   * vdd-multi TASK-008, H-1. Without this the registry has exactly two signals — a throw means
+   * *failed*, a return means *done* — so a provider that truthfully answers "I have nothing for
+   * this address" terminates the route and shadows every provider behind it. The first fix
+   * attempted was to make the provider THROW on an empty result. That works and is wrong: it puts
+   * knowledge of the successor inside the provider. `blockscout` would then be reporting a failure
+   * it did not have, and would keep doing so when deployed with no Nansen behind it — a provider
+   * whose correctness depends on its neighbours cannot be developed or deployed independently.
+   *
+   * So the provider states its own truth and **this predicate carries the cross-provider policy**,
+   * as data, next to the adapter ORDER that already encodes the spend rule. Applied to cache hits
+   * as well as to fresh results — otherwise the same shadowing returns through the cache.
+   *
+   * When no adapter satisfies it, the walk does not fail: the first truthful-but-unsatisfying
+   * result is returned. "No provider has labels for this address" is an answer, not an outage.
+   *
+   * **PROVISIONAL — see OQ-4 in `docs/TASK.md`.** This is the smallest hook that keeps the defect
+   * out of production, NOT the router. The owner's decision (2026-07-28) is that the real design is
+   * settled at a redesign stage, and that it will differ in two ways: the router must be able to
+   * call a COMBINATION of adapters and aggregate their results, and the policy should be configured
+   * partly in the DB, as classes, rather than as a literal in `providers.config.ts`. In that design
+   * this predicate becomes "is what I have collected enough, or do I need another source", joined
+   * by the merge rule that does not exist yet.
+   *
+   * So: do not grow this into a policy engine. Weights, partial merges and multi-source collection
+   * are the router's job, and adding them here would make the redesign harder, not easier.
+   */
+  isSatisfying?: (result: unknown) => boolean;
 }

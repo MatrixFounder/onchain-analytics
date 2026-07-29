@@ -50,10 +50,18 @@
 **Файлы:** `packages/core/src/adapters/blockscout/index.ts` (стаб),
 `packages/core/src/providers.config.ts`, `packages/core/src/index.ts`.
 
-Адаптер возвращает захардкоженные значения; **логики нет**. Регистрация: два хоста
-(`api.blockscout.com`, `mcp.blockscout.com`), `rateLimit {capacity:5, refillPerSec:5}`,
-`requiresEnv: []`. Маршруты: `token.holders → ['blockscout']`,
+Адаптер возвращает захардкоженные значения; **логики нет**. Регистрация: `rateLimit {capacity:5,
+refillPerSec:5}`, `requiresEnv: []`. Маршруты: `token.holders → ['blockscout']`,
 `entity.labels → ['blockscout','nansen']`. `dune` перестаёт объявлять `token.holders`.
+
+> **Отклонение от плана, зафиксировано 008-8.** Здесь планировались **два хоста**
+> (`api.blockscout.com` + `mcp.blockscout.com`). Реализовано **один**: `hosts: ['mcp.blockscout.com']`.
+> Прямой хост принуждает авторизацию (402 без ключа), а у `token.holders` нет адаптера-фолбэка —
+> на стоковой установке capability рекламировалась на 39 сетях и не обслуживалась ни на одной
+> (адверсариальный цикл 1). Устаревший хост потом ещё держался в allowlist «раз он ничего не стоит»
+> — `/vdd-multi` убрал и это: `safeFetch` перепроверяет **каждый хоп редиректа** по этому списку,
+> поэтому разрешённый, но не вызываемый хост — это всё ещё хост, куда нас может увести
+> сбойнувший фасад, а allowlist здесь единственный контроль исходящего.
 
 E2E-тесты пишутся здесь и **обязаны проходить на стабах** — иначе это не Stub-First.
 
@@ -76,7 +84,9 @@ E2E-тесты пишутся здесь и **обязаны проходить 
 
 **Файлы:** `packages/core/src/adapters/blockscout/index.ts`.
 
-- `token.holders` → `GET api.blockscout.com/<chain_id>/api/v2/tokens/<addr>/holders?apikey=…`;
+- `token.holders` → `GET mcp.blockscout.com/v1/direct_api_call?chain_id=…&endpoint_path=/api/v2/tokens/<addr>/holders`
+  (планировался прямой `api.blockscout.com` — см. отклонение в 008-2; фасад проксирует тот же
+  REST-эндпоинт и отвечает без ключа, живой зонд 2026-07-28: 50 записей, обе формы адреса);
 - `entity.labels` → `GET mcp.blockscout.com/v1/get_address_info?chain_id=…&address=…`;
 - ключ читается **внутри `fetch()`**, после вычисления кеш-ключа (как `COINGECKO_*`);
 - `value_truncated` — если истинно, результат помечен, усечённое не выдаётся за полное (R-80).

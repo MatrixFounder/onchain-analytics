@@ -44,6 +44,16 @@ export const CAPABILITY_TOOLS = [
     tool: 'onchain_dex_volume',
     args: (c) => ({ chain: c, days: 7 }),
   },
+  {
+    // TASK-008 — free (`['blockscout']`, `costOf: 0`), so unlike `entity.labels` one directory
+    // down, an eval run of it bills nobody. Needs a curated `token` per chain: a holder list is
+    // meaningless without a contract to ask about, and the probe row already carries one for
+    // `token.price`. Chains with no curated token report `no-probe` rather than silently vanishing
+    // — which is the whole point of this file.
+    capability: 'token.holders',
+    tool: 'onchain_token_holders',
+    args: (c, p) => (p.token ? { chain: c, tokenAddress: p.token } : null),
+  },
 ];
 
 /** Capabilities deliberately NOT exercised, each with the reason it is out of scope. */

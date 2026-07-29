@@ -517,14 +517,20 @@ export const adapterRegistrations: AdapterRegistration[] = [
     rateLimit: { capacity: 2, refillPerSec: 0.2 },
     requiresEnv: ['ONCHAIN_PG_URL'],
   },
-  // R-73 (TASK-008). BOTH hosts on one registration — the allowlist is per adapter, and this
-  // adapter legitimately speaks to two (see "Two hosts, one adapter"). `requiresEnv` stays EMPTY
-  // on purpose: the facade answers without a key today, so demanding one would disable a working
-  // capability. The key is read inside fetch(), like COINGECKO_* — after the cache key is derived,
-  // so it can never enter it.
+  // R-73 (TASK-008). ONE host. The two-host design this comment used to describe was reverted in
+  // adversarial cycle 1 — the direct `api.blockscout.com` enforces auth (402 with no key) and
+  // `token.holders` has no fallback adapter, so on a stock install it was advertised on 39 chains
+  // and served on none. The stale host then survived in the allowlist on the argument that it
+  // "costs nothing"; vdd-multi removed it, because `safeFetch` re-checks every REDIRECT hop against
+  // this list, so an allowlisted host we never call is still a host a misbehaving facade can bounce
+  // us to — and here the allowlist is the only egress control there is.
+  //
+  // `requiresEnv` stays EMPTY on purpose: the facade answers without a key today, so demanding one
+  // would disable a working capability. The key is read inside fetch(), like COINGECKO_* — after
+  // the cache key is derived, so it can never enter it.
   {
     id: 'blockscout',
-    hosts: ['api.blockscout.com', 'mcp.blockscout.com'],
+    hosts: ['mcp.blockscout.com'],
     rateLimit: { capacity: 5, refillPerSec: 5 },
     requiresEnv: [],
   },

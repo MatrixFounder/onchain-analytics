@@ -206,3 +206,74 @@ describe('throttle (token-bucket) [Phase 2, injectable clock — no real timers]
     });
   });
 });
+
+/**
+ * `weight` (TASK-008 follow-up, R-73b) — one call may cost more than one token.
+ *
+ * A bucket counts OUR requests; a vendor quota counts UPSTREAM ones. `blockscout`'s
+ * `/v1/get_address_info` fans out to three upstreams server-side, so a weightless bucket
+ * under-counts the thing it exists to limit by 3×.
+ */
+describe('throttle weight', () => {
+  const config = { capacity: 5, refillPerSec: 2 };
+
+  it('consumes `weight` tokens, not one', async () => {
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+
+    // Capacity 5: one weight-3 call leaves 2, so a second weight-3 call must wait for 1 token.
+    await throttle('blockscout', config, 3);
+    expect(clock.waitCalls).toEqual([]);
+    await throttle('blockscout', config, 3);
+    // Deficit of 1 token at 2/sec = 500ms. A weightless implementation would not have waited at all.
+    expect(clock.waitCalls).toEqual([500]);
+  });
+
+  it('defaults to 1 — every existing caller is unaffected', async () => {
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    for (let i = 0; i < 5; i += 1) await throttle('defillama', config);
+    expect(clock.waitCalls).toEqual([]);
+  });
+
+  it('computes ONE wait against ONE fairness cap, not N of them', async () => {
+    // The reason this is a weight rather than N sequential calls: N calls compute N independent
+    // waits, each capped at MAX_WAIT_MS, so a saturated bucket could park one logical request for
+    // N × 30s — reintroducing the latency stacking that free-first ordering exists to avoid.
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    await throttle('blockscout', config, 5);
+    await throttle('blockscout', config, 5);
+    expect(clock.waitCalls).toHaveLength(1);
+    expect(clock.waitCalls[0]).toBe(2500);
+  });
+
+  it('refunds the FULL weight when it rejects, so the bucket does not leak tokens', async () => {
+    // A partial refund would tighten the limiter a little on every rejected weighted call until it
+    // admitted nothing at all.
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    const slow = { capacity: 5, refillPerSec: 0.05 };
+
+    await throttle('blockscout', slow, 5);
+    await expect(throttle('blockscout', slow, 3)).rejects.toBeInstanceOf(RateLimitRejectedError);
+    // 100 seconds of refill at 0.05/s = 5 tokens: a full bucket again IF the rejection refunded
+    // all three. With a 1-token refund it would still be short and this call would reject too.
+    clock.advance(100_000);
+    await expect(throttle('blockscout', slow, 5)).resolves.toBeUndefined();
+  });
+
+  it('refuses a weight it can never satisfy instead of waiting forever on a full bucket', async () => {
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    await expect(throttle('blockscout', config, 6)).rejects.toThrow(/exceeds bucket capacity/);
+  });
+
+  it('refuses a non-integer or non-positive weight rather than silently treating it as 1', async () => {
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      await expect(throttle('blockscout', config, bad)).rejects.toThrow(/weight must be/);
+    }
+  });
+});

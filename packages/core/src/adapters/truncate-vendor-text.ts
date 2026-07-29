@@ -16,13 +16,36 @@
 export const MAX_VENDOR_SYMBOL_LENGTH = 64;
 export const MAX_VENDOR_NAME_LENGTH = 256;
 
+/**
+ * Caps `value` at `maxLength` **UTF-16 code units**, cutting only on code-point boundaries.
+ *
+ * `maxLength` counts code units because that is what the schema backstops count: zod's `.max()`
+ * measures `input.length`. Cycle-1 read it as code points, which made the two disagree on exactly
+ * the input an attacker chooses — 300 astral characters survive `Array.from(...).slice(0, 256)` as
+ * 512 code units, and `parse()` then throws, i.e. the backstop this function claims to keep
+ * unreachable fires. `token.holders` routes to `['blockscout']` alone, so that throw is a hard
+ * capability failure plus a negative-cache entry; `entity.labels` escalates to PAID Nansen. Either
+ * way the party choosing the label chooses the outcome, and Blockscout ingests user-submitted tags.
+ *
+ * Cutting on a code-point boundary is still non-negotiable: a bare `slice` through a surrogate pair
+ * emits a lone surrogate, which travels into the JSON-RPC frame and into a `better-sqlite3` TEXT
+ * bind (silently mangled to U+FFFD).
+ *
+ * Cost is **O(maxLength), not O(value.length)** — nothing bounds the input (`sanitize.ts`'s
+ * `readString` checks only `typeof` and non-empty), so a 1 MB vendor `name` must not become a
+ * 1M-element array to yield 256 characters. A code point is at most 2 code units, so the
+ * `maxLength * 2` window provably contains the first `maxLength` code points; the loop stops at
+ * `maxLength` units, which is far short of the window's (possibly severed) tail, so the severed
+ * trailing surrogate is unreachable rather than merely unlikely.
+ */
 export function truncateVendorText(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
-  // Cut on a CODE POINT boundary, not a UTF-16 code unit (vdd-multi cycle 6, L). `slice` through a
-  // surrogate pair emits a lone surrogate, which then travels into the JSON-RPC frame and into a
-  // `better-sqlite3` TEXT bind (silently mangled to U+FFFD). The cut offset is attacker-chosen —
-  // a token whose emoji straddles position 64 is a one-line thing to deploy on a permissionless
-  // DEX. `Array.from` also makes `maxLength` mean visible characters, which is what a reader of
-  // this function's name expects.
-  return Array.from(value).slice(0, maxLength).join('');
+  let out = '';
+  let units = 0;
+  for (const codePoint of value.slice(0, maxLength * 2)) {
+    if (units + codePoint.length > maxLength) break;
+    out += codePoint;
+    units += codePoint.length;
+  }
+  return out;
 }

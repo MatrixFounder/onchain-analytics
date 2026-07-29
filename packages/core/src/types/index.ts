@@ -11,3 +11,9 @@ export { SnapshotSchema, type Snapshot } from './snapshot.js';
 export { SmartMoneyFlowSchema, type SmartMoneyFlow } from './smart-money-flow.js';
 export { EntityLabelSchema, type EntityLabel } from './entity-label.js';
 export { TokenRiskScoreSchema, type TokenRiskScore } from './token-risk-score.js';
+// TASK-008 (R-74) — the canonical `token.holders` result. Added to this barrel when the MCP tool
+// was written: the type shipped with the adapter but never reached the package's public surface,
+// so the one consumer outside `packages/core` could not name the shape it receives. The comment at
+// the top of this file states the rule the omission broke — no consumer imports
+// `types/<entity>.ts` directly, which only works if the barrel is complete.
+export { TokenHoldersSchema, type TokenHolders } from './token-holders.js';

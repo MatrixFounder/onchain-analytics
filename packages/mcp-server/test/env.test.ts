@@ -303,3 +303,21 @@ describe('loadEnv', () => {
     }
   });
 });
+
+describe('BLOCKSCOUT_PRO_API_KEY (TASK-008 R-79a)', () => {
+  it('is optional — a stock install with no key still validates', () => {
+    expect(EnvSchema.parse({}).BLOCKSCOUT_PRO_API_KEY).toBeUndefined();
+    expect(EnvSchema.parse({ BLOCKSCOUT_PRO_API_KEY: '' }).BLOCKSCOUT_PRO_API_KEY).toBeUndefined();
+  });
+
+  it('rejects a value that only LOOKS present, instead of shipping it as apikey=%20', () => {
+    // The failure this guards is silent by construction: the key travels as a query parameter, so a
+    // whitespace value does not fail at an auth layer — the facade answers 200 anyway during the
+    // grace period, and the day enforcement lands it becomes a total auth failure with no
+    // diagnostic. `echo key >> .env` leaves a trailing newline; a shell `KEY=" "` leaves a space.
+    expect(() => EnvSchema.parse({ BLOCKSCOUT_PRO_API_KEY: '   ' })).toThrow();
+    expect(
+      EnvSchema.parse({ BLOCKSCOUT_PRO_API_KEY: 'proapi_real\n' }).BLOCKSCOUT_PRO_API_KEY,
+    ).toBe('proapi_real');
+  });
+});

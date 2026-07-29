@@ -239,12 +239,45 @@ describe('L — truncation cuts on a code point, never through a surrogate pair'
     // The cut offset is attacker-chosen: a token whose emoji straddles the bound is one line to
     // deploy on a permissionless DEX. A lone surrogate then travels into the JSON-RPC frame and
     // into a SQLite TEXT bind, where it is silently mangled.
+    //
+    // CHANGED EXPECTATION (vdd-multi TASK-008, H-6): this used to assert the emoji SURVIVES at
+    // `'a'.repeat(63) + '😀'` — 65 UTF-16 units under a 64-unit cap. That encoded the defect
+    // rather than guarding against it: the caps this helper claims to keep unreachable are zod
+    // `.max()` bounds, and zod measures `input.length`, i.e. code units. The emoji does not fit,
+    // so it is dropped; only whole code points are ever emitted, which is the property this test
+    // is actually for.
     const value = `${'a'.repeat(63)}😀tail`;
     const cut = truncateVendorText(value, 64);
-    expect(cut).toBe(`${'a'.repeat(63)}😀`);
+    expect(cut).toBe('a'.repeat(63));
     expect([...cut].every((ch) => ch.codePointAt(0)! < 0xd800 || ch.codePointAt(0)! > 0xdfff)).toBe(
       true,
     );
+  });
+
+  it('respects the bound in UTF-16 code units, the unit the schema caps count', () => {
+    // The regression H-6 names: 300 astral characters are 600 code units; a code-point-counting
+    // truncation returns 512 of them and `Schema.parse` then throws — on `token.holders` that is a
+    // hard capability failure plus a negative-cache entry (the route is blockscout-only), and on
+    // `entity.labels` it is an escalation to PAID Nansen. The party choosing the label chooses the
+    // outcome, and Blockscout ingests user-submitted tags.
+    const astral = truncateVendorText('😀'.repeat(300), 256);
+    expect(astral.length).toBeLessThanOrEqual(256);
+    expect(astral).toBe('😀'.repeat(128));
+    // Mixed input must not overshoot either, whatever the boundary lands on.
+    for (const value of [`${'a'.repeat(255)}😀`, `😀${'b'.repeat(300)}`, '😀'.repeat(129)]) {
+      expect(truncateVendorText(value, 256).length).toBeLessThanOrEqual(256);
+    }
+  });
+
+  it('is O(maxLength), not O(input) — a 1 MB vendor name costs 256 characters of work', () => {
+    // `readString` in the sanitizer bounds nothing but "non-empty string", so the input size is the
+    // vendor's choice. The old `Array.from(value)` materialized the whole string first: a 1 MB name
+    // became a 1M-element array to yield 256 characters. Asserted as a time bound because the
+    // allocation itself is not observable from here — a linear implementation takes ~100× longer.
+    const huge = 'x'.repeat(1_000_000);
+    const started = performance.now();
+    expect(truncateVendorText(huge, 256)).toBe('x'.repeat(256));
+    expect(performance.now() - started).toBeLessThan(50);
   });
 
   it('leaves a short string untouched', () => {

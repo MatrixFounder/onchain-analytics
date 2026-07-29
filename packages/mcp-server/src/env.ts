@@ -52,6 +52,22 @@ export const EnvSchema = z.object({
   // format is identical across tiers — cannot be sniffed); pro wins when both are set.
   COINGECKO_PRO_API_KEY: emptyAsUndefined(z.string().optional()),
   DUNE_API_KEY: emptyAsUndefined(z.string().optional()),
+  // TASK-008 R-79(a) — optional, like every key here, and validated for the reason the others are
+  // not: this is the only secret the engine sends as a QUERY PARAMETER (the vendor's choice), so a
+  // malformed value does not fail loudly at the auth layer — it ships as `apikey=%20` and the
+  // facade answers 200 anyway during the grace period. `.trim().min(1)` rather than a bare
+  // `z.string()`: `echo key >> .env` leaves a trailing newline and a shell `KEY=" "` leaves a
+  // space, both of which pass `apiKey.length > 0` inside the adapter and become a silent total auth
+  // failure the day enforcement lands. Trimming here means the adapter never sees a value that
+  // looks present and is not. Found by vdd-multi iteration 2 (sec M-4): this key was outside the
+  // validated surface entirely, and `.env.example` told the operator otherwise.
+  BLOCKSCOUT_PRO_API_KEY: emptyAsUndefined(
+    z
+      .string()
+      .transform((value) => value.trim())
+      .pipe(z.string().min(1))
+      .optional(),
+  ),
   ONCHAIN_PG_URL: emptyAsUndefined(z.string().url().optional()),
   DATA_DIR: emptyAsUndefined(z.string().optional()),
   // M2 (task 005-6, R-46) — see this schema's own docstring above for the 3-key rationale.

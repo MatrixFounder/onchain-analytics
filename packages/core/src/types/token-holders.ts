@@ -28,7 +28,15 @@ const TokenHolderSchema = z
      */
     label: z.string().max(256).optional(),
     /** Exact token base units, as a decimal string. Never parsed into a number — see above. */
-    amountRaw: z.string().regex(/^(0|[1-9][0-9]*)$/),
+    // Iteration 2 (M-4): bounded, for the reason stated one field down about `tokenId` — which
+    // called itself "the ONE place a vendor could put arbitrary text of arbitrary length into the
+    // canonical type". It was not: this regex accepts digits without limit, so 50 rows of 10 KB
+    // digit strings passed validation and were published and cached. 78 is the decimal width of
+    // 2^256-1, the same ceiling a balance cannot exceed.
+    amountRaw: z
+      .string()
+      .regex(/^(0|[1-9][0-9]*)$/)
+      .max(78),
     /**
      * ERC-1155/NFT token id, when the vendor reports one (M-5). A STRING for the same reason
      * `amountRaw` is: a uint256 id exceeds 2^53.
@@ -38,7 +46,16 @@ const TokenHolderSchema = z
      * addresses — one address appearing six times. Without the id, a caller counting holders
      * over-counts, and one summing per address produces a figure the vendor never asserted.
      */
-    tokenId: z.string().optional(),
+    // M-2 (vdd-multi TASK-008): bounded and shape-checked like every sibling field. It used to be a
+    // bare `z.string().optional()` — no `.max()`, no regex — while the docstring above called it a
+    // uint256, which made it the one place a vendor could put arbitrary text of arbitrary length
+    // into the canonical type, the JSON-RPC frame and the SQLite cache row. 78 digits is the
+    // decimal width of 2^256-1.
+    tokenId: z
+      .string()
+      .regex(/^(0|[1-9][0-9]*)$/)
+      .max(78)
+      .optional(),
     isContract: z.boolean().optional(),
     /**
      * The vendor's own scam flag. Carried through rather than filtered on: a holder list with the

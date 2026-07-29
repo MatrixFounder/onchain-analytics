@@ -13,8 +13,26 @@ export interface ThrottleDeps {
   wait?: (ms: number) => Promise<void>;
 }
 
-/** A bound throttle function for one bucket-state instance — see `createThrottle`. */
-export type Throttle = (providerId: string, config: TokenBucketConfig) => Promise<void>;
+/**
+ * A bound throttle function for one bucket-state instance — see `createThrottle`.
+ *
+ * `weight` is how many tokens this ONE call consumes, default 1. It exists because a token bucket
+ * counts OUR calls, while what a vendor's quota counts is upstream requests — and the two stop
+ * agreeing the moment a vendor endpoint fans out server-side. `nansen` needs no weight: its
+ * composite capabilities genuinely make N requests, so they call this N times and the arithmetic
+ * takes care of itself. `blockscout`'s facade is the other shape — one request from us, three
+ * upstreams and ~160 credits at the vendor — so one call must be able to cost more than one token.
+ *
+ * A weight rather than N sequential calls, deliberately: N calls compute N independent waits, each
+ * capped at `MAX_WAIT_MS`, so a saturated bucket could park a single logical request for N × 30 s
+ * — reintroducing the latency stacking that putting a free provider in front of a paid one was
+ * supposed to avoid. One weighted call computes one wait against one cap.
+ */
+export type Throttle = (
+  providerId: string,
+  config: TokenBucketConfig,
+  weight?: number,
+) => Promise<void>;
 
 interface BucketState {
   tokens: number;
@@ -99,11 +117,32 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
   const wait = deps.wait ?? defaultWait;
   const buckets = new Map<string, BucketState>();
 
-  return async function throttle(providerId: string, config: TokenBucketConfig): Promise<void> {
+  return async function throttle(
+    providerId: string,
+    config: TokenBucketConfig,
+    weight = 1,
+  ): Promise<void> {
     if (config.refillPerSec <= 0) {
       throw new RateLimitRejectedError(
         providerId,
         'refillPerSec must be > 0 (misconfigured rate limit)',
+      );
+    }
+    // Fail loudly rather than silently degrading to 1: a weight that is not a positive integer is a
+    // caller bug, and the failure mode of guessing here is a limiter quietly not limiting.
+    if (!Number.isInteger(weight) || weight < 1) {
+      throw new RateLimitRejectedError(
+        providerId,
+        `weight must be a positive integer (got ${String(weight)})`,
+      );
+    }
+    // A weight above `capacity` can never be satisfied — the bucket refills to `capacity` at most,
+    // so the deficit never clears and the caller would wait out the fairness cap on every call, on
+    // a full bucket, forever. Say so instead.
+    if (weight > config.capacity) {
+      throw new RateLimitRejectedError(
+        providerId,
+        `weight ${weight} exceeds bucket capacity ${config.capacity} — unsatisfiable`,
       );
     }
 
@@ -119,7 +158,7 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       bucket.lastRefillMs = nowMs;
     }
 
-    bucket.tokens -= 1;
+    bucket.tokens -= weight;
     if (bucket.tokens >= 0) {
       return;
     }
@@ -131,7 +170,10 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
     if (waitMs > MAX_WAIT_MS) {
       // Refund the reservation — this call will never actually wait/consume its slot, so it must
       // not permanently worsen the backlog for whoever calls next (adversarial cycle 2, fix 7).
-      bucket.tokens += 1;
+      // Refunds `weight`, not 1: a partial refund would leak tokens out of the bucket on every
+      // rejected weighted call, tightening the limiter a little more each time until it stopped
+      // admitting anything.
+      bucket.tokens += weight;
       throw new RateLimitRejectedError(
         providerId,
         `computed wait ${Math.round(waitMs)}ms exceeds the ${MAX_WAIT_MS}ms fairness cap (saturated bucket)`,

@@ -134,11 +134,11 @@ describe('onchain_ping — stdio E2E', () => {
     // spawn, which is exactly the live-network dependency R-21 forbids (no NANSEN_API_KEY is set
     // for this spawned child either — task 005-6's own "no ambient key in any test" rule).
     // `test/e2e.inprocess.test.ts` (InMemoryTransport) is what actually exercises all 7 tools.
-    'tools/list contains exactly 11 tools: onchain_ping + 4 M1 + 3 M2 + 2 TASK-006 + 1 TASK-007 (by name)',
+    'tools/list contains exactly 12 tools: onchain_ping + 4 M1 + 3 M2 + 2 TASK-006 + 1 TASK-007 + 1 TASK-008 (by name)',
     async () => {
       const c = await connect();
       const { tools } = await c.listTools(undefined, { timeout: CALL_TIMEOUT_MS });
-      expect(tools).toHaveLength(11);
+      expect(tools).toHaveLength(12);
       const names = tools.map((tool) => tool.name).sort();
       expect(names).toStrictEqual(
         [
@@ -155,6 +155,9 @@ describe('onchain_ping — stdio E2E', () => {
           // TASK-007 task 007-6 — free, keyless, no env of any kind, so it is present under spawn
           // exactly like the other keyless tools.
           'onchain_dex_volume',
+          // TASK-008 follow-up — free and keyless like `onchain_dex_volume`, so it is present under
+          // spawn on a stock install with no env at all.
+          'onchain_token_holders',
         ].sort(),
       );
     },

@@ -142,3 +142,16 @@ describe('blockscout adapter (contract, R-73)', () => {
     );
   });
 });
+
+describe('L-4 — the SSRF allowlist is exactly the host this adapter calls', () => {
+  it('declares one host, not two', async () => {
+    // `api.blockscout.com` sat here after adversarial cycle 1 reverted the two-host design, on the
+    // argument that "keeping it allowlisted costs nothing". `safeFetch` re-checks EVERY redirect
+    // hop against this list, so an allowlisted host we never call is still a host a misbehaving
+    // facade can bounce us to — and for this adapter the allowlist is the only egress control
+    // there is. R-73(b) specifies one host, so the extra entry also contradicted an accepted Must.
+    const { adapterRegistrations } = await import('../src/providers.config.js');
+    const registration = adapterRegistrations.find((entry) => entry.id === 'blockscout');
+    expect(registration?.hosts).toEqual(['mcp.blockscout.com']);
+  });
+});

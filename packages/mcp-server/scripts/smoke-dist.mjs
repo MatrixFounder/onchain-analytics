@@ -205,6 +205,7 @@ async function run() {
     'onchain_ping',
     'onchain_protocol_tvl',
     'onchain_smart_money_flows',
+    'onchain_token_holders',
     'onchain_token_risk',
     'onchain_wallet_balances',
   ];

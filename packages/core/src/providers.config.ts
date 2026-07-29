@@ -81,7 +81,28 @@ export const routes: CapabilityRoute[] = [
   // R-75 (TASK-008) — `blockscout` FIRST, `nansen` as the paid fallback behind it. The order is the
   // entire point of the change: a credit is spent only where the free source cannot answer. The
   // registry walks the list in order, so this is not a preference hint — it is the spend rule.
-  { capability: 'entity.labels', adapterIds: ['blockscout', 'nansen'] },
+  //
+  // H-1 (vdd-multi TASK-008) — `isSatisfying` is the other half of that spend rule. Order alone was
+  // not enough: the registry falls through only on a THROW, so `blockscout` truthfully answering
+  // "I have no tags for this address" terminated the route and shadowed nansen for the whole
+  // `ttlFor('entity.labels') = 3600` window — which is the ordinary case, not the tail (the
+  // recorded USDC probe has empty tags). Fixing it inside the adapter would have meant teaching
+  // `blockscout` that nansen exists; the policy belongs here, as data, beside the order it refines.
+  {
+    capability: 'entity.labels',
+    adapterIds: ['blockscout', 'nansen'],
+    isSatisfying: (result) =>
+      Array.isArray(result) &&
+      result.some((entry) => {
+        if (entry === null || typeof entry !== 'object') return false;
+        const label = entry as { name?: unknown; tags?: unknown; labels?: unknown };
+        return (
+          typeof label.name === 'string' ||
+          (Array.isArray(label.tags) && label.tags.length > 0) ||
+          (Array.isArray(label.labels) && label.labels.length > 0)
+        );
+      }),
+  },
   { capability: 'token.risk', adapterIds: ['nansen'] },
 ];
 
@@ -153,18 +174,55 @@ export const adapterRegistrations: AdapterRegistration[] = [
     rateLimit: { capacity: 2, refillPerSec: 0.1 },
     requiresEnv: ['DUNE_API_KEY'],
   },
-  // R-73 (TASK-008). TWO hosts on one registration, because this adapter legitimately speaks to
-  // both and the SSRF allowlist is per adapter: `api.blockscout.com` serves `token.holders`
-  // (enforced auth, one upstream, no model-directed wrapper) while `mcp.blockscout.com` serves
-  // `entity.labels` (the only source of the label enrichment, bought with a three-way fan-out).
+  // R-73 (TASK-008). ONE host: `mcp.blockscout.com`, the facade, which serves BOTH capabilities.
+  //
+  // This comment used to describe a two-host design — `api.blockscout.com` for `token.holders`,
+  // the facade for `entity.labels` — that adversarial cycle 1 had already reverted in the adapter
+  // (B-3: the direct host enforces auth, so `token.holders` answered on NO chain of a stock
+  // keyless install). The stale host stayed behind in this list on the argument that "keeping it
+  // allowlisted costs nothing".
+  //
+  // L-4 (vdd-multi): it does cost something. `safeFetch` re-checks EVERY redirect hop against this
+  // list, so an allowlisted host we never call is still a host a misbehaving or compromised facade
+  // can bounce us to — and for this adapter the allowlist is the only egress control there is.
+  // R-73(b) specifies exactly one host, so the extra entry also contradicted an accepted Must. A
+  // future key-gated direct path adds it back in the same commit that calls it; that is the change
+  // that should need justifying.
   //
   // `requiresEnv` is EMPTY on purpose. The facade answers without a key today, so demanding one
   // would disable a working capability on a stock install; the key is read inside `fetch()` —
   // AFTER the cache key is derived, like `COINGECKO_*` — so it can never enter a cache key.
   {
     id: 'blockscout',
-    hosts: ['api.blockscout.com', 'mcp.blockscout.com'],
-    rateLimit: { capacity: 5, refillPerSec: 5 },
+    hosts: ['mcp.blockscout.com'],
+    // **Recorded deviation from R-73(b), owner decision 2026-07-29: DEFENSIVE, not measured.**
+    //
+    // R-73(b) prescribes `{capacity: 5, refillPerSec: 5}`. That value has no measurement behind it,
+    // and unlike `defillama` (a documented 40-concurrent live probe) or `nansen` (four named vendor
+    // thresholds) it cannot get one from the vendor: TASK.md §1.2 records that these responses carry
+    // **no `RateLimit-*` and no `Retry-After` headers at all**, so there is no server signal to
+    // calibrate against. 5 RPS came from the vendor's published "5 RPS" tier line, which bounds
+    // REQUESTS while the thing that actually runs out is CREDITS.
+    //
+    // The arithmetic the prescribed value misses: `get_address_info` fans out to three upstreams
+    // (20 + 120 + 20 ≈ 160 credits) out of 100K credits/day, i.e. a ceiling of **≈625 calls/day**.
+    // At 5 RPS the limiter permits 432 000/day — ~690× the ceiling, and the entire daily quota burns
+    // in ~125 seconds. Worse, the two routes then fail in OPPOSITE directions: a saturated bucket on
+    // `entity.labels` throws, the registry walks on, and the free provider's overload silently
+    // starts spending Nansen credits; on `token.holders` (blockscout-only) the same condition is a
+    // hard refusal.
+    //
+    // `refillPerSec: 2` is chosen defensively — it is NOT a measured ceiling and must not be cited
+    // as one. It is 2.5× below the vendor's own published request rate and leaves the credit budget
+    // reachable in hours rather than in two minutes. `capacity: 5` is unchanged: burst is not the
+    // problem, sustained rate is, and 5 is also the floor that keeps a 3-token weighted call
+    // satisfiable (see `WEIGHT_ADDRESS_INFO` in the adapter, and `throttle`'s own capacity guard).
+    //
+    // Still open and deliberately NOT solved here: nothing ACCOUNTS for the spend. `costOf` is 0,
+    // there is no `usage` row and no budget gate — PLAN §3 ruled a Nansen-style gate out for a free
+    // vendor as costing more than it buys. That stays true until the ceiling is actually reached,
+    // at which point it becomes its own task with a measurement attached.
+    rateLimit: { capacity: 5, refillPerSec: 2 },
     requiresEnv: [],
   },
   {

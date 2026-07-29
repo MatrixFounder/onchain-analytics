@@ -8,6 +8,7 @@ import { registerNewPairsTool } from './tools/new-pairs.js';
 import { registerProtocolTvlTool } from './tools/protocol-tvl.js';
 import { registerSmartMoneyFlowsTool } from './tools/smart-money-flows.js';
 import { registerEntityLabelTool } from './tools/entity-label.js';
+import { registerTokenHoldersTool } from './tools/token-holders.js';
 import { registerTokenRiskTool } from './tools/token-risk.js';
 // TASK-006 (task 006-7): discovery + chain-level TVL. Both keyless; `onchain_list_chains` makes
 // no network call at all.
@@ -74,6 +75,10 @@ export function createServer(deps: CreateServerDeps): McpServer {
   registerListChainsTool(server, { registry });
   registerChainTvlTool(server, { registry });
   registerDexVolumeTool(server, { registry });
+  // TASK-008 follow-up — a FREE route (`['blockscout']`, `costOf: 0`), so no `budgetStore`, same as
+  // the six above. Registered here rather than with the paid block deliberately: the grouping in
+  // this function is by cost, and that is the property a reader needs at a glance.
+  registerTokenHoldersTool(server, { registry });
   // M2 (task 005-6) — `budgetStore` threaded into each context ONLY for read-only `_meta.budget`
   // visibility (this factory's own docstring above); an omitted `budgetStore` degrades the tool to
   // "works, just without `_meta.budget`" (`budget-meta.ts`'s own contract), never an error.
