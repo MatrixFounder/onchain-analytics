@@ -2,6 +2,51 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
+- 2026-07-29, **v4.6** — documentation pass (`/update-docs` after TASK-009). No design decision
+  changed; what changed is that the documents' own claims became checkable.
+
+  - **Stale counts corrected in eight places across five files** — adapters (10 → 12), MCP tools
+    (10/11 → 13) and test totals (796 → 1106) in `functional-architecture.md`, `deployment.md`,
+    `interfaces.md`, `technology-stack.md`, `system-architecture.md` and the index. All of it had
+    accumulated because TASK-007 and TASK-008 updated the section they were editing and no more.
+  - **Two mechanical gates so it cannot rot again** (WI-21): `mcp-server/test/docs-counts.test.ts`
+    compares the counts these documents state against `adapterRegistrations` and the real
+    `tools/list`, and requires every registered tool to be NAMED in §5 — a count alone would pass if
+    one tool were swapped for another, and TASK-008's actual failure was a tool with no entry at all.
+    `core/test/ttl-coverage.test.ts` requires an EXPLICIT TTL row for every routed capability; the
+    silent fall-through to `DEFAULT_TTL_SECONDS` has happened twice and was caught by review both
+    times. Both were mutation-checked rather than assumed to work.
+  - **Historical statements are deliberately out of scope.** The gates read only present-tense
+    sentences: "M1 shipped nine adapters" is true forever, and `version-history.md` is a log of what
+    past versions said. A gate that rewrote history to match today's counts would be worse than none.
+  - `eval/README.md`'s "Free providers only" paragraph existed **twice**, in two wordings, and both
+    copies still listed the five M1 providers after two free adapters had been added. Merged into one.
+    A fact stated twice is a fact that gets updated once.
+
+- 2026-07-29, **v4.5** — TASK-009 `btc-supply-independent-verification` (research track A-3): the
+  twelfth adapter `blockchain-info`, capability `chain.supply` on `bitcoin`, the tool
+  `onchain_chain_supply`, and a reference-source axis in the eval. Three findings from the live
+  keyless probe of 2026-07-29, each of which changed the design:
+
+  - **The vendor's two supply surfaces are two different quantities, both correct** (§3.2/§4.1).
+    `/stats.totalbc` sits at an INTEGER number of block subsidies past the halving boundary — it is
+    the formula; `/q/totalbc` sits at a FRACTIONAL one, so it cannot be a stale copy of the formula
+    and is instead the actually-claimed supply. The gap is unclaimed coinbase subsidy (~29–32 BTC,
+    0.00016%). The task text prescribed `/q/*` "for emission"; that would have served one quantity
+    under the other's name, at an error no reader could see.
+  - **🔴 Checking supply against the halving formula is a tautology** (§3.2). It matched bit-exactly
+    at both probed heights and will keep matching while the vendor computes it the same way. The
+    only independently refutable value is the block **height**, so the cross-check compares heights
+    against a second unrelated vendor and lets the deterministic formula carry that into supply.
+  - **The delta is counted in blocks of subsidy, never in percent** (§5.1.5). One block is
+    0.000016%; a full day of vendor staleness is 0.0023%. On any percentage scale a human would
+    choose, a real failure and a rounding error look identical.
+
+  Also: `mempool.space` was deliberately NOT adopted as an adapter — a source the engine answers
+  from cannot be the independent check on that answer, and its wider surface has no consumer. The
+  index's own counts were corrected in the same pass (ten adapters → twelve, eleven tools →
+  thirteen): TASK-008 had updated §3.2 but not the index or §5.
+
 - 2026-07-27, **v4.4** — TASK-007 `defillama-dex-volumes`: the free DEX-volume tier (research track
   A-1). Three design decisions, each forced by a live keyless probe run the same day rather than by
   the research write-up:

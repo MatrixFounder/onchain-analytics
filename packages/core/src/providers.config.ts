@@ -104,6 +104,14 @@ export const routes: CapabilityRoute[] = [
       }),
   },
   { capability: 'token.risk', adapterIds: ['nansen'] },
+  // R-82 (TASK-009) — BTC supply, keyless and free. The narrowest route in this table: one adapter,
+  // one chain.
+  //
+  // `mempool.space` serves the same subject and is deliberately ABSENT — from this route, from
+  // `adapterRegistrations` below, and from every allowlist. It is the eval's independent reference,
+  // and a source the engine answers from cannot be the check on that answer. Adding it here would
+  // quietly delete the only thing that makes the cross-check mean anything.
+  { capability: 'chain.supply', adapterIds: ['blockchain-info'] },
 ];
 
 /**
@@ -278,5 +286,25 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // because "under all four" is what the requirement says and this is not that.
     rateLimit: { capacity: 15, refillPerSec: 10 },
     requiresEnv: ['NANSEN_API_KEY'],
+  },
+  // 12th entry — TASK-009 (R-81), keyless and secret-free. `requiresEnv` is empty not by grace (as
+  // with `blockscout`, where a key exists but is not yet enforced) but because the vendor offers no
+  // key for these surfaces at all.
+  //
+  // ONE host: `blockchain.info` and `api.blockchain.info` were measured serving both `/q/*` and
+  // `/stats` identically (2026-07-29, HTTP 200 each). A second entry would widen the set of hosts a
+  // misbehaving endpoint can redirect us to — `safeFetch` re-checks every hop against this list —
+  // and buy nothing, which is the L-4 lesson TASK-008 recorded the hard way.
+  //
+  // The limiter is DEFENSIVE and must not be cited as a measured ceiling: the vendor publishes no
+  // rate limit and sends no `RateLimit-*` or `Retry-After` header, so there is nothing to calibrate
+  // against. Five rapid probes returned 200 and that is the whole of what we know. One call per
+  // second is far under anything plausible and still far above what this capability needs — the
+  // value it serves changes once per ten minutes, which is also its TTL.
+  {
+    id: 'blockchain-info',
+    hosts: ['blockchain.info'],
+    rateLimit: { capacity: 5, refillPerSec: 1 },
+    requiresEnv: [],
   },
 ];

@@ -12,7 +12,8 @@
 // network. No injected fetch, no fixture registry, no internal imports: if it passes here it works
 // for a client, which is the only claim worth making.
 //
-// SCOPE. Free/keyless providers only: DeFiLlama, CoinGecko, DexScreener, rpc-evm, rpc-solana.
+// SCOPE. Free/keyless providers only: DeFiLlama, CoinGecko, DexScreener, rpc-evm, rpc-solana,
+// Blockscout, blockchain-info.
 // The three Nansen-backed tools are excluded because calling them spends credits — an eval that
 // bills you every run will be turned off, and a monitor that is off is worse than no monitor.
 //
@@ -161,10 +162,83 @@ async function callTool(server, name, args) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ── reference sources (TASK-009, R-88) ───────────────────────────────────────────────────────────
+//
+// A source the ENGINE does not use, fetched directly here so an answer can be checked against
+// something with no shared cause. This is the ONE place that knows how to do it; every future
+// source is a row in `probes.json`.
+//
+// Not routed through `safeFetch`: this file is a developer script, deliberately outside `pnpm test`
+// and outside `dist/`, so nothing an agent or a client can reach ever executes it. What replaces the
+// gate is that the URL is not computed — it comes from a reviewed data file and must be `https`.
+const REFERENCE_TIMEOUT_MS = 10_000;
+/** ~1 KB is three orders of magnitude above any plausible reference body (the BTC tip is 6 bytes). */
+const REFERENCE_MAX_BYTES = 4096;
+
+/** Reads one value out of a reference response per the `parse` mode declared in the data file. */
+function parseReference(spec, text) {
+  if (spec.parse === 'integer') {
+    const body = text.trim();
+    if (!/^\d{1,32}$/.test(body)) {
+      // A text/plain surface returns an error PAGE with status 200 often enough that "it answered"
+      // proves nothing. Describe the body, never quote it.
+      throw new Error(`expected a plain integer, got string(length=${body.length})`);
+    }
+    return Number(body);
+  }
+  if (spec.parse === 'json') {
+    let doc;
+    try {
+      doc = JSON.parse(text);
+    } catch {
+      throw new Error(`expected JSON, got string(length=${text.length})`);
+    }
+    let cursor = doc;
+    for (const key of spec.path ?? []) {
+      cursor = cursor?.[key];
+    }
+    if (typeof cursor !== 'number' || !Number.isSafeInteger(cursor)) {
+      throw new Error(`${(spec.path ?? []).join('.')} is not a safe integer`);
+    }
+    return cursor;
+  }
+  throw new Error(`unknown parse mode '${spec.parse}'`);
+}
+
+/**
+ * Fetches every declared reference source. A failure here is never a verdict about a provider —
+ * it is our own apparatus being unavailable, so it is reported as such and the dependent
+ * cross-check degrades to `no-probe`.
+ */
+async function loadReferenceSources(specs) {
+  const loaded = {};
+  for (const [name, spec] of Object.entries(specs ?? {})) {
+    const started = Date.now();
+    try {
+      if (!String(spec.url).startsWith('https://')) {
+        throw new Error('reference URLs must be https');
+      }
+      const response = await fetch(spec.url, {
+        signal: AbortSignal.timeout(REFERENCE_TIMEOUT_MS),
+        headers: { accept: 'text/plain, application/json' },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const text = (await response.text()).slice(0, REFERENCE_MAX_BYTES);
+      loaded[name] = { ok: true, value: parseReference(spec, text), ms: Date.now() - started };
+    } catch (err) {
+      loaded[name] = { ok: false, error: String(err.message ?? err), ms: Date.now() - started };
+    }
+  }
+  return loaded;
+}
+
 // ── run ──────────────────────────────────────────────────────────────────────────────────────────
 async function main() {
   const server = startServer();
   const results = [];
+  // No initializer: `report`'s own default covers the path where the run throws before the sources
+  // are loaded, so seeding `{}` here would be an assignment nothing ever reads.
+  let references;
   const record = (chain, capability, tool, outcome) =>
     results.push({ chain, capability, tool, ...outcome });
 
@@ -192,6 +266,26 @@ async function main() {
           .map((s) => s.trim())
           .filter(Boolean)
       : Object.keys(probes.chains);
+
+    // Fetched once, before the matrix: every cross-check that needs an independent second opinion
+    // reads from here rather than issuing its own call per chain.
+    references = await loadReferenceSources(probes.referenceSources);
+    // A reference that did not answer is OUR apparatus failing, not a provider defect — so it gets
+    // a `no-probe` row of its own (out of the failure count) rather than degrading the tool it was
+    // supposed to check. Recorded per reference so a silently missing second opinion is visible;
+    // otherwise the cross-check simply stops running and the report looks exactly as green as a run
+    // where it ran and passed.
+    for (const [name, ref] of Object.entries(references)) {
+      if (!ref.ok) {
+        record('—', `reference:${name}`, '—', {
+          verdict: 'no-probe',
+          ms: ref.ms,
+          problems: [
+            `reference source unavailable (${ref.error}) — cross-checks using it did not run`,
+          ],
+        });
+      }
+    }
 
     for (const chain of selected) {
       const probe = probes.chains[chain];
@@ -238,6 +332,14 @@ async function main() {
           ...(tool === 'onchain_wallet_balances'
             ? crossChecks.nativeSymbol(registrySymbol, outcome.structured)
             : []),
+          // TASK-009: the only cross-check that consults a source outside the engine entirely.
+          ...(tool === 'onchain_chain_supply'
+            ? crossChecks.supplyVsConsensus(
+                outcome.structured,
+                references,
+                probes.crossChecks?.supplyVsConsensus,
+              )
+            : []),
         ];
         const merged = cross.length
           ? {
@@ -259,11 +361,11 @@ async function main() {
     server.stop();
   }
 
-  report(results, server.stderr);
+  report(results, server.stderr, references);
 }
 
 // ── report ───────────────────────────────────────────────────────────────────────────────────────
-function report(results, stderrLines) {
+function report(results, stderrLines, references = {}) {
   const ICON = {
     ok: '✅',
     degraded: '⚠️ ',
@@ -319,6 +421,19 @@ function report(results, stderrLines) {
     console.log('\n  Untested — no probe input, or no eval case wired at all:');
     for (const n of noProbe)
       console.log(`   ? ${n.chain}/${n.capability}: ${n.problems.join('; ')}`);
+  }
+  // Printed every run, with the VALUE, not just "ok". A diagnostic nobody reads is not a
+  // diagnostic: a cross-check that silently agreed and one that never ran look identical in a
+  // pass/fail column, and only the number distinguishes them.
+  if (Object.keys(references).length > 0) {
+    console.log('\n  Independent reference sources (not used by the engine):');
+    for (const [name, ref] of Object.entries(references)) {
+      console.log(
+        ref.ok
+          ? `   · ${name} = ${ref.value} (${ref.ms}ms)`
+          : `   ? ${name} unavailable: ${ref.error}`,
+      );
+    }
   }
   // Printed every run, unconditionally: an exclusion nobody is reminded of is indistinguishable
   // from an oversight, and this is the list that decides what the eval is allowed not to cover.

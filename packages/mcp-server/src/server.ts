@@ -16,6 +16,8 @@ import { registerListChainsTool } from './tools/list-chains.js';
 import { registerChainTvlTool } from './tools/chain-tvl.js';
 // TASK-007 (task 007-6): free DEX volume, same keyless `defillama` adapter as `chain.tvl`.
 import { registerDexVolumeTool } from './tools/dex-volume.js';
+// TASK-009 (task 009-5): free BTC supply, keyless `blockchain-info` adapter.
+import { registerChainSupplyTool } from './tools/chain-supply.js';
 
 /**
  * Dependencies passed explicitly into the server factory (reviewer note 1: version is never
@@ -79,6 +81,11 @@ export function createServer(deps: CreateServerDeps): McpServer {
   // the six above. Registered here rather than with the paid block deliberately: the grouping in
   // this function is by cost, and that is the property a reader needs at a glance.
   registerTokenHoldersTool(server, { registry });
+  // TASK-009 — also free (`['blockchain-info']`, `costOf: 0`), so it joins the free block above the
+  // paid one. Registered in the SAME task that adds the route: coverage is derived from
+  // `routes × chainSupport`, not from the tool list, so a route without a tool advertises a
+  // capability nothing can call — the defect TASK-008 had to come back and fix.
+  registerChainSupplyTool(server, { registry });
   // M2 (task 005-6) — `budgetStore` threaded into each context ONLY for read-only `_meta.budget`
   // visibility (this factory's own docstring above); an omitted `budgetStore` degrades the tool to
   // "works, just without `_meta.budget`" (`budget-meta.ts`'s own contract), never an error.

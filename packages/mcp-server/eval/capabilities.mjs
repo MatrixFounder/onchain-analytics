@@ -54,6 +54,14 @@ export const CAPABILITY_TOOLS = [
     tool: 'onchain_token_holders',
     args: (c, p) => (p.token ? { chain: c, tokenAddress: p.token } : null),
   },
+  {
+    // TASK-009 — free and keyless. Needs no curated probe data: the tool takes a chain and nothing
+    // else, so every chain declaring the capability is exercised automatically. Today that is
+    // `bitcoin` alone, which is also the point of the coverage assertions around it.
+    capability: 'chain.supply',
+    tool: 'onchain_chain_supply',
+    args: (c) => ({ chain: c }),
+  },
 ];
 
 /** Capabilities deliberately NOT exercised, each with the reason it is out of scope. */

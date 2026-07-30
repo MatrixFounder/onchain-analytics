@@ -1,6 +1,10 @@
 {
   "$comment": "RF-2 — provenance manifest. Each entry pins the sha256 of a file whose silent edit would invalidate a recorded, live-verified assertion. Verified by scripts/verify-provenance.mjs on every test run (working tree) and by .githooks/pre-commit (index). Re-baseline ONLY with --update, in the same commit as the change, so a reviewer sees both halves.",
   "files": {
+    "docs/onchain-analytics/raw/blockchain-info-stats-2026-07-29.json": {
+      "sha256": "46f1ddb5f34c954c97e90a0c85ac753a3be00eb3e6f68ad8f19134144499f62e",
+      "note": "TASK-009 — live keyless GET https://api.blockchain.info/stats (2026-07-29). Two facts rest on it. (1) It is the EMISSION source: bitcoinEmissionSat(n_blocks_total) reproduces totalbc bit-exactly, which is what pins n_blocks_total as a block COUNT rather than a tip height — a reading error of one block is 3.125 BTC = 0.000016% of supply and invisible to any plausibility check. (2) Together with the plaintext snapshot beside it, it is the evidence that /stats.totalbc sits at an INTEGER number of subsidies past the halving boundary while /q/totalbc does not. Re-recording it silently would turn a measurement back into an assumption."
+    },
     "docs/onchain-analytics/raw/blockscout-addrinfo-2026-07-28.json": {
       "sha256": "43f6a58021e53fdedf0b1ad94576e56d6bb2769552f890f53d2dc1210e2900e6",
       "note": "Live keyless probe of GET /v1/get_address_info (USDC, chain 1, 2026-07-28). Carries the instructions[] array of LLM-directed imperatives with the caller address interpolated verbatim — the R-68e surface this task exists to close. basic_info.metadata is null here, which is why labels are read from data.metadata.tags."
@@ -16,6 +20,10 @@
     "docs/onchain-analytics/raw/blockscout-labeled-2026-07-28.json": {
       "sha256": "dbc126a08d9b227ef5ca852024e08618c5a5096c8a94d47ce9643442a3c4c944",
       "note": "Live keyless probe of GET /v1/get_address_info (Binance Hot Wallet, chain 1, 2026-07-28). The address WITH labels: proves they live at data.metadata.tags[], not basic_info.metadata/name, both of which are null even here."
+    },
+    "docs/onchain-analytics/raw/btc-crosscheck-plaintext-2026-07-29.json": {
+      "sha256": "c0589d9a0122668e46887468da9ccae26fe1c79653b93419516333d616b97872",
+      "note": "TASK-009 — coherent live snapshot of three plain-text surfaces (2026-07-29): blockchain.info /q/totalbc, /q/getblockcount and mempool.space /blocks/tip/height, taken back-to-back so they are comparable. It carries the decisive measurement of the task: /q/totalbc is 120092.8 subsidies past the halving boundary — FRACTIONAL, so it cannot be the halving formula nor a stale copy of one (a stale copy sits at an integer offset), and is therefore actually-claimed supply rather than emission. The whole two-field design of ChainSupply rests on that, and the task text it overrode prescribed the opposite."
     },
     "docs/onchain-analytics/raw/defillama-dex-echo-probe-2026-07-28.json": {
       "sha256": "0c2ebb9ab0534b594bc9a09454ae9c0a6ed1ff9b2405b4a4e64024fcecc2f6d9",

@@ -151,12 +151,12 @@ flowchart LR
     NORMCHAIN["chain/address normalize"]
     SSRF["SSRF host-allowlist gate<br/>per-adapter allowlist"]
     RATE["per-provider rate limit"]
-    AD["Provider Adapters + Capability Registry<br/>D4: id+capabilities+costOf+fetch+normalize<br/>10 adapters registered"]
+    AD["Provider Adapters + Capability Registry<br/>D4: id+capabilities+costOf+fetch+normalize<br/>12 adapters registered"]
     NORM["normalize() → canonical zod<br/>D5: Token/Wallet/Balance/Pool/OHLCV/Snapshot"]
     CACHE["Cache: lru-cache + SQLite DATA_DIR (D6)<br/>+ budget guard: usage ledger, daily ceiling (M2)"]
     PGHIST["pg-history adapter (optional, R-12)<br/>inside the Registry, not beside it"]
     SCHED["croner + job log — local/embedded profile only<br/>on a dedicated server the schedule lives in n8n (D8)"]
-    MCP["MCP server @onchain-intel/mcp-server — 10 tools<br/>ping · get_token · wallet_balances · new_pairs · protocol_tvl<br/>list_chains · chain_tvl · smart_money_flows · entity_label · token_risk"]
+    MCP["MCP server @onchain-intel/mcp-server — 13 tools<br/>ping · get_token · wallet_balances · new_pairs · protocol_tvl<br/>list_chains · chain_tvl · dex_volume · token_holders · chain_supply<br/>smart_money_flows · entity_label · token_risk"]
   end
 
   subgraph N8N["Autonomous loop — n8n + Supabase Postgres, dev VM<br/>snapshotter now; rule scheduling + alerts at M3"]

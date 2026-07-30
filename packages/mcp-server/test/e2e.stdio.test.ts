@@ -134,13 +134,25 @@ describe('onchain_ping — stdio E2E', () => {
     // spawn, which is exactly the live-network dependency R-21 forbids (no NANSEN_API_KEY is set
     // for this spawned child either — task 005-6's own "no ambient key in any test" rule).
     // `test/e2e.inprocess.test.ts` (InMemoryTransport) is what actually exercises all 7 tools.
-    'tools/list contains exactly 12 tools: onchain_ping + 4 M1 + 3 M2 + 2 TASK-006 + 1 TASK-007 + 1 TASK-008 (by name)',
+    'tools/list contains exactly 13 tools: onchain_ping + 4 M1 + 3 M2 + 2 TASK-006 + 1 TASK-007 + 1 TASK-008 + 1 TASK-009 (by name)',
     async () => {
       const c = await connect();
       const { tools } = await c.listTools(undefined, { timeout: CALL_TIMEOUT_MS });
-      expect(tools).toHaveLength(12);
+      // WI-20: this is normally the FIRST of four independent guards to fail when a tool is added,
+      // and the last one only fires after a full build. Naming all four here turns three discovery
+      // cycles into one lookup — they stay independent on purpose (each protects a different
+      // property), so the fix is a cross-reference, not a merge.
+      const ADD_A_TOOL =
+        'A tool was added or removed. FOUR independent inventories must agree, and each fails in ' +
+        'its own gate:\n' +
+        '  1. this list (pnpm test)\n' +
+        '  2. eval/capabilities.mjs -> CAPABILITY_TOOLS, or CAPABILITY_EXCLUSIONS ' +
+        '(test/eval-capability-coverage.test.ts)\n' +
+        '  3. scripts/smoke-dist.mjs -> expectedNames (pnpm smoke:dist — runs AFTER test and build)\n' +
+        '  4. docs/architectures/interfaces.md §5 must NAME the tool (test/docs-counts.test.ts)';
+      expect(tools, ADD_A_TOOL).toHaveLength(13);
       const names = tools.map((tool) => tool.name).sort();
-      expect(names).toStrictEqual(
+      expect(names, ADD_A_TOOL).toStrictEqual(
         [
           'onchain_get_token',
           'onchain_new_pairs',
@@ -158,6 +170,9 @@ describe('onchain_ping — stdio E2E', () => {
           // TASK-008 follow-up — free and keyless like `onchain_dex_volume`, so it is present under
           // spawn on a stock install with no env at all.
           'onchain_token_holders',
+          // TASK-009 task 009-5 — keyless and secret-free (the vendor offers no key at all), so it
+          // too is present under spawn on a stock install.
+          'onchain_chain_supply',
         ].sort(),
       );
     },

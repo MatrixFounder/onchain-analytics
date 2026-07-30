@@ -19,8 +19,30 @@
     "crossChecks): registry-vs-provider, chain echo, and registry nativeSymbol vs what the RPC reports.",
     "",
     "Slugs and addresses here are VERIFIED AGAINST THE LIVE PROVIDERS, not recalled: a wrong one shows up",
-    "as a provider error and would blame the server for a defect in the test data."
+    "as a provider error and would blame the server for a defect in the test data.",
+    "",
+    "referenceSources (TASK-009): a source the ENGINE does not use, fetched directly by the eval to check an",
+    "answer against something with no shared cause. Adding one is a config edit here — run.mjs reads url/parse",
+    "generically. Rules: https only; the host lives in this reviewed file, never computed at run time; and a",
+    "reference that fails to answer yields `no-probe`, never a provider failure, because it is OUR test",
+    "apparatus and not the vendor under test."
   ],
+  "referenceSources": {
+    "btcTipHeight": {
+      "url": "https://mempool.space/api/blocks/tip/height",
+      "parse": "integer",
+      "why": "Independent of blockchain-info in vendor, infrastructure and funding. It is the only value in the BTC supply answer a second source can genuinely contradict: re-deriving emission from the halving schedule agrees with blockchain.info by construction, because the vendor computes it the same way. mempool.space is deliberately NOT an engine adapter — a source we answer from cannot be the check on that answer.",
+      "verifiedAt": "2026-07-29",
+      "verifiedNote": "HTTP 200, content-type text/plain, body '960103'; 8 rapid sequential probes all 200, no RateLimit-* header of any kind"
+    }
+  },
+  "crossChecks": {
+    "supplyVsConsensus": {
+      "reference": "btcTipHeight",
+      "maxDeltaBlocks": 6,
+      "why": "The delta is counted in BLOCKS OF SUBSIDY, never in percent: one block is 0.000016% of supply, so an off-by-one and a full day of staleness (144 blocks, 0.0023%) both round to zero on any percentage scale a human would pick. 6 blocks is about an hour. MEASURED skew across three samples on 2026-07-29 was -2..0 blocks — blockchain.info's /stats is an aggregate with its own refresh cadence, and a block can be found between the two calls; the tool's 600s TTL can add one more. The BOUND itself is DEFENSIVE, not measured, and must not be cited as a vendor ceiling — it lives here as data so it can be retuned without a release."
+    }
+  },
   "chains": {
     "ethereum": {
       "family": "evm",

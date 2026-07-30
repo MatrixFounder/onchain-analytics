@@ -3,11 +3,11 @@
 | Field             | Value                                                                                                                                                                                                                                                                                                                                             |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Document type** | Living document — updated **in place**, never archived per task                                                                                                                                                                                                                                                                                   |
-| **Delivered**     | M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md)) · M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)) · M2 ✅ ([task-005](tasks/task-005-m2-alpha-paid.md)) · TASK-006 `universal-chain-registry` ✅ ([task-006](tasks/task-006-universal-chain-registry.md)) · TASK-007 `defillama-dex-volumes` ✅ ([TASK.md](TASK.md)) — 2026-07-27 |
+| **Delivered**     | M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md)) · M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)) · M2 ✅ ([task-005](tasks/task-005-m2-alpha-paid.md)) · TASK-006 `universal-chain-registry` ✅ ([task-006](tasks/task-006-universal-chain-registry.md)) · TASK-007 `defillama-dex-volumes` ✅ ([task-007](tasks/task-007-defillama-dex-volumes.md)) · TASK-008 `blockscout-free-tier` ✅ ([task-008](tasks/task-008-blockscout-free-tier.md)) — 2026-07-29 · TASK-009 `btc-supply-independent-verification` ✅ ([TASK.md](TASK.md)) — 2026-07-29 |
 | **ADR**           | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20, decisions D1–D12                                                                                                                                                                                                                            |
 | **Data schema**   | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable conventions, applied here to the cache DB and the `usage` ledger                                                                                                                                                                                                     |
 | **Roadmap**       | [ROADMAP.md](onchain-analytics/ROADMAP.md) — phases M0–M6                                                                                                                                                                                                                                                                                         |
-| **Updated**       | 2026-07-27, **v4.4** — test suite **911** (core 713 + mcp-server 198). Full changelog: [architectures/version-history.md](architectures/version-history.md)                                                                                                                                                                                       |
+| **Updated**       | 2026-07-29, **v4.6** — doc pass: counts corrected in 8 places and made checkable by two gates. Full changelog: [architectures/version-history.md](architectures/version-history.md)                                                                                                                                                                                       |
 | **Format**        | **Index mode** (skill `architecture-format-core`): section bodies live in [docs/architectures/](architectures/); this file holds the table of contents, one-line summaries, and the sections small enough to keep inline                                                                                                                          |
 
 ---
@@ -44,10 +44,10 @@ DexScreener / DeFiLlama / RPC / Dash DAPI / …) → normalization into canonica
 credit budget → an aggregating MCP server of our own. The stack and its twelve decisions (D1–D12)
 are **Accepted** in ADR-001; this document does not revisit them, it makes them concrete.
 
-**What the engine is today** — ten provider adapters behind one hot-swappable interface, a chain
-registry of 458 networks, a two-level cache, an SSRF gate and per-provider rate limiting, a credit
-budget guard on the single paid provider, and eleven workflow-oriented MCP tools served over local
-stdio.
+**What the engine is today** — twelve provider adapters behind one hot-swappable interface (eleven
+of them serving something; `dune` is a config stub), a chain registry of 458 networks, a two-level
+cache, an SSRF gate and per-provider rate limiting, a credit budget guard on the single paid
+provider, and thirteen workflow-oriented MCP tools served over local stdio.
 
 ### 1.1. Delivered scope
 
@@ -70,6 +70,16 @@ stdio.
   list rather than from `vendors.defillama` — which covers 458 chains for TVL but only 274 for
   volume. `safeFetch`'s response-size cap became real for responses with no `Content-Length`
   (R-47(1)), because the host this tier talks to sends none.
+- **TASK-008** — the free explorer tier: the eleventh adapter `blockscout` over the keyless REST
+  facade, `token.holders` retargeted off the dead `dune` stub and `entity.labels` put in front of
+  paid Nansen, plus `onchain_token_holders`. It is where the vendor free text addressed **at a
+  language model** (`instructions`) had to be dropped rather than truncated, and where a route
+  learned `isSatisfying` so a truthful "I have nothing" stops shadowing the provider behind it.
+- **TASK-009** — independent verification of BTC numbers: the twelfth adapter `blockchain-info`
+  (keyless), `chain.supply` on `bitcoin` with `onchain_chain_supply`, and a **reference-source axis
+  in the eval** — a second, unrelated vendor declared as DATA in `probes.json`. Its finding shaped
+  the design: checking supply against the halving formula is a tautology, because the vendor derives
+  it the same way; only the block **height** can be independently contradicted.
 
 ### 1.2. Standing constraints
 
@@ -126,7 +136,7 @@ coverage-matrix definition, and the two failure types that must never be merged.
 
 ## 5. Interfaces
 
-Contracts for all ten MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
+Contracts for all thirteen MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
 `ChainInputSchema` contract shared by every chain-accepting tool, the public API of
 `packages/core`, and the provider integration table that is the source of the per-adapter SSRF
 allowlist. → [architectures/interfaces.md](architectures/interfaces.md)

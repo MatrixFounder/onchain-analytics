@@ -33,7 +33,7 @@ checkout(SHA-pin) → corepack enable (pnpm) → setup-node@22 (pnpm store cache
   → smoke:dist           # ping-only (rationale in §3.2)
 ```
 
-Fixtures and mocks (D11) keep the entire test volume **network-independent**: 10 adapters, the
+Fixtures and mocks (D11) keep the entire test volume **network-independent**: 12 adapters, the
 chain registry and coverage matrix, the cache, the SSRF gate, rate limiting, the budget gate, and
 the tools exercised through **two** E2E suites. No secret is needed in CI (R-21:
 `DUNE_API_KEY` / `COINGECKO_API_KEY` / `ONCHAIN_PG_URL` / `NANSEN_API_KEY` are read only by the
@@ -81,5 +81,5 @@ limits: changing a provider's priority or adding a host to the allowlist edits o
    key degrade explicitly (UC-1 alt, R-24).
 5. Attach to Claude Code as a local stdio MCP server, unchanged since M0
    (`node packages/mcp-server/dist/index.js` or `tsx packages/mcp-server/src/index.ts`).
-6. Call any of the 10 tools → a canonical response; a repeat call with the same normalized
+6. Call any of the 13 tools → a canonical response; a repeat call with the same normalized
    arguments within the TTL → `_meta.cache.status === 'hit'` (UC-3, ROADMAP exit criterion).

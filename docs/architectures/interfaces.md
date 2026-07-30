@@ -2,13 +2,15 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. External API — 11 MCP tools
+### 5.1. External API — 13 MCP tools
 
 `onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
-Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), and one
-free DEX-volume tool with TASK-007 (§5.1.4).
+Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), one free
+DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (`onchain_token_holders`
+— `{ chain, tokenAddress }` → `TokenHolders`, capability `token.holders`), and one free BTC-supply
+tool with TASK-009 (§5.1.5).
 
-**The `chain` parameter, stated once.** Nine of the eleven tools take a chain, and every one of them
+**The `chain` parameter, stated once.** Eleven of the thirteen tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
 resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
 `ethereum` and `solana` are aliases and stay valid indefinitely. What a tool can actually serve is
@@ -110,7 +112,7 @@ reserved.
 
 `tokenAddress`/`query` reuse the same `.max()` bounds and the same
 `superRefine`/`isValidAddress` idiom as `onchain_get_token` above — reused, not reinvented.
-`onchain_entity_label` has the only compound `superRefine` of the ten tools: **at least one** of
+`onchain_entity_label` has the only compound `superRefine` of the thirteen tools: **at least one** of
 `query`/`tokenAddress` is required (otherwise there is nothing to search for), and `tokenAddress`
 is mandatory when `exhaustive: true`.
 
@@ -129,7 +131,7 @@ It is present **only** when the capability is paid AND actually executed (`_meta
 `_meta.cache.ageMs` on a miss (§3.2).
 
 The read does **not** go through `CapabilityRegistry.resolve()`'s return type: that type is shared
-by all ten adapters and must not grow for the sake of one paid provider. The three tool handlers
+by all twelve adapters and must not grow for the sake of one paid provider. The three tool handlers
 instead read `budgetStore.getUsage('nansen', dayBucketMs(Date.now()))` with a **separate** SQLite
 SELECT after `registry.resolve()` has returned — purely for display, never part of the gate decision
 (which has already happened inside `nansen.fetch()`, §3.2). `BudgetStore` is injected into those
@@ -231,7 +233,52 @@ requested 90 days is the tool doing its job, not a truncation. `truncated.series
 hard cap was hit — the request asked for more points than the transport or the point cap will carry —
 so the flag keeps meaning "you did not get what you asked for" instead of degrading into decoration.
 
-**The `chain` parameter contract (R-50), shared by all nine chain-taking tools:**
+#### 5.1.5 The BTC-supply tool and the eval's reference axis (TASK-009) — free
+
+```jsonc
+// onchain_chain_supply — how much of a chain's native asset exists. Keyless, 0 credits.
+// { chain: ChainInput }                     // covered on `bitcoin` only
+// → {
+//     chain, symbol, decimals,              // decimals = 8, a CONSENSUS constant (the registry's
+//                                           // nativeDecimals for bitcoin is null)
+//     emissionRaw: string,                  // satoshi — what the halving schedule has released
+//     emissionBtc: number,                  //   lossy projection, for charts/comparison only
+//     circulatingRaw: string,               // satoshi — what miners actually claimed
+//     circulatingBtc: number,
+//     blockCount: number,                   // the height the emission figure is consistent with
+//     source: "blockchain-info", fetchedAt
+//   }
+// Capability: chain.supply
+```
+
+**Two supply numbers, because there are two facts.** `emission` and `circulating` differ by the
+coinbase subsidy miners never claimed (~29–32 BTC, 0.00016%). Serving either one under the other's
+name would be a fabrication invisible to any reader. §3.2 records the measurement that separates
+them, including the test that settles it: the formula-derived figure sits at an INTEGER number of
+subsidies past the halving boundary, the claimed one at a fractional one.
+
+**🔴 The cross-check compares HEIGHTS, not supply (R-89).** Re-deriving `emission` from the halving
+schedule can never contradict the vendor, because the vendor derives it the same way — measured
+bit-exact at both probed heights. The one thing an independent source can genuinely refute is the
+**block height**, which the deterministic formula then propagates into supply. So the eval fetches
+`mempool.space`'s tip height as a second, unrelated vendor and grades the difference **in blocks of
+subsidy** — never in percent, where one block is 0.000016% and a full day of vendor staleness still
+rounds to zero.
+
+**`mempool.space` is deliberately NOT an adapter.** It is the reference, and a source the engine
+answers from cannot be the independent check on that answer. The vendor's wider surface (hashrate,
+difficulty adjustment, recommended fees, mining pools) has no consumer today, and a capability with
+no consumer is the "advertised everywhere, served nowhere" defect TASK-008 spent a task removing.
+
+**The reference source is DATA (R-88).** `eval/probes.json` gains a `referenceSources` block — url,
+how to read the body, why this source, when it was last verified — and `eval/run.mjs` learns to
+fetch such a source **once, generically**. Adding the next one is a config edit. Two rules keep the
+axis honest, both inherited from the eval's existing doctrine: only `https`, with the host living in
+the reviewed data file rather than being computed at run time; and a reference source that fails to
+answer yields `no-probe`, **never** a provider failure — an eval that scores its own missing test
+data as a vendor defect is lying, and a report that cries wolf stops being read.
+
+**The `chain` parameter contract (R-50), shared by all eleven chain-taking tools:**
 
 ```ts
 // One shared import; zero chain literals anywhere in mcp-server:

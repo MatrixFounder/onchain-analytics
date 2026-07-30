@@ -1,0 +1,27 @@
+{
+  "$comment": "TASK-009 (A-3) live keyless probe, 2026-07-29. One coherent snapshot of the three plain-text surfaces taken back-to-back with docs/onchain-analytics/raw/blockchain-info-stats-2026-07-29.json. Records the measured DISAGREEMENT between two surfaces of the SAME vendor, which is why the adapter reads /stats and not /q/totalbc.",
+  "recordedAt": "2026-07-29T12:09:55Z",
+  "probes": [
+    {
+      "url": "https://blockchain.info/q/totalbc",
+      "http": 200,
+      "contentType": "text/plain; charset=utf-8",
+      "body": "2006279000000000",
+      "unit": "satoshi"
+    },
+    {
+      "url": "https://blockchain.info/q/getblockcount",
+      "http": 200,
+      "contentType": "text/plain; charset=utf-8",
+      "body": "960103",
+      "unit": "blocks"
+    },
+    {
+      "url": "https://mempool.space/api/blocks/tip/height",
+      "http": 200,
+      "contentType": "text/plain",
+      "body": "960103",
+      "unit": "block height"
+    }
+  ]
+}

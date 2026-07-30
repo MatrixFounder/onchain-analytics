@@ -45,14 +45,15 @@ disagree:
   is neither wired into `CAPABILITY_TOOLS` nor recorded in `CAPABILITY_EXCLUSIONS`. That half matters
   more, because this eval is deliberately not part of CI and a tool can ship between two runs of it.
 
-**Free providers only** — DeFiLlama, CoinGecko, DexScreener, rpc-evm, rpc-solana. The three
-Nansen-backed capabilities are excluded because calling them spends credits; the exclusion is data
-(`CAPABILITY_EXCLUSIONS`, printed at the end of every run) rather than an omission, because an
-exclusion nobody is reminded of is indistinguishable from an oversight.
+**Free providers only** — DeFiLlama, CoinGecko, DexScreener, rpc-evm, rpc-solana, Blockscout,
+blockchain-info. The three Nansen-backed capabilities are excluded because calling them spends
+credits: an eval that bills you every run gets turned off, and a monitor that is off is worse than no
+monitor. The exclusion is **data** (`CAPABILITY_EXCLUSIONS`, printed at the end of every run) rather
+than an omission, because an exclusion nobody is reminded of is indistinguishable from an oversight.
 
-**Free providers only** — DeFiLlama, CoinGecko, DexScreener, rpc-evm, rpc-solana. The three
-Nansen-backed tools are excluded because calling them spends credits; an eval that bills you every
-run gets turned off, and a monitor that is off is worse than no monitor.
+(This paragraph appeared twice, in two slightly different wordings, until TASK-009 merged them — and
+both copies still listed the five M1 providers after two free adapters had been added. A fact stated
+twice is a fact that will be updated once.)
 
 ## Verdicts
 
@@ -90,6 +91,40 @@ An earlier design also chained DexScreener's token address into CoinGecko. The l
 it: `new_pairs` returns `baseTokenSymbol` and never a contract address, so that chain does not exist
 and claiming to test it would have been fiction.
 
+## Reference sources — the second opinion (TASK-009)
+
+The cross-checks above all compare two things the **engine** produced. That cannot catch a vendor
+that is simply wrong, because both sides share a cause. A `referenceSources` entry in
+`probes.json` names a source the engine does **not** use, which `run.mjs` fetches directly:
+
+```jsonc
+"referenceSources": {
+  "btcTipHeight": { "url": "https://mempool.space/api/blocks/tip/height", "parse": "integer", … }
+}
+```
+
+Adding one is a **config edit** — `parse: "integer"` reads a plain-text integer, `parse: "json"`
+with a `path` reads a field out of a JSON document. Three rules keep the axis honest:
+
+- **https only, and the host lives in this file.** The URL is never computed at run time. This
+  script is outside `pnpm test` and outside `dist/`, so nothing an agent or a client can reach ever
+  runs it — that, plus a reviewed data file, is what stands in for the server's SSRF gate here.
+- **An unreachable reference is `no-probe`, never a provider failure.** It is our apparatus, not the
+  vendor under test.
+- **The value is printed every run**, not just its status. A cross-check that silently agreed and
+  one that never ran look identical in a pass/fail column.
+
+`supplyVsConsensus` is the first consumer, and it is worth knowing why it is shaped the way it is.
+Re-deriving BTC emission from the halving schedule **cannot** contradict `blockchain-info` — the
+vendor computes that field the same way, and it matched bit-exactly at both probed heights. So the
+check compares the **block height** against `mempool.space` and lets the deterministic schedule
+carry the disagreement into supply. The bound is in **blocks of subsidy** (`maxDeltaBlocks`, data,
+default 6 ≈ an hour), never in percent: one block is 0.000016% and a day of staleness is 0.0023%, so
+a percentage scale reports every real failure as rounding.
+
+`mempool.space` is deliberately not an adapter. A source the engine answers from cannot be the
+independent check on that answer.
+
 ## Maintaining `probes.json`
 
 Probe inputs are **data**: adding a chain is a config edit, never a code change. Slugs and addresses
@@ -103,12 +138,20 @@ nothing else — so every chain in the file is exercised for it automatically.
 
 ## Known-good baseline
 
-Full run, 2026-07-28 (after RF-5 wired `dex.volume.history`): **0 error, 0 degraded** — 55–57 ok, 15
-unsupported, 4 no-probe, and 0–2 rate-limited. The `ok`/`rate-limited` split moves between runs
-because CoinGecko's keyless tier throttles unpredictably; that is why `rate-limited` is a verdict of
-its own and stays out of the failure count. Exit code was 0. (The previous baseline, 2026-07-27, read
-44–45 ok / 14 unsupported / 2 no-probe — it was taken while the DEX-volume capability existed and was
-never called, which is the defect, not a change in the providers.)
+Full run, 2026-07-29 (after TASK-009 added `chain.supply` and the reference axis): **0 error, 0
+degraded** — 61 ok, 33 unsupported, 4 no-probe, 2 rate-limited, exit code 0. The reference source
+answered (`btcTipHeight = 960107`) and `bitcoin/chain.supply` agreed with it to **0 blocks**.
+
+The two `rate-limited` rows were `base/token.holders` and `polygon/token.holders` — our OWN
+defensive limiter on `blockscout` (`refillPerSec: 2`, TASK-008), not a vendor refusal. That is
+working as designed and stays out of the failure count, but it is worth knowing which side threw:
+the `ok`/`rate-limited` split moves between runs for two independent reasons now, CoinGecko's
+unpredictable keyless tier and our own deliberately conservative Blockscout bucket.
+
+(Previous baselines: 2026-07-28 read 55–57 ok / 15 unsupported / 4 no-probe — the unsupported count
+grew because two capabilities were added, and a capability the registry declines on a chain is a
+pass. 2026-07-27 read 44–45 ok / 14 unsupported / 2 no-probe, taken while the DEX-volume capability
+existed and was never called, which is the defect, not a change in the providers.)
 
 The four `no-probe` rows are stable and worth knowing. The first two are missing probe DATA; the last
 two are capabilities with no eval case at all, and they are printed precisely so that a THIRD one

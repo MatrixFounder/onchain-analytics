@@ -14,7 +14,8 @@
 // Sequence: initialize -> notifications/initialized -> tools/list -> tools/call onchain_ping.
 // Asserts (a) tools/list returns exactly the expected tool set BY NAME — onchain_ping + the 4 M1
 // tools (task 003-7) + the 3 M2 Nansen-backed paid tools (task 005-6) + the 2 discovery/chain-TVL
-// tools (TASK-006 task 006-7) + onchain_dex_volume (TASK-007 task 007-6), 11 in total; the count is
+// tools (TASK-006 task 006-7) + onchain_dex_volume (TASK-007) + onchain_token_holders (TASK-008)
+// + onchain_chain_supply (TASK-009), 13 in total; the count is
 // derived from that list rather than written twice (Q-6); (b) the call's structuredContent.version
 // matches package.json's version (read here, never hardcoded); (c) every line the child writes to
 // stdout parses as JSON
@@ -196,6 +197,7 @@ async function run() {
   // tools and TASK-007 a third, both updated the in-process suites, and this one stayed red in CI
   // because nothing local runs it (`pnpm test` does not; only the CI step after `pnpm build`).
   const expectedNames = [
+    'onchain_chain_supply',
     'onchain_chain_tvl',
     'onchain_dex_volume',
     'onchain_entity_label',
@@ -228,7 +230,10 @@ async function run() {
       `tools/list did not return exactly the ${expectedNames.length} expected tools ` +
         `(got ${actualNames.length}). Missing: ${missing.length ? missing.join(', ') : '(none)'}. ` +
         `Unexpected: ${unexpected.length ? unexpected.join(', ') : '(none)'}. ` +
-        'If a tool was added deliberately, add its name to `expectedNames` in this script.',
+        'If a tool was added deliberately, add its name to `expectedNames` in this script — and ' +
+        'to the other three inventories, none of which references the others (WI-20): ' +
+        'test/e2e.stdio.test.ts, eval/capabilities.mjs (CAPABILITY_TOOLS or ' +
+        'CAPABILITY_EXCLUSIONS), and docs/architectures/interfaces.md §5.',
     );
   }
 

@@ -102,6 +102,25 @@ signalPercentile?, lastTriggerOn?}` (`TGMIndicator`), where `score` is qualitati
   safe). Plus `source`, `fetchedAt`.
 - **Business rule:** anti-corruption layer, golden test on a fixture (R-33 acceptance).
 
+#### Entity: `ChainSupply` (TASK-009, D5 extension, R-83)
+
+- **Description:** how much of a chain's native asset exists — consumed by `onchain_chain_supply`.
+  Served for `bitcoin` only, from the keyless `blockchain-info` adapter. It is the first canonical
+  type whose subject is a **chain's monetary state** rather than a token, wallet, pool or label.
+- **Key attributes:** `chain`, `symbol`, `decimals`; `emissionRaw` and `circulatingRaw` as
+  **satoshi strings**, each with a lossy `…Btc` number projection for charts and comparison;
+  `blockCount` (the height the vendor's own emission figure is consistent with); `source`,
+  `fetchedAt`.
+- **Why two supply fields and not one:** they are different quantities and the difference is real —
+  `emission` is what the halving schedule has released, `circulating` is what miners actually
+  claimed, and ~29–32 BTC of subsidy was never claimed (§3.2, measured 2026-07-29). Collapsing them
+  would mean serving one under the other's name at a 0.00016% error — invisible, and a fabrication.
+- **Business rule:** `circulating ≤ emission` is a **consensus** invariant, not a heuristic, and is
+  enforced in `normalize()`: a response violating it is refused, never rounded into agreement.
+  Exact values stay strings and are computed through `bigint` (DB-SCHEMA §1.7); `decimals: 8` is a
+  Bitcoin consensus constant, taken from consensus rather than from the registry, whose
+  `nativeDecimals` for `bitcoin` is `null` (see OQ in `docs/TASK.md`).
+
 #### Entity: `ChainInfo` (TASK-006, R-48) — **the chain registry**
 
 - **Description:** one chain, described in full. This is **not** a canonical domain type in the D5
@@ -332,6 +351,7 @@ than a list:
 | `rpc-solana`                                         | `c.caip2 === <solana mainnet caip2>`                         |
 | `nansen`                                             | per capability — see below                                   |
 | `dash-platform` / `platform-explorer` / `pg-history` | `c.caip2 === <dash caip2>`                                   |
+| `blockchain-info`                                    | `c.caip2 === 'other:bitcoin'` — one chain, and the vendor serves exactly one |
 | `dune`                                               | unchanged — `isAvailable()` is still unconditionally `false` |
 
 A deprecated chain is covered by nothing: `covered()` refuses it before consulting any adapter.

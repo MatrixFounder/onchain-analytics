@@ -10,6 +10,7 @@ import {
   createDefillamaAdapter,
   createDexscreenerAdapter,
   createBlockscoutAdapter,
+  createBlockchainInfoAdapter,
   createDuneAdapter,
   createNansenAdapter,
   createPgHistoryAdapter,
@@ -94,6 +95,9 @@ function buildRegistry(env: Env, budgetStore: BudgetStore): CapabilityRegistry {
     // no `env` at all, so `deps.env ?? process.env` fell back to the raw process environment and the
     // one secret TASK-008 introduced was the only one bypassing `EnvSchema` (vdd-multi i2, sec M-4).
     ['blockscout', createBlockscoutAdapter({ env: toProcessEnv(env) })],
+    // TASK-009: no `env` argument, and that is the whole configuration story — this adapter has no
+    // secret to validate, because the vendor offers no key for the surfaces it reads.
+    ['blockchain-info', createBlockchainInfoAdapter()],
     ['pg-history', createPgHistoryAdapter({ env: toProcessEnv(env) })],
     ['nansen', createProductionNansenAdapter(env, budgetStore)],
   ]);

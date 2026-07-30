@@ -17,3 +17,7 @@ export { TokenRiskScoreSchema, type TokenRiskScore } from './token-risk-score.js
 // the top of this file states the rule the omission broke — no consumer imports
 // `types/<entity>.ts` directly, which only works if the barrel is complete.
 export { TokenHoldersSchema, type TokenHolders } from './token-holders.js';
+// TASK-009 (R-83) — the canonical `chain.supply` result. Exported here in the SAME task that adds
+// the type, not in a later one: the rule at the top of this file only holds if the barrel is
+// complete, and TASK-008 already paid for discovering that the hard way.
+export { ChainSupplySchema, type ChainSupply } from './chain-supply.js';

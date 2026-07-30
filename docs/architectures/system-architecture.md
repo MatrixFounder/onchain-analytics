@@ -41,8 +41,9 @@ for the M2/M3 slicing.
 - **Type:** TypeScript library package (no `bin`), consumed by `mcp-server` through a
   `workspace:*` dependency.
 - **Purpose:** canonical types, the chain registry, chain/address normalization, the Adapter +
-  Capability Registry, ten provider adapters (nine landed in M1 — two of them, `dash-platform` and
-  `dune`, interface/fixture-only — plus the paid `nansen` from M2), the two-level cache, the SSRF
+  Capability Registry, twelve provider adapters (nine landed in M1 — two of them, `dash-platform`
+  and `dune`, interface/fixture-only — plus the paid `nansen` from M2, then the free `blockscout`
+  from TASK-008 and `blockchain-info` from TASK-009), the two-level cache, the SSRF
   gate, the rate limiter, the credit budget gate, and a read-only PG client (`pg-history` adapter).
 - **Technologies:** TypeScript strict, zod, `better-sqlite3`, `lru-cache`, `ulid`, `@noble/hashes`
   (keccak256 for EIP-55 — its only reason for existing here: ADR-001 D5 requires an EVM checksum,
@@ -455,6 +456,11 @@ export const routes: CapabilityRoute[] = [
   // R-75 (TASK-008) — Blockscout FIRST, Nansen as the paid fallback in the same chain. Order is
   // the whole point: a credit is spent only when the free source cannot answer.
   { capability: 'entity.labels', adapterIds: ['blockscout', 'nansen'] },
+  // R-82 (TASK-009) — BTC supply. One adapter, one chain: this is the narrowest route in the
+  // table, and deliberately so. `mempool.space` is NOT here even though it serves the same
+  // subject, because it is the eval's INDEPENDENT reference — a source we answer from cannot
+  // also be the check on that answer (§5.1.5, R-89).
+  { capability: 'chain.supply', adapterIds: ['blockchain-info'] },
 ];
 
 export const adapterRegistrations: AdapterRegistration[] = [
@@ -528,10 +534,25 @@ export const adapterRegistrations: AdapterRegistration[] = [
   // `requiresEnv` stays EMPTY on purpose: the facade answers without a key today, so demanding one
   // would disable a working capability. The key is read inside fetch(), like COINGECKO_* — after
   // the cache key is derived, so it can never enter it.
+  // `refillPerSec: 2`, not the 5 R-73(b) prescribed: DEFENSIVE, not measured. The vendor sends no
+  // `RateLimit-*` header at all, so there is nothing to calibrate against, and the thing that runs
+  // out is CREDITS, not requests — `get_address_info` fans out to three upstreams (~160 credits of
+  // 100K/day ⇒ a ceiling near 625 calls/day), which 5 RPS would burn in ~125 seconds.
   {
     id: 'blockscout',
     hosts: ['mcp.blockscout.com'],
-    rateLimit: { capacity: 5, refillPerSec: 5 },
+    rateLimit: { capacity: 5, refillPerSec: 2 },
+    requiresEnv: [],
+  },
+  // R-81 (TASK-009) — keyless, no account, no secret of any kind. ONE host: `blockchain.info` and
+  // `api.blockchain.info` were measured to serve `/q/*` and `/stats` identically (2026-07-29), so a
+  // second entry would widen the redirect-hop allowlist (the L-4 lesson from `blockscout`) and buy
+  // nothing. The limiter is defensive for the same reason as `blockscout`'s: no `RateLimit-*`, no
+  // `Retry-After`, no documented number — five rapid probes returned 200 and that is ALL we know.
+  {
+    id: 'blockchain-info',
+    hosts: ['blockchain.info'],
+    rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
   },
 ];
@@ -546,7 +567,9 @@ list would have to track 458 registry rows; a predicate cannot drift from them.
 Rate-limit values are conservative starting points (not vendor-documented limits, except for the
 Dune credits) and can be tuned by editing the config, with no change on the calling side (R-4).
 
-**The adapters — summary** (nine from M1, plus `blockscout` from TASK-008):
+**The adapters — summary.** Nine from M1, `nansen` from M2, `blockscout` from TASK-008,
+`blockchain-info` from TASK-009 — **twelve registered, of which eleven serve something**: `dune`
+remains a config stub whose `isAvailable()` is unconditionally `false`.
 
 | id                  | Capabilities                                                   | Transport                                                                  | Key                                                                                                                    | Note                                                                                                                                          |
 | ------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -554,7 +577,8 @@ Dune credits) and can be tuned by editing the config, with no change on the call
 | `dexscreener`       | `pairs.new`, `pool.info`                                       | REST (`fetch`)                                                             | none (keyless)                                                                                                         | R-6 Must requires both; `pool.info` has no tool consumer yet; exact endpoint confirmed when the fixture is recorded (R-22), §11; **live**     |
 | `defillama`         | `protocol.tvl`, `chain.tvl`, `dex.volume.history`              | REST (`fetch`), `/protocol/{slug}`, `/v2/chains`, `/overview/dexs/{chain}` | none (keyless)                                                                                                         | R-7, R-53, **R-61 (TASK-007)**, **live**                                                                                                      |
 | `dune`              | **none** (config stub; `token.holders` moved away in TASK-008) | REST Query API — **not implemented** (interface/config stub)               | `DUNE_API_KEY` (free tier), but `isAvailable()` is unconditionally `false`                                             | R-8, decision below. Until TASK-008 it _declared_ `token.holders` while covering zero chains — an advertised capability that answered nowhere |
-| `blockscout`        | `token.holders`, `entity.labels`                               | REST (`fetch`) over **two hosts** — see "Two hosts, one adapter" below     | optional `BLOCKSCOUT_PRO_API_KEY`, passed as the **`apikey` query parameter** (not a header)                           | **R-73..R-80 (TASK-008)**, **live**                                                                                                           |
+| `blockscout`        | `token.holders`, `entity.labels`                               | REST (`fetch`), the **facade** `mcp.blockscout.com/v1/<tool>` for both — the two-host design was reverted, see below | optional `BLOCKSCOUT_PRO_API_KEY`, passed as the **`apikey` query parameter** (not a header)                           | **R-73..R-80 (TASK-008)**, **live**                                                                                                           |
+| `blockchain-info`   | `chain.supply` (bitcoin only)                                  | REST (`fetch`), `/stats` + `/q/totalbc`                                    | **none, and none possible** — the vendor offers no key for these surfaces                                              | **R-81..R-87 (TASK-009)**, **live**                                                                                                           |
 | `rpc-evm`           | `wallet.balances.native` (EVM)                                 | JSON-RPC `eth_getBalance` (`fetch`)                                        | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                           |
 | `rpc-solana`        | `wallet.balances.native` (Solana)                              | JSON-RPC `getBalance` (`fetch`)                                            | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                           |
 | `dash-platform`     | `privacy.shielded_pool`, `platform.*`                          | **gRPC** — **not implemented** (interface + fixture contract only)         | none (keyless), but unreachable                                                                                        | R-9 via a mock; see below                                                                                                                     |
@@ -617,8 +641,39 @@ Dune credits) and can be tuned by editing the config, with no change on the call
   `tooltipAttribution`) are not emitted at all, since a URL in a model's context is a fetch
   suggestion.
 
-**Two hosts, one adapter (TASK-008).** `blockscout` is the first adapter whose two capabilities do
-not share a transport, and the split is forced by measurement rather than taste:
+- `blockchain-info.normalize()` (TASK-009, R-84/R-85): the vendor's two supply surfaces are **two
+  different quantities, both correct**, and the adapter's job is to keep them from being mistaken
+  for one another. Measured 2026-07-29 by a test that settles it without appeal — how many whole
+  block subsidies fit between the value and the halving boundary at block 840 000:
+
+  | surface          | subsidies past the boundary | therefore                                              |
+  | ---------------- | --------------------------- | ------------------------------------------------------ |
+  | `/stats.totalbc` | `120102` — **integer**      | the halving formula itself ⇒ **theoretical emission**   |
+  | `/q/totalbc`     | `120092.8` — **fractional** | cannot be the formula ⇒ **actually-claimed supply**     |
+
+  The gap (28.75–31.88 BTC, ~0.00016%) is coinbase subsidy miners never claimed. A stale copy of the
+  formula would sit at an INTEGER offset; a fractional one cannot. So `emission` and `circulating`
+  are separate fields with separate names, and `normalize()` enforces the consensus invariant
+  **`circulating ≤ emission`** — you cannot claim more than the subsidy — refusing the response
+  rather than serving a number it cannot justify.
+
+  Values are carried as **satoshi strings** through `bigint`, never `number` (DB-SCHEMA §1.7). They
+  fit a double *today*, which is exactly the reasoning that rots: the rule is that the value is an
+  exact integer, not that it currently happens to be small enough.
+
+**🔴 Verifying supply against the formula is a TAUTOLOGY — the height is what carries information.**
+This is the load-bearing insight of TASK-009 and the reason its cross-check is shaped the way it is.
+`consensusEmission(n_blocks_total) === totalbc` held **bit-exactly at both probed heights**, and it
+will keep holding for as long as the vendor computes the field the same way we do. A check that
+cannot fail is not a check. What a second source can genuinely contradict is the **block height** —
+so the eval compares our answer's height against `mempool.space` and lets the deterministic formula
+propagate that into supply (§5.1.5). The delta is expressed in **blocks of subsidy, never percent**:
+one block is 0.000016%, so an off-by-one and a full day of vendor staleness (144 blocks, 0.0023%)
+both round to "zero" on any percentage scale a human would pick.
+
+**Two hosts measured, one host used (TASK-008).** The vendor exposes the same data through two
+hosts with materially different properties. The measurement below is what made the choice, and it is
+kept because the rejected branch is the one a future reader will be tempted to re-propose:
 
 |                        | `api.blockscout.com/<chain_id>/api/v2/…`                  | `mcp.blockscout.com/v1/<tool>`                        |
 | ---------------------- | --------------------------------------------------------- | ----------------------------------------------------- |
@@ -1192,7 +1247,8 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
   | `protocol.tvl`                        | 300s  | D6: TVL 5–30 min, lower bound                                                                                           |
   | `dex.volume.history`                  | 3600s | the vendor's own step is **one day** — a shorter TTL cannot buy a newer number, only a second identical download (R-64) |
   | `privacy.shielded_pool`, `platform.*` | 3600s | no point polling faster than the existing snapshotter's hourly cadence                                                  |
-  | `token.holders` (dune)                | 3600s | credit-metered, low volatility                                                                                          |
+  | `token.holders`                       | 3600s | low volatility (was credit-metered under `dune`; free under `blockscout` since TASK-008)                                |
+  | `chain.supply`                        | 600s  | the value changes **only** when a block is found — the Bitcoin target interval, so a shorter TTL cannot buy a newer number (R-82c) |
 
 - **Hot layer bounded by BYTES, not only by entry count (WI-11).** `LruHotLayer`'s `max: 500` was
   sized when the largest cached value was a ~200 B `ProtocolTvlResult`, so the implied ceiling was
@@ -1449,7 +1505,12 @@ client.
 
 #### Test suite
 
-**796 tests** — `packages/core` 617, `packages/mcp-server` 179 (D11, R-21/R-22).
+**1106 tests** — `packages/core` 876, `packages/mcp-server` 230 (D11, R-21/R-22).
+
+Two of them are **documentation** gates, added in TASK-009's doc pass because the drift they catch
+had twice been caught by a human instead: `core/test/ttl-coverage.test.ts` (every routed capability
+has an EXPLICIT TTL row, never the fallback) and `mcp-server/test/docs-counts.test.ts` (the counts
+these documents state, and the tool/adapter names they must contain, compared against the code).
 
 - **`packages/core/test/`:** one `*.contract.test.ts` per adapter that has a live/fixture/mock path
   — golden normalization from "raw fixture response" to "canonical object" (D11).
@@ -1497,13 +1558,13 @@ flowchart TB
   ENTRY["mcp-server/src/index.ts (bin)<br/>StdioServerTransport"]
   SRV["mcp-server/src/server.ts<br/>createServer({env,version,registry?})"]
   ENV["mcp-server/src/env.ts<br/>EnvSchema + optional keys"]
-  TOOLS["mcp-server/src/tools/*.ts<br/>ping + get-token + wallet-balances<br/>+ new-pairs + protocol-tvl + M2/TASK-006 tools"]
+  TOOLS["mcp-server/src/tools/*.ts — 13<br/>ping + get-token + wallet-balances<br/>+ new-pairs + protocol-tvl + M2/TASK-006 tools<br/>+ dex-volume + token-holders + chain-supply"]
 
   subgraph CORE["@onchain-intel/core"]
     TYPES["types/* — Token/Wallet/Balance/Pool/OHLCV/Snapshot"]
     CHAIN["chain/* — registry (458 chains) + address + coverage"]
-    REG["adapters/registry.ts + providers.config.ts (10 adapters)"]
-    ADAPT["adapters/{coingecko,dexscreener,defillama,rpc-evm,<br/>rpc-solana,platform-explorer} — live<br/>+ {dash-platform,dune} — interface/stub, no live fetch<br/>+ {pg-history} — optional PG-backed<br/>+ {nansen} — paid, budget-gated inside fetch()"]
+    REG["adapters/registry.ts + providers.config.ts (12 adapters)"]
+    ADAPT["adapters/{coingecko,dexscreener,defillama,rpc-evm,<br/>rpc-solana,platform-explorer,blockscout,blockchain-info} — live<br/>+ {dash-platform,dune} — interface/stub, no live fetch<br/>+ {pg-history} — optional PG-backed<br/>+ {nansen} — paid, budget-gated inside fetch()"]
     CACHE["cache/* — lru + sqlite in DATA_DIR + budget ledger"]
     NET["net/* — safeFetch + throttle"]
     PGC["pg/read-client.ts (used only by pg-history)"]

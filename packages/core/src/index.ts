@@ -25,6 +25,8 @@ export {
   type TokenRiskScore,
   TokenHoldersSchema,
   type TokenHolders,
+  ChainSupplySchema,
+  type ChainSupply,
 } from './types/index.js';
 
 export { normalizeAddress, isValidAddress } from './chain/address.js';
@@ -95,6 +97,21 @@ export {
   createBlockscoutAdapter,
   servesChain as blockscoutServesChain,
 } from './adapters/blockscout/index.js';
+// TASK-009 (R-81): free BTC supply. `bitcoinEmissionSat` / `bitcoinSubsidyAtHeightSat` are exported
+// beside it because the live eval needs the SAME consensus arithmetic to grade the answer against an
+// independent source — a second copy of the halving schedule in `eval/checks.mjs` would be two
+// sources of one fact, and the one that drifts is always the copy.
+export {
+  createBlockchainInfoAdapter,
+  type BlockchainInfoAdapterDeps,
+  servesChain as blockchainInfoServesChain,
+} from './adapters/blockchain-info/index.js';
+export {
+  bitcoinEmissionSat,
+  bitcoinSubsidyAtHeightSat,
+  BITCOIN_DECIMALS,
+  SATOSHI_PER_BTC,
+} from './chain/bitcoin-emission.js';
 export { createPgHistoryAdapter, type PgHistoryAdapterDeps } from './adapters/pg-history/index.js';
 export { NotImplementedInM1Error } from './adapters/not-implemented-error.js';
 

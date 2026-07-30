@@ -115,9 +115,9 @@ onchain-analytics/
 │  │  │  ├─ net/                          # safe-fetch (SSRF gate), rate-limit, args-hash
 │  │  │  ├─ pg/
 │  │  │  │  └─ read-client.ts             # used only by adapters/pg-history/, not a side channel
-│  │  │  ├─ providers.config.ts           # routes + adapterRegistrations (10 adapters)
+│  │  │  ├─ providers.config.ts           # routes + adapterRegistrations (12 adapters)
 │  │  │  └─ index.ts                      # public re-export surface (§5.2)
-│  │  ├─ test/                            # 617 tests
+│  │  ├─ test/                            # 876 tests
 │  │  │  ├─ fixtures/<adapter>/*.json     # committed (D11), each with a *.evidence.md sibling
 │  │  │  ├─ fixtures/chain-registry*/     # vendor catalog fixtures for the offline sync test
 │  │  │  ├─ *.contract.test.ts            # per adapter with a fixture/mock path (not `dune`)
@@ -134,7 +134,7 @@ onchain-analytics/
 │     │  ├─ index.ts                      # bin; the single transport choice (stdio, D3)
 │     │  ├─ server.ts                     # createServer({env,version,registry?}) — registry injectable
 │     │  ├─ env.ts                        # zod env schema (D10)
-│     │  └─ tools/                        # 10 registered tools + 2 shared helpers
+│     │  └─ tools/                        # 13 registered tools + 2 shared helpers
 │     │     ├─ ping.ts                    # unchanged since M0 (R-20)
 │     │     ├─ get-token.ts               # M1
 │     │     ├─ wallet-balances.ts         # M1
@@ -147,7 +147,7 @@ onchain-analytics/
 │     │     ├─ chain-tvl.ts               # TASK-006
 │     │     ├─ resolve-capability.ts      # shared _meta.cache resolution helper (§5.1)
 │     │     └─ budget-meta.ts             # shared _meta.budget shape (§5.1.2)
-│     ├─ test/                            # 179 tests: e2e.stdio (SPAWN), e2e.inprocess
+│     ├─ test/                            # 230 tests: e2e.stdio (SPAWN), e2e.inprocess
 │     │                                   #   (InMemoryTransport), per-tool, degradation, wiring
 │     ├─ eval/                            # live eval harness over the free tier (run.mjs, probes.json)
 │     └─ scripts/

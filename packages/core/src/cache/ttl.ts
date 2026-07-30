@@ -28,6 +28,13 @@ const TTL_SECONDS: Readonly<Record<string, number>> = {
   'platform.documents': 3600,
   'platform.credits': 3600,
   'token.holders': 3600,
+  // TASK-009 (R-82b). Mandatory, not polish: without this row the capability falls through to
+  // `DEFAULT_TTL_SECONDS` below, whose own docstring says it should not be hit — an accident that
+  // has already happened twice in this file (all three M2 paid capabilities, then
+  // `dex.volume.history`). 600s is the Bitcoin target block interval: the value changes ONLY when a
+  // block is found, so a shorter TTL cannot buy a fresher number, it can only buy a second identical
+  // pair of requests.
+  'chain.supply': 600,
 
   // Not explicit rows in ARCHITECTURE.md §3.2's TTL table — implementation decision (developer-
   // guidelines §1.5 "implementation ambiguity"), documented here rather than silently guessed:

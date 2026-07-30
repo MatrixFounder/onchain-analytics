@@ -133,9 +133,17 @@ registry adds **data** to the existing mechanism; it does not replace the mechan
 
 ### 7.3. Attack surface and hardening
 
-- **stdout discipline** (M0 invariant) holds for all 10 tools. `_meta` — including `_meta.budget`
+- **stdout discipline** (M0 invariant) holds for all 13 tools. `_meta` — including `_meta.budget`
   (§5.1.2) — and every log line go through the MCP protocol response or stderr, never through raw
   stdout.
+- **The eval's reference sources are a second egress path, and it is bounded by being outside the
+  server** (TASK-009, R-88). `eval/run.mjs` fetches an independent vendor directly, not through
+  `safeFetch`, so the SSRF gate does not cover it. That is acceptable for exactly one reason: the
+  eval is a developer script that is deliberately **not part of `pnpm test`** and not shipped in
+  `dist/`, so nothing an agent or a client can reach ever executes it. The URLs are not computed —
+  they live in `probes.json`, a reviewed data file in git, and are constrained to `https`. The
+  server's own perimeter is untouched: no adapter, no route and no tool gains a host from this axis,
+  and `mempool.space` appears in **no** allowlist precisely because the engine never calls it.
 - **SSRF gate (R-25):** `safeFetch()` is the single outbound-HTTP point; the allowlist is
   **per-adapter**, not a global union, so a bug in or compromise of one adapter grants no access to
   another adapter's hosts. Redirects are checked on every hop (max 3) and the `Location` header is

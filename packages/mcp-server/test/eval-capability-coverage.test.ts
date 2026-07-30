@@ -57,7 +57,15 @@ describe('every capability an MCP tool serves has an eval case or a recorded rea
     // Read a failure here as: a tool ships a capability the live eval never calls. Wire it into
     // CAPABILITY_TOOLS, or record why not in CAPABILITY_EXCLUSIONS. "Nobody got round to it" is the
     // one state this refuses, because that is exactly what shipped.
-    expect(unaccounted).toEqual([]);
+    //
+    // WI-20: three sibling inventories need the same edit and none references the others, so the
+    // list is repeated here rather than discovered one failed gate at a time.
+    expect(
+      unaccounted,
+      'Wire it into eval/capabilities.mjs (CAPABILITY_TOOLS or CAPABILITY_EXCLUSIONS). A new TOOL ' +
+        'also needs: test/e2e.stdio.test.ts, scripts/smoke-dist.mjs -> expectedNames (fires only ' +
+        'after test AND build), and a named entry in docs/architectures/interfaces.md §5.',
+    ).toEqual([]);
   });
 
   it('names dex.volume.history specifically — the capability that shipped untested', () => {

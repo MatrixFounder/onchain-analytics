@@ -49,6 +49,10 @@ export default tseslint.config(
         clearTimeout: 'readonly',
         fetch: 'readonly',
         URL: 'readonly',
+        // TASK-009: the eval's reference-source fetch bounds itself with a timeout signal. Added to
+        // this narrow list for the same reason as the rest — declaring the handful of Node globals
+        // these scripts actually use, rather than pulling in the `globals` package for them.
+        AbortSignal: 'readonly',
       },
     },
   },
