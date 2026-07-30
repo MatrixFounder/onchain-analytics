@@ -35,6 +35,10 @@ CLAUDE.agentic.md
 docs/KNOWN_ISSUES.md
 docs/issues/
 docs/BACKLOG.md
+# the work-item RECORDS, sibling of docs/issues/ — omitted here until WI-20…WI-23 turned CI red
+# (2026-07-30). Record bodies are evidence: they quote captured output and hand-built tables, and
+# the run-feedback CLI (WI-23) writes them, so a formatter pass would rewrite them on every filing.
+docs/backlog/
 docs/feedback/
 # generated chain registry — scripts/sync-chain-registry.ts owns its byte format (R-49c determinism)
 packages/core/src/chain/registry.data.json

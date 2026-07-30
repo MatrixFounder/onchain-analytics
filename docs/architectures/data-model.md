@@ -342,17 +342,17 @@ covered(capability, chain) :=
 Every adapter answers the question about a chain itself, with a predicate over `ChainInfo` rather
 than a list:
 
-| Adapter                                              | `chainSupport(c, capability)`                                |
-| ---------------------------------------------------- | ------------------------------------------------------------ |
-| `defillama`                                          | per capability — see below                                   |
-| `coingecko`                                          | `c.vendors.coingecko !== null`                               |
-| `dexscreener`                                        | `c.vendors.dexscreener !== null`                             |
-| `rpc-evm`                                            | `c.family === 'evm' && c.rpcHosts !== null`                  |
-| `rpc-solana`                                         | `c.caip2 === <solana mainnet caip2>`                         |
-| `nansen`                                             | per capability — see below                                   |
-| `dash-platform` / `platform-explorer` / `pg-history` | `c.caip2 === <dash caip2>`                                   |
+| Adapter                                              | `chainSupport(c, capability)`                                                |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `defillama`                                          | per capability — see below                                                   |
+| `coingecko`                                          | `c.vendors.coingecko !== null`                                               |
+| `dexscreener`                                        | `c.vendors.dexscreener !== null`                                             |
+| `rpc-evm`                                            | `c.family === 'evm' && c.rpcHosts !== null`                                  |
+| `rpc-solana`                                         | `c.caip2 === <solana mainnet caip2>`                                         |
+| `nansen`                                             | per capability — see below                                                   |
+| `dash-platform` / `platform-explorer` / `pg-history` | `c.caip2 === <dash caip2>`                                                   |
 | `blockchain-info`                                    | `c.caip2 === 'other:bitcoin'` — one chain, and the vendor serves exactly one |
-| `dune`                                               | unchanged — `isAvailable()` is still unconditionally `false` |
+| `dune`                                               | unchanged — `isAvailable()` is still unconditionally `false`                 |
 
 A deprecated chain is covered by nothing: `covered()` refuses it before consulting any adapter.
 
