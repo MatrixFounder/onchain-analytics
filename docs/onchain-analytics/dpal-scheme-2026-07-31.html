@@ -1,0 +1,599 @@
+<title>onchain-intel — концептуальная схема и каталог настроек</title>
+
+<style>
+  :root {
+    --ground: #f4f6f8;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #1a1b22;
+    --ink-soft: #5b6072;
+    --ink-faint: #878da0;
+    --rule: #d9dde5;
+    --rule-strong: #b9c0cd;
+    --accent: #2b4fbe;
+    --accent-soft: #e5eaf9;
+    --brass: #86690f;
+    --brass-soft: #f5edd7;
+    --teal: #1c635c;
+    --teal-soft: #dff0ed;
+
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+    --measure: 74ch;
+    --wide: 1160px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0e0f15;
+      --surface: #161822;
+      --surface-2: #1d202c;
+      --ink: #e4e7ef;
+      --ink-soft: #99a0b5;
+      --ink-faint: #6d7488;
+      --rule: #262a37;
+      --rule-strong: #3a4053;
+      --accent: #86a1ff;
+      --accent-soft: #1b2340;
+      --brass: #d6b465;
+      --brass-soft: #2c2617;
+      --teal: #63c0b4;
+      --teal-soft: #102b28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e0f15;
+    --surface: #161822;
+    --surface-2: #1d202c;
+    --ink: #e4e7ef;
+    --ink-soft: #99a0b5;
+    --ink-faint: #6d7488;
+    --rule: #262a37;
+    --rule-strong: #3a4053;
+    --accent: #86a1ff;
+    --accent-soft: #1b2340;
+    --brass: #d6b465;
+    --brass-soft: #2c2617;
+    --teal: #63c0b4;
+    --teal-soft: #102b28;
+  }
+  :root[data-theme="light"] {
+    --ground: #f4f6f8;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #1a1b22;
+    --ink-soft: #5b6072;
+    --ink-faint: #878da0;
+    --rule: #d9dde5;
+    --rule-strong: #b9c0cd;
+    --accent: #2b4fbe;
+    --accent-soft: #e5eaf9;
+    --brass: #86690f;
+    --brass-soft: #f5edd7;
+    --teal: #1c635c;
+    --teal-soft: #dff0ed;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.5rem;
+  }
+
+  .col { max-width: var(--measure); }
+
+  /* ---------- masthead ---------- */
+  .masthead { display: flex; flex-direction: column; gap: 1.1rem; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.7rem, 3.6vw, 2.5rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .standfirst {
+    font-size: 1.08rem;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 2rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--rule);
+    padding-top: 0.9rem;
+  }
+  .meta b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---------- sections ---------- */
+  section { display: flex; flex-direction: column; gap: 1.25rem; }
+  .sec-head { display: flex; align-items: baseline; gap: 0.85rem; border-bottom: 1px solid var(--rule-strong); padding-bottom: 0.55rem; }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    flex: none;
+  }
+  h2 {
+    font-family: var(--mono);
+    font-size: 1.12rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  p { margin: 0; max-width: var(--measure); }
+  .note { color: var(--ink-soft); font-size: 0.95rem; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.08em 0.34em;
+  }
+
+  /* ---------- diagram panel ---------- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface-2);
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .panel-body { padding: 1.4rem 1rem; overflow-x: auto; }
+  .mermaid { display: block; min-width: 0; }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.62rem 0.85rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { font-family: var(--mono); font-size: 0.82rem; white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---------- pills ---------- */
+  .pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.14em 0.5em;
+    border-radius: 2px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .p-new { color: var(--accent); background: var(--accent-soft); }
+  .p-ext { color: var(--brass); background: var(--brass-soft); }
+  .p-has { color: var(--teal); background: var(--teal-soft); }
+
+  /* ---------- tier rail ---------- */
+  .tier { display: flex; flex-direction: column; gap: 0.8rem; }
+  .tier-head { display: flex; align-items: baseline; gap: 0.7rem; }
+  .tier-badge {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--surface);
+    background: var(--ink-soft);
+    padding: 0.16em 0.5em;
+    border-radius: 2px;
+    flex: none;
+  }
+  .tier-who { font-family: var(--mono); font-size: 0.76rem; color: var(--ink-faint); }
+
+  /* ---------- callout ---------- */
+  .callout {
+    border-left: 2px solid var(--accent);
+    background: var(--surface);
+    padding: 0.95rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .callout.warn { border-left-color: var(--brass); }
+  .callout h3 { color: var(--accent); }
+  .callout.warn h3 { color: var(--brass); }
+
+  ol, ul { margin: 0; padding-left: 1.25rem; max-width: var(--measure); display: flex; flex-direction: column; gap: 0.4rem; }
+  li::marker { color: var(--ink-faint); }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  @media (max-width: 640px) {
+    body { font-size: 15.5px; }
+    .page { padding: 2.5rem 1rem 4rem; gap: 2.5rem; }
+    .meta { gap: 0 1rem; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">onchain-intel · концептуальная схема решения</div>
+    <h1>Что строим и какие настройки в итоге появятся</h1>
+    <p class="standfirst">
+      Итог разбора идеи конфигурируемого DPAL: три схемы целевого решения и полный каталог
+      настроечных объектов — что уже есть, что расширяется, что появляется впервые, и кто
+      имеет право это править.
+    </p>
+    <div class="meta">
+      <span><b>Дата</b> 31.07.2026</span>
+      <span><b>Решений принято</b> 8 из 8</span>
+      <span><b>ADR</b> 12 решений в 2 документах</span>
+      <span><b>Транспорт</b> Streamable HTTP</span>
+      <span><b>Модель</b> доступ по нашим ключам за кредиты</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Целевая архитектура</h2></div>
+    <p class="note">
+      Синим помечено то, чего сегодня нет. Всё остальное существует и в ходе работ не
+      переписывается — двенадцать адаптеров и их контракт остаются нетронутыми.
+    </p>
+    <div class="panel">
+      <div class="panel-head"><span>Схема 1 — четыре слоя</span><span>новое = ADR</span></div>
+      <div class="panel-body">
+<pre class="mermaid">
+flowchart TB
+  CLIENT["Клиент: агент, Claude Code, n8n"]
+
+  subgraph IF["Слой интерфейсов"]
+    direction TB
+    STDIO["MCP stdio&lt;br/&gt;локальная сессия · есть"]
+    HTTP["MCP Streamable HTTP&lt;br/&gt;новое · ADR-009"]
+    PERIM["Токен · Host · CORS · TLS&lt;br/&gt;новое · ADR-010"]
+    BILL["Тарификация по прайсу — ДО кеша&lt;br/&gt;новое · ADR-011"]
+  end
+
+  subgraph SEM["Семантический слой — что вообще можно спросить"]
+    direction TB
+    TOOLS["Реестр тулов ToolSpec&lt;br/&gt;новое · ADR-007"]
+    CAPS["Манифест capability&lt;br/&gt;shape · ttl · deadline · shareable&lt;br/&gt;новое · ADR-004"]
+    TYPES["12 канонических zod-типов · есть"]
+  end
+
+  subgraph EXE["Слой исполнения — как это делается"]
+    direction TB
+    ROUTER["Роутер: последовательный обход маршрута · есть"]
+    POLICY["Политика как дескриптор + реестр классов&lt;br/&gt;новое · ADR-003"]
+    AGG["Сбор для set и series&lt;br/&gt;новое · ADR-005"]
+    GATES["Кеш · TTL · дедлайн · бюджет · лимитер&lt;br/&gt;есть, лимитер становится общим"]
+  end
+
+  subgraph PROV["Слой провайдеров — независимые адаптеры"]
+    direction TB
+    REG["Регистрации: хосты · лимиты · tier · trust&lt;br/&gt;есть, три новых поля"]
+    ADP["12 адаптеров · контракт не трогаем"]
+  end
+
+  CLIENT --> STDIO
+  CLIENT --> HTTP
+  HTTP --> PERIM --> BILL --> TOOLS
+  STDIO --> TOOLS
+  TOOLS --> CAPS --> ROUTER
+  ROUTER --> POLICY
+  ROUTER --> AGG
+  ROUTER --> GATES
+  ROUTER --> REG --> ADP --> TYPES
+</pre>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>Путь запроса и два счётчика</h2></div>
+    <p>
+      Ключевое следствие коммерческой модели: <b>клиент платит за ответ, а не за вызов вендора.</b>
+      Поэтому тарификация стоит до кеша, а вендорский бюджет-гейт — внутри вызова адаптера.
+      На попадании в кеш клиент платит полную цену, а наш расход равен нулю.
+    </p>
+    <div class="panel">
+      <div class="panel-head"><span>Схема 2 — где списывается и где тратится</span><span>ADR-011</span></div>
+      <div class="panel-body">
+<pre class="mermaid">
+flowchart TD
+  REQ["Запрос с клиентским ключом"] --> AUTH["Проверка токена: принципал, квота, список тулов"]
+  AUTH --> PRICE["РЕЗЕРВ по прайсу в client_usage&lt;br/&gt;здесь, до кеша"]
+  PRICE --> TOOL["Валидация входа · канонизация сети"]
+  TOOL --> DL["Старт дедлайна вызова&lt;br/&gt;абсолютный deadlineAtMs"]
+  DL --> COV["Гейт покрытия · позиция не меняется"]
+  COV --> CACHE{"Кеш — глобальный,&lt;br/&gt;без арендной сегментации"}
+  CACHE -->|попадание| ANS["Ответ + возраст данных в _meta&lt;br/&gt;клиент платит полную цену&lt;br/&gt;наш расход НОЛЬ"]
+  CACHE -->|промах| FETCH["Вызов адаптера"]
+  FETCH --> VG["Вендорский бюджет-гейт ВНУТРИ вызова&lt;br/&gt;есть · решение не меняем"]
+  VG --> VEND["Вендор: списание в usage&lt;br/&gt;вендорские кредиты"]
+  VEND --> NORM["Нормализация + запись в кеш"]
+  NORM --> ANS
+  ANS --> SET["Фиксация списания&lt;br/&gt;отказ или дедлайн = возврат резерва"]
+</pre>
+      </div>
+    </div>
+    <div class="callout warn">
+      <h3>Обязательство, вытекающее из этой схемы</h3>
+      <p class="note">
+        Раз клиент платит полную цену за ответ из кеша, он обязан видеть возраст этого ответа.
+        Поле <code>_meta.cache.ageMs</code> уже существует и перестаёт быть отладочным — оно
+        становится частью коммерческого контракта и не может быть убрано «за ненадобностью».
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Что можно объединять, а что нельзя</h2></div>
+    <p>
+      <code>shape</code> — не метаданные, а отказ конструктора: у точечной величины комбинатора не
+      существует, поэтому «слить два TVL» нельзя написать даже по ошибке.
+    </p>
+    <div class="panel">
+      <div class="panel-head"><span>Схема 3 — семантика агрегации</span><span>ADR-004 · ADR-005</span></div>
+      <div class="panel-body">
+<pre class="mermaid">
+flowchart TD
+  Q["Ответ capability"] --> S{"shape"}
+  S -->|"point · supply, TVL, цена, баланс, высота"| P["Комбинатора НЕТ.&lt;br/&gt;Побеждает первый удовлетворивший источник.&lt;br/&gt;Расхождение показываем, не сглаживаем."]
+  S -->|"set · метки, держатели, пары"| ST["Объединение, сегментированное по источнику.&lt;br/&gt;Кросс-источникового ключа идентичности нет.&lt;br/&gt;Выключено до ранга доверия."]
+  S -->|"series · ряды снимков"| SR["Объединение с дедупликацией по ts.&lt;br/&gt;Ключ: metric + asset + ts.&lt;br/&gt;Конфликт решает приоритет источника.&lt;br/&gt;ВКЛЮЧАЕТСЯ ПЕРВЫМ — оба источника бесплатны."]
+</pre>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Каталог настроек</h2></div>
+    <p>
+      Четыре яруса, различающиеся не форматом хранения, а <b>тем, кто имеет право писать</b> и что
+      проверяет запись. Граница проведена по одному признаку: всё, что может потратить деньги,
+      назвать хост или нести вендорский секрет, остаётся в ревьюируемом коммите.
+    </p>
+    <p class="note">
+      <span class="pill p-has">есть</span> — работает сегодня &nbsp;
+      <span class="pill p-ext">расширяется</span> — добавляются поля &nbsp;
+      <span class="pill p-new">новое</span> — объекта сегодня нет
+    </p>
+
+    <div class="tier">
+      <div class="tier-head">
+        <span class="tier-badge">Ярус 1</span>
+        <h3>TypeScript в коммите</h3>
+        <span class="tier-who">пишет разработчик · проверяется диффом, схемой zod и гейтом полноты</span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Объект</th><th>Поля</th><th>Статус</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="k">routes<br>маршруты</td>
+              <td><code>capability</code>, <code>adapterIds[]</code> — порядок и есть правило траты, <code>policy {kind, params}</code> вместо JS-замыкания, <code>collect {mode, combiner}</code></td>
+              <td><span class="pill p-ext">расширяется</span></td>
+            </tr>
+            <tr>
+              <td class="k">манифест<br>capability</td>
+              <td><code>id</code>, <code>shape</code> (point / set / series), <code>ttlSeconds</code> — обязательное, переезжает из отдельного файла, <code>deadlineMs</code> — обязательное, <code>shareable</code>, <code>identityKey</code>, описание</td>
+              <td><span class="pill p-new">новое</span></td>
+            </tr>
+            <tr>
+              <td class="k">регистрации<br>провайдеров</td>
+              <td><code>id</code>, <code>hosts[]</code> — список разрешённых хостов, <code>rateLimit</code>, <code>requiresEnv</code>, <code>tier</code> (free / paid), <code>trust</code> (authoritative / derived / community), <code>authStyle</code>, <code>envKeyName</code> — имя переменной, не значение, <code>rationale</code> — чем обоснован нестандартный лимит</td>
+              <td><span class="pill p-ext">расширяется</span></td>
+            </tr>
+            <tr>
+              <td class="k">реестр<br>политик</td>
+              <td>именованные классы: «первый удовлетворивший», «непустые метки», … Конфигурация <b>выбирает</b> класс; добавление класса — код и тест</td>
+              <td><span class="pill p-new">новое</span></td>
+            </tr>
+            <tr>
+              <td class="k">реестр<br>комбинаторов</td>
+              <td>«объединение с сегментацией по источнику» для set, «дедупликация по времени» для series. Точечным величинам комбинатор недоступен по типу</td>
+              <td><span class="pill p-new">новое</span></td>
+            </tr>
+            <tr>
+              <td class="k">реестр<br>тулов</td>
+              <td><code>name</code>, <code>capability</code>, заголовок, описание, аннотации (только чтение, платный), ссылки на схемы. Из него генерируются четыре инвентаря вместо ручной синхронизации</td>
+              <td><span class="pill p-new">новое</span></td>
+            </tr>
+            <tr>
+              <td class="k">прайс-лист</td>
+              <td>capability → цена в <b>наших</b> кредитах, версия. Цена фиксируется в момент списания и хранится в строке леджера — изменение прайса не переписывает историю</td>
+              <td><span class="pill p-new">новое</span></td>
+            </tr>
+            <tr>
+              <td class="k">транспортные<br>константы</td>
+              <td>предел редиректов, таймаут по умолчанию, потолок размера ответа, шаблон чувствительных заголовков</td>
+              <td><span class="pill p-has">есть</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tier">
+      <div class="tier-head">
+        <span class="tier-badge">Ярус 2</span>
+        <h3>Генерируемые артефакты в коммите</h3>
+        <span class="tier-who">пишет скрипт, перезапускает человек · проверяется тестом на совпадение регенерации</span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Артефакт</th><th>Что в нём</th><th>Статус</th></tr></thead>
+          <tbody>
+            <tr><td class="k">реестр сетей</td><td>458 сетей: канонический идентификатор, вендорские соответствия, семейство адресов; колонка RPC-хостов курируется вручную и автозаполнение запрещено</td><td><span class="pill p-has">есть</span></td></tr>
+            <tr><td class="k">покрытие<br>вендоров</td><td>три файла — по одному на Nansen, Blockscout и объёмы DEX; выведены из запиненных проб, а не из общего списка сетей</td><td><span class="pill p-has">есть</span></td></tr>
+            <tr><td class="k">таблица цен<br>вендора</td><td>цена каждой операции Nansen в вендорских кредитах; побайтовый дифф и есть сигнал о смене прайса вендором</td><td><span class="pill p-has">есть</span></td></tr>
+            <tr><td class="k">инвентари<br>тулов</td><td>список для проверки по stdio, список для собранной сборки, ось eval, раздел контрактов в документации — всё из реестра тулов</td><td><span class="pill p-new">новое</span></td></tr>
+            <tr><td class="k">манифест<br>провенанса</td><td>хеши запиненных живых проб — доказательство, что фикстуры не переписаны молча</td><td><span class="pill p-has">есть</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tier">
+      <div class="tier-head">
+        <span class="tier-badge">Ярус 3</span>
+        <h3>Переменные окружения</h3>
+        <span class="tier-who">пишет оператор · файл с правами 0600, вне репозитория, валидация схемой при старте</span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Группа</th><th>Что задаёт</th><th>Статус</th></tr></thead>
+          <tbody>
+            <tr><td class="k">вендорские<br>ключи</td><td>ключи провайдеров и путь к каталогу данных — двенадцать записей; значение никогда не попадает в ключ кеша и в логи</td><td><span class="pill p-has">есть</span></td></tr>
+            <tr><td class="k">потолки<br>расхода</td><td>суточный потолок кредитов, скорость расхода, максимум вызовов в минуту, порог предупреждения</td><td><span class="pill p-has">есть</span></td></tr>
+            <tr><td class="k">сетевой<br>сервер</td><td>порт, адрес привязки, публичный адрес для проверки заголовка Host, разрешённые источники запросов</td><td><span class="pill p-new">новое</span></td></tr>
+            <tr><td class="k">секрет<br>токенов</td><td>соль для хеширования клиентских токенов — в базе хранится хеш, не сам токен</td><td><span class="pill p-new">новое</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tier">
+      <div class="tier-head">
+        <span class="tier-badge">Ярус 4</span>
+        <h3>Данные времени выполнения</h3>
+        <span class="tier-who">пишет движок и кабинет · это данные, а не конфигурация кода</span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Таблица</th><th>Что в ней</th><th>Статус</th></tr></thead>
+          <tbody>
+            <tr><td class="k">кеш</td><td>записи по ключу «провайдер + capability + хеш аргументов»; общий для всех клиентов</td><td><span class="pill p-has">есть</span></td></tr>
+            <tr><td class="k">расход<br>у вендора</td><td>сколько мы задолжали провайдеру за сутки и за скользящее окно</td><td><span class="pill p-has">есть</span></td></tr>
+            <tr><td class="k">клиентские<br>токены</td><td>хеш токена, владелец, баланс кредитов, ограничение скорости, разрешённые тулы, статус. <b>Это то, что редактируется через кабинет без релиза</b></td><td><span class="pill p-new">новое</span></td></tr>
+            <tr><td class="k">клиентские<br>списания</td><td>кто, когда, за какую capability, по какой зафиксированной цене; идентификатор запроса для защиты от двойного списания при повторе; состояние — зарезервировано, списано, возвращено</td><td><span class="pill p-new">новое</span></td></tr>
+            <tr><td class="k">общий<br>лимитер</td><td>состояние бакетов по провайдерам, общее на все процессы вместо нынешнего внутрипроцессного</td><td><span class="pill p-new">новое</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="callout">
+      <h3>База данных появляется — но не там, где её отговаривали делать</h3>
+      <p class="note">
+        Изначальная идея предлагала хранить в базе маршруты, типы подключений, эндпойнты и ключи.
+        Это отклонено: строка, меняющая порядок провайдеров, меняет правило траты денег, а строка
+        с хостом — периметр исходящих запросов.
+      </p>
+      <p class="note">
+        Клиентские токены и списания — другой случай, и инвариант на них держится:
+        <b>токен может потратить только свой баланс, но не может изменить, к какому хосту мы пойдём
+        и какого провайдера позовём.</b> Поэтому они живут в базе и правятся без релиза.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Что придётся трогать руками</h2></div>
+    <p>Из всего каталога в регулярной работе участвуют три вещи. Остальное настраивается один раз.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Что</th><th>Как часто</th><th>Через что</th><th>Нужен релиз</th></tr></thead>
+        <tbody>
+          <tr><td>Токены и балансы клиентов</td><td>постоянно</td><td>кабинет</td><td>нет</td></tr>
+          <tr><td>Прайс-лист capability</td><td>редко</td><td>коммит</td><td>да</td></tr>
+          <tr><td>Лимиты и порядок провайдеров по итогам эксплуатации</td><td>по факту наблюдений</td><td>коммит с записью замера рядом со значением</td><td>да</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Порядок работ</h2></div>
+    <p class="note">
+      Оценки калиброваны по факту: две последние задачи проекта стоили 50 и 31 файл каждая,
+      примерно половина — документация и evidence под гейтами, которую нельзя пропустить.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Этап</th><th>Содержание</th><th class="num">Оценка</th></tr></thead>
+        <tbody>
+          <tr><td class="k">T-010</td><td>Два ADR-документа, закрытие двух открытых вопросов архитектуры</td><td class="num">2–3 дня</td></tr>
+          <tr><td class="k">T-011</td><td>Реестр тулов; шесть инвентарей становятся читателями одного источника</td><td class="num">≈1 нед</td></tr>
+          <tr><td class="k">T-012</td><td>Манифест capability, политика как дескриптор, ярус провайдера, <b>дедлайн вызова с реальной отменой</b></td><td class="num">1–1.5 нед</td></tr>
+          <tr><td class="k">T-013</td><td>Агрегация: включение слияния исторических рядов</td><td class="num">≈1 нед</td></tr>
+          <tr><td class="k">T-014</td><td>HTTP, токен, периметр, профили, общий лимитер — <b>полный объём</b></td><td class="num">≈2 нед</td></tr>
+          <tr><td class="k">T-015</td><td>Тарификация фазы 0 и замер расхода бесплатного провайдера</td><td class="num">1–1.5 нед</td></tr>
+          <tr><td class="k">M3</td><td>Сигналы и алерты поверх сетевого интерфейса</td><td class="num">≈2 нед</td></tr>
+          <tr><td class="k">M4</td><td>Скилл и evals против единого реестра тулов</td><td class="num">≈1 нед</td></tr>
+          <tr><td class="k">T-016</td><td>Ранг доверия и включение слияния меток</td><td class="num">3–4 дня</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warn">
+      <h3>Цена принятого решения, названная явно</h3>
+      <p class="note">
+        Полный объём сетевого этапа сдвигает сигналы примерно на два месяца. Взамен исчезает
+        промежуточное состояние, в котором сетевой сервер работает с ограничителем скорости,
+        рассчитанным на одну локальную сессию: при одном вашем токене это терпимо, при первом
+        внешнем клиенте — уже нет.
+      </p>
+    </div>
+  </section>
+
+</div>
