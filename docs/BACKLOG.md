@@ -79,6 +79,8 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 ## Discovered issues / work-items
 
 <!-- feedback:discovered-issues -->
+- **WI-25** [Позиционные ссылки проверены до собственных правок — документ процитировал текст, который сам удалил](backlog/wi-25-positional-refs-verified-before-own-edits.md) — effort `S`, status `open`, opened 2026-07-31
+- **WI-24** [Архитектурный документ показывает удалённое поле chains как действующий механизм](backlog/wi-24-system-architecture-drifts-from-code.md) — effort `M`, status `open`, opened 2026-07-31
 - **WI-19** [vdd-multi: контракт вывода отчёта не масштабируется](backlog/wi-19-vdd-multi-report-routing-does-not-scale.md) — opened 2026-07-29, effort S: inline-отчёт по умолчанию нечитаем на реальном объёме находок; **изменение поведения общего фреймворка — на рассмотрение владельцу**, не готовая правка
 - **WI-18** [Мутационное тестирование живёт вне репозитория](backlog/wi-18-mutation-testing-lives-outside-the-repo.md) — opened 2026-07-29, effort M: единственная механическая проверка качества тестов существует только как одноразовый скрипт вне репозитория — и однажды соврала в свою пользу, посчитав непримененную мутацию пойманной
 
