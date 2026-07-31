@@ -11,7 +11,8 @@ const TGM_TOKEN_INFORMATION = 'POST /api/v1/tgm/token-information';
 
 // Nansen's premium-labels tier replaces a SINGLE `/tgm/holders` call's normal per-plan price with
 // a flat surcharge when the caller passes `premium_labels: true` — task 005-3's own real,
-// non-simulated refusal case (TASK.md UC-3, §1 п.5: 150cr against a 100cr free-plan balance).
+// non-simulated refusal case (`docs/tasks/task-005-m2-alpha-paid.md` UC-3, §1 п.5: 150cr against a
+// 100cr free-plan balance).
 // `NANSEN_PREMIUM_LABELS_COST` is now GENERATED (code review round 2 fix — it used to be a
 // hand-maintained `150` literal here, which could drift silently against the spec with zero
 // diff), sourced from the SAME committed spec's `x-credit-cost-variants['premium_labels=true']`

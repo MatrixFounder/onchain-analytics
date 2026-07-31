@@ -207,7 +207,8 @@ export const adapterRegistrations: AdapterRegistration[] = [
     //
     // R-73(b) prescribes `{capacity: 5, refillPerSec: 5}`. That value has no measurement behind it,
     // and unlike `defillama` (a documented 40-concurrent live probe) or `nansen` (four named vendor
-    // thresholds) it cannot get one from the vendor: TASK.md §1.2 records that these responses carry
+    // thresholds) it cannot get one from the vendor: `docs/tasks/task-008-blockscout-free-tier.md`
+    // §1.2 records that these responses carry
     // **no `RateLimit-*` and no `Retry-After` headers at all**, so there is no server signal to
     // calibrate against. 5 RPS came from the vendor's published "5 RPS" tier line, which bounds
     // REQUESTS while the thing that actually runs out is CREDITS.

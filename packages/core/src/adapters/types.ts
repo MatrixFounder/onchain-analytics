@@ -98,7 +98,16 @@ export interface CapabilityRoute {
    * When no adapter satisfies it, the walk does not fail: the first truthful-but-unsatisfying
    * result is returned. "No provider has labels for this address" is an answer, not an outage.
    *
-   * **PROVISIONAL — see OQ-4 in `docs/TASK.md`.** This is the smallest hook that keeps the defect
+   * **PROVISIONAL — superseded by ADR-002 D2**
+   * (`docs/onchain-analytics/ADR-002-configurable-routing.md`), which closes OQ-4: this predicate
+   * becomes a serialisable descriptor resolved against a registry of policy classes in core —
+   * `{ kind: 'any' }` or, for the one route that has a policy today,
+   * `{ kind: 'someElementHasAny', fields: [...] }`. The class is deliberately NOT called
+   * `nonEmpty`: this predicate accepts a non-empty array of contentless entries as unsatisfying,
+   * and a literal "non-empty" reading would reintroduce H-1. Until T-012 lands the descriptor, the
+   * text below still describes what is here.
+   *
+   * This is the smallest hook that keeps the defect
    * out of production, NOT the router. The owner's decision (2026-07-28) is that the real design is
    * settled at a redesign stage, and that it will differ in two ways: the router must be able to
    * call a COMBINATION of adapters and aggregate their results, and the policy should be configured

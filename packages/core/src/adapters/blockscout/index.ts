@@ -137,8 +137,12 @@ const MAX_RESPONSE_BYTES = 512 * 1024;
  * hundred seconds, not the ~120 s the first version of this docstring asserted. That number was
  * repeated, not derived. This constant removes ~40 s from it; it does not bound it.
  *
- * The actual bound has to be a deadline for the whole `resolve()` walk, which does not exist yet —
- * see OQ-4, since it belongs to the same router redesign.
+ * The actual bound has to be a deadline for the whole `resolve()` walk, which does not exist yet.
+ * It is now DECIDED but not yet built: ADR-002 D4
+ * (`docs/onchain-analytics/ADR-002-configurable-routing.md`) closes OQ-4 with an absolute
+ * `deadlineAtMs` carried through `throttle()` and `safeFetch`, cancelling only work that has not
+ * yet cost money. Landing that (T-012) is what turns this paragraph from a limitation into history
+ * — and this docstring must be rewritten in the SAME commit, not after it.
  */
 const REQUEST_TIMEOUT_MS = 5_000;
 
@@ -152,7 +156,8 @@ const UINT256_DECIMAL_RE = /^(0|[1-9][0-9]{0,77})$/;
  * Throttle tokens burned by one `/v1/get_address_info` call.
  *
  * The bucket counts OUR requests; the vendor's quota counts UPSTREAM ones, and this endpoint fans
- * out to three of them server-side (20 + 120 + 20 ≈ 160 credits — TASK.md §1.2, measured). So one
+ * out to three of them server-side (20 + 120 + 20 ≈ 160 credits —
+ * `docs/tasks/task-008-blockscout-free-tier.md` §1.2, measured). So one
  * call that looks like one call to the limiter is three to the thing being limited. `nansen` has
  * the same asymmetry and needs no weight, because its composite capabilities genuinely issue N
  * requests and therefore call `throttle()` N times; here the fan-out is invisible to us, so it has

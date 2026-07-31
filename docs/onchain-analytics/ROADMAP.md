@@ -1,7 +1,7 @@
 # ROADMAP — `onchain-intel` (движок) + `onchain-analytics` (скилл)
 
 - **Дата:** 2026-06-30 · **Обновлён:** 2026-07-29 (**TASK-008 сдан и дважды отревьюен**, попутно добавлена пропущенная строка TASK-007; ранее 2026-07-27 — **TASK-006 сдан и дважды отревьюен, реестр известных проблем пуст**; ранее 2026-07-24 — **M2 выполнен**; ранее — **M1 выполнен** 2026-07-23; ранее — **M0 выполнен** 2026-07-22; ранее 2026-07-20 — снапшоттер Dash Platform + privacy-метрики, пометки *(2026-07-20)*) · **Статус:** Active (M0 ✅ · M1 ✅ · M2 ✅ → M3)
-- **Связанные:** [REPORT.md](REPORT.md) · [ADR-001-tech-stack.md](ADR-001-tech-stack.md) · [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md) · [research-digest.md](research-digest.md)
+- **Связанные:** [REPORT.md](REPORT.md) · [ADR-001-tech-stack.md](ADR-001-tech-stack.md) · [ADR-002-configurable-routing.md](ADR-002-configurable-routing.md) · [ADR-003-network-transport-and-billing.md](ADR-003-network-transport-and-billing.md) · [DB-SCHEMA-CONCEPT.md](DB-SCHEMA-CONCEPT.md) · [research-digest.md](research-digest.md)
 - **Стек (из ADR-001):** TypeScript / Node 22 · `@modelcontextprotocol/sdk` · SQLite · zod · pnpm-monorepo · Apache-2.0.
 
 > Оценки в «инженеро-неделях» при ~1 разработчике. Это not-fixed — границы фаз управляются **exit-критериями**, а не календарём.
@@ -276,7 +276,7 @@ graph LR
 
   | Этап | Содержание | ≈Оценка |
   |---|---|---|
-  | **T-010** | ADR-002 «Конфигурируемый роутинг и семантика агрегации» + ADR-003 «Сетевой транспорт, периметр и коммерческая модель»; закрытие OQ-4 и OQ-M3-1 | 2–3 дня |
+  | **T-010** ✅ | [ADR-002](ADR-002-configurable-routing.md) «Конфигурируемый роутинг и семантика агрегации» (D1…D9) + [ADR-003](ADR-003-network-transport-and-billing.md) «Сетевой транспорт, периметр и коммерческая модель» (D1…D6); **OQ-4 и OQ-M3-1 закрыты** ([open-questions.md](../architectures/open-questions.md) §Resolved) | сдан 2026-07-31 |
   | **T-011** | Единый реестр тулов; шесть инвентарей → читатели одного источника | ≈1 нед |
   | **T-012** | Манифест capability (`shape`/`ttlSeconds`/`deadlineMs`/`shareable`), политика как сериализуемый дескриптор, `tier`, **дедлайн вызова с реальной отменой** | 1–1.5 нед |
   | **T-013** | Агрегация: включение слияния рядов `privacy.shielded_pool.history` / `platform.metrics.history` | ≈1 нед |

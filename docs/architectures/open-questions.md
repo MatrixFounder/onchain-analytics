@@ -54,34 +54,6 @@ diff — keeps human review of `rpcHosts` and removes the remembering; (c) surfa
 startup once it crosses a threshold. (b) + (c) looks right, but this is a **process** decision, not
 an architectural one — it changes nothing in the design.
 
-### OQ-M3-1 — the interface n8n uses to call engine capabilities
-
-The snapshotter stays on n8n + Postgres permanently (owner decision 2026-07-25, ADR-001 D8/D9
-addenda). That settles ownership and opens a consequence: **if the schedule lives in n8n and the
-canonical capabilities live in the engine, something has to carry calls between them.**
-
-There is no transport today. The MCP server is **stdio-only** (D3, "local stdio under Claude
-Code"), and stdio is not callable over a network. The snapshotter sidesteps this by calling DAPI
-directly, bypassing the engine — on the diagram that is a separate edge, "n8n's own call, not
-through the engine". M3 cannot repeat that: rules must be computed on **canonical** data, with the
-budget gate and the cache, which means through the engine. Otherwise n8n becomes a second, parallel
-provider client with its own normalization and no credit accounting, which throws away all of M2.
-
-Options (none chosen):
-
-1. **Bring the Streamable HTTP transport forward** (currently M6). The transport abstraction for it
-   is already in D3, and it gives n8n a normal HTTP call. The price is a public surface plus the
-   auth/CORS/port questions M6 planned to settle in an ADR of its own.
-2. **One-shot CLI mode:** n8n triggers `Execute Command`, the engine process performs one
-   capability and exits. No network surface; the budget gate and cache work as-is (shared
-   `DATA_DIR`). The price is a process start per call, and n8n has to live on the same machine.
-3. **n8n writes a job into Postgres and the engine picks it up.** Inverts the dependency but brings
-   back an always-on engine process — which contradicts the decision itself.
-
-Option 2 is the least invasive for M3 and spends none of the decisions reserved for M6; option 1 is
-the correct one if the engine is meant to be a network service at all. **Settled by an ADR at M3
-kickoff** — this is the first question implementation will hit, not a detail.
-
 ### Backlog candidate — a wider Nansen chain scope
 
 A broader Nansen-specific chain scope for one or more of the three paid capabilities. It requires a
@@ -89,6 +61,59 @@ separate live probe **per capability** (the vendor's per-endpoint enumerators do
 other) and an explicit product request, which the ROADMAP §M2 exit criteria do not state.
 
 ## Resolved
+
+### T-010 (2026-07-31) — OQ-M3-1 and OQ-4
+
+Both were closed by owner decisions on 2026-07-31 and written up as ADRs. The **options as they
+stood** are preserved below on purpose: a closed question must not be reopened from scratch, and the
+rejected alternatives are the cheapest part of the record to lose.
+
+**OQ-M3-1 — the interface n8n uses to call engine capabilities: Streamable HTTP.**
+See [ADR-003](../onchain-analytics/ADR-003-network-transport-and-billing.md) D1.
+
+The snapshotter stays on n8n + Postgres permanently (owner decision 2026-07-25, ADR-001 D8/D9
+addenda). That settled ownership and opened a consequence: if the schedule lives in n8n and the
+canonical capabilities live in the engine, something has to carry calls between them — and there was
+no transport, the MCP server being **stdio-only** (D3), which is not callable over a network. M3
+cannot bypass the engine the way the snapshotter does for DAPI: rules must be computed on
+**canonical** data, with the budget gate and the cache, or n8n becomes a second provider client with
+its own normalization and no credit accounting, throwing away all of M2.
+
+The three options were: (1) **bring the Streamable HTTP transport forward** from M6 — a public
+surface plus auth/CORS/port questions; (2) **one-shot CLI mode** — no network surface, but a process
+start per call and n8n must live on the same machine; (3) **n8n writes a job into Postgres and the
+engine polls it** — inverts the dependency but brings back an always-on engine process, contradicting
+the 2026-07-25 decision itself. The entry's own verdict, quoted so the reversal below has something
+to reverse: _"Option 2 is the least invasive for M3 and spends none of the decisions reserved for M6;
+option 1 is the correct one if the engine is meant to be a network service at all."_
+
+**Chosen: option 1**, on a ground that did not exist when the options were written. That verdict
+judged option 2 "least invasive for M3" while assuming the only consumer was our own n8n. The owner's
+2026-07-31 decision to **sell access** to the MCP for client credits makes that assumption false: a
+paying client cannot invoke a one-shot CLI on our machine. The choice stopped being a trade-off about
+invasiveness. stdio is **not** removed — local development under Claude Code must not require a
+running server, and `createServer` is already transport-agnostic (`mcp-server/src/server.ts:52-55`),
+so the seam costs nothing to keep.
+
+**OQ-4 — where cross-provider routing policy lives: a serialisable descriptor plus a registry of
+policy classes in core.** See [ADR-002](../onchain-analytics/ADR-002-configurable-routing.md), which
+closes it in full (D1…D9).
+
+OQ-4 was inherited from TASK-008 and never had a home in this file — it lived in the §7 of whichever
+`docs/TASK.md` was current, which is why it now reads as three different questions across the repo.
+The routing-policy one is this one. (The **M2** OQ-4 — `entity.labels` escalation default on Pro —
+and the **TASK-006** OQ-4 — historical `chain.tvl` series — are separate, both below, and neither is
+affected.)
+
+The question was: `CapabilityRoute.isSatisfying` is a literal predicate in `providers.config.ts`, its
+own docstring calls it provisional, and the owner's 2026-07-28 decision said the real router must
+call a **combination** of adapters and aggregate, with policy configured partly in the DB "as
+classes". Resolution: the predicate becomes a serialisable descriptor `{ kind, ...params }` resolved
+against a registry of classes in code (**ADR-002 D2**) — adding a class is a code change plus a test,
+choosing one is a config line, and a descriptor naming an unregistered class fails at registry
+construction rather than on first traffic. Aggregation becomes a property of the capability's
+`shape` (**D3**/**D5**), is off by default, and is enabled first on `series`, not on `entity.labels`
+(**D6**), because a series has a legitimate identity key (`metric`/`asset`/`ts`) and labels do not.
 
 ### M1 (TASK-003)
 

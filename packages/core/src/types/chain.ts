@@ -9,7 +9,8 @@ import { z } from 'zod';
  * for every new chain.
  *
  * **Recorded deviation from ARCHITECTURE.md §3.2, which specifies a CAIP-2-branded `ChainSchema`.**
- * Domain types carry the slug (`ethereum`), not the CAIP-2 id (`eip155:1`), because TASK.md R-59d
+ * Domain types carry the slug (`ethereum`), not the CAIP-2 id (`eip155:1`), because
+ * `docs/tasks/task-006-universal-chain-registry.md` R-59d
  * requires that the SHAPE OF TOOL RESPONSES not change — and `onchain_get_token` has always
  * answered `chain: "ethereum"`. Emitting `eip155:1` there would break a Must requirement to
  * satisfy an implementation preference.

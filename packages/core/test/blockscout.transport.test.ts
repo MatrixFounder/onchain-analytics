@@ -64,7 +64,8 @@ describe('blockscout transport — token.holders (R-74)', () => {
     // passed for any path whatsoever — including one built from an address in a form the vendor
     // had never been asked about. `normalizeAddress` checksums to EIP-55 while the recorded probe
     // was captured lowercase, so nothing in the repo showed the two agreed. Re-probed live
-    // 2026-07-28: both forms answer HTTP 200 with 50 rows (see TASK.md §6), so the emitted url is
+    // 2026-07-28: both forms answer HTTP 200 with 50 rows (see
+    // `docs/tasks/task-008-blockscout-free-tier.md` §6), so the emitted url is
     // correct — and now it is pinned, which is what the substring assertions never did.
     expect(urls[0]).toBe(
       'https://mcp.blockscout.com/v1/direct_api_call?chain_id=1&endpoint_path=%2Fapi%2Fv2%2Ftokens%2F0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48%2Fholders',

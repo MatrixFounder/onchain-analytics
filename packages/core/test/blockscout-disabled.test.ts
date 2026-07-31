@@ -12,7 +12,8 @@ import {
  * is unreachable".
  *
  * This requirement does not come from the vendor's API; it comes from the owner's licence decision
- * (TASK.md OQ-2). The engine is for personal use, and if access is ever opened outward it will be
+ * (`docs/tasks/task-008-blockscout-free-tier.md` OQ-2). The engine is for personal use, and if
+ * access is ever opened outward it will be
  * "closed with an option on the server". An option that does not exist yet is not a plan — the day
  * it is needed, removing a provider would mean editing routes under time pressure, on a system that
  * is already exposed. So the ability to drop `blockscout` out of the chain is exercised now, while

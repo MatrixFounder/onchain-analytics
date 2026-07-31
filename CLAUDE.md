@@ -14,6 +14,10 @@ budget → snapshotter / signals → an aggregating MCP server of our own. Plus 
 `onchain-analytics` skill in Universal-skills (thin client to the MCP server + playbooks).
 
 **Sources of truth:** [ADR-001](docs/onchain-analytics/ADR-001-tech-stack.md) (stack, 12 decisions),
+[ADR-002](docs/onchain-analytics/ADR-002-configurable-routing.md) (routing policy, capability
+manifest, call deadline, aggregation semantics — 9 decisions; closes OQ-4),
+[ADR-003](docs/onchain-analytics/ADR-003-network-transport-and-billing.md) (Streamable HTTP,
+principal + perimeter, two-ledger billing — 6 decisions; closes OQ-M3-1),
 [DB-SCHEMA-CONCEPT](docs/onchain-analytics/DB-SCHEMA-CONCEPT.md) (data schema + migrations),
 [ROADMAP](docs/onchain-analytics/ROADMAP.md), [REPORT](docs/onchain-analytics/REPORT.md).
 The digest below is working guidance; **the documents themselves are authoritative**.

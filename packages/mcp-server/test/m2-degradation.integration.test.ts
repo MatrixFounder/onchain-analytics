@@ -49,7 +49,8 @@ import { ProtocolTvlOutputSchema } from '../src/tools/protocol-tvl.js';
  *    is pre-filled to the ceiling via a DIRECT `budgetStore.recordDelta()` write (reviewer note (c))
  *    — never inferred from a live remote balance.
  *
- * **Reinterpretation of ROADMAP §M2's "деградация на free-провайдера" (TASK.md §4, documented, not
+ * **Reinterpretation of ROADMAP §M2's "деградация на free-провайдера"
+ * (`docs/tasks/task-005-m2-alpha-paid.md` §4, documented, not
  * a silent divergence):** ROADMAP's literal text implies a registry-level fallback to a different,
  * free adapter (M1's `dash-platform` ⇄ `platform-explorer` hot-swap, R-11). None of the three M2
  * capabilities (`smart-money.flows`/`entity.labels`/`token.risk`) has a free equivalent with the

@@ -9,7 +9,8 @@
 /**
  * `(method+path) -> {free, pro}` credit cost. Exactly the ~8 endpoints M2's three capabilities
  * (`smart-money.flows`, `entity.labels`, `token.risk`) actually call — NOT all 74 operations in
- * the spec (out of scope, TASK.md §4). `costOf()` (cost-of.ts) looks keys up here; a key absent
+ * the spec (out of scope, `docs/tasks/task-005-m2-alpha-paid.md` §4). `costOf()` (cost-of.ts) looks
+ * keys up here; a key absent
  * from this table (future capability/endpoint drift) MUST resolve to
  * `Number.POSITIVE_INFINITY`, never `0` — fail-closed, R-37 MIN-3.
  */
