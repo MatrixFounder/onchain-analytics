@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { adapterRegistrations } from '@onchain-intel/core';
+import { adapterRegistrations, routes } from '@onchain-intel/core';
 import { loadEnv } from '../src/env.js';
 import { createServer } from '../src/server.js';
 
@@ -129,6 +129,33 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     // the test pass while checking less than it claims. The claim COUNT is therefore asserted too.
     expect(claims.length).toBeGreaterThanOrEqual(9);
     expect(claims).toEqual(claims.map(() => actual));
+  });
+
+  it('states the route count correctly, and does not re-copy the route table (WI-24)', () => {
+    // WI-24: §3.2 carried a COPY of the `routes` literal. It drifted twice over — fourteen `chains:`
+    // literals that TASK-006 had deleted from the code, and four routes it never grew. The copy is
+    // gone; what replaced it is a count plus a shape, and the count is checked here.
+    const claims = claimedCounts(
+      'docs/architectures/system-architecture.md',
+      /holds \*\*(\d+) routes\*\*\s+over\s+\d+\s+distinct\s+capabilities/g,
+    );
+    expect(claims.length).toBeGreaterThanOrEqual(1);
+    expect(claims).toEqual(claims.map(() => routes.length));
+
+    // The distinct-capability count is a DIFFERENT fact (two routes serve
+    // `wallet.balances.native`), so it is derived rather than assumed equal to the route count.
+    const distinct = new Set(routes.map((route) => route.capability)).size;
+    const capabilityClaims = claimedCounts(
+      'docs/architectures/system-architecture.md',
+      /routes\*\*\s+over\s+(\d+)\s+distinct\s+capabilities/g,
+    );
+    expect(capabilityClaims.length).toBeGreaterThanOrEqual(1);
+    expect(capabilityClaims).toEqual(capabilityClaims.map(() => distinct));
+
+    // The reason the count is checkable at all is that the table is no longer duplicated. Guard the
+    // property itself, not just today's numbers: a re-pasted literal would bring back `chains:`,
+    // which no route has set since TASK-006 and which ADR-002 D2 deletes outright.
+    expect(read('docs/architectures/system-architecture.md')).not.toContain("chains: ['");
   });
 
   it('states how many tools take a chain, counted from the real input schemas', async () => {

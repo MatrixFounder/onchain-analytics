@@ -346,10 +346,13 @@ export interface ProviderAdapter {
   normalize(cap: string, raw: unknown): unknown; // narrowed by the adapter internally
   isAvailable?(): { ok: true } | { ok: false; reason: string }; // env/key readiness, R-24
 
-  // "Can I serve this chain" — a PREDICATE over ChainInfo, not a list (R-51a/R-54c). A list would
-  // have to be kept in sync with the registry; a predicate cannot drift from it.
+  // "Can I serve this chain FOR THIS CAPABILITY" — a PREDICATE over ChainInfo, not a list
+  // (R-51a/R-54c). A list would have to be kept in sync with the registry; a predicate cannot drift
+  // from it. The second parameter is load-bearing: coverage is a property of the PAIR, not of the
+  // adapter — `nansen` serves different chain sets per capability (17/25/25), and `defillama`
+  // covers `dex.volume.history` on a narrower set than `chain.tvl`.
   // Absent ⇒ the adapter is not chain-bound (see CapabilityDescriptor.chains).
-  chainSupport?(chain: ChainInfo): boolean;
+  chainSupport?(chain: ChainInfo, capability: string): boolean;
 }
 ```
 
@@ -375,8 +378,15 @@ invert: the adapter reads the registry, the registry knows nothing about adapter
 ```ts
 export interface CapabilityRoute {
   capability: string;
-  chains?: Chain[];
+  chains?: Chain[]; // declared but set by NO route since TASK-006; ADR-002 D2 removes it
   adapterIds: string[]; // order = priority + fallback chain (R-11)
+
+  // Cross-provider policy: "is this answer enough, or should the walk continue" (TASK-008, H-1).
+  // It lives on the ROUTE, not inside a provider: an adapter that knows who stands behind it
+  // cannot be developed or deployed on its own. Applied to cache hits too, or shadowing returns
+  // through the cache. PROVISIONAL — ADR-002 D2 replaces the function with a serialisable
+  // descriptor resolved against a registry of policy classes in core.
+  isSatisfying?: (result: unknown) => boolean;
 }
 
 export class CapabilityRegistry {
@@ -401,162 +411,138 @@ export class CapabilityRegistry {
 `providers.config.ts` holds the declarative routes plus the adapter registry (id →
 hosts/rate-limit/env):
 
+**The route table is NOT reproduced here.** `providers.config.ts` holds **21 routes** over 20
+distinct capabilities, and the authoritative list is that file — a copy in this document is a copy
+that drifts, which is exactly what happened between TASK-006 and TASK-010 (WI-24: this section
+carried `chains:` literals for fourteen routes months after they were deleted from the code, and
+was missing four routes that existed). What belongs here is the **shape and the rules**, which do
+not change per route:
+
 ```ts
 export const routes: CapabilityRoute[] = [
-  { capability: 'token.price', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
-  { capability: 'token.metadata', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
-  { capability: 'pairs.new', chains: ['ethereum', 'solana'], adapterIds: ['dexscreener'] },
-  // R-6 Must requires both pairs.new and pool.info; pool.info has no tool consumer yet — cheap to
-  // declare now:
-  { capability: 'pool.info', chains: ['ethereum', 'solana'], adapterIds: ['dexscreener'] },
-  { capability: 'protocol.tvl', chains: ['ethereum', 'solana'], adapterIds: ['defillama'] },
-  { capability: 'wallet.balances.native', chains: ['ethereum'], adapterIds: ['rpc-evm'] },
-  { capability: 'wallet.balances.native', chains: ['solana'], adapterIds: ['rpc-solana'] },
-  {
-    capability: 'privacy.shielded_pool',
-    chains: ['dash'],
-    adapterIds: ['dash-platform', 'platform-explorer'],
-  },
-  {
-    capability: 'platform.identities',
-    chains: ['dash'],
-    adapterIds: ['dash-platform', 'platform-explorer'],
-  },
-  {
-    capability: 'platform.contracts',
-    chains: ['dash'],
-    adapterIds: ['dash-platform', 'platform-explorer'],
-  },
-  {
-    capability: 'platform.documents',
-    chains: ['dash'],
-    adapterIds: ['dash-platform', 'platform-explorer'],
-  },
-  {
-    capability: 'platform.credits',
-    chains: ['dash'],
-    adapterIds: ['dash-platform', 'platform-explorer'],
-  },
-  // R-10 (platform-explorer's own history, always live/keyless) + R-12 (optional PG-backed
-  // history): platform-explorer first (needs no DSN, always available), pg-history second (an
-  // additional/alternative view of history, only when ONCHAIN_PG_URL is set):
-  {
-    capability: 'privacy.shielded_pool.history',
-    chains: ['dash'],
-    adapterIds: ['platform-explorer', 'pg-history'],
-  },
-  {
-    capability: 'platform.metrics.history',
-    chains: ['dash'],
-    adapterIds: ['platform-explorer', 'pg-history'],
-  },
-  // R-74 (TASK-008) — retargeted off the `dune` stub, which declared this capability while
-  // covering zero chains. Coverage now comes from the generated Blockscout chain list.
-  { capability: 'token.holders', adapterIds: ['blockscout'] },
-  // R-75 (TASK-008) — Blockscout FIRST, Nansen as the paid fallback in the same chain. Order is
-  // the whole point: a credit is spent only when the free source cannot answer.
-  { capability: 'entity.labels', adapterIds: ['blockscout', 'nansen'] },
-  // R-82 (TASK-009) — BTC supply. One adapter, one chain: this is the narrowest route in the
-  // table, and deliberately so. `mempool.space` is NOT here even though it serves the same
-  // subject, because it is the eval's INDEPENDENT reference — a source we answer from cannot
-  // also be the check on that answer (§5.1.5, R-89).
-  { capability: 'chain.supply', adapterIds: ['blockchain-info'] },
-];
+  // The ordinary shape: one capability, one adapter. NO `chains:` literal — coverage comes from
+  // `chainSupport` (§4.2.3), and a literal here would be a second, drifting answer to the same
+  // question. Removed from every route in TASK-006; ADR-002 D2 removes the field itself.
+  { capability: 'token.price', adapterIds: ['coingecko'] },
 
-export const adapterRegistrations: AdapterRegistration[] = [
-  {
-    id: 'coingecko',
-    hosts: ['api.coingecko.com', 'pro-api.coingecko.com'],
-    rateLimit: { capacity: 10, refillPerSec: 0.5 },
-    requiresEnv: [],
-  },
-  {
-    id: 'dexscreener',
-    hosts: ['api.dexscreener.com'],
-    rateLimit: { capacity: 5, refillPerSec: 1 },
-    requiresEnv: [],
-  },
-  {
-    id: 'defillama',
-    hosts: ['api.llama.fi'],
-    // Raised from the M1 placeholder {capacity: 5, refillPerSec: 1} in TASK-007 (R-66). That value
-    // was OUR brake, not the vendor's: the vendor publishes no numeric limit at all, and a live
-    // cache-busted probe took 40 CONCURRENT origin requests with 40/40 HTTP 200 and zero 429s. At
-    // 5/1 a ten-chain sweep — the DoD this capability was built against — spent ~5s asleep in our
-    // own limiter, and a wide sweep would cross the 30s MAX_WAIT_MS fairness cap and start throwing.
-    rateLimit: { capacity: 10, refillPerSec: 5 },
-    requiresEnv: [],
-  },
-  // interface/config stub — isAvailable() returns false unconditionally (see below):
-  {
-    id: 'dune',
-    hosts: ['api.dune.com'],
-    rateLimit: { capacity: 2, refillPerSec: 0.1 },
-    requiresEnv: ['DUNE_API_KEY'],
-  },
-  {
-    id: 'rpc-evm',
-    hosts: ['ethereum-rpc.publicnode.com', 'eth.drpc.org'],
-    rateLimit: { capacity: 5, refillPerSec: 1 },
-    requiresEnv: [],
-  },
-  {
-    id: 'rpc-solana',
-    hosts: ['api.mainnet-beta.solana.com'],
-    rateLimit: { capacity: 5, refillPerSec: 1 },
-    requiresEnv: [],
-  },
-  // No live host: interface + fixture contract only. Hosts get filled in when the deferred live
-  // gRPC transport lands (§11):
-  { id: 'dash-platform', hosts: [], rateLimit: { capacity: 5, refillPerSec: 1 }, requiresEnv: [] },
-  {
-    id: 'platform-explorer',
-    hosts: ['platform-explorer.pshenmic.dev'],
-    rateLimit: { capacity: 5, refillPerSec: 1 },
-    requiresEnv: [],
-  },
-  // Not an HTTP host: the Postgres wire protocol. The DSN itself is the access control, not a
-  // hostname allowlist. Registered here SOLELY for the providers FK (§4.2).
-  {
-    id: 'pg-history',
-    hosts: [],
-    rateLimit: { capacity: 2, refillPerSec: 0.2 },
-    requiresEnv: ['ONCHAIN_PG_URL'],
-  },
-  // R-73 (TASK-008). ONE host. The two-host design this comment used to describe was reverted in
-  // adversarial cycle 1 — the direct `api.blockscout.com` enforces auth (402 with no key) and
-  // `token.holders` has no fallback adapter, so on a stock install it was advertised on 39 chains
-  // and served on none. The stale host then survived in the allowlist on the argument that it
-  // "costs nothing"; vdd-multi removed it, because `safeFetch` re-checks every REDIRECT hop against
-  // this list, so an allowlisted host we never call is still a host a misbehaving facade can bounce
-  // us to — and here the allowlist is the only egress control there is.
-  //
-  // `requiresEnv` stays EMPTY on purpose: the facade answers without a key today, so demanding one
-  // would disable a working capability. The key is read inside fetch(), like COINGECKO_* — after
-  // the cache key is derived, so it can never enter it.
-  // `refillPerSec: 2`, not the 5 R-73(b) prescribed: DEFENSIVE, not measured. The vendor sends no
-  // `RateLimit-*` header at all, so there is nothing to calibrate against, and the thing that runs
-  // out is CREDITS, not requests — `get_address_info` fans out to three upstreams (~160 credits of
-  // 100K/day ⇒ a ceiling near 625 calls/day), which 5 RPS would burn in ~125 seconds.
-  {
-    id: 'blockscout',
-    hosts: ['mcp.blockscout.com'],
-    rateLimit: { capacity: 5, refillPerSec: 2 },
-    requiresEnv: [],
-  },
-  // R-81 (TASK-009) — keyless, no account, no secret of any kind. ONE host: `blockchain.info` and
-  // `api.blockchain.info` were measured to serve `/q/*` and `/stats` identically (2026-07-29), so a
-  // second entry would widen the redirect-hop allowlist (the L-4 lesson from `blockscout`) and buy
-  // nothing. The limiter is defensive for the same reason as `blockscout`'s: no `RateLimit-*`, no
-  // `Retry-After`, no documented number — five rapid probes returned 200 and that is ALL we know.
-  {
-    id: 'blockchain-info',
-    hosts: ['blockchain.info'],
-    rateLimit: { capacity: 5, refillPerSec: 1 },
-    requiresEnv: [],
-  },
+  // Two adapters, ordered. Order IS the spend rule, not a preference hint (R-11): a credit is
+  // spent only when the free source cannot answer. `isSatisfying` refines it — without the
+  // policy an EMPTY free answer would end the walk and shadow the paid source for a whole TTL.
+  { capability: 'entity.labels', adapterIds: ['blockscout', 'nansen'], isSatisfying: /* … */ },
+
+  // Two free adapters, one live vendor view + our own snapshotter history. This is the pair
+  // ADR-002 D6 turns on merging for FIRST, because `Snapshot` has a legitimate identity key
+  // (metric/asset/ts) and both sides are free.
+  { capability: 'privacy.shielded_pool.history', adapterIds: ['platform-explorer', 'pg-history'] },
+
+  // Same capability, two routes rather than one route with two ids: the adapters serve DISJOINT
+  // chain families, so the split is what keeps `chainSupport` the only chain authority.
+  { capability: 'wallet.balances.native', adapterIds: ['rpc-evm'] },
+  { capability: 'wallet.balances.native', adapterIds: ['rpc-solana'] },
 ];
 ```
+
+Two absences in that file are decisions, not omissions, and both are recorded beside the routes
+they concern: `mempool.space` is deliberately **not** an adapter (it is the eval's independent
+reference — a source we answer from cannot also be the check on that answer, §5.1.5/R-89), and
+`dune` is registered but permanently unavailable (`isAvailable()` → `{ok: false}`), so its
+capabilities are advertised by nobody.
+
+export const adapterRegistrations: AdapterRegistration[] = [
+{
+id: 'coingecko',
+hosts: ['api.coingecko.com', 'pro-api.coingecko.com'],
+rateLimit: { capacity: 10, refillPerSec: 0.5 },
+requiresEnv: [],
+},
+{
+id: 'dexscreener',
+hosts: ['api.dexscreener.com'],
+rateLimit: { capacity: 5, refillPerSec: 1 },
+requiresEnv: [],
+},
+{
+id: 'defillama',
+hosts: ['api.llama.fi'],
+// Raised from the M1 placeholder {capacity: 5, refillPerSec: 1} in TASK-007 (R-66). That value
+// was OUR brake, not the vendor's: the vendor publishes no numeric limit at all, and a live
+// cache-busted probe took 40 CONCURRENT origin requests with 40/40 HTTP 200 and zero 429s. At
+// 5/1 a ten-chain sweep — the DoD this capability was built against — spent ~5s asleep in our
+// own limiter, and a wide sweep would cross the 30s MAX_WAIT_MS fairness cap and start throwing.
+rateLimit: { capacity: 10, refillPerSec: 5 },
+requiresEnv: [],
+},
+// interface/config stub — isAvailable() returns false unconditionally (see below):
+{
+id: 'dune',
+hosts: ['api.dune.com'],
+rateLimit: { capacity: 2, refillPerSec: 0.1 },
+requiresEnv: ['DUNE_API_KEY'],
+},
+{
+id: 'rpc-evm',
+hosts: ['ethereum-rpc.publicnode.com', 'eth.drpc.org'],
+rateLimit: { capacity: 5, refillPerSec: 1 },
+requiresEnv: [],
+},
+{
+id: 'rpc-solana',
+hosts: ['api.mainnet-beta.solana.com'],
+rateLimit: { capacity: 5, refillPerSec: 1 },
+requiresEnv: [],
+},
+// No live host: interface + fixture contract only. Hosts get filled in when the deferred live
+// gRPC transport lands (§11):
+{ id: 'dash-platform', hosts: [], rateLimit: { capacity: 5, refillPerSec: 1 }, requiresEnv: [] },
+{
+id: 'platform-explorer',
+hosts: ['platform-explorer.pshenmic.dev'],
+rateLimit: { capacity: 5, refillPerSec: 1 },
+requiresEnv: [],
+},
+// Not an HTTP host: the Postgres wire protocol. The DSN itself is the access control, not a
+// hostname allowlist. Registered here SOLELY for the providers FK (§4.2).
+{
+id: 'pg-history',
+hosts: [],
+rateLimit: { capacity: 2, refillPerSec: 0.2 },
+requiresEnv: ['ONCHAIN_PG_URL'],
+},
+// R-73 (TASK-008). ONE host. The two-host design this comment used to describe was reverted in
+// adversarial cycle 1 — the direct `api.blockscout.com` enforces auth (402 with no key) and
+// `token.holders` has no fallback adapter, so on a stock install it was advertised on 39 chains
+// and served on none. The stale host then survived in the allowlist on the argument that it
+// "costs nothing"; vdd-multi removed it, because `safeFetch` re-checks every REDIRECT hop against
+// this list, so an allowlisted host we never call is still a host a misbehaving facade can bounce
+// us to — and here the allowlist is the only egress control there is.
+//
+// `requiresEnv` stays EMPTY on purpose: the facade answers without a key today, so demanding one
+// would disable a working capability. The key is read inside fetch(), like COINGECKO_* — after
+// the cache key is derived, so it can never enter it.
+// `refillPerSec: 2`, not the 5 R-73(b) prescribed: DEFENSIVE, not measured. The vendor sends no
+// `RateLimit-*` header at all, so there is nothing to calibrate against, and the thing that runs
+// out is CREDITS, not requests — `get_address_info` fans out to three upstreams (~160 credits of
+// 100K/day ⇒ a ceiling near 625 calls/day), which 5 RPS would burn in ~125 seconds.
+{
+id: 'blockscout',
+hosts: ['mcp.blockscout.com'],
+rateLimit: { capacity: 5, refillPerSec: 2 },
+requiresEnv: [],
+},
+// R-81 (TASK-009) — keyless, no account, no secret of any kind. ONE host: `blockchain.info` and
+// `api.blockchain.info` were measured to serve `/q/*` and `/stats` identically (2026-07-29), so a
+// second entry would widen the redirect-hop allowlist (the L-4 lesson from `blockscout`) and buy
+// nothing. The limiter is defensive for the same reason as `blockscout`'s: no `RateLimit-*`, no
+// `Retry-After`, no documented number — five rapid probes returned 200 and that is ALL we know.
+{
+id: 'blockchain-info',
+hosts: ['blockchain.info'],
+rateLimit: { capacity: 5, refillPerSec: 1 },
+requiresEnv: [],
+},
+];
+
+````
 
 **Chain scoping is a derived value, not a literal.** The `chains:` arrays above are the committed
 form of the routes; they are not the authority on which chains a capability serves. The registry
@@ -778,7 +764,7 @@ _Registration (`providers.config.ts.adapterRegistrations`, the tenth entry):_
   rateLimit: { capacity: 5, refillPerSec: 1 },
   requiresEnv: ['NANSEN_API_KEY'],
 },
-```
+````
 
 _Authentication:_ the header is `apiKey: <NANSEN_API_KEY>`, **not** `Authorization: Bearer` (probe:
 `auth.scheme: 'apiKey', in: 'header', name: 'apiKey'`). The MCP endpoint is the one that uses
@@ -789,14 +775,22 @@ openapi paths) — the same `fetch()` shape as `rpc-evm`'s JSON-RPC POST:
 The fixture recorder (R-44, an extension of `record-fixture.mjs`) must serialize the request body,
 not only the query string.
 
-_Three routes (`providers.config.ts.routes`, with no fallback adapter — there is no free equivalent,
-R-30):_
+_The three routes M2 introduced (`providers.config.ts.routes`), shown in their CURRENT form — two
+still have no fallback because there is no free equivalent (R-30), and `entity.labels` acquired one
+in TASK-008:_
 
 ```ts
-{ capability: 'smart-money.flows', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
-{ capability: 'entity.labels', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
-{ capability: 'token.risk', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
+{ capability: 'smart-money.flows', adapterIds: ['nansen'] },
+{ capability: 'entity.labels', adapterIds: ['blockscout', 'nansen'], isSatisfying: /* … */ },
+{ capability: 'token.risk', adapterIds: ['nansen'] },
 ```
+
+Two things changed after M2 and are shown above rather than in their M2 form. The `chains:` literals
+these three routes carried are **gone** — coverage moved into `chainSupport()` in TASK-006, and the
+paragraph below is what replaced them. And `entity.labels` is no longer paid-only: TASK-008 put the
+free `blockscout` in front of `nansen`, with a route-level policy so that an EMPTY free answer does
+not end the walk. "No fallback adapter — there is no free equivalent (R-30)" therefore holds for two
+of the three, not all three.
 
 **Paid chain scope is derived, not enumerated.** The three routes were introduced with the same
 `ethereum`+`solana` subset as M1 — the vendor's own chain enumerators disagree with each other
