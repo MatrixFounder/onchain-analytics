@@ -1,0 +1,1376 @@
+[
+  {
+    "name": "onchain_ping",
+    "description": "Deterministic liveness check for the onchain-intel MCP server.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "service": {
+          "type": "string",
+          "const": "onchain-intel-mcp-server"
+        },
+        "version": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "ok",
+        "service",
+        "version",
+        "ts"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_get_token",
+    "description": "Token metadata and USD price for a contract address, on any supported chain. Call onchain_list_chains({capability:\"token.price\"}) to see where it is served (CoinGecko-backed).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain",
+        "address"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "symbol": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "priceUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "marketCapUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "address",
+        "symbol",
+        "name",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_wallet_balances",
+    "description": "Native asset balance for a wallet address, from a curated JSON-RPC endpoint. Served only on chains with an approved RPC host — call onchain_list_chains({capability:\"wallet.balances.native\"}) for the list.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain",
+        "address"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string"
+        },
+        "balances": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "assetType": {
+                "type": "string",
+                "enum": [
+                  "native",
+                  "token"
+                ]
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "decimals": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "amountRaw": {
+                "type": "string"
+              },
+              "amountNum": {
+                "type": "number"
+              },
+              "contractAddress": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "assetType",
+              "symbol",
+              "decimals",
+              "amountRaw"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "address",
+        "balances",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_new_pairs",
+    "description": "Recently active DEX trading pairs on a chain. Call onchain_list_chains({capability:\"pairs.new\"}) to see where it is served (DexScreener-backed).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "limit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "chain": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dexId": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "baseTokenSymbol": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "quoteTokenSymbol": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "pairAddress": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "liquidityUsd": {
+                "type": "number",
+                "minimum": 0
+              },
+              "volume24hUsd": {
+                "type": "number",
+                "minimum": 0
+              },
+              "source": {
+                "type": "string"
+              },
+              "fetchedAt": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "chain",
+              "dexId",
+              "baseTokenSymbol",
+              "quoteTokenSymbol",
+              "pairAddress",
+              "source",
+              "fetchedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "pairs",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_protocol_tvl",
+    "description": "Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug. Use onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "protocolSlug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "chain",
+        "protocolSlug"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "tvlUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "totalTvlUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "protocol",
+        "chain",
+        "tvlUsd",
+        "totalTvlUsd",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_list_chains",
+    "title": "List supported chains",
+    "description": "Discover which chains this engine knows and which capabilities are actually served on each. Use it to find the right `chain` value for the other tools, or to check where a capability is available. Makes no network calls.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "family": {
+          "type": "string",
+          "enum": [
+            "evm",
+            "svm",
+            "move",
+            "cosmos",
+            "utxo",
+            "other"
+          ]
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "minTvlUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 200
+        }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string"
+              },
+              "caip2": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "family": {
+                "type": "string"
+              },
+              "nativeSymbol": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tvlUsdAtRegistrySync": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "slug",
+              "caip2",
+              "name",
+              "family",
+              "nativeSymbol",
+              "capabilities",
+              "tvlUsdAtRegistrySync"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "registrySyncedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chains",
+        "total",
+        "registrySyncedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_chain_tvl",
+    "title": "Chain TVL",
+    "description": "Total value locked of a CHAIN (not a protocol), from DeFiLlama. Use onchain_protocol_tvl for a single protocol. Call onchain_list_chains to discover valid chain values.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string"
+        },
+        "tvlUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "name",
+        "tvlUsd",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_dex_volume",
+    "title": "DEX volume of a chain",
+    "description": "Daily DEX trading volume of a CHAIN, from DeFiLlama — free and keyless. Returns the daily series in the requested window plus the vendor 24h/7d/30d/1y/all-time totals. Set includeSeries:false for the totals alone. This is volume TRADED, not value locked — use onchain_chain_tvl for TVL. Served on fewer chains than TVL is: call onchain_list_chains with capability \"dex.volume.history\" to see where.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1825
+        },
+        "includeSeries": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "fromMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "toMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "days": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "fromMs",
+            "toMs",
+            "days"
+          ],
+          "additionalProperties": false
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ts": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "volumeUsd": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "ts",
+              "volumeUsd"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "gapDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "totals": {
+          "type": "object",
+          "properties": {
+            "h24": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "d7": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "d30": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "d1y": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "allTime": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "h24",
+            "d7",
+            "d30",
+            "d1y",
+            "allTime"
+          ],
+          "additionalProperties": false
+        },
+        "truncated": {
+          "type": "object",
+          "properties": {
+            "series": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "series",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "name",
+        "window",
+        "series",
+        "points",
+        "gapDays",
+        "totals",
+        "truncated",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_token_holders",
+    "description": "Top token holders and their exact balances. Coverage is per chain — call onchain_list_chains({capability:\"token.holders\"}) first. Returns at most one vendor page; check truncated and droppedRows before treating the list as the complete holder set. Balances are exact base-unit strings with no decimals applied — get decimals from onchain_get_token.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "tokenAddress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain",
+        "tokenAddress"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tokenAddress": {
+          "type": "string"
+        },
+        "holders": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "amountRaw": {
+                "type": "string",
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "tokenId": {
+                "type": "string",
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "isContract": {
+                "type": "boolean"
+              },
+              "isScam": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "address",
+              "amountRaw"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "droppedRows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "tokenAddress",
+        "holders",
+        "truncated",
+        "droppedRows",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_chain_supply",
+    "title": "Chain native-asset supply",
+    "description": "How much of a chain's native asset exists. Returns TWO distinct figures: \"emission\" — what the issuance schedule has released — and \"circulating\" — what was actually claimed. They differ by unclaimed block subsidy and must not be used interchangeably. Exact values are the *Raw strings in the smallest unit; the *Btc fields are lossy conveniences. Bitcoin only today; call onchain_list_chains to see where the capability is served.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "emissionRaw": {
+          "type": "string"
+        },
+        "emissionBtc": {
+          "type": "number",
+          "minimum": 0
+        },
+        "circulatingRaw": {
+          "type": "string"
+        },
+        "circulatingBtc": {
+          "type": "number",
+          "minimum": 0
+        },
+        "blockCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "symbol",
+        "decimals",
+        "emissionRaw",
+        "emissionBtc",
+        "circulatingRaw",
+        "circulatingBtc",
+        "blockCount",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_smart_money_flows",
+    "description": "Smart-money net-flow (1h/24h/7d/30d) and top holders for a token. Coverage is per chain — call onchain_list_chains({capability:\"smart-money.flows\"}) first (Nansen-backed, paid).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "tokenAddress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain",
+        "tokenAddress"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tokenAddress": {
+          "type": "string"
+        },
+        "tokenSymbol": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "netflow1hUsd": {
+          "type": "number"
+        },
+        "netflow24hUsd": {
+          "type": "number"
+        },
+        "netflow7dUsd": {
+          "type": "number"
+        },
+        "netflow30dUsd": {
+          "type": "number"
+        },
+        "traderCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tokenAgeDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tokenSectors": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "topHolders": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "addressLabel": {
+                "type": "string"
+              },
+              "tokenAmount": {
+                "type": "number"
+              },
+              "valueUsd": {
+                "type": "number"
+              },
+              "ownershipPercentage": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "address"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "tokenAddress",
+        "tokenSymbol",
+        "netflow1hUsd",
+        "netflow24hUsd",
+        "netflow7dUsd",
+        "netflow30dUsd",
+        "topHolders",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_entity_label",
+    "description": "Entity/address labels for a search query and/or token address. Coverage is per chain — call onchain_list_chains({capability:\"entity.labels\"}) first (Nansen-backed, paid; the opt-in exhaustive escalation costs more and is served on fewer chains).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "tokenAddress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "exhaustive": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "entities": {
+          "maxItems": 600,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "chain": {
+                "type": "string",
+                "minLength": 1
+              },
+              "address": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "tags": {
+                "default": [],
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 256
+                }
+              },
+              "labels": {
+                "default": [],
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 256
+                }
+              },
+              "premiumRequested": {
+                "type": "boolean"
+              },
+              "source": {
+                "type": "string"
+              },
+              "fetchedAt": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "tags",
+              "labels",
+              "premiumRequested",
+              "source",
+              "fetchedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "entities",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_token_risk",
+    "description": "Risk/reward indicators for a token. Coverage is per chain — call onchain_list_chains({capability:\"token.risk\"}) first (Nansen-backed, paid).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "tokenAddress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain",
+        "tokenAddress"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string"
+        },
+        "marketCapUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "marketCapGroup": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "isStablecoin": {
+          "type": "boolean"
+        },
+        "deploymentDate": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "symbol": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "fdvUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "circulatingSupply": {
+          "type": "number",
+          "minimum": 0
+        },
+        "totalSupply": {
+          "type": "number",
+          "minimum": 0
+        },
+        "liquidityUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "totalHolders": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "riskIndicators": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "indicatorType": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "score": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "signal": {
+                "type": "number"
+              },
+              "signalPercentile": {
+                "type": "number"
+              },
+              "lastTriggerOn": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "indicatorType"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "rewardIndicators": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "indicatorType": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "score": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "signal": {
+                "type": "number"
+              },
+              "signalPercentile": {
+                "type": "number"
+              },
+              "lastTriggerOn": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "indicatorType"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "address",
+        "riskIndicators",
+        "rewardIndicators",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  }
+]

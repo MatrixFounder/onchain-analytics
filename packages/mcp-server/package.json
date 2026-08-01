@@ -19,7 +19,8 @@
     "test": "vitest run",
     "smoke:dist": "node scripts/smoke-dist.mjs",
     "probe:principal": "node scripts/probe-principal.mjs",
-    "eval": "node eval/run.mjs"
+    "eval": "node eval/run.mjs",
+    "snapshot:tools": "tsx scripts/snapshot-tools.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
