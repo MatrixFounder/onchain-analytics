@@ -1,9 +1,7 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — the eval is plain .mjs by design (no build step, no SDK); only its data is read
 import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS } from '../eval/capabilities.mjs';
+import { toolSpecs } from '../src/tools/tool-specs.js';
 
 /**
  * RF-5 — the offline half of the fix.
@@ -18,18 +16,20 @@ import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS } from '../eval/capabilities.mj
  * construction is not on the path a new tool travels. This test is on that path, and it needs no
  * network — both sides are files in this repo.
  *
- * The tool side is DERIVED, not restated: a new `src/tools/*.ts` with a `CAPABILITY` constant is
- * picked up here the moment it lands. Restating the list would reproduce the very defect (two
- * hand-written lists drifting apart) one directory over.
+ * The tool side is DERIVED, not restated: a tool declaring a capability is picked up here the
+ * moment it lands. Restating the list would reproduce the very defect (two hand-written lists
+ * drifting apart) one directory over.
+ *
+ * **It used to derive by REGEX over the source files** — `/^const CAPABILITY = '…';$/m` across
+ * `src/tools/*.ts` — which was a text heuristic about text. It read whatever matched a formatting
+ * convention, so a tool writing the same constant differently would have vanished from the
+ * comparison silently; the lower bound below would have caught a total failure and never a partial
+ * one. Since TASK-011 the capability is a field on the tool's spec, so this reads the registry.
  */
-const toolsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/tools');
-
 function capabilitiesServedByTools(): Map<string, string> {
   const byCapability = new Map<string, string>();
-  for (const file of readdirSync(toolsDir).filter((f) => f.endsWith('.ts'))) {
-    const source = readFileSync(path.join(toolsDir, file), 'utf8');
-    const match = /^const CAPABILITY = '([^']+)';$/m.exec(source);
-    if (match?.[1]) byCapability.set(match[1], file);
+  for (const spec of toolSpecs) {
+    if (spec.capability !== null) byCapability.set(spec.capability, spec.name);
   }
   return byCapability;
 }
@@ -41,7 +41,7 @@ describe('every capability an MCP tool serves has an eval case or a recorded rea
     ...(CAPABILITY_EXCLUSIONS as Map<string, string>).keys(),
   ]);
 
-  it('finds the tool→capability constants at all', () => {
+  it('finds the tool→capability mapping at all', () => {
     // Guards the derivation itself: if the naming convention changes, this test would otherwise
     // pass by scanning nothing — green for the worst possible reason.
     expect(served.size).toBeGreaterThanOrEqual(9);

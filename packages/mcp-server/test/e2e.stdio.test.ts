@@ -8,6 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { PingOutputSchema } from '../src/tools/ping.js';
+import { toolSpecs } from '../src/tools/tool-specs.js';
 
 /**
  * E2E test over REAL stdio (task 001-3, closes R-6, confirms R-9/R-10). Spawns `src/index.ts`
@@ -148,33 +149,17 @@ describe('onchain_ping — stdio E2E', () => {
         '  1. this list (pnpm test)\n' +
         '  2. eval/capabilities.mjs -> CAPABILITY_TOOLS, or CAPABILITY_EXCLUSIONS ' +
         '(test/eval-capability-coverage.test.ts)\n' +
-        '  3. scripts/smoke-dist.mjs -> expectedNames (pnpm smoke:dist — runs AFTER test and build)\n' +
+        '  3. scripts/smoke-dist.mjs reads tool-inventory.json (pnpm smoke:dist — AFTER build)\n' +
         '  4. docs/architectures/interfaces.md §5 must NAME the tool (test/docs-counts.test.ts)';
-      expect(tools, ADD_A_TOOL).toHaveLength(13);
+      // Derived from the registry, never restated (TASK-011 R-116). The channel is unchanged —
+      // this suite still spawns `src/index.ts` and reads the wire — only the EXPECTATION stopped
+      // being a second hand-written list. What still cannot be derived, and is not, is "there are
+      // at least 13": that hand-written bound lives in `tools-list-contract.test.ts`, because a
+      // count taken from the same array the server registers from would agree with any loss.
+      const expected = toolSpecs.map((spec) => spec.name).sort();
+      expect(tools, ADD_A_TOOL).toHaveLength(expected.length);
       const names = tools.map((tool) => tool.name).sort();
-      expect(names, ADD_A_TOOL).toStrictEqual(
-        [
-          'onchain_get_token',
-          'onchain_new_pairs',
-          'onchain_ping',
-          'onchain_protocol_tvl',
-          'onchain_wallet_balances',
-          'onchain_smart_money_flows',
-          'onchain_entity_label',
-          'onchain_list_chains',
-          'onchain_chain_tvl',
-          'onchain_token_risk',
-          // TASK-007 task 007-6 — free, keyless, no env of any kind, so it is present under spawn
-          // exactly like the other keyless tools.
-          'onchain_dex_volume',
-          // TASK-008 follow-up — free and keyless like `onchain_dex_volume`, so it is present under
-          // spawn on a stock install with no env at all.
-          'onchain_token_holders',
-          // TASK-009 task 009-5 — keyless and secret-free (the vendor offers no key at all), so it
-          // too is present under spawn on a stock install.
-          'onchain_chain_supply',
-        ].sort(),
-      );
+      expect(names, ADD_A_TOOL).toStrictEqual(expected);
     },
     TEST_TIMEOUT_MS,
   );

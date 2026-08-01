@@ -16,24 +16,59 @@
 // This module is data + pure functions on purpose: importing it must never start a server, so the
 // test suite can read it without touching the network.
 
+import { readFileSync } from 'node:fs';
+
+/**
+ * Tool names come from the generated inventory, never from this file (TASK-011, R-117).
+ *
+ * The artifact is read rather than imported because this module is plain ESM by design and must
+ * not acquire a build step — and because reading a file cannot start a server, which is this
+ * file's other standing contract. `capability -> tool` is the whole mapping the eval needs; the
+ * `args` builders below stay hand-written, since how to construct a probe call is knowledge that
+ * lives nowhere in the registry and should not.
+ */
+const INVENTORY = JSON.parse(
+  readFileSync(new URL('../tool-inventory.json', import.meta.url), 'utf8'),
+);
+
+/**
+ * The tool serving a capability, or a loud failure.
+ *
+ * Throwing at import time is deliberate: `test/eval-capability-coverage.test.ts` imports this
+ * module offline, so a capability listed here that no tool serves — an orphan left behind by a
+ * removed or renamed tool — fails `pnpm test` rather than surfacing during a live run that nobody
+ * is watching (R-126).
+ */
+function toolFor(capability) {
+  const entry = INVENTORY.tools.find((tool) => tool.capability === capability);
+  if (!entry) {
+    throw new Error(
+      `eval/capabilities.mjs: no MCP tool serves '${capability}'. Either the capability is wired ` +
+        'here by mistake, or the tool was renamed/removed and this entry is an orphan. ' +
+        'The inventory is generated from src/tools/tool-specs.ts.',
+    );
+  }
+  return entry.name;
+}
+
 /** capability → the tool that serves it, and how to build its arguments from a probe row.
  * `args` returning null means "no probe input curated for this chain" → reported as `no-probe`. */
 export const CAPABILITY_TOOLS = [
-  { capability: 'chain.tvl', tool: 'onchain_chain_tvl', args: (c) => ({ chain: c }) },
+  { capability: 'chain.tvl', tool: toolFor('chain.tvl'), args: (c) => ({ chain: c }) },
   {
     capability: 'protocol.tvl',
-    tool: 'onchain_protocol_tvl',
+    tool: toolFor('protocol.tvl'),
     args: (c, p) => (p.protocolSlug ? { chain: c, protocolSlug: p.protocolSlug } : null),
   },
-  { capability: 'pairs.new', tool: 'onchain_new_pairs', args: (c) => ({ chain: c, limit: 5 }) },
+  { capability: 'pairs.new', tool: toolFor('pairs.new'), args: (c) => ({ chain: c, limit: 5 }) },
   {
     capability: 'token.price',
-    tool: 'onchain_get_token',
+    tool: toolFor('token.price'),
     args: (c, p) => (p.token ? { chain: c, address: p.token } : null),
   },
   {
     capability: 'wallet.balances.native',
-    tool: 'onchain_wallet_balances',
+    tool: toolFor('wallet.balances.native'),
     args: (c, p) => (p.wallet ? { chain: c, address: p.wallet } : null),
   },
   {
@@ -41,7 +76,7 @@ export const CAPABILITY_TOOLS = [
     // that declares it is exercised for free. 7 days keeps the payload small; the window is what
     // makes `gapDays` meaningful, so this is where a vendor that stops publishing shows up.
     capability: 'dex.volume.history',
-    tool: 'onchain_dex_volume',
+    tool: toolFor('dex.volume.history'),
     args: (c) => ({ chain: c, days: 7 }),
   },
   {
@@ -51,7 +86,7 @@ export const CAPABILITY_TOOLS = [
     // `token.price`. Chains with no curated token report `no-probe` rather than silently vanishing
     // — which is the whole point of this file.
     capability: 'token.holders',
-    tool: 'onchain_token_holders',
+    tool: toolFor('token.holders'),
     args: (c, p) => (p.token ? { chain: c, tokenAddress: p.token } : null),
   },
   {
@@ -59,7 +94,7 @@ export const CAPABILITY_TOOLS = [
     // else, so every chain declaring the capability is exercised automatically. Today that is
     // `bitcoin` alone, which is also the point of the coverage assertions around it.
     capability: 'chain.supply',
-    tool: 'onchain_chain_supply',
+    tool: toolFor('chain.supply'),
     args: (c) => ({ chain: c }),
   },
 ];

@@ -59,6 +59,16 @@ if (!existsSync(distEntry)) {
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 
+// The generated tool inventory (TASK-011 R-114). Read as a FILE on purpose: this script stays
+// dependency-free — no SDK, no TypeScript, no build step — which is the property that lets it test
+// the shipped artifact without dragging the build into its own prerequisites.
+const inventoryPath = path.resolve(packageRoot, 'tool-inventory.json');
+if (!existsSync(inventoryPath)) {
+  fail(`tool inventory not found at ${inventoryPath} — run \`pnpm gen:tools\` first.`);
+  process.exit(1);
+}
+const inventory = JSON.parse(readFileSync(inventoryPath, 'utf8'));
+
 // Task 003-7: `dist/index.js`'s `main()` now unconditionally builds the REAL `CapabilityRegistry`
 // (all 9 real adapters + the real two-level cache) before registering any tool, even though this
 // script only ever calls `onchain_ping` — the `SqliteCacheStore` constructor touches disk
@@ -192,25 +202,14 @@ async function run() {
 
   const listResult = await sendRequest('tools/list', {});
   const tools = listResult && listResult.tools;
-  // Kept sorted; the count below is DERIVED from this list, never written again as a literal.
-  // A hardcoded `!== 8` sitting beside the names is what let this gate rot: TASK-006 added two
-  // tools and TASK-007 a third, both updated the in-process suites, and this one stayed red in CI
-  // because nothing local runs it (`pnpm test` does not; only the CI step after `pnpm build`).
-  const expectedNames = [
-    'onchain_chain_supply',
-    'onchain_chain_tvl',
-    'onchain_dex_volume',
-    'onchain_entity_label',
-    'onchain_get_token',
-    'onchain_list_chains',
-    'onchain_new_pairs',
-    'onchain_ping',
-    'onchain_protocol_tvl',
-    'onchain_smart_money_flows',
-    'onchain_token_holders',
-    'onchain_token_risk',
-    'onchain_wallet_balances',
-  ];
+  // Read from the generated inventory, never restated here (TASK-011 R-115). The literal that
+  // used to sit at this spot is what let this gate rot: TASK-006 added two tools and TASK-007 a
+  // third, both updated the in-process suites, and this one stayed red in CI because nothing local
+  // runs it (`pnpm test` does not; only the CI step after `pnpm build`).
+  //
+  // The comparison is still `src`-against-`dist`: the expectation comes from the artifact generated
+  // out of the source registry, the observation from the built `dist/index.js` that just answered.
+  const expectedNames = [...inventory.tools.map((tool) => tool.name)].sort();
   const actualNames = Array.isArray(tools)
     ? tools
         .map((tool) => tool && tool.name)
@@ -230,10 +229,11 @@ async function run() {
       `tools/list did not return exactly the ${expectedNames.length} expected tools ` +
         `(got ${actualNames.length}). Missing: ${missing.length ? missing.join(', ') : '(none)'}. ` +
         `Unexpected: ${unexpected.length ? unexpected.join(', ') : '(none)'}. ` +
-        'If a tool was added deliberately, add its name to `expectedNames` in this script — and ' +
-        'to the other three inventories, none of which references the others (WI-20): ' +
-        'test/e2e.stdio.test.ts, eval/capabilities.mjs (CAPABILITY_TOOLS or ' +
-        'CAPABILITY_EXCLUSIONS), and docs/architectures/interfaces.md §5.',
+        'This list is DERIVED from tool-inventory.json, so a mismatch means the built dist/ and ' +
+        'the source registry disagree — either the artifact is stale (`pnpm gen:tools`) or the ' +
+        'build did not pick up a registry change. Adding a tool is: edit ' +
+        'src/tools/tool-specs.ts, run `pnpm gen:tools`, then update ' +
+        'test/fixtures/tools-list.snapshot.json after reading its diff.',
     );
   }
 
