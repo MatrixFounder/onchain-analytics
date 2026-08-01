@@ -1,6 +1,6 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
+import { defineTool } from './registry.js';
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
 
@@ -118,30 +118,21 @@ export async function dexVolumeHandler(
   return { ok: true, value: parsed.data, cache: outcome.cache };
 }
 
-export function registerDexVolumeTool(server: McpServer, ctx: DexVolumeContext): void {
-  server.registerTool(
-    'onchain_dex_volume',
-    {
-      title: 'DEX volume of a chain',
-      description:
-        'Daily DEX trading volume of a CHAIN, from DeFiLlama — free and keyless. Returns the ' +
-        'daily series in the requested window plus the vendor 24h/7d/30d/1y/all-time totals. ' +
-        'Set includeSeries:false for the totals alone. This is volume TRADED, not value locked — ' +
-        'use onchain_chain_tvl for TVL. Served on fewer chains than TVL is: call ' +
-        'onchain_list_chains with capability "dex.volume.history" to see where.',
-      inputSchema: DexVolumeInputSchema,
-      outputSchema: DexVolumeOutputSchema,
-    },
-    async (input: DexVolumeInput) => {
-      const outcome = await dexVolumeHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text' as const, text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(outcome.value) }],
-        structuredContent: outcome.value,
-        _meta: { cache: outcome.cache },
-      };
-    },
-  );
-}
+export const dexVolumeToolSpec = defineTool({
+  name: 'onchain_dex_volume',
+  title: 'DEX volume of a chain',
+  description:
+    'Daily DEX trading volume of a CHAIN, from DeFiLlama — free and keyless. Returns the ' +
+    'daily series in the requested window plus the vendor 24h/7d/30d/1y/all-time totals. ' +
+    'Set includeSeries:false for the totals alone. This is volume TRADED, not value locked — ' +
+    'use onchain_chain_tvl for TVL. Served on fewer chains than TVL is: call ' +
+    'onchain_list_chains with capability "dex.volume.history" to see where.',
+  inputSchema: DexVolumeInputSchema,
+  outputSchema: DexVolumeOutputSchema,
+  capability: 'dex.volume.history',
+  needs: ['registry'],
+  handler: async (input, ctx) => {
+    const outcome = await dexVolumeHandler(input, ctx);
+    return outcome.ok ? { ok: true, output: outcome.value, cache: outcome.cache } : outcome;
+  },
+});

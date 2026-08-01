@@ -4,7 +4,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CapabilityRegistry, routes, type BudgetStore } from '@onchain-intel/core';
-import { defineTool, toolSpecs, type ToolContext, type ToolSpec } from '../src/tools/registry.js';
+import { defineTool, type ToolContext, type ToolSpec } from '../src/tools/registry.js';
+import { toolSpecs } from '../src/tools/tool-specs.js';
 
 /**
  * The registry's own contract (TASK-011, 011-2).
@@ -238,11 +239,64 @@ describe('defineTool publishes identity faithfully (R-110)', () => {
   });
 });
 
-describe('the registry starts empty and is wired in 011-3b', () => {
-  it('exports an empty list that nothing reads yet', () => {
-    // Deliberately asserts the stub state. When 011-3b lands, this expectation is replaced by the
-    // real inventory checks — and until then, a non-empty registry would mean `server.ts` and the
-    // registry disagree about who registers tools.
-    expect(toolSpecs).toStrictEqual([]);
+describe('the registry is the inventory (R-110, R-112)', () => {
+  it('declares every tool exactly once, with no duplicate names', () => {
+    const names = toolSpecs.map((spec) => spec.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('gives every tool a non-empty title and description', () => {
+    // `title` is required by the type, so this guards the *value*: an empty string satisfies
+    // `string` and would publish a blank label.
+    for (const spec of toolSpecs) {
+      expect(spec.title.trim(), `${spec.name} has no title`).not.toBe('');
+      expect(spec.description.trim(), `${spec.name} has no description`).not.toBe('');
+    }
+  });
+
+  it('states `capability` as an explicit null where a tool serves none', () => {
+    // The two that compute their own answer: `onchain_ping` and `onchain_list_chains`. Written as
+    // `null` rather than left off, so "serves no capability" is a statement and not an omission.
+    const withoutCapability = toolSpecs
+      .filter((spec) => spec.capability === null)
+      .map((s) => s.name);
+    expect(withoutCapability.sort()).toStrictEqual(['onchain_list_chains', 'onchain_ping']);
+    for (const spec of toolSpecs) {
+      expect(spec.capability === null || spec.capability.length > 0).toBe(true);
+    }
+  });
+
+  it('routes every declared capability, so no tool advertises something unreachable', () => {
+    // TASK-008's actual defect: a capability advertised by a tool that no route could serve. Here
+    // it becomes unrepresentable rather than reviewable.
+    const routed = new Set(routes.map((route) => route.capability));
+    const unroutable = toolSpecs
+      .filter((spec) => spec.capability !== null && !routed.has(spec.capability))
+      .map((spec) => `${spec.name} -> ${spec.capability ?? ''}`);
+    expect(unroutable).toStrictEqual([]);
+  });
+
+  it('asks only for context keys that exist', () => {
+    const known = new Set(['version', 'registry', 'budgetStore']);
+    for (const spec of toolSpecs) {
+      for (const key of spec.needs) {
+        expect(known.has(key), `${spec.name} needs unknown context key ${key}`).toBe(true);
+      }
+    }
+  });
+
+  it('keeps `budgetStore` to the three tools that actually report a credit spend', () => {
+    // Least privilege, asserted as data rather than trusted to review: any other tool acquiring the
+    // budget store would show up here, and that is the seam where a paid-provider detail could leak
+    // into a free tool's response.
+    const withBudget = toolSpecs
+      .filter((spec) => spec.needs.includes('budgetStore'))
+      .map((spec) => spec.name)
+      .sort();
+    expect(withBudget).toStrictEqual([
+      'onchain_entity_label',
+      'onchain_smart_money_flows',
+      'onchain_token_risk',
+    ]);
   });
 });

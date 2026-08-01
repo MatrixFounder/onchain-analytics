@@ -199,16 +199,3 @@ export function defineTool<
     },
   };
 }
-
-/**
- * Every tool this server publishes, in the order clients see them in `tools/list`.
- *
- * **The order is part of the contract.** The SDK publishes tools in registration order, every
- * existing observer sorts by name before comparing, and so a reordering here would change what the
- * model receives without a single gate noticing — which is why `test/tools-list-contract.test.ts`
- * freezes the unsorted sequence.
- *
- * Empty until task 011-3b moves the thirteen tools onto `defineTool`; `server.ts` is untouched
- * until then, so nothing reads this yet.
- */
-export const toolSpecs: readonly ToolSpec[] = [];

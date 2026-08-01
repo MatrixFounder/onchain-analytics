@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 
 /**
  * Input contract for `onchain_ping`. The tool takes no parameters — the empty, `.strict()`
@@ -53,21 +53,13 @@ export function pingHandler(_input: PingInput, ctx: PingContext): PingOutput {
  * `@modelcontextprotocol/sdk` version, so there is exactly one schema object driving both
  * runtime validation and the generated MCP tool-schema (no hand-written JSON-Schema duplicate).
  */
-export function registerPingTool(server: McpServer, ctx: PingContext): void {
-  server.registerTool(
-    'onchain_ping',
-    {
-      title: 'Server liveness check',
-      description: 'Deterministic liveness check for the onchain-intel MCP server.',
-      inputSchema: PingInputSchema,
-      outputSchema: PingOutputSchema,
-    },
-    (input) => {
-      const output = pingHandler(input, ctx);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output) }],
-        structuredContent: output,
-      };
-    },
-  );
-}
+export const pingToolSpec = defineTool({
+  name: 'onchain_ping',
+  title: 'Server liveness check',
+  description: 'Deterministic liveness check for the onchain-intel MCP server.',
+  inputSchema: PingInputSchema,
+  outputSchema: PingOutputSchema,
+  capability: null,
+  needs: ['version'],
+  handler: (input, ctx) => ({ ok: true, output: pingHandler(input, ctx) }),
+});

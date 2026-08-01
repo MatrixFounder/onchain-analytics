@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 import {
   canonicalizeChain,
   ChainInputSchema,
@@ -136,34 +136,16 @@ export async function getTokenHandler(
  *
  * `_meta.cache` sits OUTSIDE `structuredContent`/`outputSchema` (ARCHITECTURE.md §3.2/§5.1).
  */
-export function registerGetTokenTool(server: McpServer, ctx: GetTokenContext): void {
-  server.registerTool(
-    'onchain_get_token',
-    {
-      // TASK-006 / vdd-multi cycle 5, M-2: the description is now the ONLY chain signal the model
-      // sees while routing. Dropping the `z.enum` saved ~8.7k tokens of schema per request, and the
-      // enum was also what told the model which chains existed — so a description still naming two
-      // chains would make this task's headline capability invisible to its only consumer. Naming
-      // the discovery tool AND the capability id is what keeps it accurate without re-paying for
-      // the enum: `onchain_list_chains` answers from the same coverage matrix the engine gates on.
-      title: 'Token price and metadata',
-      description:
-        'Token metadata and USD price for a contract address, on any supported chain. ' +
-        'Call onchain_list_chains({capability:"token.price"}) to see where it is served ' +
-        '(CoinGecko-backed).',
-      inputSchema: GetTokenInputSchema,
-      outputSchema: GetTokenOutputSchema,
-    },
-    async (input) => {
-      const outcome = await getTokenHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-        structuredContent: outcome.output,
-        _meta: { cache: outcome.cache },
-      };
-    },
-  );
-}
+export const getTokenToolSpec = defineTool({
+  name: 'onchain_get_token',
+  title: 'Token price and metadata',
+  description:
+    'Token metadata and USD price for a contract address, on any supported chain. ' +
+    'Call onchain_list_chains({capability:"token.price"}) to see where it is served ' +
+    '(CoinGecko-backed).',
+  inputSchema: GetTokenInputSchema,
+  outputSchema: GetTokenOutputSchema,
+  capability: 'token.price',
+  needs: ['registry'],
+  handler: getTokenHandler,
+});

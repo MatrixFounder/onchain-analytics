@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 import {
   canonicalizeChain,
   ChainInputSchema,
@@ -92,33 +92,16 @@ export async function walletBalancesHandler(
 
 /** Registers `onchain_wallet_balances` — exactly this name (R-17). See `get-token.ts`'s
  * `registerGetTokenTool` docstring for the shared `isError`/`_meta.cache` wiring rationale. */
-export function registerWalletBalancesTool(server: McpServer, ctx: WalletBalancesContext): void {
-  server.registerTool(
-    'onchain_wallet_balances',
-    {
-      // See `get-token.ts` for why the chain set is named through the discovery tool rather than
-      // listed here (vdd-multi cycle 5, M-2). This capability is the narrowest of the eight: it
-      // needs a HUMAN-CURATED RPC host per chain (security.md §7.2.1), so coverage is a short
-      // allowlist, not "every EVM chain" — which is exactly why guessing is expensive and the
-      // discovery call is worth naming.
-      title: 'Native balance of a wallet',
-      description:
-        'Native asset balance for a wallet address, from a curated JSON-RPC endpoint. ' +
-        'Served only on chains with an approved RPC host — call ' +
-        'onchain_list_chains({capability:"wallet.balances.native"}) for the list.',
-      inputSchema: WalletBalancesInputSchema,
-      outputSchema: WalletBalancesOutputSchema,
-    },
-    async (input) => {
-      const outcome = await walletBalancesHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-        structuredContent: outcome.output,
-        _meta: { cache: outcome.cache },
-      };
-    },
-  );
-}
+export const walletBalancesToolSpec = defineTool({
+  name: 'onchain_wallet_balances',
+  title: 'Native balance of a wallet',
+  description:
+    'Native asset balance for a wallet address, from a curated JSON-RPC endpoint. ' +
+    'Served only on chains with an approved RPC host — call ' +
+    'onchain_list_chains({capability:"wallet.balances.native"}) for the list.',
+  inputSchema: WalletBalancesInputSchema,
+  outputSchema: WalletBalancesOutputSchema,
+  capability: 'wallet.balances.native',
+  needs: ['registry'],
+  handler: walletBalancesHandler,
+});

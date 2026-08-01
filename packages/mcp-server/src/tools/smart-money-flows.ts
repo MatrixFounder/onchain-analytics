@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 import {
   canonicalizeChain,
   ChainInputSchema,
@@ -127,31 +127,16 @@ export async function smartMoneyFlowsHandler(
  * pattern as `get-token.ts`'s `registerGetTokenTool` (`isError`/`_meta.cache`), plus `_meta.budget`
  * as a sibling key when the handler returned one (Phase 2).
  */
-export function registerSmartMoneyFlowsTool(server: McpServer, ctx: SmartMoneyFlowsContext): void {
-  server.registerTool(
-    'onchain_smart_money_flows',
-    {
-      // See `get-token.ts` for the M-2 rationale. On a PAID route the discovery call is not a
-      // nicety: a wrong `chain` guess is refused before any credits are reserved, but only if the
-      // model knows to ask instead of guessing.
-      title: 'Smart-money flows for a token',
-      description:
-        'Smart-money net-flow (1h/24h/7d/30d) and top holders for a token. ' +
-        'Coverage is per chain — call onchain_list_chains({capability:"smart-money.flows"}) ' +
-        'first (Nansen-backed, paid).',
-      inputSchema: SmartMoneyFlowsInputSchema,
-      outputSchema: SmartMoneyFlowsOutputSchema,
-    },
-    async (input) => {
-      const outcome = await smartMoneyFlowsHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-        structuredContent: outcome.output,
-        _meta: { cache: outcome.cache, ...(outcome.budget ? { budget: outcome.budget } : {}) },
-      };
-    },
-  );
-}
+export const smartMoneyFlowsToolSpec = defineTool({
+  name: 'onchain_smart_money_flows',
+  title: 'Smart-money flows for a token',
+  description:
+    'Smart-money net-flow (1h/24h/7d/30d) and top holders for a token. ' +
+    'Coverage is per chain — call onchain_list_chains({capability:"smart-money.flows"}) ' +
+    'first (Nansen-backed, paid).',
+  inputSchema: SmartMoneyFlowsInputSchema,
+  outputSchema: SmartMoneyFlowsOutputSchema,
+  capability: 'smart-money.flows',
+  needs: ['registry', 'budgetStore'],
+  handler: smartMoneyFlowsHandler,
+});

@@ -1,6 +1,6 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
+import { defineTool } from './registry.js';
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
 
@@ -65,27 +65,18 @@ export async function chainTvlHandler(
   return { ok: true, value: parsed.data, cache: outcome.cache };
 }
 
-export function registerChainTvlTool(server: McpServer, ctx: ChainTvlContext): void {
-  server.registerTool(
-    'onchain_chain_tvl',
-    {
-      title: 'Chain TVL',
-      description:
-        'Total value locked of a CHAIN (not a protocol), from DeFiLlama. Use onchain_protocol_tvl ' +
-        'for a single protocol. Call onchain_list_chains to discover valid chain values.',
-      inputSchema: ChainTvlInputSchema,
-      outputSchema: ChainTvlOutputSchema,
-    },
-    async (input: ChainTvlInput) => {
-      const outcome = await chainTvlHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text' as const, text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(outcome.value) }],
-        structuredContent: outcome.value,
-        _meta: { cache: outcome.cache },
-      };
-    },
-  );
-}
+export const chainTvlToolSpec = defineTool({
+  name: 'onchain_chain_tvl',
+  title: 'Chain TVL',
+  description:
+    'Total value locked of a CHAIN (not a protocol), from DeFiLlama. Use onchain_protocol_tvl ' +
+    'for a single protocol. Call onchain_list_chains to discover valid chain values.',
+  inputSchema: ChainTvlInputSchema,
+  outputSchema: ChainTvlOutputSchema,
+  capability: 'chain.tvl',
+  needs: ['registry'],
+  handler: async (input, ctx) => {
+    const outcome = await chainTvlHandler(input, ctx);
+    return outcome.ok ? { ok: true, output: outcome.value, cache: outcome.cache } : outcome;
+  },
+});

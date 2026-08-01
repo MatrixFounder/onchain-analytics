@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 import {
   canonicalizeChain,
   ChainInputSchema,
@@ -137,35 +137,18 @@ export async function tokenHoldersHandler(
 }
 
 /** Registers `onchain_token_holders` on `server`. Same wiring pattern as the other free tools. */
-export function registerTokenHoldersTool(server: McpServer, ctx: TokenHoldersContext): void {
-  server.registerTool(
-    'onchain_token_holders',
-    {
-      // The two sentences earn their schema cost. Coverage: this capability reaches far fewer
-      // chains than the M1 tools do (EVM explorers only), and a wrong chain guess is a refusal the
-      // model would otherwise retry. Completeness: `truncated`/`droppedRows` exist because "50
-      // holders" and "the first 50 of many" are different answers to a concentration question — a
-      // model that ignores them will state a share of supply that was never asserted.
-      title: 'Top token holders',
-      description:
-        'Top token holders and their exact balances. Coverage is per chain — call ' +
-        'onchain_list_chains({capability:"token.holders"}) first. Returns at most one vendor page; ' +
-        'check truncated and droppedRows before treating the list as the complete holder set. ' +
-        'Balances are exact base-unit strings with no decimals applied — get decimals from ' +
-        'onchain_get_token.',
-      inputSchema: TokenHoldersInputSchema,
-      outputSchema: TokenHoldersOutputSchema,
-    },
-    async (input) => {
-      const outcome = await tokenHoldersHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-        structuredContent: outcome.output,
-        _meta: { cache: outcome.cache },
-      };
-    },
-  );
-}
+export const tokenHoldersToolSpec = defineTool({
+  name: 'onchain_token_holders',
+  title: 'Top token holders',
+  description:
+    'Top token holders and their exact balances. Coverage is per chain — call ' +
+    'onchain_list_chains({capability:"token.holders"}) first. Returns at most one vendor page; ' +
+    'check truncated and droppedRows before treating the list as the complete holder set. ' +
+    'Balances are exact base-unit strings with no decimals applied — get decimals from ' +
+    'onchain_get_token.',
+  inputSchema: TokenHoldersInputSchema,
+  outputSchema: TokenHoldersOutputSchema,
+  capability: 'token.holders',
+  needs: ['registry'],
+  handler: tokenHoldersHandler,
+});

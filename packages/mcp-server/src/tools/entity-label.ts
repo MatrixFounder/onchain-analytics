@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 import {
   canonicalizeChain,
   ChainInputSchema,
@@ -178,32 +178,16 @@ export async function entityLabelHandler(
 
 /** Registers `onchain_entity_label` — exactly this name (R-42) — on `server`. Same wiring pattern
  * as `smart-money-flows.ts`'s `registerSmartMoneyFlowsTool`. */
-export function registerEntityLabelTool(server: McpServer, ctx: EntityLabelContext): void {
-  server.registerTool(
-    'onchain_entity_label',
-    {
-      // See `get-token.ts` (M-2) and `smart-money-flows.ts` (paid route). The exhaustive tier is
-      // called out separately because its chain set is genuinely NARROWER than the default tier's
-      // (`NANSEN_EXHAUSTIVE_LABELS_CHAINS`), and it is the 100cr call — the one place where a
-      // wrong chain guess is worth a sentence of schema.
-      title: 'Entity and address labels',
-      description:
-        'Entity/address labels for a search query and/or token address. Coverage is per chain — ' +
-        'call onchain_list_chains({capability:"entity.labels"}) first (Nansen-backed, paid; ' +
-        'the opt-in exhaustive escalation costs more and is served on fewer chains).',
-      inputSchema: EntityLabelInputSchema,
-      outputSchema: EntityLabelOutputSchema,
-    },
-    async (input) => {
-      const outcome = await entityLabelHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-        structuredContent: outcome.output,
-        _meta: { cache: outcome.cache, ...(outcome.budget ? { budget: outcome.budget } : {}) },
-      };
-    },
-  );
-}
+export const entityLabelToolSpec = defineTool({
+  name: 'onchain_entity_label',
+  title: 'Entity and address labels',
+  description:
+    'Entity/address labels for a search query and/or token address. Coverage is per chain — ' +
+    'call onchain_list_chains({capability:"entity.labels"}) first (Nansen-backed, paid; ' +
+    'the opt-in exhaustive escalation costs more and is served on fewer chains).',
+  inputSchema: EntityLabelInputSchema,
+  outputSchema: EntityLabelOutputSchema,
+  capability: 'entity.labels',
+  needs: ['registry', 'budgetStore'],
+  handler: entityLabelHandler,
+});

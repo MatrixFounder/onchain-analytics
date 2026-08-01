@@ -1,6 +1,6 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
+import { defineTool } from './registry.js';
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
 
@@ -73,30 +73,21 @@ export async function chainSupplyHandler(
   return { ok: true, value: parsed.data, cache: outcome.cache };
 }
 
-export function registerChainSupplyTool(server: McpServer, ctx: ChainSupplyContext): void {
-  server.registerTool(
-    'onchain_chain_supply',
-    {
-      title: 'Chain native-asset supply',
-      description:
-        'How much of a chain\'s native asset exists. Returns TWO distinct figures: "emission" — ' +
-        'what the issuance schedule has released — and "circulating" — what was actually claimed. ' +
-        'They differ by unclaimed block subsidy and must not be used interchangeably. Exact values ' +
-        'are the *Raw strings in the smallest unit; the *Btc fields are lossy conveniences. ' +
-        'Bitcoin only today; call onchain_list_chains to see where the capability is served.',
-      inputSchema: ChainSupplyInputSchema,
-      outputSchema: ChainSupplyOutputSchema,
-    },
-    async (input: ChainSupplyInput) => {
-      const outcome = await chainSupplyHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text' as const, text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(outcome.value) }],
-        structuredContent: outcome.value,
-        _meta: { cache: outcome.cache },
-      };
-    },
-  );
-}
+export const chainSupplyToolSpec = defineTool({
+  name: 'onchain_chain_supply',
+  title: 'Chain native-asset supply',
+  description:
+    'How much of a chain\'s native asset exists. Returns TWO distinct figures: "emission" — ' +
+    'what the issuance schedule has released — and "circulating" — what was actually claimed. ' +
+    'They differ by unclaimed block subsidy and must not be used interchangeably. Exact values ' +
+    'are the *Raw strings in the smallest unit; the *Btc fields are lossy conveniences. ' +
+    'Bitcoin only today; call onchain_list_chains to see where the capability is served.',
+  inputSchema: ChainSupplyInputSchema,
+  outputSchema: ChainSupplyOutputSchema,
+  capability: 'chain.supply',
+  needs: ['registry'],
+  handler: async (input, ctx) => {
+    const outcome = await chainSupplyHandler(input, ctx);
+    return outcome.ok ? { ok: true, output: outcome.value, cache: outcome.cache } : outcome;
+  },
+});

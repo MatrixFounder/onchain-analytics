@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 import type { CapabilityRegistry, ChainFamily, ChainInfo } from '@onchain-intel/core';
 
 /** Default page size. Small on purpose — see `ListChainsOutputSchema.total`. */
@@ -142,24 +142,16 @@ export function listChainsHandler(
   };
 }
 
-export function registerListChainsTool(server: McpServer, ctx: ListChainsContext): void {
-  server.registerTool(
-    'onchain_list_chains',
-    {
-      title: 'List supported chains',
-      description:
-        'Discover which chains this engine knows and which capabilities are actually served on ' +
-        'each. Use it to find the right `chain` value for the other tools, or to check where a ' +
-        'capability is available. Makes no network calls.',
-      inputSchema: ListChainsInputSchema,
-      outputSchema: ListChainsOutputSchema,
-    },
-    (input: ListChainsInput) => {
-      const value = listChainsHandler(input, ctx);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(value) }],
-        structuredContent: value,
-      };
-    },
-  );
-}
+export const listChainsToolSpec = defineTool({
+  name: 'onchain_list_chains',
+  title: 'List supported chains',
+  description:
+    'Discover which chains this engine knows and which capabilities are actually served on ' +
+    'each. Use it to find the right `chain` value for the other tools, or to check where a ' +
+    'capability is available. Makes no network calls.',
+  inputSchema: ListChainsInputSchema,
+  outputSchema: ListChainsOutputSchema,
+  capability: null,
+  needs: ['registry'],
+  handler: (input, ctx) => ({ ok: true, output: listChainsHandler(input, ctx) }),
+});

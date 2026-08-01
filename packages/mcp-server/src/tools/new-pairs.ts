@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 import {
   canonicalizeChain,
   ChainInputSchema,
@@ -135,29 +135,16 @@ export async function newPairsHandler(
 
 /** Registers `onchain_new_pairs` — exactly this name (R-18). See `get-token.ts`'s
  * `registerGetTokenTool` docstring for the shared `isError`/`_meta.cache` wiring rationale. */
-export function registerNewPairsTool(server: McpServer, ctx: NewPairsContext): void {
-  server.registerTool(
-    'onchain_new_pairs',
-    {
-      // See `get-token.ts` for the M-2 rationale.
-      title: 'Recent DEX pairs',
-      description:
-        'Recently active DEX trading pairs on a chain. Call ' +
-        'onchain_list_chains({capability:"pairs.new"}) to see where it is served ' +
-        '(DexScreener-backed).',
-      inputSchema: NewPairsInputSchema,
-      outputSchema: NewPairsOutputSchema,
-    },
-    async (input) => {
-      const outcome = await newPairsHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-        structuredContent: outcome.output,
-        _meta: { cache: outcome.cache },
-      };
-    },
-  );
-}
+export const newPairsToolSpec = defineTool({
+  name: 'onchain_new_pairs',
+  title: 'Recent DEX pairs',
+  description:
+    'Recently active DEX trading pairs on a chain. Call ' +
+    'onchain_list_chains({capability:"pairs.new"}) to see where it is served ' +
+    '(DexScreener-backed).',
+  inputSchema: NewPairsInputSchema,
+  outputSchema: NewPairsOutputSchema,
+  capability: 'pairs.new',
+  needs: ['registry'],
+  handler: newPairsHandler,
+});

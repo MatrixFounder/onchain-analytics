@@ -1,6 +1,6 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
+import { defineTool } from './registry.js';
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
 
@@ -109,28 +109,15 @@ export async function protocolTvlHandler(
 
 /** Registers `onchain_protocol_tvl` — exactly this name (R-19). See `get-token.ts`'s
  * `registerGetTokenTool` docstring for the shared `isError`/`_meta.cache` wiring rationale. */
-export function registerProtocolTvlTool(server: McpServer, ctx: ProtocolTvlContext): void {
-  server.registerTool(
-    'onchain_protocol_tvl',
-    {
-      // See `get-token.ts` for the M-2 rationale.
-      title: 'Protocol TVL',
-      description:
-        'Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug. Use ' +
-        'onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.',
-      inputSchema: ProtocolTvlInputSchema,
-      outputSchema: ProtocolTvlOutputSchema,
-    },
-    async (input) => {
-      const outcome = await protocolTvlHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-        structuredContent: outcome.output,
-        _meta: { cache: outcome.cache },
-      };
-    },
-  );
-}
+export const protocolTvlToolSpec = defineTool({
+  name: 'onchain_protocol_tvl',
+  title: 'Protocol TVL',
+  description:
+    'Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug. Use ' +
+    'onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.',
+  inputSchema: ProtocolTvlInputSchema,
+  outputSchema: ProtocolTvlOutputSchema,
+  capability: 'protocol.tvl',
+  needs: ['registry'],
+  handler: protocolTvlHandler,
+});

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { defineTool } from './registry.js';
 import {
   canonicalizeChain,
   ChainInputSchema,
@@ -116,28 +116,15 @@ export async function tokenRiskHandler(
 
 /** Registers `onchain_token_risk` — exactly this name (R-43) — on `server`. Same wiring pattern
  * as `smart-money-flows.ts`'s `registerSmartMoneyFlowsTool`. */
-export function registerTokenRiskTool(server: McpServer, ctx: TokenRiskContext): void {
-  server.registerTool(
-    'onchain_token_risk',
-    {
-      // See `get-token.ts` (M-2) and `smart-money-flows.ts` (paid route) for the rationale.
-      title: 'Token risk and reward indicators',
-      description:
-        'Risk/reward indicators for a token. Coverage is per chain — call ' +
-        'onchain_list_chains({capability:"token.risk"}) first (Nansen-backed, paid).',
-      inputSchema: TokenRiskInputSchema,
-      outputSchema: TokenRiskOutputSchema,
-    },
-    async (input) => {
-      const outcome = await tokenRiskHandler(input, ctx);
-      if (!outcome.ok) {
-        return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-        structuredContent: outcome.output,
-        _meta: { cache: outcome.cache, ...(outcome.budget ? { budget: outcome.budget } : {}) },
-      };
-    },
-  );
-}
+export const tokenRiskToolSpec = defineTool({
+  name: 'onchain_token_risk',
+  title: 'Token risk and reward indicators',
+  description:
+    'Risk/reward indicators for a token. Coverage is per chain — call ' +
+    'onchain_list_chains({capability:"token.risk"}) first (Nansen-backed, paid).',
+  inputSchema: TokenRiskInputSchema,
+  outputSchema: TokenRiskOutputSchema,
+  capability: 'token.risk',
+  needs: ['registry', 'budgetStore'],
+  handler: tokenRiskHandler,
+});

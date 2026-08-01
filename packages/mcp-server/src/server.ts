@@ -1,30 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CapabilityRegistry, routes, type BudgetStore } from '@onchain-intel/core';
 import type { Env } from './env.js';
-import { registerPingTool } from './tools/ping.js';
-import { registerGetTokenTool } from './tools/get-token.js';
-import { registerWalletBalancesTool } from './tools/wallet-balances.js';
-import { registerNewPairsTool } from './tools/new-pairs.js';
-import { registerProtocolTvlTool } from './tools/protocol-tvl.js';
-import { registerSmartMoneyFlowsTool } from './tools/smart-money-flows.js';
-import { registerEntityLabelTool } from './tools/entity-label.js';
-import { registerTokenHoldersTool } from './tools/token-holders.js';
-import { registerTokenRiskTool } from './tools/token-risk.js';
-// TASK-006 (task 006-7): discovery + chain-level TVL. Both keyless; `onchain_list_chains` makes
-// no network call at all.
-import { registerListChainsTool } from './tools/list-chains.js';
-import { registerChainTvlTool } from './tools/chain-tvl.js';
-// TASK-007 (task 007-6): free DEX volume, same keyless `defillama` adapter as `chain.tvl`.
-import { registerDexVolumeTool } from './tools/dex-volume.js';
-// TASK-009 (task 009-5): free BTC supply, keyless `blockchain-info` adapter.
-import { registerChainSupplyTool } from './tools/chain-supply.js';
+import { type ToolContext } from './tools/registry.js';
+import { toolSpecs } from './tools/tool-specs.js';
 
 /**
  * Dependencies passed explicitly into the server factory (reviewer note 1: version is never
  * hardcoded — it is threaded through from `index.ts`, which reads it once from `package.json`).
  * `env` is accepted per ARCHITECTURE.md §5.2's factory signature — no tool reads it directly
- * (each of the 4 new M1 tools reads `registry` instead; `@onchain-intel/core` adapters read env
- * keys themselves, task 003-6/003-7).
+ * (each tool reads `registry` instead; `@onchain-intel/core` adapters read env keys themselves,
+ * task 003-6/003-7).
  *
  * **`registry` is injectable (task 003-7, ARCHITECTURE.md §3.2/§5.2, F-1):** this is the ONLY
  * mechanism "MCP E2E without network" (R-21) relies on — no global `fetch` mock, a different
@@ -35,7 +20,7 @@ import { registerChainSupplyTool } from './tools/chain-supply.js';
  * (`InMemoryTransport`) is what actually exercises this seam; the spawn suite stays ping-only.
  *
  * **`budgetStore` (M2, task 005-6, interfaces.md §5.2):** injectable the SAME way as `registry` —
- * threaded into the 3 new M2 tools' contexts ONLY for read-only `_meta.budget` visibility
+ * reaching ONLY the three tools that declare it, for read-only `_meta.budget` visibility
  * (`budget-meta.ts`'s own `budgetMeta()`). This is a DIFFERENT `BudgetStore` reference than the one
  * `index.ts` wires into `createNansenAdapter({budgetStore})` (that one performs the actual gate
  * decision inside `nansen.fetch()`) — in production both point at the SAME `SqliteBudgetStore`
@@ -52,46 +37,43 @@ export interface CreateServerDeps {
 /**
  * Transport-agnostic `McpServer` factory (D3): builds the server and registers every tool, but
  * never creates or attaches a transport — `index.ts` is the only place that decides stdio vs. a
- * future (M6) alternative HTTP-based transport, so this factory can be reused unchanged either way.
+ * future alternative HTTP-based transport (ADR-003 D1), so this factory can be reused unchanged
+ * either way.
+ *
+ * **Registration is a loop over `toolSpecs` (TASK-011, ADR-002 D7).** It used to be thirteen
+ * `registerXTool` calls grouped by cost, with comments explaining the grouping — and that grouping
+ * was the last hand-maintained restatement of the inventory inside `src`. The order of the loop is
+ * the order clients see in `tools/list`, which is why `toolSpecs` is ordered deliberately rather
+ * than alphabetically and why `test/tools-list-contract.test.ts` freezes the unsorted sequence.
+ *
+ * **Each tool receives only the context keys it declared** (`needs` on its spec). That is not a
+ * style choice: before the loop, `server.ts` handed each tool a fresh literal, so a free tool held
+ * no reference to the budget store at all. Passing one wide object to all thirteen would have
+ * traded that guarantee for the author's self-restraint — weak, since `budgetStore` is optional
+ * everywhere. `defineTool` projects the object instead, so least privilege survives as a runtime
+ * fact rather than a convention.
  *
  * `deps.registry`'s fallback (`new CapabilityRegistry(routes, new Map())`) is a deliberately INERT
  * default — the real `routes` table (`@onchain-intel/core`'s `providers.config.ts`) but an EMPTY
  * adapter `Map`, so every capability degrades gracefully (`CapabilityUnavailableError`, "no adapter
  * registered for this id") rather than crashing. It is NEVER the real, network-capable registry:
- * assembling all 9 real adapters + the real two-level cache is `index.ts`'s single, explicit
- * responsibility (this task's own instruction, ARCHITECTURE.md §3.2 "строится один раз в
- * index.ts") — `index.ts` always constructs one and passes it in explicitly; this fallback exists
- * purely so `createServer` stays type-safe and harmless if a future caller ever omits `registry`
- * outside that documented production path (implementation choice, developer-guidelines §1.5).
+ * assembling all real adapters + the real two-level cache is `index.ts`'s single, explicit
+ * responsibility (ARCHITECTURE.md §3.2 "строится один раз в index.ts") — `index.ts` always
+ * constructs one and passes it in explicitly; this fallback exists purely so `createServer` stays
+ * type-safe and harmless if a future caller ever omits `registry` outside that documented
+ * production path (implementation choice, developer-guidelines §1.5).
  */
 export function createServer(deps: CreateServerDeps): McpServer {
   const server = new McpServer({ name: 'onchain-intel-mcp-server', version: deps.version });
-  const registry = deps.registry ?? new CapabilityRegistry(routes, new Map());
-  const budgetStore = deps.budgetStore;
+  const context: ToolContext = {
+    version: deps.version,
+    registry: deps.registry ?? new CapabilityRegistry(routes, new Map()),
+    ...(deps.budgetStore ? { budgetStore: deps.budgetStore } : {}),
+  };
 
-  registerPingTool(server, { version: deps.version });
-  registerGetTokenTool(server, { registry });
-  registerWalletBalancesTool(server, { registry });
-  registerNewPairsTool(server, { registry });
-  registerProtocolTvlTool(server, { registry });
-  registerListChainsTool(server, { registry });
-  registerChainTvlTool(server, { registry });
-  registerDexVolumeTool(server, { registry });
-  // TASK-008 follow-up — a FREE route (`['blockscout']`, `costOf: 0`), so no `budgetStore`, same as
-  // the six above. Registered here rather than with the paid block deliberately: the grouping in
-  // this function is by cost, and that is the property a reader needs at a glance.
-  registerTokenHoldersTool(server, { registry });
-  // TASK-009 — also free (`['blockchain-info']`, `costOf: 0`), so it joins the free block above the
-  // paid one. Registered in the SAME task that adds the route: coverage is derived from
-  // `routes × chainSupport`, not from the tool list, so a route without a tool advertises a
-  // capability nothing can call — the defect TASK-008 had to come back and fix.
-  registerChainSupplyTool(server, { registry });
-  // M2 (task 005-6) — `budgetStore` threaded into each context ONLY for read-only `_meta.budget`
-  // visibility (this factory's own docstring above); an omitted `budgetStore` degrades the tool to
-  // "works, just without `_meta.budget`" (`budget-meta.ts`'s own contract), never an error.
-  registerSmartMoneyFlowsTool(server, { registry, budgetStore });
-  registerEntityLabelTool(server, { registry, budgetStore });
-  registerTokenRiskTool(server, { registry, budgetStore });
+  for (const spec of toolSpecs) {
+    spec.register(server, context);
+  }
 
   return server;
 }
