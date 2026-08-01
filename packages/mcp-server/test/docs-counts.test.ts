@@ -54,6 +54,32 @@ function claimedCounts(relative: string, pattern: RegExp): number[] {
   return [...read(relative).matchAll(pattern)].map((match) => toNumber(match[1] as string));
 }
 
+/**
+ * The same, but carrying the file each claim came from.
+ *
+ * **Why this exists.** These tests used to compare two arrays of numbers, so a failure read
+ * `expected [13, 13, …] to deeply equal [14, 14, …]` — accurate, and useless: it named no file to
+ * edit, which is the exact defect TASK-011 removes everywhere else. It was found by RUNNING the
+ * AC-7 protocol (add a fourteenth tool and read what the suite says) rather than by reading this
+ * file, which is the reason that protocol exists.
+ */
+function claimsWithSource(relative: string, pattern: RegExp): { file: string; value: number }[] {
+  return claimedCounts(relative, pattern).map((value) => ({ file: relative, value }));
+}
+
+/** Names the files whose claims disagree with `actual`, so the failure says what to edit. */
+function assertClaims(
+  claims: { file: string; value: number }[],
+  actual: number,
+  what: string,
+): void {
+  const wrong = [...new Set(claims.filter((c) => c.value !== actual).map((c) => c.file))];
+  expect(
+    wrong,
+    `${what}: these files state a number other than ${actual}. Update them: ${wrong.join(', ')}`,
+  ).toStrictEqual([]);
+}
+
 async function registeredToolNames(): Promise<string[]> {
   // The real server, over the real protocol — the same seam `e2e.inprocess` uses. Counting
   // `registerXTool(` in the source would be a text heuristic about a text file; this is the list a
@@ -75,28 +101,28 @@ describe('documentation counts match the code they describe (WI-21)', () => {
   it('states the adapter count correctly wherever it states it in the present tense', () => {
     const actual = adapterRegistrations.length;
     const claims = [
-      ...claimedCounts(
+      ...claimsWithSource(
         'docs/ARCHITECTURE.md',
         /\*\*What the engine is today\*\* — (\w+) provider/g,
       ),
-      ...claimedCounts(
+      ...claimsWithSource(
         'docs/architectures/system-architecture.md',
         /Capability Registry, (\w+) provider adapters/g,
       ),
-      ...claimedCounts(
+      ...claimsWithSource(
         'docs/architectures/system-architecture.md',
         /providers\.config\.ts \((\d+) adapters\)/g,
       ),
-      ...claimedCounts(
+      ...claimsWithSource(
         'docs/architectures/functional-architecture.md',
         /(\d+) adapters registered/g,
       ),
-      ...claimedCounts(
+      ...claimsWithSource(
         'docs/architectures/deployment.md',
         /network-independent\*\*: (\d+) adapters/g,
       ),
-      ...claimedCounts('docs/architectures/interfaces.md', /shared\s*\n?by all (\w+) adapters/g),
-      ...claimedCounts(
+      ...claimsWithSource('docs/architectures/interfaces.md', /shared\s*\n?by all (\w+) adapters/g),
+      ...claimsWithSource(
         'docs/architectures/technology-stack.md',
         /adapterRegistrations \((\d+) adapters\)/g,
       ),
@@ -104,32 +130,32 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     // If the sentences these patterns anchor on are ever reworded, the array empties and the test
     // would pass while checking nothing — so the count of CLAIMS is asserted too.
     expect(claims.length).toBeGreaterThanOrEqual(7);
-    expect(claims).toEqual(claims.map(() => actual));
+    assertClaims(claims, actual, 'adapter count');
   });
 
   it('states the MCP tool count correctly wherever it states it in the present tense', async () => {
     const actual = (await registeredToolNames()).length;
     const claims = [
-      ...claimedCounts('docs/ARCHITECTURE.md', /and (\w+) workflow-oriented MCP tools/g),
-      ...claimedCounts('docs/ARCHITECTURE.md', /Contracts for all (\w+) MCP tools/g),
-      ...claimedCounts('docs/architectures/interfaces.md', /External API — (\d+) MCP tools/g),
-      ...claimedCounts('docs/architectures/interfaces.md', /of the (\w+) tools take a chain/g),
-      ...claimedCounts(
+      ...claimsWithSource('docs/ARCHITECTURE.md', /and (\w+) workflow-oriented MCP tools/g),
+      ...claimsWithSource('docs/ARCHITECTURE.md', /Contracts for all (\w+) MCP tools/g),
+      ...claimsWithSource('docs/architectures/interfaces.md', /External API — (\d+) MCP tools/g),
+      ...claimsWithSource('docs/architectures/interfaces.md', /of the (\w+) tools take a chain/g),
+      ...claimsWithSource(
         'docs/architectures/interfaces.md',
         /compound `superRefine` of the (\w+) tools/g,
       ),
-      ...claimedCounts('docs/architectures/security.md', /holds for all (\d+) tools/g),
-      ...claimedCounts('docs/architectures/deployment.md', /Call any of the (\d+) tools/g),
-      ...claimedCounts(
+      ...claimsWithSource('docs/architectures/security.md', /holds for all (\d+) tools/g),
+      ...claimsWithSource('docs/architectures/deployment.md', /Call any of the (\d+) tools/g),
+      ...claimsWithSource(
         'docs/architectures/functional-architecture.md',
         /mcp-server — (\d+) tools/g,
       ),
-      ...claimedCounts('docs/architectures/technology-stack.md', /# (\d+) registered tools/g),
+      ...claimsWithSource('docs/architectures/technology-stack.md', /# (\d+) registered tools/g),
     ];
     // If a sentence is reworded, its pattern stops matching and the array shrinks — which would let
     // the test pass while checking less than it claims. The claim COUNT is therefore asserted too.
     expect(claims.length).toBeGreaterThanOrEqual(9);
-    expect(claims).toEqual(claims.map(() => actual));
+    assertClaims(claims, actual, 'MCP tool count');
   });
 
   it('states the route count correctly, and does not re-copy the route table (WI-24)', () => {
