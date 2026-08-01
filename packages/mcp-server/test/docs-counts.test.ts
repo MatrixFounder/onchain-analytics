@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { adapterRegistrations, routes } from '@onchain-intel/core';
+import { toolSpecs } from '../src/tools/tool-specs.js';
 import { loadEnv } from '../src/env.js';
 import { createServer } from '../src/server.js';
 
@@ -191,6 +192,29 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     for (const name of await registeredToolNames()) {
       expect(interfaces, `${name} is registered but absent from interfaces.md`).toContain(name);
     }
+  });
+
+  it('names the capability each tool serves, next to the tool (R-119)', () => {
+    // The document already names both halves — `onchain_chain_tvl` and `chain.tvl` — but nothing
+    // checked they still agree. A capability retargeted in code (TASK-008 moved `token.holders`
+    // off a dead stub) would leave this contract describing the old pairing, and the pairing is
+    // the part a reader relies on when deciding which tool answers their question.
+    const interfaces = read('docs/architectures/interfaces.md');
+    const undocumented = toolSpecs
+      .filter((spec) => spec.capability !== null && !interfaces.includes(spec.capability))
+      .map((spec) => `${spec.name} -> ${spec.capability ?? ''}`);
+    expect(
+      undocumented,
+      'A tool serves a capability that §5 never names. Add it beside the tool block.',
+    ).toStrictEqual([]);
+
+    // And the other direction: a `// Capability: x` line naming something no tool serves is a
+    // leftover, and leftovers are how a contract starts describing a system that no longer exists.
+    const served = new Set(toolSpecs.map((spec) => spec.capability).filter(Boolean));
+    const stale = [...interfaces.matchAll(/\/\/ Capability: ([a-z][a-z.-]+)/g)]
+      .map((match) => match[1] as string)
+      .filter((capability) => !served.has(capability));
+    expect(stale, 'interfaces.md names a capability no registered tool serves.').toStrictEqual([]);
   });
 
   it('names every registered adapter id in the system-architecture adapter table', () => {

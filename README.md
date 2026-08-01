@@ -26,6 +26,11 @@ two-level cache + credit budget guard → 8 workflow-oriented tools your agent c
   - [onchain_wallet_balances](#onchain_wallet_balances)
   - [onchain_new_pairs](#onchain_new_pairs)
   - [onchain_protocol_tvl](#onchain_protocol_tvl)
+  - [onchain_list_chains](#onchain_list_chains)
+  - [onchain_chain_tvl](#onchain_chain_tvl)
+  - [onchain_dex_volume](#onchain_dex_volume)
+  - [onchain_token_holders](#onchain_token_holders)
+  - [onchain_chain_supply](#onchain_chain_supply)
   - [onchain_smart_money_flows](#onchain_smart_money_flows-paid)
   - [onchain_entity_label](#onchain_entity_label-paid)
   - [onchain_token_risk](#onchain_token_risk-paid)
@@ -180,6 +185,11 @@ Cost is in Nansen credits. Free tools cost nothing and need no key.
 | `onchain_wallet_balances`   | free           | 60s   | no               |
 | `onchain_new_pairs`         | free           | 30s   | no               |
 | `onchain_protocol_tvl`      | free           | 300s  | no               |
+| `onchain_list_chains`       | free           | —     | no               |
+| `onchain_chain_tvl`         | free           | 300s  | no               |
+| `onchain_dex_volume`        | free           | 3600s | no               |
+| `onchain_token_holders`     | free           | 3600s | no               |
+| `onchain_chain_supply`      | free           | 600s  | no               |
 | `onchain_smart_money_flows` | **10 cr**      | 300s  | `NANSEN_API_KEY` |
 | `onchain_entity_label`      | **0/5/100 cr** | 3600s | `NANSEN_API_KEY` |
 | `onchain_token_risk`        | **6 cr**       | 1800s | `NANSEN_API_KEY` |
@@ -281,6 +291,79 @@ Input:
   "source": "defillama",
   "fetchedAt": 1785013396663
 }
+```
+
+### onchain_list_chains
+
+Which chains this server knows, and which capabilities are actually served on each. Answers from a
+local registry of 458 networks — no network call, no key. Use it to find the right `chain` value
+before calling anything else, or to check whether a capability reaches the chain you care about.
+
+Input — everything is optional; `capability` narrows the answer to chains where that capability is
+really covered:
+
+```json
+{ "capability": "token.price", "limit": 20 }
+```
+
+### onchain_chain_tvl
+
+Total value locked of a whole **chain**, from DeFiLlama. For a single protocol use
+`onchain_protocol_tvl` instead — the two answer different questions and are easy to confuse.
+
+Input:
+
+```json
+{ "chain": "ethereum" }
+```
+
+### onchain_dex_volume
+
+Daily DEX trading volume for a chain, plus the aggregates DeFiLlama publishes alongside it (24h,
+7d, 30d, all-time). The window matters: `gapDays` reports how many days inside it carry no data,
+which is how a vendor that quietly stopped publishing becomes visible instead of looking like a
+quiet market.
+
+Input — `days` is the window, `includeSeries` controls whether the daily points come back or only
+the aggregates:
+
+```json
+{ "chain": "ethereum", "days": 30, "includeSeries": true }
+```
+
+### onchain_token_holders
+
+The largest holders of a token and their exact balances, from Blockscout's public explorer API.
+
+Two fields decide whether the answer means what it looks like. `truncated` says the list is not the
+complete tail — either more holders exist beyond the page, or rows were dropped. `droppedRows`
+counts rows the server refused to publish because the vendor sent something it would not stand
+behind. **Check both before reading the list as a concentration measure.**
+
+Balances arrive as exact base-unit strings with no decimals applied — a token balance routinely
+exceeds what a JSON number can hold without losing digits. Get `decimals` from
+`onchain_get_token`.
+
+Input:
+
+```json
+{ "chain": "ethereum", "tokenAddress": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" }
+```
+
+### onchain_chain_supply
+
+How much of a chain's native asset exists. Bitcoin only today.
+
+The answer carries **two figures that are not interchangeable**: `emissionRaw` is what the issuance
+schedule has released, `circulatingRaw` is what was actually claimed. They differ by unclaimed
+block subsidy — miners who never spent their reward — and using one where the other belongs
+misstates supply. Both are exact integer strings in the smallest unit; the `*Btc` fields beside
+them are lossy conveniences for display.
+
+Input:
+
+```json
+{ "chain": "bitcoin" }
 ```
 
 ### onchain_smart_money_flows (paid)

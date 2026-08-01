@@ -25,6 +25,11 @@ DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализаци�
   - [onchain_wallet_balances](#onchain_wallet_balances)
   - [onchain_new_pairs](#onchain_new_pairs)
   - [onchain_protocol_tvl](#onchain_protocol_tvl)
+  - [onchain_list_chains](#onchain_list_chains)
+  - [onchain_chain_tvl](#onchain_chain_tvl)
+  - [onchain_dex_volume](#onchain_dex_volume)
+  - [onchain_token_holders](#onchain_token_holders)
+  - [onchain_chain_supply](#onchain_chain_supply)
   - [onchain_smart_money_flows](#onchain_smart_money_flows-платный)
   - [onchain_entity_label](#onchain_entity_label-платный)
   - [onchain_token_risk](#onchain_token_risk-платный)
@@ -180,6 +185,11 @@ SSRF-allowlist.
 | `onchain_wallet_balances`   | бесплатно      | 60с   | нет              |
 | `onchain_new_pairs`         | бесплатно      | 30с   | нет              |
 | `onchain_protocol_tvl`      | бесплатно      | 300с  | нет              |
+| `onchain_list_chains`       | бесплатно      | —     | нет              |
+| `onchain_chain_tvl`         | бесплатно      | 300с  | нет              |
+| `onchain_dex_volume`        | бесплатно      | 3600с | нет              |
+| `onchain_token_holders`     | бесплатно      | 3600с | нет              |
+| `onchain_chain_supply`      | бесплатно      | 600с  | нет              |
 | `onchain_smart_money_flows` | **10 кр**      | 300с  | `NANSEN_API_KEY` |
 | `onchain_entity_label`      | **0/5/100 кр** | 3600с | `NANSEN_API_KEY` |
 | `onchain_token_risk`        | **6 кр**       | 1800с | `NANSEN_API_KEY` |
@@ -281,6 +291,79 @@ TVL протокола — в разрезе сети и суммарный — 
   "source": "defillama",
   "fetchedAt": 1785013396663
 }
+```
+
+### onchain_list_chains
+
+Какие сети сервер знает и какие возможности реально обслуживаются на каждой. Отвечает из локального
+реестра на 458 сетей — без обращения к сети и без ключа. Нужен, чтобы найти правильное значение
+`chain` перед вызовом остальных инструментов или проверить, доходит ли возможность до интересующей
+сети.
+
+Вход — всё необязательно; `capability` сужает ответ до сетей, где эта возможность действительно
+покрыта:
+
+```json
+{ "capability": "token.price", "limit": 20 }
+```
+
+### onchain_chain_tvl
+
+Совокупная заблокированная стоимость (TVL) **сети целиком**, по данным DeFiLlama. Для отдельного
+протокола нужен `onchain_protocol_tvl` — эти два отвечают на разные вопросы, и их легко перепутать.
+
+Вход:
+
+```json
+{ "chain": "ethereum" }
+```
+
+### onchain_dex_volume
+
+Дневные объёмы торгов на DEX по сети плюс агрегаты, которые публикует DeFiLlama (24ч, 7д, 30д, за
+всё время). Окно здесь существенно: `gapDays` сообщает, сколько дней внутри него не несут данных, —
+именно так вендор, тихо переставший публиковать, становится виден вместо того, чтобы выглядеть
+затишьем на рынке.
+
+Вход — `days` задаёт окно, `includeSeries` решает, возвращать ли дневные точки или только агрегаты:
+
+```json
+{ "chain": "ethereum", "days": 30, "includeSeries": true }
+```
+
+### onchain_token_holders
+
+Крупнейшие держатели токена и их точные балансы, по публичному API обозревателя Blockscout.
+
+Смысл ответа определяют два поля. `truncated` означает, что список — не полный «хвост»: либо
+держателей больше, чем поместилось на страницу, либо часть строк отброшена. `droppedRows` считает
+строки, которые сервер отказался публиковать, потому что вендор прислал то, за что сервер не
+ручается. **Оба надо прочитать прежде, чем трактовать список как меру концентрации.**
+
+Балансы приходят точными строками в минимальных единицах, без применения десятичных знаков: баланс
+токена регулярно превышает то, что JSON-число хранит без потери цифр. Значение `decimals` даёт
+`onchain_get_token`.
+
+Вход:
+
+```json
+{ "chain": "ethereum", "tokenAddress": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" }
+```
+
+### onchain_chain_supply
+
+Сколько существует нативного актива сети. Сегодня — только Bitcoin.
+
+Ответ несёт **две величины, которые нельзя подменять друг другом**: `emissionRaw` — то, что выпустил
+график эмиссии, `circulatingRaw` — то, что было фактически востребовано. Разница между ними —
+неполученная субсидия блоков, награды майнеров, которые так и не были потрачены; использование одной
+величины вместо другой искажает предложение. Обе — точные целые строки в минимальных единицах;
+соседние поля `*Btc` рядом с ними это удобные, но лоссовые представления для отображения.
+
+Вход:
+
+```json
+{ "chain": "bitcoin" }
 ```
 
 ### onchain_smart_money_flows (платный)

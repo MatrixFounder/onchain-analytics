@@ -28,13 +28,16 @@ the two refusal shapes, backward compatibility — is in §5.1.3.
 // price, not 3600s metadata), otherwise priceUsd could legally go stale for an hour. The
 // token.metadata route stays registered for future metadata-only consumers.
 // onchain_wallet_balances — { chain: ChainInput, address: string (.max(64)) }
+// Capability: wallet.balances.native
 // → Wallet (§4.1, balances: Balance[] — only assetType:'native' in M1)
 // onchain_new_pairs — { chain: ChainInput, limit?: number }
+// Capability: pairs.new
 // → { chain, pairs: Pool[], source, fetchedAt }
 // (the limit default is materialized BEFORE args are built: an omitted limit and an explicit
 // limit:10 would otherwise derive different args hashes for one logical request, duplicating the
 // upstream fetch instead of sharing one cache entry)
 // onchain_protocol_tvl — { chain: ChainInput, protocolSlug: string (.max(128)) }
+// Capability: protocol.tvl
 // → { protocol, chain, tvlUsd, totalTvlUsd, source, fetchedAt }
 ```
 

@@ -114,7 +114,8 @@
 
 **Component: MCP server (`@onchain-intel/mcp-server`) — NOW**
 
-- **Ten registered tools**, all zod in/out and registry-routed:
+- **Thirteen registered tools**, all zod in/out and registry-routed, declared once in
+  `packages/mcp-server/src/tools/tool-specs.ts` (ADR-002 D7):
   - `onchain_ping` — M0, contract unchanged (R-20).
   - M1 read layer: `onchain_get_token`, `onchain_wallet_balances`, `onchain_new_pairs`,
     `onchain_protocol_tvl`.
@@ -122,6 +123,9 @@
     `onchain_token_risk`.
   - TASK-006 keyless, registry-backed: `onchain_list_chains` (discovery, zero network calls) and
     `onchain_chain_tvl` (chain-level TVL, DeFiLlama-backed).
+  - TASK-007/008/009, free tiers: `onchain_dex_volume` (DEX volume history, DeFiLlama),
+    `onchain_token_holders` (holder list, Blockscout) and `onchain_chain_supply` (native-asset
+    supply, blockchain.info — BTC only today).
 - `dash-platform` and `platform-explorer` register capabilities in the Capability Registry and are
   covered by contract tests, but neither gets a tool of its own — the Platform privacy rules (M3)
   are the first real consumer.

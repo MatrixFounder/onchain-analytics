@@ -1521,9 +1521,9 @@ client.
     acceptance criterion prettier would break.
     The four independent observation channels of
     [WI-20](../backlog/wi-20-three-tool-inventory-lists.md) all remain — what stops being
-    duplicated is the *data*, not the *checking*.
+    duplicated is the _data_, not the _checking_.
   - 🔴 **Three independent guards against a tool DISAPPEARING**, because deriving every reader from
-    the registry would otherwise leave zero (the documentation gate iterates *registered* tools, so
+    the registry would otherwise leave zero (the documentation gate iterates _registered_ tools, so
     a vanished one is simply not iterated): (1) a hand-written lower bound,
     `expect(toolSpecs.length).toBeGreaterThanOrEqual(13)` — the idiom `docs-counts.test.ts` already
     uses, and the only one **no command can regenerate**; (2) orphan-name detection — any
