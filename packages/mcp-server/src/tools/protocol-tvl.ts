@@ -114,6 +114,7 @@ export function registerProtocolTvlTool(server: McpServer, ctx: ProtocolTvlConte
     'onchain_protocol_tvl',
     {
       // See `get-token.ts` for the M-2 rationale.
+      title: 'Protocol TVL',
       description:
         'Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug. Use ' +
         'onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.',

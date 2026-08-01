@@ -1,6 +1,7 @@
 [
   {
     "name": "onchain_ping",
+    "title": "Server liveness check",
     "description": "Deterministic liveness check for the onchain-intel MCP server.",
     "inputSchema": {
       "type": "object",
@@ -43,6 +44,7 @@
   },
   {
     "name": "onchain_get_token",
+    "title": "Token price and metadata",
     "description": "Token metadata and USD price for a contract address, on any supported chain. Call onchain_list_chains({capability:\"token.price\"}) to see where it is served (CoinGecko-backed).",
     "inputSchema": {
       "type": "object",
@@ -123,6 +125,7 @@
   },
   {
     "name": "onchain_wallet_balances",
+    "title": "Native balance of a wallet",
     "description": "Native asset balance for a wallet address, from a curated JSON-RPC endpoint. Served only on chains with an approved RPC host — call onchain_list_chains({capability:\"wallet.balances.native\"}) for the list.",
     "inputSchema": {
       "type": "object",
@@ -219,6 +222,7 @@
   },
   {
     "name": "onchain_new_pairs",
+    "title": "Recent DEX pairs",
     "description": "Recently active DEX trading pairs on a chain. Call onchain_list_chains({capability:\"pairs.new\"}) to see where it is served (DexScreener-backed).",
     "inputSchema": {
       "type": "object",
@@ -336,6 +340,7 @@
   },
   {
     "name": "onchain_protocol_tvl",
+    "title": "Protocol TVL",
     "description": "Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug. Use onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.",
     "inputSchema": {
       "type": "object",
@@ -439,7 +444,8 @@
           "maximum": 200
         }
       },
-      "$schema": "http://json-schema.org/draft-07/schema#"
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
     },
     "outputSchema": {
       "type": "object",
@@ -539,7 +545,8 @@
       "required": [
         "chain"
       ],
-      "$schema": "http://json-schema.org/draft-07/schema#"
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
     },
     "outputSchema": {
       "type": "object",
@@ -603,7 +610,8 @@
       "required": [
         "chain"
       ],
-      "$schema": "http://json-schema.org/draft-07/schema#"
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
     },
     "outputSchema": {
       "type": "object",
@@ -783,6 +791,7 @@
   },
   {
     "name": "onchain_token_holders",
+    "title": "Top token holders",
     "description": "Top token holders and their exact balances. Coverage is per chain — call onchain_list_chains({capability:\"token.holders\"}) first. Returns at most one vendor page; check truncated and droppedRows before treating the list as the complete holder set. Balances are exact base-unit strings with no decimals applied — get decimals from onchain_get_token.",
     "inputSchema": {
       "type": "object",
@@ -901,7 +910,8 @@
       "required": [
         "chain"
       ],
-      "$schema": "http://json-schema.org/draft-07/schema#"
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
     },
     "outputSchema": {
       "type": "object",
@@ -968,6 +978,7 @@
   },
   {
     "name": "onchain_smart_money_flows",
+    "title": "Smart-money flows for a token",
     "description": "Smart-money net-flow (1h/24h/7d/30d) and top holders for a token. Coverage is per chain — call onchain_list_chains({capability:\"smart-money.flows\"}) first (Nansen-backed, paid).",
     "inputSchema": {
       "type": "object",
@@ -1092,6 +1103,7 @@
   },
   {
     "name": "onchain_entity_label",
+    "title": "Entity and address labels",
     "description": "Entity/address labels for a search query and/or token address. Coverage is per chain — call onchain_list_chains({capability:\"entity.labels\"}) first (Nansen-backed, paid; the opt-in exhaustive escalation costs more and is served on fewer chains).",
     "inputSchema": {
       "type": "object",
@@ -1211,6 +1223,7 @@
   },
   {
     "name": "onchain_token_risk",
+    "title": "Token risk and reward indicators",
     "description": "Risk/reward indicators for a token. Coverage is per chain — call onchain_list_chains({capability:\"token.risk\"}) first (Nansen-backed, paid).",
     "inputSchema": {
       "type": "object",

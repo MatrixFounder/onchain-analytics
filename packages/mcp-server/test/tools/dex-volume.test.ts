@@ -191,15 +191,26 @@ describe('onchain_dex_volume — schemas (R-69a)', () => {
     ).toBe(false);
   });
 
-  it('exposes a .shape usable by registerTool (no transform, no z.record)', () => {
-    // `server.registerTool` takes `.shape`, which only exists on a `z.object` with a statically
-    // known form — this is the assertion that keeps the schema from drifting into something the
-    // MCP SDK cannot render to JSON Schema.
+  it('stays a statically-shaped, strict object the SDK can render to JSON Schema', () => {
+    // **The rationale changed in TASK-011 (011-3a), the assertion did not.** This test used to say
+    // "`server.registerTool` takes `.shape`" — and that was the defect, not the contract: handing
+    // the SDK a raw shape makes it wrap the fields in a NON-strict object, so the `.strict()` this
+    // schema declares was silently discarded and the published JSON Schema carried no
+    // `additionalProperties`. Registration now passes the full schema.
+    //
+    // What the test still guards is the property that made the old wording plausible: the schema
+    // must stay a `z.object` with a statically known field set (no transform, no `z.record`),
+    // because that is what the SDK can render at all. `.shape` is used here only as the cheapest
+    // way to observe that — it is no longer how the schema reaches `registerTool`.
     expect(Object.keys(DexVolumeInputSchema.shape).sort()).toEqual([
       'chain',
       'days',
       'includeSeries',
     ]);
     expect(Object.keys(DexVolumeOutputSchema.shape)).toContain('gapDays');
+    // And the strictness the old path threw away is now observable on the schema itself.
+    expect(DexVolumeInputSchema.safeParse({ chain: 'ethereum', unexpected: 1 }).success).toBe(
+      false,
+    );
   });
 });

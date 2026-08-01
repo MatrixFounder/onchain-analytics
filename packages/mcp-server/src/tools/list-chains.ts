@@ -151,8 +151,8 @@ export function registerListChainsTool(server: McpServer, ctx: ListChainsContext
         'Discover which chains this engine knows and which capabilities are actually served on ' +
         'each. Use it to find the right `chain` value for the other tools, or to check where a ' +
         'capability is available. Makes no network calls.',
-      inputSchema: ListChainsInputSchema.shape,
-      outputSchema: ListChainsOutputSchema.shape,
+      inputSchema: ListChainsInputSchema,
+      outputSchema: ListChainsOutputSchema,
     },
     (input: ListChainsInput) => {
       const value = listChainsHandler(input, ctx);

@@ -134,6 +134,7 @@ export function registerSmartMoneyFlowsTool(server: McpServer, ctx: SmartMoneyFl
       // See `get-token.ts` for the M-2 rationale. On a PAID route the discovery call is not a
       // nicety: a wrong `chain` guess is refused before any credits are reserved, but only if the
       // model knows to ask instead of guessing.
+      title: 'Smart-money flows for a token',
       description:
         'Smart-money net-flow (1h/24h/7d/30d) and top holders for a token. ' +
         'Coverage is per chain — call onchain_list_chains({capability:"smart-money.flows"}) ' +

@@ -146,6 +146,7 @@ export function registerTokenHoldersTool(server: McpServer, ctx: TokenHoldersCon
       // model would otherwise retry. Completeness: `truncated`/`droppedRows` exist because "50
       // holders" and "the first 50 of many" are different answers to a concentration question — a
       // model that ignores them will state a share of supply that was never asserted.
+      title: 'Top token holders',
       description:
         'Top token holders and their exact balances. Coverage is per chain — call ' +
         'onchain_list_chains({capability:"token.holders"}) first. Returns at most one vendor page; ' +

@@ -121,6 +121,7 @@ export function registerTokenRiskTool(server: McpServer, ctx: TokenRiskContext):
     'onchain_token_risk',
     {
       // See `get-token.ts` (M-2) and `smart-money-flows.ts` (paid route) for the rationale.
+      title: 'Token risk and reward indicators',
       description:
         'Risk/reward indicators for a token. Coverage is per chain — call ' +
         'onchain_list_chains({capability:"token.risk"}) first (Nansen-backed, paid).',

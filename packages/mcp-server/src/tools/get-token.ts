@@ -146,6 +146,7 @@ export function registerGetTokenTool(server: McpServer, ctx: GetTokenContext): v
       // chains would make this task's headline capability invisible to its only consumer. Naming
       // the discovery tool AND the capability id is what keeps it accurate without re-paying for
       // the enum: `onchain_list_chains` answers from the same coverage matrix the engine gates on.
+      title: 'Token price and metadata',
       description:
         'Token metadata and USD price for a contract address, on any supported chain. ' +
         'Call onchain_list_chains({capability:"token.price"}) to see where it is served ' +

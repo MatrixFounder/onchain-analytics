@@ -186,6 +186,7 @@ export function registerEntityLabelTool(server: McpServer, ctx: EntityLabelConte
       // called out separately because its chain set is genuinely NARROWER than the default tier's
       // (`NANSEN_EXHAUSTIVE_LABELS_CHAINS`), and it is the 100cr call — the one place where a
       // wrong chain guess is worth a sentence of schema.
+      title: 'Entity and address labels',
       description:
         'Entity/address labels for a search query and/or token address. Coverage is per chain — ' +
         'call onchain_list_chains({capability:"entity.labels"}) first (Nansen-backed, paid; ' +

@@ -129,8 +129,8 @@ export function registerDexVolumeTool(server: McpServer, ctx: DexVolumeContext):
         'Set includeSeries:false for the totals alone. This is volume TRADED, not value locked — ' +
         'use onchain_chain_tvl for TVL. Served on fewer chains than TVL is: call ' +
         'onchain_list_chains with capability "dex.volume.history" to see where.',
-      inputSchema: DexVolumeInputSchema.shape,
-      outputSchema: DexVolumeOutputSchema.shape,
+      inputSchema: DexVolumeInputSchema,
+      outputSchema: DexVolumeOutputSchema,
     },
     async (input: DexVolumeInput) => {
       const outcome = await dexVolumeHandler(input, ctx);

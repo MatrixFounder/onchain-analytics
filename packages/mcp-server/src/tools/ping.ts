@@ -57,6 +57,7 @@ export function registerPingTool(server: McpServer, ctx: PingContext): void {
   server.registerTool(
     'onchain_ping',
     {
+      title: 'Server liveness check',
       description: 'Deterministic liveness check for the onchain-intel MCP server.',
       inputSchema: PingInputSchema,
       outputSchema: PingOutputSchema,

@@ -140,6 +140,7 @@ export function registerNewPairsTool(server: McpServer, ctx: NewPairsContext): v
     'onchain_new_pairs',
     {
       // See `get-token.ts` for the M-2 rationale.
+      title: 'Recent DEX pairs',
       description:
         'Recently active DEX trading pairs on a chain. Call ' +
         'onchain_list_chains({capability:"pairs.new"}) to see where it is served ' +

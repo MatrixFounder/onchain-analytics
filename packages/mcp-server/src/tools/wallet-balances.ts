@@ -101,6 +101,7 @@ export function registerWalletBalancesTool(server: McpServer, ctx: WalletBalance
       // needs a HUMAN-CURATED RPC host per chain (security.md §7.2.1), so coverage is a short
       // allowlist, not "every EVM chain" — which is exactly why guessing is expensive and the
       // discovery call is worth naming.
+      title: 'Native balance of a wallet',
       description:
         'Native asset balance for a wallet address, from a curated JSON-RPC endpoint. ' +
         'Served only on chains with an approved RPC host — call ' +

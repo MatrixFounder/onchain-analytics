@@ -73,8 +73,8 @@ export function registerChainTvlTool(server: McpServer, ctx: ChainTvlContext): v
       description:
         'Total value locked of a CHAIN (not a protocol), from DeFiLlama. Use onchain_protocol_tvl ' +
         'for a single protocol. Call onchain_list_chains to discover valid chain values.',
-      inputSchema: ChainTvlInputSchema.shape,
-      outputSchema: ChainTvlOutputSchema.shape,
+      inputSchema: ChainTvlInputSchema,
+      outputSchema: ChainTvlOutputSchema,
     },
     async (input: ChainTvlInput) => {
       const outcome = await chainTvlHandler(input, ctx);

@@ -84,8 +84,8 @@ export function registerChainSupplyTool(server: McpServer, ctx: ChainSupplyConte
         'They differ by unclaimed block subsidy and must not be used interchangeably. Exact values ' +
         'are the *Raw strings in the smallest unit; the *Btc fields are lossy conveniences. ' +
         'Bitcoin only today; call onchain_list_chains to see where the capability is served.',
-      inputSchema: ChainSupplyInputSchema.shape,
-      outputSchema: ChainSupplyOutputSchema.shape,
+      inputSchema: ChainSupplyInputSchema,
+      outputSchema: ChainSupplyOutputSchema,
     },
     async (input: ChainSupplyInput) => {
       const outcome = await chainSupplyHandler(input, ctx);
