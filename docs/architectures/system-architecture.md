@@ -1477,10 +1477,69 @@ client.
   (`e2e.stdio.test.ts` spawns `src/index.ts` through `tsx`, and that process has no way to receive
   the caller's `registry` object). Hence the split between the spawn suite and the in-process suite
   (below).
-- **Four M1 `src/tools/*.ts`** (`get-token.ts`, `wallet-balances.ts`, `new-pairs.ts`,
+- **The tool inventory is data, not prose (TASK-011, [ADR-002](../onchain-analytics/ADR-002-configurable-routing.md)
+  D7).** Every tool module exports a `ToolSpec` — `name`, `title?`, `description`, the served
+  `capability` (`null` for the two that serve none), both zod schemas, and a handler — and
+  `createServer` registers by iterating `toolSpecs`. `title?` is part of the type because 4 of the
+  13 tools carry one and 9 do not; a spec without it would silently drop four titles from
+  `tools/list`. One helper (`defineTool`) is the only place that touches `server.registerTool`, so
+  a tool's name is **declared** exactly once.
+  - 🔴 **Least privilege stays a RUNTIME fact, not a type-level promise.** Today `server.ts` hands
+    each tool a fresh literal (`{version}`, `{registry}`, `{registry, budgetStore}`), so a free
+    tool has no reference to the budget store at all. A uniform loop that passed one wide context
+    to all thirteen would replace that with self-restraint — and self-restraint is weak here,
+    because `budgetStore` is declared **optional** in all three M2 contexts, so any tool could add
+    `budgetStore?: BudgetStore` to its own context type and read it, compiling silently. So the
+    spec declares the context keys it needs (`needs: ['registry', 'budgetStore']`), the handler
+    receives `Pick<ToolContext, K>`, and **the loop projects the object before calling** —
+    `pick(ctx, spec.needs)`. Two properties, not one: the type narrows with no assertion anywhere
+    (`ToolContext` is assignable to `Pick<ToolContext, K>` by construction — verified by compiling
+    it), and the object a tool receives genuinely lacks the keys it did not ask for, which a test
+    can assert. `needs` is data, so "what this tool depends on" is inspectable rather than inferred.
+  - 🔴 **Schemas: one form, and picking it changes the contract for four tools.** Nine tools pass a
+    full zod schema to `registerTool`; four (`chain-tvl`, `chain-supply`, `dex-volume`,
+    `list-chains` — the same four that carry `title`) pass `.shape`. The SDK wraps a raw shape in a
+    NON-strict object, so those four declare `.strict()` and do not get it: in the captured
+    baseline their `inputSchema` has **no** `additionalProperties`, while the other nine have
+    `additionalProperties: false`. `ToolSpec` therefore requires the **full schema**, `.shape` is
+    rejected by the type — which fixes a latent defect and, in doing so, changes those four tools'
+    published schema. That is an enumerated, owner-approved contract change, not a silent one.
+    The opposite choice (standardise on `.shape`) is rejected outright: in zod 4 `.superRefine`
+    returns `this`, so `GetTokenInputSchema.shape` compiles and carries **none** of the checks —
+    `onchain_get_token` would stop validating addresses while still looking correct.
+  - **Readers, not copies.** The stdio inventory suite, the dependency-free `smoke-dist` script,
+    the eval's capability axis and the documentation gates all derive the list from the registry.
+    Non-TypeScript readers go through a committed generated artifact, following
+    `gen-blockscout-chains.ts` + `blockscout-chains-in-sync.test.ts` (the generator is an exported
+    pure function, regenerated into a tmpdir by a test and compared) — **not**
+    `registry.data.json`, whose generator hits three live vendor catalogues and carries
+    hand-curated columns, and whose committed file has no freshness gate at all. The artifact is
+    read with `readFileSync`, never imported from `src/`: `resolveJsonModule` is core-only and
+    `with { type: 'json' }` is pinned as flaky under this TypeScript/NodeNext combination. Both
+    generated files go into `.prettierignore` in the same commit, for the reason core already
+    records: a generator owns its file's bytes, and byte-identity across two runs is the
+    acceptance criterion prettier would break.
+    The four independent observation channels of
+    [WI-20](../backlog/wi-20-three-tool-inventory-lists.md) all remain — what stops being
+    duplicated is the *data*, not the *checking*.
+  - 🔴 **Three independent guards against a tool DISAPPEARING**, because deriving every reader from
+    the registry would otherwise leave zero (the documentation gate iterates *registered* tools, so
+    a vanished one is simply not iterated): (1) a hand-written lower bound,
+    `expect(toolSpecs.length).toBeGreaterThanOrEqual(13)` — the idiom `docs-counts.test.ts` already
+    uses, and the only one **no command can regenerate**; (2) orphan-name detection — any
+    `onchain_*` token in a gated document must exist in the registry; (3) the artifact in-sync
+    test. The frozen `tools/list` snapshot proves the refactor changed no byte, but it is
+    deliberately **not** the sole deletion guard: its byte comparison reddens on every SDK/zod bump
+    and is healed by re-running the snapshot command, and a routine that says "red → regenerate →
+    green" would eventually bless a disappearance too.
+  - **Response shape is not uniform today** and the loop has to name that rather than assume it:
+    `ping` and `list-chains` are synchronous and emit no `_meta`; the M1 tools are async with
+    `_meta.cache`; the M2 tools add `_meta.budget` on a miss. A canonical outcome type covers all
+    three, and the two synchronous tools are brought to it.
+- **The M1 `src/tools/*.ts`** (`get-token.ts`, `wallet-balances.ts`, `new-pairs.ts`,
   `protocol-tvl.ts`) follow the `ping.ts` pattern: a pure handler (unit-testable without a
-  transport, returning `{ok:true,...} | {ok:false,reason}`, never throwing) plus `registerXTool`
-  (the SDK wiring), which on `{ok:false}` explicitly builds
+  transport, returning `{ok:true,...} | {ok:false,reason}`, never throwing) plus the SDK wiring,
+  which on `{ok:false}` explicitly builds
   `{ isError: true, content: [{ type: 'text', text: <reason, no secret values> }] }`. The installed
   SDK (`@modelcontextprotocol/sdk@1.29.0`) already wraps the **whole** `tools/call` handler — input
   validation, the callback itself, and output-schema validation — in one try/catch and converts any
@@ -1550,7 +1609,7 @@ these documents state, and the tool/adapter names they must contain, compared ag
 flowchart TB
   HOST["Claude Code — MCP host"]
   ENTRY["mcp-server/src/index.ts (bin)<br/>StdioServerTransport"]
-  SRV["mcp-server/src/server.ts<br/>createServer({env,version,registry?})"]
+  SRV["mcp-server/src/server.ts<br/>createServer({env,version,registry?,budgetStore?})<br/>loops over toolSpecs"]
   ENV["mcp-server/src/env.ts<br/>EnvSchema + optional keys"]
   TOOLS["mcp-server/src/tools/*.ts — 13<br/>ping + get-token + wallet-balances<br/>+ new-pairs + protocol-tvl + M2/TASK-006 tools<br/>+ dex-volume + token-holders + chain-supply"]
 
@@ -1564,7 +1623,7 @@ flowchart TB
     PGC["pg/read-client.ts (used only by pg-history)"]
   end
 
-  TEST_SPAWN["mcp-server/test/e2e.stdio.test.ts<br/>SPAWN — tools/list===10 + ping only"]
+  TEST_SPAWN["mcp-server/test/e2e.stdio.test.ts<br/>SPAWN — tools/list===13 (derived from toolSpecs) + ping only"]
   TEST_INPROC["mcp-server/test/e2e.inprocess.test.ts<br/>InMemoryTransport — all tools, fixture registry"]
   CORETEST["core/test/*.contract.test.ts<br/>golden normalization + fixtures/mocks"]
 
