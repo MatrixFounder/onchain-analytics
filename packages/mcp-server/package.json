@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "smoke:dist": "node scripts/smoke-dist.mjs",
+    "probe:principal": "node scripts/probe-principal.mjs",
     "eval": "node eval/run.mjs"
   },
   "dependencies": {
