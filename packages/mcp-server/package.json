@@ -20,7 +20,8 @@
     "smoke:dist": "node scripts/smoke-dist.mjs",
     "probe:principal": "node scripts/probe-principal.mjs",
     "eval": "node eval/run.mjs",
-    "snapshot:tools": "tsx scripts/snapshot-tools.ts"
+    "snapshot:tools": "tsx scripts/snapshot-tools.ts",
+    "gen:tools": "tsx scripts/gen-tool-inventory.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
