@@ -1,0 +1,214 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { BudgetStore, CapabilityRegistry } from '@onchain-intel/core';
+import type { z } from 'zod';
+import type { BudgetMeta } from './budget-meta.js';
+import type { CacheMeta } from './resolve-capability.js';
+
+/**
+ * The single source of the MCP tool inventory (TASK-011, ADR-002 D7).
+ *
+ * **The problem this replaces.** The list of tool names was restated in sixteen files, each with
+ * its own format and its own moment of failure, and three of them were wrong the day this was
+ * written: both READMEs named eight tools of thirteen, `.AGENTS.md` named twelve, and the live
+ * eval graded a tool it had no check for as `ok`. Adding a tool cost four separate edits discovered
+ * one at a time, the last only after `test` AND `build` had already passed.
+ *
+ * From here the inventory is data. Registration, the stdio inventory suite, the dependency-free
+ * `smoke-dist` script, the eval's capability axis and the documentation gates all become READERS of
+ * this list. What stops being duplicated is the data, not the checking: the four independent
+ * observation channels of WI-20 all survive, each still failing in its own way.
+ *
+ * **What deriving everything from one list costs, and where that cost is paid.** Every derived
+ * guard agrees with this array by construction. So if an entry is ever *lost* — a bad merge, a
+ * dropped line — all of them agree on the smaller list and the suite stays green. The documentation
+ * gate cannot help: it iterates registered tools, so a tool that vanished is never iterated. Three
+ * guards exist for exactly that, and they are deliberately outside this file:
+ * `test/tools-list-contract.test.ts` (a frozen snapshot plus a hand-written lower bound that no
+ * command regenerates), the orphan-name check over gated documents, and the in-sync test of the
+ * generated artifact.
+ */
+
+/**
+ * Everything a tool handler could need, assembled once by `createServer`.
+ *
+ * A tool never receives this whole object — see `needs` on {@link ToolDefinition}.
+ */
+export interface ToolContext {
+  /** The running package version, threaded in from `index.ts`; never hardcoded in a tool. */
+  version: string;
+  /** The capability registry; injectable, which is what makes E2E-without-network possible. */
+  registry: CapabilityRegistry;
+  /** Read-only `_meta.budget` visibility. Absent is legal: the tool degrades, never errors. */
+  budgetStore?: BudgetStore;
+}
+
+/**
+ * What a handler returns, covering all three response shapes this server actually has — instead of
+ * assuming they are one. `ping`/`list-chains` answer synchronously and publish no `_meta`; the M1
+ * tools attach `_meta.cache`; the M2 tools add `_meta.budget` on a miss. Absent `cache`/`budget`
+ * render as an absent key, never as `_meta: {}`.
+ *
+ * `{ok: false}` carries a chosen `reason` rather than a thrown error's `.message`: the SDK would
+ * turn a throw into `isError: true` anyway, but then the text is whatever the exception said.
+ */
+export type ToolOutcome<TOutput> =
+  | { ok: true; output: TOutput; cache?: CacheMeta; budget?: BudgetMeta }
+  | { ok: false; reason: string };
+
+/**
+ * A tool as its own module declares it.
+ *
+ * `K` is the set of context keys this tool uses. The handler receives `Pick<ToolContext, K>`, so a
+ * tool that did not ask for `budgetStore` cannot read it — and that is a compile error, not a
+ * convention. See {@link defineTool} for why the object is also narrowed at runtime.
+ */
+export interface ToolDefinition<
+  TInput,
+  TOutput extends Record<string, unknown>,
+  K extends keyof ToolContext,
+> {
+  /** The wire name, e.g. `onchain_ping`. Declared here and nowhere else in `src`. */
+  readonly name: string;
+  /**
+   * Human-readable label shown by MCP clients. **Required, not optional** (owner decision
+   * 2026-08-01): four tools carried one and nine did not, and a registry built over that
+   * inconsistency would preserve it forever.
+   */
+  readonly title: string;
+  readonly description: string;
+  /**
+   * The capability this tool resolves, or `null` when it serves none (`onchain_ping` computes its
+   * answer; `onchain_list_chains` reads the chain registry). `null` is written explicitly so that
+   * "serves no capability" is a statement rather than an omission.
+   */
+  readonly capability: string | null;
+  /** The context keys this tool uses. Data, so the dependency is inspectable rather than inferred. */
+  readonly needs: readonly K[];
+  /**
+   * The full zod schema — never a raw `.shape`. The SDK wraps a raw shape in a NON-strict object,
+   * which silently discards `.strict()`, and `.superRefine` chains keep a `.shape` that carries
+   * none of their checks: passing `GetTokenInputSchema.shape` compiles and stops validating
+   * addresses while looking correct.
+   */
+  readonly inputSchema: z.ZodType<TInput>;
+  readonly outputSchema: z.ZodType<TOutput>;
+  readonly handler: (
+    input: TInput,
+    ctx: Pick<ToolContext, K>,
+  ) => ToolOutcome<TOutput> | Promise<ToolOutcome<TOutput>>;
+}
+
+/**
+ * A tool after `defineTool` erases its type parameters, so a heterogeneous list is possible without
+ * `any`. Identity stays readable; the schemas and handler are reachable only through `register`.
+ *
+ * **No `tier`, and no price.** Which provider tier answers a capability is `AdapterRegistration`'s
+ * business (ADR-002 D8, stage T-012). A field with no consumer today is an invitation to fill it in
+ * wrongly, and this registry is precisely the place where a wrong classification would spread.
+ */
+export interface ToolSpec {
+  readonly name: string;
+  readonly title: string;
+  readonly description: string;
+  readonly capability: string | null;
+  readonly needs: readonly (keyof ToolContext)[];
+  readonly register: (server: McpServer, ctx: ToolContext) => void;
+}
+
+/**
+ * The context a tool actually receives: only the keys it declared.
+ *
+ * The two assertions below are the price of a dynamic key write and are sound by construction —
+ * `key` comes from `keyof ToolContext`, and the loop writes exactly the keys of `K`. TypeScript
+ * cannot prove the second part, so `tool-spec.test.ts` asserts it at runtime instead.
+ */
+function project<K extends keyof ToolContext>(
+  ctx: ToolContext,
+  keys: readonly K[],
+): Pick<ToolContext, K> {
+  const narrowed: Partial<ToolContext> = {};
+  for (const key of keys) {
+    if (key in ctx) {
+      // One assignment across a union of value types; the read and the write use the same key.
+      (narrowed as Record<string, unknown>)[key] = ctx[key];
+    }
+  }
+  return narrowed as Pick<ToolContext, K>;
+}
+
+/** Renders an outcome into the SDK's result shape, reproducing all three response forms exactly. */
+function toCallToolResult<TOutput extends Record<string, unknown>>(
+  outcome: ToolOutcome<TOutput>,
+): CallToolResult {
+  if (!outcome.ok) {
+    return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
+  }
+  const meta = {
+    ...(outcome.cache ? { cache: outcome.cache } : {}),
+    ...(outcome.budget ? { budget: outcome.budget } : {}),
+  };
+  return {
+    content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
+    structuredContent: outcome.output,
+    ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
+  };
+}
+
+/**
+ * The only place in this package that calls `server.registerTool`, which is what makes a tool's
+ * name appear exactly once in `src`.
+ *
+ * **Why `needs` is data and the context is projected, rather than just typed.** Before this, each
+ * tool got a fresh literal from `server.ts` (`{version}`, `{registry}`, `{registry, budgetStore}`),
+ * so a free tool held no reference to the budget store at all. A loop handing one wide context to
+ * all thirteen would replace that guarantee with self-restraint — and self-restraint is weak here,
+ * because `budgetStore` is optional in every M2 context, so any tool could add
+ * `budgetStore?: BudgetStore` to its own type and read it, compiling in silence. Projecting the
+ * object keeps least privilege a runtime fact that a test can assert, and `Pick<ToolContext, K>`
+ * keeps it a compile error too. `ToolContext` is assignable to `Pick<ToolContext, K>` by
+ * construction, so the seam between the loop and a handler carries **no** type assertion — and the
+ * handler's `input` is genuinely `TInput` rather than a silently-inferred `any` (checked by making
+ * `satisfies number` fail on it). The only two assertions live inside `project`, where a dynamic
+ * key is written across a union of value types; they are covered by a runtime test rather than
+ * trusted.
+ */
+export function defineTool<
+  TInput,
+  TOutput extends Record<string, unknown>,
+  K extends keyof ToolContext,
+>(definition: ToolDefinition<TInput, TOutput, K>): ToolSpec {
+  return {
+    name: definition.name,
+    title: definition.title,
+    description: definition.description,
+    capability: definition.capability,
+    needs: definition.needs,
+    register(server, ctx) {
+      server.registerTool(
+        definition.name,
+        {
+          title: definition.title,
+          description: definition.description,
+          inputSchema: definition.inputSchema,
+          outputSchema: definition.outputSchema,
+        },
+        async (input) =>
+          toCallToolResult(await definition.handler(input, project(ctx, definition.needs))),
+      );
+    },
+  };
+}
+
+/**
+ * Every tool this server publishes, in the order clients see them in `tools/list`.
+ *
+ * **The order is part of the contract.** The SDK publishes tools in registration order, every
+ * existing observer sorts by name before comparing, and so a reordering here would change what the
+ * model receives without a single gate noticing — which is why `test/tools-list-contract.test.ts`
+ * freezes the unsorted sequence.
+ *
+ * Empty until task 011-3b moves the thirteen tools onto `defineTool`; `server.ts` is untouched
+ * until then, so nothing reads this yet.
+ */
+export const toolSpecs: readonly ToolSpec[] = [];
