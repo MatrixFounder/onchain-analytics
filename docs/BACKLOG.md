@@ -79,6 +79,9 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 ## Discovered issues / work-items
 
 <!-- feedback:discovered-issues -->
+- **WI-32** [Правки оркестратора устойчиво применяются наполовину](backlog/wi-32-orchestrator-fixes-are-half-applied.md) — effort `S`, status `open`, opened 2026-08-02
+- **WI-31** [Гейт проверяется более узким вызовом, чем запускает CI](backlog/wi-31-gate-verified-with-narrower-invocation-than-ci.md) — effort `S`, status `open`, opened 2026-08-02
+- **WI-30** [Валидатор RTM опирается на язык документа, а пропуск шага не событие](backlog/wi-30-rtm-validator-assumes-latin-and-skip-is-silent.md) — effort `S`, status `open`, opened 2026-08-02
 - **WI-29** [Критики-субагенты встают на 600 с: скилл требует сканер, роль без Bash](backlog/wi-29-600-bash.md) — status `open`, opened 2026-08-02
 - **WI-28** [Колонки TTL и кредитов в двух README не сверяются с кодом](backlog/wi-28-ttl-readme.md) — status `open`, opened 2026-08-02
 - **WI-27** [Три тула отдают модели весь ZodError вместо первого issue](backlog/wi-27-zoderror-issue.md) — status `open`, opened 2026-08-02
