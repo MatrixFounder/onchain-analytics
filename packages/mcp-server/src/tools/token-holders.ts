@@ -136,7 +136,7 @@ export async function tokenHoldersHandler(
   return { ok: true, output: parsed.data, cache: outcome.cache };
 }
 
-/** Registers `onchain_token_holders` on `server`. Same wiring pattern as the other free tools. */
+/** The `ToolSpec` for `onchain_token_holders` — this name is declared here and nowhere else. */
 export const tokenHoldersToolSpec = defineTool({
   name: 'onchain_token_holders',
   title: 'Top token holders',
@@ -148,7 +148,7 @@ export const tokenHoldersToolSpec = defineTool({
     'onchain_get_token.',
   inputSchema: TokenHoldersInputSchema,
   outputSchema: TokenHoldersOutputSchema,
-  capability: 'token.holders',
+  capability: CAPABILITY,
   needs: ['registry'],
   handler: tokenHoldersHandler,
 });

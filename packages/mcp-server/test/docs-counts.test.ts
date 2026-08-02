@@ -220,26 +220,52 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     }
   });
 
-  it('names the capability each tool serves, next to the tool (R-119)', () => {
-    // The document already names both halves — `onchain_chain_tvl` and `chain.tvl` — but nothing
-    // checked they still agree. A capability retargeted in code (TASK-008 moved `token.holders`
-    // off a dead stub) would leave this contract describing the old pairing, and the pairing is
-    // the part a reader relies on when deciding which tool answers their question.
+  it('pairs each tool with its capability IN THE SAME BLOCK (R-119)', () => {
+    // **A substring search over the whole file is not this check.** The first version asserted only
+    // that the capability id appeared *somewhere* in the document, which every id does — so
+    // swapping two tools' capabilities in code left it green while §5 described a pairing that no
+    // longer existed. Caught by the adversarial cycle with exactly that mutation
+    // (`chain.tvl` ↔ `chain.supply`), and it is not cosmetic: `eval/capabilities.mjs` derives WHICH
+    // TOOL TO CALL from the capability, and those two take the same `{ chain }` argument, so the
+    // probe would have gone quietly to the wrong tool.
+    //
+    // So the document's OWN pairing is extracted — each `// Capability: x` anchor is attributed to
+    // the nearest `onchain_*` named above it — and compared against the registry.
     const interfaces = read('docs/architectures/interfaces.md');
-    const undocumented = toolSpecs
-      .filter((spec) => spec.capability !== null && !interfaces.includes(spec.capability))
-      .map((spec) => `${spec.name} -> ${spec.capability ?? ''}`);
+    const lines = interfaces.split('\n');
+    const documented = new Map<string, string>();
+    lines.forEach((line, index) => {
+      const anchor = /^\/\/ Capability: ([a-z][a-z.-]+)/.exec(line.trim());
+      if (!anchor) return;
+      for (let back = index; back >= 0 && index - back <= 12; back -= 1) {
+        const tool = /(onchain_[a-z0-9_]+)/.exec(lines[back] ?? '');
+        if (tool?.[1]) {
+          documented.set(tool[1], anchor[1] as string);
+          return;
+        }
+      }
+    });
+
+    // Not vacuous: if the anchor convention is ever reworded, this empties and everything below
+    // would pass by comparing nothing.
+    const withCapability = toolSpecs.filter((spec) => spec.capability !== null);
+    expect(documented.size).toBe(withCapability.length);
+
+    const wrong = withCapability
+      .filter((spec) => documented.get(spec.name) !== spec.capability)
+      .map(
+        (spec) =>
+          `${spec.name}: §5 says ${documented.get(spec.name) ?? '(nothing)'}, code says ${spec.capability ?? ''}`,
+      );
     expect(
-      undocumented,
-      'A tool serves a capability that §5 never names. Add it beside the tool block.',
+      wrong,
+      'A tool block in §5 names a capability the tool does not serve. The pairing is what a reader ' +
+        'relies on to pick a tool, and the eval derives which tool to call from it.',
     ).toStrictEqual([]);
 
-    // And the other direction: a `// Capability: x` line naming something no tool serves is a
-    // leftover, and leftovers are how a contract starts describing a system that no longer exists.
+    // And no anchor may name a capability nothing serves — a leftover from a retargeted route.
     const served = new Set(toolSpecs.map((spec) => spec.capability).filter(Boolean));
-    const stale = [...interfaces.matchAll(/\/\/ Capability: ([a-z][a-z.-]+)/g)]
-      .map((match) => match[1] as string)
-      .filter((capability) => !served.has(capability));
+    const stale = [...documented.values()].filter((capability) => !served.has(capability));
     expect(stale, 'interfaces.md names a capability no registered tool serves.').toStrictEqual([]);
   });
 

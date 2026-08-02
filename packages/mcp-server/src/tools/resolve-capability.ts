@@ -48,7 +48,7 @@ export type ResolveOutcome = ResolveSuccess | ResolveFailure;
  * (ARCHITECTURE.md §9.1), but this function treats ANY thrown error identically (defensive —
  * mirrors `CapabilityRegistry.resolve()`'s own "never trust the specific error type" internal
  * `fetch`/`normalize` catch), turning it into a structured `{ok: false, reason}` the tool's
- * `registerXTool` callback maps to `{isError: true, content: [...]}` — never an unhandled
+ * `defineTool` callback maps to `{isError: true, content: [...]}` — never an unhandled
  * rejection that would crash the MCP request handler (ARCHITECTURE.md §9.1/§7.3 invariant,
  * inherited from M0).
  */

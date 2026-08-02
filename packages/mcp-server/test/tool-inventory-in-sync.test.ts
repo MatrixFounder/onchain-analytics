@@ -29,7 +29,10 @@ import { toolSpecs } from '../src/tools/tool-specs.js';
  *
  * **The failure must be loud in `pnpm test`, not at build time.** A stale artifact caught only
  * after `build` is the RF-4 class of defect: `smoke-dist`'s tool count was wrong on `main` for
- * three tasks because nothing local ran it.
+ * **two** tasks — three tools across TASK-006 and TASK-007 — because nothing local ran it. The
+ * number is the ledger's (`docs/issues/rf-4-*.md`), not a recollection: an earlier draft of this
+ * comment said "three tasks" and disagreed with the card it cites, which is how a number acquires
+ * two sources.
  */
 
 const HOW_TO_FIX = `Run \`${GENERATE_COMMAND}\` and commit the result.`;

@@ -91,7 +91,7 @@ export async function walletBalancesHandler(
 }
 
 /** Registers `onchain_wallet_balances` — exactly this name (R-17). See `get-token.ts`'s
- * `registerGetTokenTool` docstring for the shared `isError`/`_meta.cache` wiring rationale. */
+ * `defineTool` docstring for the shared `isError`/`_meta.cache` wiring rationale. */
 export const walletBalancesToolSpec = defineTool({
   name: 'onchain_wallet_balances',
   title: 'Native balance of a wallet',
@@ -101,7 +101,7 @@ export const walletBalancesToolSpec = defineTool({
     'onchain_list_chains({capability:"wallet.balances.native"}) for the list.',
   inputSchema: WalletBalancesInputSchema,
   outputSchema: WalletBalancesOutputSchema,
-  capability: 'wallet.balances.native',
+  capability: CAPABILITY,
   needs: ['registry'],
   handler: walletBalancesHandler,
 });

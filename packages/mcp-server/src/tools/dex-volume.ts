@@ -129,7 +129,7 @@ export const dexVolumeToolSpec = defineTool({
     'onchain_list_chains with capability "dex.volume.history" to see where.',
   inputSchema: DexVolumeInputSchema,
   outputSchema: DexVolumeOutputSchema,
-  capability: 'dex.volume.history',
+  capability: CAPABILITY,
   needs: ['registry'],
   handler: async (input, ctx) => {
     const outcome = await dexVolumeHandler(input, ctx);

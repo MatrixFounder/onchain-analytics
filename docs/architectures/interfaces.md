@@ -236,6 +236,26 @@ requested 90 days is the tool doing its job, not a truncation. `truncated.series
 hard cap was hit — the request asked for more points than the transport or the point cap will carry —
 so the flag keeps meaning "you did not get what you asked for" instead of degrading into decoration.
 
+#### 5.1.4a The token-holders tool (TASK-008) — free
+
+```jsonc
+// onchain_token_holders — top holders of a token and their exact balances, Blockscout-backed, keyless
+// { chain: ChainInput, tokenAddress: string (.max(64)) }
+// → { chain, tokenAddress, holders: TokenHolder[] (.max(200)), truncated, droppedRows,
+//     source, fetchedAt }
+// Capability: token.holders
+```
+
+**`truncated` and `droppedRows` are the contract, not decoration.** The first says the list is not
+the complete tail — either the vendor paged, or rows were dropped; the second counts rows the
+adapter refused to publish (a malformed balance, a `value_truncated` marker). "50 holders" and "the
+first 50 of many" are different answers to a concentration question, and a hole in the middle is a
+different defect from a cut at the end — which is why the two are separate fields and not one flag.
+
+`holders[].amountRaw` is an exact decimal string in base units, bounded to 78 digits (the width of
+2^256−1). It is never parsed into a number: token balances routinely exceed what a JSON number
+holds without losing digits, and losing them silently is worse than refusing.
+
 #### 5.1.5 The BTC-supply tool and the eval's reference axis (TASK-009) — free
 
 ```jsonc

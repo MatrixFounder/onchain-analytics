@@ -84,7 +84,7 @@ export type GetTokenOutcome =
   { ok: true; output: GetTokenOutput; cache: CacheMeta } | { ok: false; reason: string };
 
 /**
- * Pure handler for `onchain_get_token` — separated from `registerGetTokenTool` (SDK wiring),
+ * Pure handler for `onchain_get_token` — separated from `defineTool` (SDK wiring),
  * mirrors `ping.ts`'s split (unit-testable without a transport, ARCHITECTURE.md §5.2). Re-
  * normalizes `input.address` before it becomes part of the cache-key `args` (net/args-hash.ts's
  * own documented contract: args must be the normalized, post-zod-validation tool input) — the
@@ -116,7 +116,7 @@ export async function getTokenHandler(
 }
 
 /**
- * Registers `onchain_get_token` — exactly this name (R-16) — on `server`. Same `registerTool`
+ * The `ToolSpec` for `onchain_get_token` — this name is declared here and nowhere else (R-16). Same `registerTool`
  * pattern as `ping.ts`: zod schemas are the single source of truth for both runtime validation and
  * the MCP tool-schema; on `CapabilityUnavailableError` (surfaced by `resolveCapability` as
  * `{ok: false, reason}`) returns `{isError: true, content: [...]}` EXPLICITLY (task 003-7 reviewer
@@ -128,11 +128,12 @@ export async function getTokenHandler(
  * handler (input validation, the handler callback itself, AND output-schema validation) in one
  * `try/catch` that converts ANY thrown error into `{isError: true, content: [...]}` at the wire
  * level — not just zod input-validation failures (verified by reading the installed
- * `server/mcp.js`'s `setRequestHandler(CallToolRequestSchema, ...)`). This tool builds
- * `{isError: true, ...}` explicitly anyway so that (a) `getTokenHandler`'s own `{ok:false, reason}`
- * contract is unit-testable at the pure-handler level, without a transport, and (b) `reason` is a
- * deliberately chosen, tool-specific message — never whatever generic text a thrown error's own
- * `.message` happens to produce.
+ * `server/mcp.js`'s `setRequestHandler(CallToolRequestSchema, ...)`). The `{ok:false, reason}`
+ * contract exists anyway so that (a) `getTokenHandler` is unit-testable at the pure-handler level,
+ * without a transport, and (b) `reason` is a deliberately chosen, tool-specific message — never
+ * whatever generic text a thrown error's own `.message` happens to produce. **Since TASK-011 the
+ * `{isError: true, …}` object is built by `defineTool`'s shared renderer** (`registry.ts`), not
+ * here — this file no longer touches the SDK at all.
  *
  * `_meta.cache` sits OUTSIDE `structuredContent`/`outputSchema` (ARCHITECTURE.md §3.2/§5.1).
  */
@@ -145,7 +146,7 @@ export const getTokenToolSpec = defineTool({
     '(CoinGecko-backed).',
   inputSchema: GetTokenInputSchema,
   outputSchema: GetTokenOutputSchema,
-  capability: 'token.price',
+  capability: CAPABILITY,
   needs: ['registry'],
   handler: getTokenHandler,
 });

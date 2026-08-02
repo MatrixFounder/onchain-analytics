@@ -176,8 +176,7 @@ export async function entityLabelHandler(
   return { ok: true, output: parsed.data, cache: outcome.cache, budget };
 }
 
-/** Registers `onchain_entity_label` — exactly this name (R-42) — on `server`. Same wiring pattern
- * as `smart-money-flows.ts`'s `registerSmartMoneyFlowsTool`. */
+/** The `ToolSpec` for `onchain_entity_label` — this name is declared here and nowhere else (R-42). */
 export const entityLabelToolSpec = defineTool({
   name: 'onchain_entity_label',
   title: 'Entity and address labels',
@@ -187,7 +186,7 @@ export const entityLabelToolSpec = defineTool({
     'the opt-in exhaustive escalation costs more and is served on fewer chains).',
   inputSchema: EntityLabelInputSchema,
   outputSchema: EntityLabelOutputSchema,
-  capability: 'entity.labels',
+  capability: CAPABILITY,
   needs: ['registry', 'budgetStore'],
   handler: entityLabelHandler,
 });

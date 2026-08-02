@@ -114,8 +114,8 @@ export async function tokenRiskHandler(
   return { ok: true, output: parsed.data, cache: outcome.cache, budget };
 }
 
-/** Registers `onchain_token_risk` — exactly this name (R-43) — on `server`. Same wiring pattern
- * as `smart-money-flows.ts`'s `registerSmartMoneyFlowsTool`. */
+/** The `ToolSpec` for `onchain_token_risk` — this name is declared here and nowhere else (R-43). Same wiring pattern
+ * as `smart-money-flows.ts`'s `defineTool`. */
 export const tokenRiskToolSpec = defineTool({
   name: 'onchain_token_risk',
   title: 'Token risk and reward indicators',
@@ -124,7 +124,7 @@ export const tokenRiskToolSpec = defineTool({
     'onchain_list_chains({capability:"token.risk"}) first (Nansen-backed, paid).',
   inputSchema: TokenRiskInputSchema,
   outputSchema: TokenRiskOutputSchema,
-  capability: 'token.risk',
+  capability: CAPABILITY,
   needs: ['registry', 'budgetStore'],
   handler: tokenRiskHandler,
 });

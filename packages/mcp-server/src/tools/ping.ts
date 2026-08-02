@@ -31,7 +31,7 @@ export interface PingContext {
 }
 
 /**
- * Pure handler for `onchain_ping`. Deliberately separated from `registerPingTool` (SDK wiring):
+ * Pure handler for `onchain_ping`. Deliberately separated from the SDK wiring (which lives once, in `registry.ts`):
  * this function is pure and unit testable without standing up a transport (ARCHITECTURE.md
  * §5.2). The return value is routed through `PingOutputSchema.parse` — the same schema instance
  * used to build the MCP tool's output schema — so runtime validation and the protocol contract
@@ -47,7 +47,7 @@ export function pingHandler(_input: PingInput, ctx: PingContext): PingOutput {
 }
 
 /**
- * Registers the `onchain_ping` tool — exactly this name (R-10) — on `server`. `PingInputSchema`
+ * The `ToolSpec` for `onchain_ping` — this name is declared here and nowhere else (R-10). `PingInputSchema`
  * / `PingOutputSchema` are passed straight through as `inputSchema` / `outputSchema`: the SDK's
  * `registerTool` accepts a full zod schema (not just a raw shape) as of the installed
  * `@modelcontextprotocol/sdk` version, so there is exactly one schema object driving both

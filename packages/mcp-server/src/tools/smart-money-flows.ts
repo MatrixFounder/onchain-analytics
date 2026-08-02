@@ -123,8 +123,8 @@ export async function smartMoneyFlowsHandler(
 }
 
 /**
- * Registers `onchain_smart_money_flows` — exactly this name (R-41) — on `server`. Same wiring
- * pattern as `get-token.ts`'s `registerGetTokenTool` (`isError`/`_meta.cache`), plus `_meta.budget`
+ * The `ToolSpec` for `onchain_smart_money_flows` — this name is declared here and nowhere else (R-41). Same wiring
+ * pattern as `get-token.ts`'s `defineTool` (`isError`/`_meta.cache`), plus `_meta.budget`
  * as a sibling key when the handler returned one (Phase 2).
  */
 export const smartMoneyFlowsToolSpec = defineTool({
@@ -136,7 +136,7 @@ export const smartMoneyFlowsToolSpec = defineTool({
     'first (Nansen-backed, paid).',
   inputSchema: SmartMoneyFlowsInputSchema,
   outputSchema: SmartMoneyFlowsOutputSchema,
-  capability: 'smart-money.flows',
+  capability: CAPABILITY,
   needs: ['registry', 'budgetStore'],
   handler: smartMoneyFlowsHandler,
 });

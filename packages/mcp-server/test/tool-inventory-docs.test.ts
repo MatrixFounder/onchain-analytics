@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -61,7 +61,7 @@ const EXCLUDED_FILES = new Map([
   ],
   [
     'packages/mcp-server/eval/checks.mjs',
-    'a map keyed by tool name; its key set is asserted against the registry by eval-capability-coverage',
+    'a map keyed by tool name; both directions of that keying are asserted against the registry by eval-checks-coverage.test.ts',
   ],
   [
     'packages/mcp-server/test/tools-list-contract.test.ts',
@@ -80,6 +80,12 @@ const EXCLUDED_FILES = new Map([
     'packages/mcp-server/tool-inventory.json',
     'generated FROM the registry; guarded by tool-inventory-in-sync.test.ts, which is a stronger ' +
       'check than completeness',
+  ],
+  [
+    'packages/mcp-server/report.json',
+    'the eval report (`ONCHAIN_EVAL_JSON=report.json pnpm eval`, documented in eval/run.mjs) — ' +
+      'every result row carries a `tool` field, so a single-chain run already names ten. Listed ' +
+      'rather than gitignored: this walk reads the filesystem and never consults git',
   ],
   [
     'docs/architectures/version-history.md',
@@ -117,19 +123,38 @@ const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '.git', 'coverage', '.
 /**
  * Every file in the repository, as repo-relative paths.
  *
- * Symlinks are not followed. They point at the framework repositories this project references
- * rather than vendors (`.agentic-development`, the n8n skills), and one of them is currently
- * dangling — a walk that followed them would crash on someone else's broken link and, worse, would
- * start policing another repository's documents.
+ * **Symlinked DIRECTORIES are not descended into.** They point at the framework repositories this
+ * project references rather than vendors (`.agentic-development`, the n8n skills), one of them is
+ * currently dangling, and following them would both crash on someone else's broken link and start
+ * policing another repository's documents.
+ *
+ * **Symlinked FILES are still read**, and that is a correction: the first version skipped every
+ * symlink, which left a hole an adversarial reviewer walked straight through — a link placed in
+ * `docs/` pointing at an out-of-tree file naming all thirteen tools, invisible to this gate. A
+ * dangling link simply fails to read and is skipped by the caller's `catch`.
  */
 function walk(directory: string, accumulator: string[] = []): string[] {
   for (const entry of readdirSync(path.join(repoRoot, directory || '.'), { withFileTypes: true })) {
-    if (SKIP_DIRECTORIES.has(entry.name) || entry.isSymbolicLink()) continue;
+    if (SKIP_DIRECTORIES.has(entry.name)) continue;
     const relative = directory ? `${directory}/${entry.name}` : entry.name;
+    if (entry.isSymbolicLink()) {
+      // Read it as a file if it resolves to one; never descend, for the reason above.
+      if (!isDirectorySafe(relative)) accumulator.push(relative);
+      continue;
+    }
     if (entry.isDirectory()) walk(relative, accumulator);
     else if (entry.isFile()) accumulator.push(relative);
   }
   return accumulator;
+}
+
+/** `true` when the path resolves to a directory; `false` for a file OR a dangling link. */
+function isDirectorySafe(relative: string): boolean {
+  try {
+    return statSync(path.join(repoRoot, relative)).isDirectory();
+  } catch {
+    return true; // dangling — treat as "do not read", the caller skips it
+  }
 }
 
 /** Distinct registry tool names appearing in a file. */
