@@ -102,15 +102,28 @@ describe('eval/run.mjs names only tools that exist (adversarial cycle 2)', () =>
     path.join(path.dirname(fileURLToPath(import.meta.url)), '../eval/run.mjs'),
     'utf8',
   );
+  /**
+   * Names allowed to appear without being registered — planned or retired tools mentioned in prose.
+   * The sibling documentation gate has `PLANNED_TOOL_NAMES` for exactly this, and `docs-counts.ts`
+   * states the governing rule: a test that forces history to match today's inventory is worse than
+   * no test. Empty today; it exists so that a historical note is a one-line declaration rather than
+   * a deletion (cycle 3).
+   */
+  const ALLOWED_UNREGISTERED = new Map<string, string>();
+
   const mentioned = [...new Set([...runSource.matchAll(/onchain_[a-z0-9_]+/g)].map((m) => m[0]))];
 
   it('resolves every tool literal against the registry', () => {
-    const orphans = mentioned.filter((name) => !registeredNames.has(name));
+    const orphans = mentioned.filter(
+      (name) => !registeredNames.has(name) && !ALLOWED_UNREGISTERED.has(name),
+    );
     expect(
       orphans.sort(),
-      'eval/run.mjs branches on a tool name that no longer exists. Nothing else would report it: ' +
-        "the file is below the documentation gate's discovery threshold, and a branch that stops " +
-        'matching produces no row, no warning and no failure — the cross-check simply never runs.',
+      'eval/run.mjs names a tool that is not registered. If it is a live branch, nothing else ' +
+        "would report it: the file is below the documentation gate's discovery threshold, and a " +
+        'branch that stops matching produces no row, no warning and no failure — the cross-check ' +
+        'simply never runs. If it is a historical or forward-looking note, declare it in ' +
+        'ALLOWED_UNREGISTERED with the reason rather than deleting the note.',
     ).toStrictEqual([]);
   });
 

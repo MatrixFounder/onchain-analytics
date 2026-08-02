@@ -318,21 +318,34 @@ describe('the registry is the inventory (R-110, R-112)', () => {
  * the tools whose inputs the test can synthesize, whereas these cover every module the day it is
  * added — including one whose handler is never successfully invoked in the offline suite.
  */
+/**
+ * Source text with block and line comments removed, so a gate below can assert about CODE rather
+ * than about prose. Good enough for these checks and deliberately not a parser: it does not
+ * understand `//` inside a string literal, which no module under `src/tools` contains.
+ */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
 describe('each tool module declares its privileges once (adversarial cycle 2)', () => {
   const toolsDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/tools');
   /**
-   * A tool module is one that calls `defineTool` — derived, not listed. An exclusion list of the
+   * A tool module is one that *calls* `defineTool({` — derived, not listed. An exclusion list of the
    * helper modules (`registry.ts`, `budget-meta.ts`, …) would be one more hand-written inventory,
    * and it would go stale the first time a helper is added.
+   *
+   * Matching `= defineTool({` rather than the bare `defineTool(` keeps prose out: `budget-meta.ts`
+   * already mentions `defineTool` in a sentence, and one edit dropping the backticks would have
+   * added a fourteenth "module" and reddened the count with a message naming no file (cycle 3).
    */
   const MODULES = readdirSync(toolsDirectory)
     .filter((file) => file.endsWith('.ts'))
     .filter((file) =>
-      readFileSync(path.join(toolsDirectory, file), 'utf8').includes('defineTool('),
+      readFileSync(path.join(toolsDirectory, file), 'utf8').includes('= defineTool({'),
     );
 
   it('finds one module per registered tool, so the assertions below are not vacuous', () => {
-    expect(MODULES.length).toBe(toolSpecs.length);
+    expect(MODULES, `Modules found: ${MODULES.join(', ')}`).toHaveLength(toolSpecs.length);
   });
 
   it('names its capability once — the spec field and the resolve call read one constant', () => {
@@ -345,7 +358,25 @@ describe('each tool module declares its privileges once (adversarial cycle 2)', 
     for (const file of MODULES) {
       const source = readFileSync(path.join(toolsDirectory, file), 'utf8');
       const declarations = [...source.matchAll(/^const CAPABILITY = '([a-z][\w.-]*)';$/gm)];
-      const specField = /^ {2}capability: (.+),$/m.exec(source)?.[1];
+
+      // **Scoped to the `defineTool({…})` call, and every occurrence inside it, not the first one
+      // in the file** (cycle 3). The previous version ran a non-global regex over the whole module,
+      // which failed in both directions. It could be defeated: add any earlier two-space
+      // `capability: CAPABILITY` — a `CacheMeta` constant is the natural shape — and the spec field
+      // below it may go back to a bare literal with the gate still green, restoring the exact split
+      // this test exists to forbid. And it could fire falsely: `list-chains.ts` declares an INPUT
+      // field named `capability`, which escapes today only because prettier happened to indent that
+      // object by four spaces.
+      const specStart = source.indexOf('= defineTool({');
+      const specBody = specStart === -1 ? '' : source.slice(specStart);
+      const specFields = [...specBody.matchAll(/^ {2}capability: (.+),$/gm)].map((m) => m[1]);
+      if (specFields.length !== 1) {
+        offenders.push(
+          `${file}: expected exactly one \`capability:\` field in the defineTool call, found ${specFields.length}`,
+        );
+        continue;
+      }
+      const specField = specFields[0];
 
       if (specField === 'null') {
         // A server-level tool (`ping`, `list_chains`): no capability, and none may be resolved.
@@ -367,7 +398,9 @@ describe('each tool module declares its privileges once (adversarial cycle 2)', 
           `${file}: spec says \`capability: ${specField ?? '(absent)'}\`, not the CAPABILITY constant`,
         );
       }
-      for (const call of source.matchAll(/resolveCapability\(\s*[\w.]+,\s*([^,]+),/g)) {
+      // First argument matched as "anything up to the first comma" rather than a dotted identifier:
+      // `resolveCapability(registryOf(ctx), …)` would otherwise not be scanned at all (cycle 3).
+      for (const call of source.matchAll(/resolveCapability\(\s*[^,]+,\s*([^,]+),/g)) {
         if (call[1]?.trim() !== 'CAPABILITY') {
           offenders.push(
             `${file}: resolves \`${call[1]?.trim() ?? '?'}\`, not the CAPABILITY constant`,
@@ -389,17 +422,34 @@ describe('each tool module declares its privileges once (adversarial cycle 2)', 
     // `needs: ['version']` could construct the budget store itself, open the SQLite file in
     // DATA_DIR, and leave every existing assertion green (verified by mutation, adversarial
     // cycle 2). Least privilege is only a runtime fact while both channels are closed.
+    //
+    // **Scanned over the whole directory, not just the tool modules** (cycle 3). Scanning only
+    // files containing `defineTool({` left the helpers beside them unguarded, and `budget-meta.ts`
+    // is the natural place for the drift: it is imported by exactly the three budget-privileged
+    // tools, so a fourth tool wanting `_meta.budget` without declaring `needs: ['budgetStore']`
+    // gets it by adding one fallback there. That is a plausible developer mistake, not a
+    // contrivance, and no lint rule covers the import channel.
+    // Comments are stripped before matching. A bare substring search over the raw text made this
+    // gate fire on `registry.ts`'s own docstring the moment that docstring started EXPLAINING the
+    // rule — a gate that forbids naming the thing it forbids. The alternative, exempting
+    // `registry.ts` by name, would be a hand-written exclusion of exactly the kind this task
+    // deletes. Code is what matters here: an import or a call, not a sentence.
     const offenders: string[] = [];
-    for (const file of MODULES) {
-      const source = readFileSync(path.join(toolsDirectory, file), 'utf8');
+    for (const file of readdirSync(toolsDirectory).filter((f) => f.endsWith('.ts'))) {
+      const code = stripComments(readFileSync(path.join(toolsDirectory, file), 'utf8'));
       for (const factory of ['createBudgetStore', 'createCacheStore']) {
-        if (source.includes(factory)) offenders.push(`${file}: references ${factory}`);
+        if (code.includes(factory)) offenders.push(`${file}: references ${factory}`);
       }
     }
     expect(
       offenders.sort(),
-      'A tool module builds its own store instead of receiving one through `ToolContext`. That ' +
-        'bypasses `needs` entirely — the projection in registry.ts can only withhold what it owns.',
+      'A module under src/tools builds its own store. For `createBudgetStore` that bypasses `needs` ' +
+        'entirely — the projection in registry.ts can only withhold what it owns, and the budget ' +
+        'store is genuinely unreachable any other way (the Nansen adapter closes over it). For ' +
+        '`createCacheStore` the point is narrower and worth stating honestly: the cache store is ' +
+        'not a `ToolContext` key at all, and `CapabilityRegistry.cache` is `private` only in the ' +
+        'type system, so any tool holding `registry` can already reach one. What this forbids ' +
+        'there is a SECOND better-sqlite3 connection to DATA_DIR, which is its own defect.',
     ).toStrictEqual([]);
   });
 });

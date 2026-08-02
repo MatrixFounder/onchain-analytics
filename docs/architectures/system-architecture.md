@@ -1630,7 +1630,7 @@ flowchart TB
   HOST -- "stdio, JSON-RPC" --> ENTRY
   ENTRY -- "server.connect(transport)" --> SRV
   ENTRY -- "loadEnv()" --> ENV
-  SRV -- "registerXTool(server)" --> TOOLS
+  SRV -- "for spec of toolSpecs: spec.register(server, ctx)" --> TOOLS
   TOOLS -- "registry.resolve(cap,chain,args)" --> REG
   REG --> ADAPT --> NET
   ADAPT --> CHAIN

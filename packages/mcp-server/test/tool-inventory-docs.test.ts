@@ -58,7 +58,7 @@ const GATED_DOCUMENTS = [
 
 /**
  * Files that legitimately name many tools without being an inventory. Each needs a reason, because
- * "it was already like that" is how the sixteen accumulated.
+ * "it was already like that" is how the seventeen accumulated.
  */
 const EXCLUDED_FILES = new Map([
   [
@@ -166,7 +166,11 @@ const MAX_READABLE_BYTES = 4 * 1024 * 1024;
  */
 function walk(directory: string, accumulator: string[] = []): string[] {
   for (const entry of readdirSync(path.join(repoRoot, directory || '.'), { withFileTypes: true })) {
-    if (SKIP_DIRECTORIES.has(entry.name)) continue;
+    // **Skipped by name only when it IS a directory** (cycle 3). Testing the name before the type
+    // meant a plain FILE called `build`, `out`, `dist`, `coverage` or `DATA_DIR` was skipped too —
+    // `cp README.md docs/out` put a document naming all thirteen tools on disk, unclassified, with
+    // the suite green. Refusing exactly that is this gate's whole purpose.
+    if (entry.isDirectory() && SKIP_DIRECTORIES.has(entry.name)) continue;
     const relative = directory ? `${directory}/${entry.name}` : entry.name;
     if (entry.isSymbolicLink()) {
       // Read it only if it resolves to a plain file; never descend, for the reason above.
@@ -174,7 +178,10 @@ function walk(directory: string, accumulator: string[] = []): string[] {
       continue;
     }
     if (entry.isDirectory()) walk(relative, accumulator);
-    else if (entry.isFile()) accumulator.push(relative);
+    // The size cap binds regular files too, not only symlinks: `walk` used to push any `isFile()`
+    // unconditionally, so the cap's own docstring ("files larger than this are not read") was false
+    // for the ordinary case and a large committed export was decoded on every run (cycle 3).
+    else if (entry.isFile() && isReadableFile(relative)) accumulator.push(relative);
   }
   return accumulator;
 }
@@ -218,19 +225,32 @@ describe('every document that lists tools lists all of them (R-123)', () => {
   });
 
   it('carries no exclusion that excludes nothing', () => {
-    // **An exclusion nobody can falsify is not an exclusion.** Two entries here named files that
-    // never crossed the threshold at all — `tools-list-contract.test.ts` names ZERO tools (the
-    // snapshot it guards lives in the fixture file, which has its own entry) and this gate names
-    // five. Deleting both left the suite green, which is the definition of decoration. Worse, they
-    // bought a permanent exemption: the day one of those files replaces its derived `TOOL_NAMES`
-    // with a hand-written list — the exact drift this task removes — nothing would notice.
+    // **An exclusion nobody can falsify is not an exclusion.** Two entries were deleted because the
+    // files they named never crossed the threshold at all. Both numbers are `namedTools()` — the
+    // same metric this check prints — so they are reproducible today:
+    //
+    //   `test/tools-list-contract.test.ts`  → 0 registered tools named (the snapshot it guards
+    //                                          lives in the fixture file, which has its own entry)
+    //   `test/tool-inventory-docs.test.ts`  → 1 (`onchain_list_chains`, in prose; the other three
+    //                                          `onchain_*` tokens are PLANNED names, not registered)
+    //
+    // …against a threshold of 8. Deleting both left the suite green, which is the definition of
+    // decoration. Worse, they bought a permanent exemption: the day one of those files replaces its
+    // derived `TOOL_NAMES` with a hand-written list — the exact drift this task removes — nothing
+    // would notice.
+    //
+    // (Cycle 2's version of this comment said the second file named "five", counting the planned
+    // names that `namedTools()` filters out. A justification stated in a metric, measured with a
+    // different metric — corrected in cycle 3, which is the third consecutive cycle to find a false
+    // number in the prose of a fix.)
     //
     // Cycle 1 found one entry justified by a false claim. This is the same class one level up: the
-    // claim is unverifiable rather than false, so the fix is a gate rather than a rewrite.
-    // A file that is not present cannot be measured, and being absent is legitimate here: the one
-    // such entry is `report.json`, which exists only after `ONCHAIN_EVAL_JSON=… pnpm eval`. The
-    // residual is stated rather than hidden — a mistyped path is indistinguishable from a
-    // not-yet-generated artifact, so this check binds only what is on disk.
+    // claim was unverifiable rather than false, so the fix is a gate rather than a rewrite.
+    // A file that is not present, or is larger than the read cap, cannot be measured — and being
+    // absent is legitimate here: the one such entry is `report.json`, which exists only after
+    // `ONCHAIN_EVAL_JSON=… pnpm eval`. The residual is stated rather than hidden: a mistyped path is
+    // indistinguishable from a not-yet-generated artifact, so this check binds only what is on disk
+    // and readable.
     const idle: string[] = [];
     for (const [relative] of EXCLUDED_FILES) {
       if (!isReadableFile(relative)) continue;

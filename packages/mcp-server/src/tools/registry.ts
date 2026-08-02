@@ -8,11 +8,16 @@ import type { CacheMeta } from './resolve-capability.js';
 /**
  * The single source of the MCP tool inventory (TASK-011, ADR-002 D7).
  *
- * **The problem this replaces.** The list of tool names was restated in sixteen files, each with
- * its own format and its own moment of failure, and three of them were wrong the day this was
- * written: both READMEs named eight tools of thirteen, `.AGENTS.md` named twelve, and the live
- * eval graded a tool it had no check for as `ok`. Adding a tool cost four separate edits discovered
- * one at a time, the last only after `test` AND `build` had already passed.
+ * **The problem this replaces.** The list of tool names was restated in **seventeen** files
+ * (`docs/TASK.md` §1.1), each with its own format and its own moment of failure, and three of those
+ * restatements disagreed with the code the day this was written — across **four** files: both
+ * READMEs named eight tools of thirteen, `.AGENTS.md` named twelve, and the live eval graded a tool
+ * it had no check for as `ok`. Adding a tool cost four separate edits discovered one at a time, the
+ * last only after `test` AND `build` had already passed.
+ *
+ * (Sixteen was ADR-002 D7's count the day before; the seventeenth file was `docs/TASK.md` itself.
+ * Cycle 2 corrected this number in `tool-inventory-docs.test.ts` and left it wrong here and in one
+ * more place — the same half-applied correction that cycle diagnosed elsewhere. Fixed in cycle 3.)
  *
  * From here the inventory is data. Registration, the stdio inventory suite, the dependency-free
  * `smoke-dist` script, the eval's capability axis and the documentation gates all become READERS of
@@ -49,8 +54,20 @@ export interface ToolContext {
  * tools attach `_meta.cache`; the M2 tools add `_meta.budget` on a miss. Absent `cache`/`budget`
  * render as an absent key, never as `_meta: {}`.
  *
- * `{ok: false}` carries a chosen `reason` rather than a thrown error's `.message`: the SDK would
- * turn a throw into `isError: true` anyway, but then the text is whatever the exception said.
+ * **`reason` is forwarded to the model verbatim, and on the capability path it IS a thrown error's
+ * `.message`.** `resolveCapability` returns `error.message` unchanged, and a
+ * `CapabilityUnavailableError` concatenates every adapter's failure — which can include up to 500
+ * characters of a vendor's own response body. `toCallToolResult` renders it as the `text` of an
+ * `isError` result, so it reaches the model with **none** of the sanitizing the success path gets
+ * (`blockscout/sanitize.ts` exists because that vendor returns model-directed `instructions` and
+ * `notes` fields). Treat it as untrusted third-party text when adding a failure path: never
+ * assume it is curated first-party copy. No secret reaches it — every adapter redacts keys before
+ * throwing and `safeFetch` reduces URLs to origin+pathname — but that is a property of the
+ * adapters, not of this type.
+ *
+ * (Corrected in adversarial cycle 3. This docstring, `.AGENTS.md` and `get-token.ts` all claimed
+ * `reason` was "a chosen message, never a thrown error's `.message`"; cycle 2 fixed the third and
+ * left these two — the same one-of-three correction it had itself diagnosed twice.)
  */
 export type ToolOutcome<TOutput> =
   | { ok: true; output: TOutput; cache?: CacheMeta; budget?: BudgetMeta }

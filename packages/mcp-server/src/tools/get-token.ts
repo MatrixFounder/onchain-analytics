@@ -116,11 +116,11 @@ export async function getTokenHandler(
 }
 
 /**
- * The `ToolSpec` for `onchain_get_token` — this name is declared here and nowhere else (R-16). Same `registerTool`
- * pattern as `ping.ts`: zod schemas are the single source of truth for both runtime validation and
- * the MCP tool-schema; on `CapabilityUnavailableError` (surfaced by `resolveCapability` as
- * `{ok: false, reason}`) returns `{isError: true, content: [...]}` EXPLICITLY (task 003-7 reviewer
- * note).
+ * The `ToolSpec` for `onchain_get_token` — this name is declared here and nowhere else (R-16). As in
+ * `ping.ts`, zod schemas are the single source of truth for both runtime validation and the MCP
+ * tool-schema; a `CapabilityUnavailableError` is surfaced by `resolveCapability` as
+ * `{ok: false, reason}` and becomes `{isError: true, content: [...]}` on the wire (task 003-7
+ * reviewer note) — rendered by `defineTool`, not here, since TASK-011.
  *
  * **Corrected (adversarial cycle 2, finding 1 — the PREVIOUS wording here was stale/inaccurate):**
  * this is NOT because the SDK's own automatic `isError` conversion is somehow insufficient — the
