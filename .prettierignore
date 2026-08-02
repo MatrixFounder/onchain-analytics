@@ -42,6 +42,20 @@ docs/backlog/
 docs/feedback/
 # generated chain registry — scripts/sync-chain-registry.ts owns its byte format (R-49c determinism)
 packages/core/src/chain/registry.data.json
+# The two TASK-011 generated artifacts, for the same reason: their generators own the bytes and a
+# test compares them byte for byte, so a prettier pass would fail the gate on an unchanged registry.
+#   snapshot   — scripts/snapshot-tools.ts    → test/tools-list-contract.test.ts (R-125)
+#   inventory  — scripts/gen-tool-inventory.ts → test/tool-inventory-in-sync.test.ts (R-114)
+#
+# **Both are also listed in `packages/mcp-server/.prettierignore`, and both listings are needed.**
+# Prettier reads only the ignore file at its CWD — nested ones are not consulted — so the package
+# file covers `pnpm --filter … format:check` and this one covers the root `prettier --check .` that
+# CI actually runs (.github/workflows/ci.yml). Listing them locally alone is what turned this branch
+# red, the same way omitting docs/backlog/ here did on 2026-07-30 (see above). The duplication is
+# safe because it is self-detecting: a third generated artifact listed only in the package file
+# fails the root gate immediately, by name.
+packages/mcp-server/test/fixtures/tools-list.snapshot.json
+packages/mcp-server/tool-inventory.json
 # transient python artefacts — git ignores them, prettier must too, otherwise running pytest at
 # the repo root turns `pnpm format:check` red for a file nobody authored
 .pytest_cache/

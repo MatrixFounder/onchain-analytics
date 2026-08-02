@@ -7,10 +7,20 @@ import { toolSpecs } from '../src/tools/tool-specs.js';
 /**
  * No file may carry a hand-written tool inventory without saying so (TASK-011, R-122/R-123/R-126).
  *
- * **The defect this closes.** On the day TASK-011 started, the tool list was restated in sixteen
- * files and three of them were wrong: both READMEs named eight tools of thirteen — stale since
- * TASK-006, through four shipped tasks — and `packages/mcp-server/.AGENTS.md` named twelve while
- * claiming a suite asserts five. None of it failed anything, because no gate looked at those files.
+ * **The defect this closes.** On the day TASK-011 started, **seventeen** files named eight or more
+ * of the thirteen tools (`docs/TASK.md` §1.1 — ADR-002 D7 had counted sixteen the day before; the
+ * seventeenth was `docs/TASK.md` itself, which is why R-122 excludes a path CLASS and not a list of
+ * names). Three of those places disagreed with the code, across **four** files (§1.2):
+ *
+ *   1. `README.md` and `README.ru.md` named eight tools of thirteen — stale since TASK-006, through
+ *      four shipped tasks. This is the public face of the product.
+ *   2. `packages/mcp-server/.AGENTS.md` named twelve, and claimed the stdio suite asserts five.
+ *   3. `eval/checks.mjs` graded a tool it had no check for as `ok` — closed by
+ *      `eval-checks-coverage.test.ts`, not by this file.
+ *
+ * None of it failed anything, because no gate looked at those files. (Numbers corrected in
+ * adversarial cycle 2: this docstring had said "sixteen files", which was the ADR's figure attached
+ * to the wrong day, and had dropped defect 3 — the one its sibling gate exists for.)
  *
  * **Membership is a declared list, never a threshold.** This is the trap the first design walked
  * into. `README.md` named exactly eight tools; had the criterion been "a file naming ≥8 must be
@@ -61,15 +71,9 @@ const EXCLUDED_FILES = new Map([
   ],
   [
     'packages/mcp-server/eval/checks.mjs',
-    'a map keyed by tool name; both directions of that keying are asserted against the registry by eval-checks-coverage.test.ts',
-  ],
-  [
-    'packages/mcp-server/test/tools-list-contract.test.ts',
-    'the frozen contract snapshot lives here on purpose — it is the one expectation NOT derived from the registry',
-  ],
-  [
-    'packages/mcp-server/test/tool-inventory-docs.test.ts',
-    'this gate itself: it names the tools it checks for',
+    'a map keyed by tool name. eval-checks-coverage.test.ts asserts every key is a registered ' +
+      'tool, and that every tool the eval invokes (CAPABILITY_TOOLS + the capability-null tools) ' +
+      'has one. Deliberately NOT a complete inventory: the three paid tools are never called',
   ],
   [
     'packages/mcp-server/test/fixtures/tools-list.snapshot.json',
@@ -118,7 +122,29 @@ const PLANNED_TOOL_NAMES = new Map([
   ['onchain_watch_remove', 'M3 watchlists (ROADMAP §M3, ADR-001 D7)'],
 ]);
 
-const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '.git', 'coverage', '.turbo']);
+/**
+ * `DATA_DIR` is the important one and was missing: `.gitignore` reserves `/DATA_DIR/` at the repo
+ * root and `resolveDataDir()` honours `DATA_DIR=./DATA_DIR`, so a developer who sets it had
+ * `cache.sqlite3` (and its `-wal`) decoded into a JS string on every `pnpm test` — silently, since
+ * `readFileSync(…, 'utf8')` does not throw on binary. The rest are ordinary build/venv output.
+ */
+const SKIP_DIRECTORIES = new Set([
+  'node_modules',
+  'dist',
+  '.git',
+  'coverage',
+  '.turbo',
+  'DATA_DIR',
+  '.venv',
+  'build',
+  'out',
+]);
+
+/**
+ * Files larger than this are not documents and are not read. A cap is required, not tidy: without
+ * it a symlink to a huge file — or to `/dev/zero` — is read into memory until the process dies.
+ */
+const MAX_READABLE_BYTES = 4 * 1024 * 1024;
 
 /**
  * Every file in the repository, as repo-relative paths.
@@ -130,16 +156,21 @@ const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '.git', 'coverage', '.
  *
  * **Symlinked FILES are still read**, and that is a correction: the first version skipped every
  * symlink, which left a hole an adversarial reviewer walked straight through — a link placed in
- * `docs/` pointing at an out-of-tree file naming all thirteen tools, invisible to this gate. A
- * dangling link simply fails to read and is skipped by the caller's `catch`.
+ * `docs/` pointing at an out-of-tree file naming all thirteen tools, invisible to this gate.
+ *
+ * A symlink is followed only when it resolves to a **regular file within the size cap**
+ * (adversarial cycle 2). The first version of this correction asked "is it not a directory?", which
+ * is true of a fifo, a socket and a character device: `readFileSync` on a writerless fifo blocks in
+ * `open(2)` for ever — no vitest timeout covers a synchronous read — and `/dev/zero` grows a buffer
+ * until the process dies. Git stores arbitrary symlink targets, so a branch can carry one.
  */
 function walk(directory: string, accumulator: string[] = []): string[] {
   for (const entry of readdirSync(path.join(repoRoot, directory || '.'), { withFileTypes: true })) {
     if (SKIP_DIRECTORIES.has(entry.name)) continue;
     const relative = directory ? `${directory}/${entry.name}` : entry.name;
     if (entry.isSymbolicLink()) {
-      // Read it as a file if it resolves to one; never descend, for the reason above.
-      if (!isDirectorySafe(relative)) accumulator.push(relative);
+      // Read it only if it resolves to a plain file; never descend, for the reason above.
+      if (isReadableFile(relative)) accumulator.push(relative);
       continue;
     }
     if (entry.isDirectory()) walk(relative, accumulator);
@@ -148,12 +179,22 @@ function walk(directory: string, accumulator: string[] = []): string[] {
   return accumulator;
 }
 
-/** `true` when the path resolves to a directory; `false` for a file OR a dangling link. */
-function isDirectorySafe(relative: string): boolean {
+/**
+ * `true` only for a regular file no larger than the cap.
+ *
+ * Everything else is skipped: a directory (we do not descend symlinked ones), a fifo/socket/device
+ * (reading one hangs or exhausts memory), an oversized file (not a document), and a link that
+ * cannot be `stat`ed at all — dangling, or unreadable because of its parent's permissions. The
+ * previous version returned the *opposite* of what its own JSDoc promised for a dangling link, and
+ * three sentences describing this helper disagreed with each other; stating one rule here is the
+ * fix for both the behaviour and the prose.
+ */
+function isReadableFile(relative: string): boolean {
   try {
-    return statSync(path.join(repoRoot, relative)).isDirectory();
+    const stat = statSync(path.join(repoRoot, relative));
+    return stat.isFile() && stat.size <= MAX_READABLE_BYTES;
   } catch {
-    return true; // dangling — treat as "do not read", the caller skips it
+    return false;
   }
 }
 
@@ -176,6 +217,36 @@ describe('every document that lists tools lists all of them (R-123)', () => {
     ).toStrictEqual([]);
   });
 
+  it('carries no exclusion that excludes nothing', () => {
+    // **An exclusion nobody can falsify is not an exclusion.** Two entries here named files that
+    // never crossed the threshold at all — `tools-list-contract.test.ts` names ZERO tools (the
+    // snapshot it guards lives in the fixture file, which has its own entry) and this gate names
+    // five. Deleting both left the suite green, which is the definition of decoration. Worse, they
+    // bought a permanent exemption: the day one of those files replaces its derived `TOOL_NAMES`
+    // with a hand-written list — the exact drift this task removes — nothing would notice.
+    //
+    // Cycle 1 found one entry justified by a false claim. This is the same class one level up: the
+    // claim is unverifiable rather than false, so the fix is a gate rather than a rewrite.
+    // A file that is not present cannot be measured, and being absent is legitimate here: the one
+    // such entry is `report.json`, which exists only after `ONCHAIN_EVAL_JSON=… pnpm eval`. The
+    // residual is stated rather than hidden — a mistyped path is indistinguishable from a
+    // not-yet-generated artifact, so this check binds only what is on disk.
+    const idle: string[] = [];
+    for (const [relative] of EXCLUDED_FILES) {
+      if (!isReadableFile(relative)) continue;
+      const named = namedTools(readFileSync(path.join(repoRoot, relative), 'utf8')).length;
+      if (named < DISCOVERY_THRESHOLD) {
+        idle.push(`${relative}: names ${named} tools, below the ${DISCOVERY_THRESHOLD} threshold`);
+      }
+    }
+    expect(
+      idle.sort(),
+      'These EXCLUDED_FILES entries do not exclude anything — the discovery check would not have ' +
+        'flagged these files anyway. Remove them: a dormant exemption is invisible until the file ' +
+        'grows into a real inventory, and then it silently suppresses the gate.',
+    ).toStrictEqual([]);
+  });
+
   it('discovers no unclassified file carrying an inventory', () => {
     const unclassified = walk('')
       .filter((relative) => !isExcludedPath(relative))
@@ -188,7 +259,10 @@ describe('every document that lists tools lists all of them (R-123)', () => {
             DISCOVERY_THRESHOLD
           );
         } catch {
-          return false; // binary or unreadable — not an inventory
+          // Unreadable (EACCES, EISDIR, a race with a deletion). NOT "binary": `readFileSync` with
+          // 'utf8' decodes a binary file lossily rather than throwing, so binaries are scanned —
+          // harmlessly, since none of them contains eight tool names.
+          return false;
         }
       });
 

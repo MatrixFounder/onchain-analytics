@@ -73,7 +73,7 @@ export const chainTvlToolSpec = defineTool({
     'for a single protocol. Call onchain_list_chains to discover valid chain values.',
   inputSchema: ChainTvlInputSchema,
   outputSchema: ChainTvlOutputSchema,
-  capability: 'chain.tvl',
+  capability: CAPABILITY,
   needs: ['registry'],
   handler: async (input, ctx) => {
     const outcome = await chainTvlHandler(input, ctx);

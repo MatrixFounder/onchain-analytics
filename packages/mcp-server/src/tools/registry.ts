@@ -122,6 +122,12 @@ export interface ToolSpec {
  * The two assertions below are the price of a dynamic key write and are sound by construction —
  * `key` comes from `keyof ToolContext`, and the loop writes exactly the keys of `K`. TypeScript
  * cannot prove the second part, so `tool-spec.test.ts` asserts it at runtime instead.
+ *
+ * **`Object.hasOwn`, not `in`** (adversarial cycle 2). `in` walks the prototype chain, so a polluted
+ * `Object.prototype.budgetStore` would satisfy the test on an installation where no store was ever
+ * injected, and a future context key named `constructor`/`valueOf` would be answered by the
+ * prototype instead of reported absent. This repository already made the same correction twice
+ * (`net/args-hash.ts`, `blockscout/sanitize.ts`); the inconsistency here was the finding.
  */
 function project<K extends keyof ToolContext>(
   ctx: ToolContext,
@@ -129,7 +135,7 @@ function project<K extends keyof ToolContext>(
 ): Pick<ToolContext, K> {
   const narrowed: Partial<ToolContext> = {};
   for (const key of keys) {
-    if (key in ctx) {
+    if (Object.hasOwn(ctx, key)) {
       // One assignment across a union of value types; the read and the write use the same key.
       (narrowed as Record<string, unknown>)[key] = ctx[key];
     }
@@ -172,18 +178,38 @@ function toCallToolResult<TOutput extends Record<string, unknown>>(
  * `satisfies number` fail on it). The only two assertions live inside `project`, where a dynamic
  * key is written across a union of value types; they are covered by a runtime test rather than
  * trusted.
+ *
+ * **Scope of the guarantee, stated exactly** (adversarial cycle 2 narrowed two overclaims here):
+ *
+ * - It covers the **context channel only**. `needs` cannot ration imports — `createBudgetStore` is
+ *   a public export of `@onchain-intel/core`, so a tool could build its own store and never touch
+ *   `ctx`. That second channel is closed by a source-level gate in `tool-spec.test.ts`, not by this
+ *   projection, and the two together are what make least privilege real.
+ * - It rations **keys, not object graphs**. `registry` is a wide key: a tool declaring it receives
+ *   the live, network-capable `CapabilityRegistry` and can resolve any capability through it. So
+ *   "a tool reaches only what it declared" is true of context keys and is *not* a promise that a
+ *   tool declaring `registry` is confined to its own capability — `onchain_list_chains` advertising
+ *   "makes no network calls" rests on its implementation, not on this projection. What the
+ *   projection does guarantee transitively is the budget store: the Nansen adapter closes over it
+ *   and never exposes it as a property, so it is unreachable from `registry`.
+ * - `needs` is frozen at definition time. `readonly K[]` is erased at runtime, and the array was
+ *   shared by reference with the spec, so anything holding `toolSpecs` could have widened a tool's
+ *   privileges for every later call.
  */
 export function defineTool<
   TInput,
   TOutput extends Record<string, unknown>,
   K extends keyof ToolContext,
 >(definition: ToolDefinition<TInput, TOutput, K>): ToolSpec {
+  // Copied and frozen, not aliased: the projection below reads this on every call, so sharing the
+  // caller's array would let a later `spec.needs.push('budgetStore')` widen a live tool.
+  const needs = Object.freeze([...definition.needs]) as readonly K[];
   return {
     name: definition.name,
     title: definition.title,
     description: definition.description,
     capability: definition.capability,
-    needs: definition.needs,
+    needs,
     register(server, ctx) {
       server.registerTool(
         definition.name,
@@ -193,8 +219,7 @@ export function defineTool<
           inputSchema: definition.inputSchema,
           outputSchema: definition.outputSchema,
         },
-        async (input) =>
-          toCallToolResult(await definition.handler(input, project(ctx, definition.needs))),
+        async (input) => toCallToolResult(await definition.handler(input, project(ctx, needs))),
       );
     },
   };

@@ -84,7 +84,7 @@ export const chainSupplyToolSpec = defineTool({
     'Bitcoin only today; call onchain_list_chains to see where the capability is served.',
   inputSchema: ChainSupplyInputSchema,
   outputSchema: ChainSupplyOutputSchema,
-  capability: 'chain.supply',
+  capability: CAPABILITY,
   needs: ['registry'],
   handler: async (input, ctx) => {
     const outcome = await chainSupplyHandler(input, ctx);

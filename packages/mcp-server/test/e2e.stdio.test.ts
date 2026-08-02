@@ -135,7 +135,11 @@ describe('onchain_ping — stdio E2E', () => {
     // spawn, which is exactly the live-network dependency R-21 forbids (no NANSEN_API_KEY is set
     // for this spawned child either — task 005-6's own "no ambient key in any test" rule).
     // `test/e2e.inprocess.test.ts` (InMemoryTransport) is what actually exercises all 7 tools.
-    'tools/list contains exactly 13 tools: onchain_ping + 4 M1 + 3 M2 + 2 TASK-006 + 1 TASK-007 + 1 TASK-008 + 1 TASK-009 (by name)',
+    // The title carried "exactly 13 tools" while the assertion below became
+    // `toHaveLength(expected.length)` — derived from the registry, so no mutation could ever
+    // falsify the number in the name. A hand-written count that nothing can falsify, printed into
+    // CI logs a human reads, is the thing this task deletes (adversarial cycle 2).
+    `tools/list matches the registry exactly, by name (${toolSpecs.length} tools today)`,
     async () => {
       const c = await connect();
       const { tools } = await c.listTools(undefined, { timeout: CALL_TIMEOUT_MS });

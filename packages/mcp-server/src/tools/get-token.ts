@@ -129,11 +129,21 @@ export async function getTokenHandler(
  * `try/catch` that converts ANY thrown error into `{isError: true, content: [...]}` at the wire
  * level — not just zod input-validation failures (verified by reading the installed
  * `server/mcp.js`'s `setRequestHandler(CallToolRequestSchema, ...)`). The `{ok:false, reason}`
- * contract exists anyway so that (a) `getTokenHandler` is unit-testable at the pure-handler level,
- * without a transport, and (b) `reason` is a deliberately chosen, tool-specific message — never
- * whatever generic text a thrown error's own `.message` happens to produce. **Since TASK-011 the
- * `{isError: true, …}` object is built by `defineTool`'s shared renderer** (`registry.ts`), not
- * here — this file no longer touches the SDK at all.
+ * contract exists anyway so that `getTokenHandler` is unit-testable at the pure-handler level,
+ * without a transport. **Since TASK-011 the `{isError: true, …}` object is built by `defineTool`'s
+ * shared renderer** (`registry.ts`), not here — this file no longer touches the SDK at all.
+ *
+ * **What `reason` actually carries** (corrected in adversarial cycle 2 — the previous wording
+ * claimed it is "a deliberately chosen, tool-specific message, never a thrown error's `.message`",
+ * and that is false on the dominant path). On the capability path `resolveCapability` returns
+ * `error.message` **verbatim**, and this handler forwards it unchanged; for a
+ * `CapabilityUnavailableError` that message concatenates every adapter's failure, which can include
+ * up to 500 characters of a vendor's own response body. That is deliberate — it is the diagnostic
+ * channel R-24/R-40 asked for — but it means the error path is **not** sanitized the way the success
+ * path is (`blockscout/sanitize.ts`, `truncate-vendor-text.ts`). Secrets do not reach it: every
+ * adapter redacts keys before throwing, and `safeFetch` reduces URLs to origin+pathname. Anyone
+ * adding a new failure path should assume vendor-authored text reaches the model and treat it as
+ * untrusted input, not as curated copy.
  *
  * `_meta.cache` sits OUTSIDE `structuredContent`/`outputSchema` (ARCHITECTURE.md §3.2/§5.1).
  */

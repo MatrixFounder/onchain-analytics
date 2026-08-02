@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — the eval is plain .mjs by design (no build step, no SDK); only its data is read
 import { checks } from '../eval/checks.mjs';
@@ -33,10 +36,17 @@ const registeredNames = new Set(toolSpecs.map((spec) => spec.name));
 const checkedNames = Object.keys(checks as Record<string, unknown>);
 
 /**
- * Tools graded without being routed through a capability: `onchain_ping` and
- * `onchain_list_chains` answer without a provider, and the eval calls them directly rather than
- * through `CAPABILITY_TOOLS`. Derived from the registry (capability `null`) rather than listed, so
- * a third such tool is covered the day it lands.
+ * Tools graded without being routed through a capability: `onchain_ping` and `onchain_list_chains`
+ * answer without a provider, and the eval calls them directly rather than through
+ * `CAPABILITY_TOOLS`.
+ *
+ * **This is a proxy for "invoked directly", not that set** (narrowed in adversarial cycle 2). The
+ * real set is two `callTool(server, '…')` literals in `eval/run.mjs`, which this file does not
+ * read. The two coincide today. A future capability-null tool the eval never calls — an
+ * `onchain_watch_list` over local state, already named in the roadmap — would make the coverage
+ * check below demand an entry for something nothing exercises. That fails loudly rather than
+ * silently, so the proxy is deliberate; it is recorded here so the next reader does not mistake it
+ * for a derivation.
  */
 const serverLevelTools = toolSpecs.filter((spec) => spec.capability === null).map((s) => s.name);
 
@@ -70,5 +80,41 @@ describe('eval/checks.mjs is keyed on tools that exist (R-126)', () => {
     expect(checkedNames.length).toBeGreaterThanOrEqual(9);
     expect((CAPABILITY_TOOLS as unknown[]).length).toBeGreaterThanOrEqual(8);
     expect(serverLevelTools.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+/**
+ * `eval/run.mjs` keys behaviour on tool names written as string literals, and no gate could see them
+ * (adversarial cycle 2).
+ *
+ * The file names five tools — below the documentation gate's discovery threshold of eight — so it is
+ * neither gated, nor excluded, nor discoverable: structurally invisible. Three of those literals
+ * select behaviour rather than merely labelling it: the registry-vs-RPC `nativeSymbol` cross-check,
+ * the `supplyVsConsensus` check that is the only probe in the project leaving the engine (TASK-009
+ * R-89), and the CoinGecko-specific throttle. A tool rename is caught loudly elsewhere — but the
+ * repair checklist that fires (`ADD_A_TOOL` in `e2e.stdio.test.ts`) names four places and this file
+ * is not one of them, so the rename gets repaired everywhere a gate points and these branches
+ * quietly stop matching. A cross-check that silently stops running reports nothing at all, which is
+ * strictly worse than the `no-probe` row `run.mjs` already emits for a missing reference source.
+ */
+describe('eval/run.mjs names only tools that exist (adversarial cycle 2)', () => {
+  const runSource = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../eval/run.mjs'),
+    'utf8',
+  );
+  const mentioned = [...new Set([...runSource.matchAll(/onchain_[a-z0-9_]+/g)].map((m) => m[0]))];
+
+  it('resolves every tool literal against the registry', () => {
+    const orphans = mentioned.filter((name) => !registeredNames.has(name));
+    expect(
+      orphans.sort(),
+      'eval/run.mjs branches on a tool name that no longer exists. Nothing else would report it: ' +
+        "the file is below the documentation gate's discovery threshold, and a branch that stops " +
+        'matching produces no row, no warning and no failure — the cross-check simply never runs.',
+    ).toStrictEqual([]);
+  });
+
+  it('actually finds literals, so the check above is not vacuous', () => {
+    expect(mentioned.length).toBeGreaterThanOrEqual(5);
   });
 });

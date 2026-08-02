@@ -107,8 +107,9 @@ export async function protocolTvlHandler(
   return { ok: true, output: parsed.data, cache: outcome.cache };
 }
 
-/** Registers `onchain_protocol_tvl` — exactly this name (R-19). See `get-token.ts`'s
- * `defineTool` docstring for the shared `isError`/`_meta.cache` wiring rationale. */
+/** The `ToolSpec` for `onchain_protocol_tvl` — this name is declared here and nowhere else (R-19).
+ * Registration happens in `registry.ts`; see `get-token.ts`'s spec docstring for the shared
+ * `isError`/`_meta.cache` wiring rationale. */
 export const protocolTvlToolSpec = defineTool({
   name: 'onchain_protocol_tvl',
   title: 'Protocol TVL',

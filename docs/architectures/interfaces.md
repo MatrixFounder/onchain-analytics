@@ -6,9 +6,8 @@
 
 `onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
 Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), one free
-DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (`onchain_token_holders`
-— `{ chain, tokenAddress }` → `TokenHolders`, capability `token.holders`), and one free BTC-supply
-tool with TASK-009 (§5.1.5).
+DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
+BTC-supply tool with TASK-009 (§5.1.5).
 
 **The `chain` parameter, stated once.** Eleven of the thirteen tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and

@@ -22,9 +22,17 @@ import { defineConfig } from 'vitest/config';
  *
  * **What this does NOT cover:** `test/e2e.stdio.test.ts` spawns `src/index.ts` as a **child
  * process** via `tsx`, which resolves modules through Node — the child never sees a Vite alias, by
- * construction. That suite therefore still reads `packages/core/dist`, and it is the one suite for
- * which that is the point (it proves the server a real client would spawn actually starts). It
- * guards its own freshness explicitly via `assertCoreDistFresh()` rather than failing mysteriously.
+ * construction. That suite passes `--tsconfig tsconfig.e2e.json`, whose `paths` mapping points
+ * `@onchain-intel/core` at `../core/src/index.ts`, so the child resolves **source** as well;
+ * `test/fixtures/core-resolution-probe.ts` runs under the identical invocation and asserts which
+ * copy was resolved. The built artifact keeps its end-to-end coverage in `scripts/smoke-dist.mjs`,
+ * which runs `dist/index.js` for real.
+ *
+ * (Corrected in adversarial cycle 2. This paragraph previously said that suite "still reads
+ * `packages/core/dist`" and "guards its own freshness explicitly via `assertCoreDistFresh()`".
+ * Neither is true: the WI-10 fix moved it to source, and `assertCoreDistFresh` exists nowhere in
+ * the repository — an mtime freshness check was tried, found unsound, and is recorded as rejected
+ * in `e2e.stdio.test.ts`, so naming it here invited exactly the repair that file warns against.)
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
 

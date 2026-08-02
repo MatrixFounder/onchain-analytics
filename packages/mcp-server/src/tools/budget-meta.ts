@@ -19,11 +19,13 @@ export interface BudgetMeta {
  * `budgetStore.getUsage('nansen', dayBucketMs(now()))` and wraps it as `{provider: 'nansen',
  * creditsUsedToday}`. Two degradation paths, BOTH resolve to `undefined` rather than throwing —
  * visibility must never turn an otherwise-successful tool call into an error (mirrors
- * `CapabilityRegistry`'s own cache-fault contract, `registry.ts`):
+ * `CapabilityRegistry`'s own cache-fault contract in `@onchain-intel/core`'s
+ * `adapters/registry.ts` — NOT the sibling `./registry.ts`, which TASK-011 added to this very
+ * directory and which holds `defineTool`):
  * - `budgetStore` was never injected into the tool's context (reviewer note: "`budgetStore`
  *   отсутствует (не инжектирован) → tool работает, просто без `_meta.budget`").
  * - `budgetStore.getUsage()` itself throws (a faulty/misbehaving store, same best-effort spirit as
- *   `registry.ts`'s own `cache.get()` fault handling).
+ *   core's `adapters/registry.ts` `cache.get()` fault handling).
  *
  * Callers are expected to invoke this ONLY when the capability's own `_meta.cache.status ===
  * 'miss'` — this function itself is agnostic to cache status, a generic "read usage, tolerate

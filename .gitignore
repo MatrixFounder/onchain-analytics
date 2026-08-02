@@ -61,6 +61,14 @@ coverage/
 
 # Local state — DB-SCHEMA-CONCEPT §1.10: all state lives in DATA_DIR; SQLite files never committed
 /DATA_DIR/
+# Eval report from `ONCHAIN_EVAL_JSON=report.json pnpm eval` (documented in eval/run.mjs). It is the
+# output of a run against real providers on the operator's own .env: every result row carries the
+# full `structured` payload and up to 200 chars of each error text. No secret can reach it today
+# (the free contour only, and key-bearing error paths are redacted), but this repo is Apache-2.0 and
+# meant to be published, so it should never ride in on a `git add -A`. It is ALSO listed in the
+# documentation gate's EXCLUDED_FILES — independently, because that walk reads the filesystem and
+# never consults git.
+/packages/mcp-server/report.json
 *.db
 *.sqlite
 *.sqlite3

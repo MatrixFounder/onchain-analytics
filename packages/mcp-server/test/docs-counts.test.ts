@@ -231,24 +231,53 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     //
     // So the document's OWN pairing is extracted — each `// Capability: x` anchor is attributed to
     // the nearest `onchain_*` named above it — and compared against the registry.
+    // **The id pattern must admit every id the route table can hold** (adversarial cycle 2). The
+    // first version matched `[a-z][a-z.-]+`, which silently truncates at `_` or a digit:
+    // `privacy.shielded_pool` — already routed in providers.config.ts — captured as
+    // `privacy.shielded`. The gate would then accuse a correct document of a typo it does not
+    // contain, and no edit to that document could clear it.
+    const ANCHOR = /^\/\/ Capability: ([a-z][a-z0-9._-]*)/;
+    // 25, not 12: two of the eleven blocks (`dex.volume.history`, `chain.supply`) sat at exactly 12,
+    // so documenting one new output field above the anchor would have detached it.
+    const ANCHOR_WINDOW = 25;
+
     const interfaces = read('docs/architectures/interfaces.md');
     const lines = interfaces.split('\n');
     const documented = new Map<string, string>();
+    const orphanAnchors: string[] = [];
     lines.forEach((line, index) => {
-      const anchor = /^\/\/ Capability: ([a-z][a-z.-]+)/.exec(line.trim());
+      const anchor = ANCHOR.exec(line.trim());
       if (!anchor) return;
-      for (let back = index; back >= 0 && index - back <= 12; back -= 1) {
+      for (let back = index; back >= 0 && index - back <= ANCHOR_WINDOW; back -= 1) {
         const tool = /(onchain_[a-z0-9_]+)/.exec(lines[back] ?? '');
         if (tool?.[1]) {
           documented.set(tool[1], anchor[1] as string);
           return;
         }
       }
+      orphanAnchors.push(`line ${index + 1}: \`${line.trim()}\``);
     });
+
+    // An anchor too far from its tool name used to surface only as `expected 10 to be 11` — a
+    // failure naming no file and no tool, which is the exact defect this file legislates against
+    // above. Report the unattributed anchor first, by line, with the cause.
+    expect(
+      orphanAnchors,
+      `A \`// Capability:\` anchor in interfaces.md §5 has no ${'`onchain_*`'} tool name within ` +
+        `${ANCHOR_WINDOW} lines above it. Either the tool name is missing from the block, or the ` +
+        'block grew past the attribution window and the window needs raising.',
+    ).toStrictEqual([]);
 
     // Not vacuous: if the anchor convention is ever reworded, this empties and everything below
     // would pass by comparing nothing.
     const withCapability = toolSpecs.filter((spec) => spec.capability !== null);
+    const undocumented = withCapability
+      .filter((spec) => !documented.has(spec.name))
+      .map((spec) => spec.name);
+    expect(
+      undocumented,
+      'These tools have no `// Capability:` anchor attributed to them in interfaces.md §5.',
+    ).toStrictEqual([]);
     expect(documented.size).toBe(withCapability.length);
 
     const wrong = withCapability

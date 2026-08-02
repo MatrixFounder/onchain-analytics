@@ -133,8 +133,9 @@ export async function newPairsHandler(
   return { ok: true, output: parsed.data, cache: outcome.cache };
 }
 
-/** Registers `onchain_new_pairs` — exactly this name (R-18). See `get-token.ts`'s
- * `defineTool` docstring for the shared `isError`/`_meta.cache` wiring rationale. */
+/** The `ToolSpec` for `onchain_new_pairs` — this name is declared here and nowhere else (R-18).
+ * Registration happens in `registry.ts`; see `get-token.ts`'s spec docstring for the shared
+ * `isError`/`_meta.cache` wiring rationale. */
 export const newPairsToolSpec = defineTool({
   name: 'onchain_new_pairs',
   title: 'Recent DEX pairs',

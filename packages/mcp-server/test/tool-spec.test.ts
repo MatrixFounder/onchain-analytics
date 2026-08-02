@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -277,7 +280,10 @@ describe('the registry is the inventory (R-110, R-112)', () => {
   });
 
   it('asks only for context keys that exist', () => {
-    const known = new Set(['version', 'registry', 'budgetStore']);
+    // Derived from the same shape `createServer` builds, not restated: a hand-written key list is
+    // the exact thing TASK-011 removes, and it would fail this test for an unrelated reason the
+    // day `ToolContext` gains a fourth key (adversarial cycle 2).
+    const known = new Set(Object.keys(fullContext()));
     for (const spec of toolSpecs) {
       for (const key of spec.needs) {
         expect(known.has(key), `${spec.name} needs unknown context key ${key}`).toBe(true);
@@ -286,9 +292,11 @@ describe('the registry is the inventory (R-110, R-112)', () => {
   });
 
   it('keeps `budgetStore` to the three tools that actually report a credit spend', () => {
-    // Least privilege, asserted as data rather than trusted to review: any other tool acquiring the
-    // budget store would show up here, and that is the seam where a paid-provider detail could leak
-    // into a free tool's response.
+    // Least privilege, asserted as data rather than trusted to review. **This assertion covers the
+    // CONTEXT channel only** — it reads `spec.needs`, i.e. what a tool declares. Acquiring the store
+    // some other way would not appear here; the import channel is closed separately, by
+    // `no tool module builds its own store` below. The earlier wording claimed this one assertion
+    // caught "any other tool acquiring the budget store", which was false (adversarial cycle 2).
     const withBudget = toolSpecs
       .filter((spec) => spec.needs.includes('budgetStore'))
       .map((spec) => spec.name)
@@ -298,5 +306,100 @@ describe('the registry is the inventory (R-110, R-112)', () => {
       'onchain_smart_money_flows',
       'onchain_token_risk',
     ]);
+  });
+});
+
+/**
+ * Two invariants that hold *by construction* inside every tool module today, gated here so they
+ * keep holding for the fourteenth tool (adversarial cycle 2).
+ *
+ * Both are source-level checks, deliberately. They are statements about **how a fact is declared**,
+ * which is a property of the text, not of any single execution: a runtime probe could only cover
+ * the tools whose inputs the test can synthesize, whereas these cover every module the day it is
+ * added — including one whose handler is never successfully invoked in the offline suite.
+ */
+describe('each tool module declares its privileges once (adversarial cycle 2)', () => {
+  const toolsDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/tools');
+  /**
+   * A tool module is one that calls `defineTool` — derived, not listed. An exclusion list of the
+   * helper modules (`registry.ts`, `budget-meta.ts`, …) would be one more hand-written inventory,
+   * and it would go stale the first time a helper is added.
+   */
+  const MODULES = readdirSync(toolsDirectory)
+    .filter((file) => file.endsWith('.ts'))
+    .filter((file) =>
+      readFileSync(path.join(toolsDirectory, file), 'utf8').includes('defineTool('),
+    );
+
+  it('finds one module per registered tool, so the assertions below are not vacuous', () => {
+    expect(MODULES.length).toBe(toolSpecs.length);
+  });
+
+  it('names its capability once — the spec field and the resolve call read one constant', () => {
+    // Cycle 1 collapsed `capability: '<literal>'` into `capability: CAPABILITY` because a module
+    // holding both a literal and a constant declares one fact twice. It reported eleven modules
+    // collapsed; it had collapsed nine, and the two it missed — chain-tvl and chain-supply — were
+    // the very pair whose capabilities the reviewer had swapped to demonstrate the defect. Nothing
+    // failed, because no gate looked. This is that gate.
+    const offenders: string[] = [];
+    for (const file of MODULES) {
+      const source = readFileSync(path.join(toolsDirectory, file), 'utf8');
+      const declarations = [...source.matchAll(/^const CAPABILITY = '([a-z][\w.-]*)';$/gm)];
+      const specField = /^ {2}capability: (.+),$/m.exec(source)?.[1];
+
+      if (specField === 'null') {
+        // A server-level tool (`ping`, `list_chains`): no capability, and none may be resolved.
+        if (declarations.length > 0) offenders.push(`${file}: capability null but declares one`);
+        if (source.includes('resolveCapability(')) {
+          offenders.push(`${file}: capability null but calls resolveCapability`);
+        }
+        continue;
+      }
+
+      if (declarations.length !== 1) {
+        offenders.push(
+          `${file}: expected exactly one \`const CAPABILITY\`, found ${declarations.length}`,
+        );
+        continue;
+      }
+      if (specField !== 'CAPABILITY') {
+        offenders.push(
+          `${file}: spec says \`capability: ${specField ?? '(absent)'}\`, not the CAPABILITY constant`,
+        );
+      }
+      for (const call of source.matchAll(/resolveCapability\(\s*[\w.]+,\s*([^,]+),/g)) {
+        if (call[1]?.trim() !== 'CAPABILITY') {
+          offenders.push(
+            `${file}: resolves \`${call[1]?.trim() ?? '?'}\`, not the CAPABILITY constant`,
+          );
+        }
+      }
+    }
+    expect(
+      offenders.sort(),
+      'A tool declares its capability in more than one place. The spec field and every ' +
+        "`resolveCapability` argument must both read the module's single `const CAPABILITY`, so " +
+        'that retargeting a tool is one edit and cannot half-apply.',
+    ).toStrictEqual([]);
+  });
+
+  it('builds no store of its own — privilege arrives through the context or not at all', () => {
+    // `needs` rations the CONTEXT. It cannot ration imports: `createBudgetStore` and
+    // `createCacheStore` are public exports of @onchain-intel/core, so a tool declaring
+    // `needs: ['version']` could construct the budget store itself, open the SQLite file in
+    // DATA_DIR, and leave every existing assertion green (verified by mutation, adversarial
+    // cycle 2). Least privilege is only a runtime fact while both channels are closed.
+    const offenders: string[] = [];
+    for (const file of MODULES) {
+      const source = readFileSync(path.join(toolsDirectory, file), 'utf8');
+      for (const factory of ['createBudgetStore', 'createCacheStore']) {
+        if (source.includes(factory)) offenders.push(`${file}: references ${factory}`);
+      }
+    }
+    expect(
+      offenders.sort(),
+      'A tool module builds its own store instead of receiving one through `ToolContext`. That ' +
+        'bypasses `needs` entirely — the projection in registry.ts can only withhold what it owns.',
+    ).toStrictEqual([]);
   });
 });
