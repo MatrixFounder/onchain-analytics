@@ -61,13 +61,21 @@ export interface ToolContext {
  * `isError` result, so it reaches the model with **none** of the sanitizing the success path gets
  * (`blockscout/sanitize.ts` exists because that vendor returns model-directed `instructions` and
  * `notes` fields). Treat it as untrusted third-party text when adding a failure path: never
- * assume it is curated first-party copy. No secret reaches it — every adapter redacts keys before
- * throwing and `safeFetch` reduces URLs to origin+pathname — but that is a property of the
- * adapters, not of this type.
+ * assume it is curated first-party copy.
  *
- * (Corrected in adversarial cycle 3. This docstring, `.AGENTS.md` and `get-token.ts` all claimed
- * `reason` was "a chosen message, never a thrown error's `.message`"; cycle 2 fixed the third and
- * left these two — the same one-of-three correction it had itself diagnosed twice.)
+ * No secret reaches it today — but the mechanism matters more than the fact, because the mechanism
+ * is what a new adapter will copy (narrowed in cycle 4). Exactly **one** adapter embeds a vendor
+ * body and redacts its key before truncating (`nansen/endpoints.ts`); the others are safe by
+ * **abstention** — they never embed one — and `safeFetch` reduces every URL it reports to
+ * origin+pathname, which is what keeps Blockscout's query-string key out. "Adapters redact" is
+ * therefore not a property anything inherits: a new key-holding adapter that echoes a response body
+ * must redact first, and **nothing in the suite enforces that** (`nansen.secrets.test.ts` is
+ * nansen-scoped).
+ *
+ * (Corrected across adversarial cycles 3 and 4. This claim lived in FOUR places — this docstring,
+ * `.AGENTS.md`, `get-token.ts` and `docs/architectures/system-architecture.md` — and was corrected
+ * one file per cycle, which is the partial-application pattern those cycles kept diagnosing
+ * elsewhere.)
  */
 export type ToolOutcome<TOutput> =
   | { ok: true; output: TOutput; cache?: CacheMeta; budget?: BudgetMeta }

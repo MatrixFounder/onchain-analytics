@@ -1544,9 +1544,15 @@ client.
   SDK (`@modelcontextprotocol/sdk@1.29.0`) already wraps the **whole** `tools/call` handler — input
   validation, the callback itself, and output-schema validation — in one try/catch and converts any
   thrown error into `isError: true` (verified by reading the installed `server/mcp.js`). The
-  explicit construction is kept deliberately: (a) each handler's `{ok:false,reason}` contract is
-  unit-testable at the pure level with no transport, and (b) `reason` is a chosen message rather
-  than the generic `.message` of a thrown error.
+  explicit construction is kept deliberately so each handler's `{ok:false,reason}` contract is
+  unit-testable at the pure level with no transport. **`reason` is NOT curated copy:** on the
+  capability path `resolveCapability` forwards `error.message` verbatim, and a
+  `CapabilityUnavailableError` concatenates every adapter's failure — which can carry up to 500
+  characters of a vendor's own response body. It reaches the model as `isError` text with none of
+  the success path's sanitizing, so a new failure path must treat it as untrusted input. No secret
+  reaches it: adapters that embed a vendor body redact keys first, and `safeFetch` reduces URLs to
+  origin+pathname. _(This bullet asserted the opposite until adversarial cycle 4 — the fourth place
+  the same claim lived, corrected one file at a time across three cycles.)_
 - `src/env.ts` — four optional keys (R-23): `COINGECKO_API_KEY`, `DUNE_API_KEY`, `ONCHAIN_PG_URL`
   (`z.string().url().optional()` — WHATWG URL parsing accepts `postgres://`), and `DATA_DIR`
   (`z.string().optional()`). `EnvSchema.parse({})` still does not throw (R-23). A fifth optional key,
@@ -1558,7 +1564,10 @@ client.
 
 #### Test suite
 
-**1106 tests** — `packages/core` 876, `packages/mcp-server` 230 (D11, R-21/R-22).
+**1161 tests** — `packages/core` 876, `packages/mcp-server` 285 (D11, R-21/R-22).
+_(measured 2026-08-02, TASK-011; ungated — no test can count both packages from inside one of them,
+so this figure is a dated snapshot in the manner of ADR-002's counts, not a checked claim. It read
+1106/230 until cycle 4 of TASK-011's adversarial review.)_
 
 Two of them are **documentation** gates, added in TASK-009's doc pass because the drift they catch
 had twice been caught by a human instead: `core/test/ttl-coverage.test.ts` (every routed capability

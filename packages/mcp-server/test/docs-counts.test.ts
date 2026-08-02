@@ -151,10 +151,25 @@ describe('documentation counts match the code they describe (WI-21)', () => {
         /mcp-server — (\d+) tools/g,
       ),
       ...claimsWithSource('docs/architectures/technology-stack.md', /# (\d+) registered tools/g),
+      // **The READMEs, added in adversarial cycle 4 — and this is the defect TASK-011 was named
+      // after.** §1.2 of the task marks them 🔴 "публичное лицо продукта" because they listed eight
+      // tools of thirteen, stale since TASK-006 through four shipped tasks. The task fixed the
+      // NAMES — which is all `tool-inventory-docs.test.ts` checks — and left the COUNT at eight in
+      // four places per language, including the quickstart's own verification step ("You should see
+      // 8 tools"), which therefore instructed the user to confirm a wrong number. Every pattern
+      // above points at `docs/**`; nothing had ever looked at the two files at the repository root.
+      ...claimsWithSource('README.md', /→ (\d+) workflow-oriented tools/g),
+      ...claimsWithSource('README.md', /\*\*(\d+) MCP tools\.\*\*/g),
+      ...claimsWithSource('README.md', /You should see \*\*(\d+) tools\*\*/g),
+      ...claimsWithSource('README.md', /MCP server: (\d+) tools/g),
+      ...claimsWithSource('README.ru.md', /→ (\d+) инструментов/g),
+      ...claimsWithSource('README.ru.md', /\*\*(\d+) MCP-инструментов\.\*\*/g),
+      ...claimsWithSource('README.ru.md', /должно быть \*\*(\d+) инструментов\*\*/g),
+      ...claimsWithSource('README.ru.md', /MCP-сервер: (\d+) инструментов/g),
     ];
     // If a sentence is reworded, its pattern stops matching and the array shrinks — which would let
     // the test pass while checking less than it claims. The claim COUNT is therefore asserted too.
-    expect(claims.length).toBeGreaterThanOrEqual(9);
+    expect(claims.length).toBeGreaterThanOrEqual(17);
     assertClaims(claims, actual, 'MCP tool count');
   });
 

@@ -191,7 +191,11 @@ describe('defineTool reproduces all three response shapes (R-128)', () => {
     expect(result['_meta']).toStrictEqual({ cache, budget });
   });
 
-  it('turns a refusal into `isError` with the chosen reason, not a thrown message', async () => {
+  // "the outcome's `reason`", not "the chosen reason": this probe's handler does choose its string,
+  // but the retired phrasing implied `reason` is always curated, which is false on the capability
+  // path (see `ToolOutcome`'s docstring). Renamed in cycle 4 so the wording is not reintroduced by
+  // someone copying this title.
+  it("turns a refusal into `isError` carrying the outcome's `reason`, not a thrown message", async () => {
     const spec = defineTool({
       ...base,
       name: 'probe_refusal',
@@ -319,12 +323,36 @@ describe('the registry is the inventory (R-110, R-112)', () => {
  * added — including one whose handler is never successfully invoked in the offline suite.
  */
 /**
- * Source text with block and line comments removed, so a gate below can assert about CODE rather
- * than about prose. Good enough for these checks and deliberately not a parser: it does not
- * understand `//` inside a string literal, which no module under `src/tools` contains.
+ * `true` when `source` **acquires** `symbol` — imports it, or calls/constructs it.
+ *
+ * **This replaced a `stripComments()` helper, which was a regex pretending to be a parser and could
+ * delete live code** (cycle 4). Its block-comment pattern ran over raw source, so an unbalanced
+ * comment-opening sequence inside an ordinary string literal — a glob pattern, a message quoting a
+ * comment token — began a phantom comment that the next genuine block-comment terminator anywhere
+ * below closed, silently removing everything between. An `import { createBudgetStore }` in that span
+ * would have vanished and the gate would have reported no offenders on code that violates it.
+ *
+ * Matching the *shape* of an acquisition removes the whole class. It also solves the problem
+ * stripping was invented for: prose writes the name in backticks — `` `createBudgetStore` `` — which
+ * is neither an import nor a call, so a docstring explaining the rule no longer trips the rule.
  */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+function acquires(source: string, symbol: string): boolean {
+  // The import form is anchored to a real statement — `import {…} from` at the start of a line.
+  // A looser `import[^;]*<symbol>[^;]*from` still read prose: `registry.ts`'s own docstring says
+  // "`needs` cannot ration imports — `createBudgetStore` is a public export of `@onchain-intel/core`",
+  // and the English word "imports" plus a later "from" matched it. Third time this gate has fired on
+  // a sentence about itself; the anchor is what finally distinguishes code from writing about code.
+  const imported = new RegExp(
+    `^\\s*import\\s+(?:type\\s+)?\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s*from`,
+    'm',
+  );
+  const called = new RegExp(`(?:new\\s+)?\\b${symbol}\\s*\\(`);
+  return imported.test(source) || called.test(source);
+}
+
+/** `true` when `source` imports anything at all from `moduleSpecifier`. */
+function importsModule(source: string, moduleSpecifier: string): boolean {
+  return new RegExp(`from\\s*['"]${moduleSpecifier}['"]`).test(source);
 }
 
 describe('each tool module declares its privileges once (adversarial cycle 2)', () => {
@@ -334,9 +362,15 @@ describe('each tool module declares its privileges once (adversarial cycle 2)', 
    * helper modules (`registry.ts`, `budget-meta.ts`, …) would be one more hand-written inventory,
    * and it would go stale the first time a helper is added.
    *
-   * Matching `= defineTool({` rather than the bare `defineTool(` keeps prose out: `budget-meta.ts`
-   * already mentions `defineTool` in a sentence, and one edit dropping the backticks would have
-   * added a fourteenth "module" and reddened the count with a message naming no file (cycle 3).
+   * Matching `= defineTool({` rather than the bare `defineTool(` keeps prose out of the selection.
+   *
+   * (Cycle 3 justified this with a specific scenario — that `budget-meta.ts` mentions `defineTool`
+   * in a sentence and dropping its backticks would add a fourteenth "module". That is **not true**:
+   * the text reads ``which holds `defineTool`):``, and without backticks it is `defineTool)`, which
+   * the old matcher would not have matched either. No file in `src/` contains the literal
+   * `defineTool(` in prose. The change is still right — it narrows the predicate to the thing it
+   * means, and stops depending on that staying true — but the story told for it was invented, which
+   * is the failure this whole task is about. Corrected in cycle 4.)
    */
   const MODULES = readdirSync(toolsDirectory)
     .filter((file) => file.endsWith('.ts'))
@@ -423,22 +457,40 @@ describe('each tool module declares its privileges once (adversarial cycle 2)', 
     // DATA_DIR, and leave every existing assertion green (verified by mutation, adversarial
     // cycle 2). Least privilege is only a runtime fact while both channels are closed.
     //
-    // **Scanned over the whole directory, not just the tool modules** (cycle 3). Scanning only
-    // files containing `defineTool({` left the helpers beside them unguarded, and `budget-meta.ts`
-    // is the natural place for the drift: it is imported by exactly the three budget-privileged
-    // tools, so a fourth tool wanting `_meta.budget` without declaring `needs: ['budgetStore']`
-    // gets it by adding one fallback there. That is a plausible developer mistake, not a
-    // contrivance, and no lint rule covers the import channel.
-    // Comments are stripped before matching. A bare substring search over the raw text made this
-    // gate fire on `registry.ts`'s own docstring the moment that docstring started EXPLAINING the
-    // rule — a gate that forbids naming the thing it forbids. The alternative, exempting
-    // `registry.ts` by name, would be a hand-written exclusion of exactly the kind this task
-    // deletes. Code is what matters here: an import or a call, not a sentence.
+    // **Scanned over all of `src/`, recursively, with ONE named exemption** (cycle 4). Cycle 3
+    // widened this from the tool modules to their directory, which still left two escapes needing
+    // no concealment at all: `src/tools/helpers/budget.ts` (a subfolder — routine housekeeping) and
+    // `src/budget-fallback.ts` (one level up, beside `server.ts`). Either can import the factory and
+    // be called from `budget-meta.ts`, which is the very drift path this gate names. Bounding the
+    // gate by a directory listing rather than by the dependency graph made its coverage an accident
+    // of where files happen to sit.
+    //
+    // `src/index.ts` is the exemption: composing the stores is exactly its job. One exemption with
+    // a stated reason is cheaper than a class of holes — and unlike a per-file exclusion list it
+    // cannot silently grow, because every addition is a visible edit to this line.
+    //
+    // The class names are here too, not only the factories: `SqliteBudgetStore` and
+    // `SqliteCacheStore` are exported from their modules and `@onchain-intel/core` declares no
+    // `exports` map, so a deep import resolves and would name neither factory. `better-sqlite3`
+    // itself is listed for the same reason — it is not a dependency of this package, so any
+    // reference is a new door rather than a use of an existing one.
+    const FORBIDDEN_SYMBOLS = [
+      'createBudgetStore',
+      'createCacheStore',
+      'SqliteBudgetStore',
+      'SqliteCacheStore',
+    ];
+    const EXEMPT = 'index.ts'; // composes the stores — the one file architecturally allowed to
+    const srcDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src');
     const offenders: string[] = [];
-    for (const file of readdirSync(toolsDirectory).filter((f) => f.endsWith('.ts'))) {
-      const code = stripComments(readFileSync(path.join(toolsDirectory, file), 'utf8'));
-      for (const factory of ['createBudgetStore', 'createCacheStore']) {
-        if (code.includes(factory)) offenders.push(`${file}: references ${factory}`);
+    for (const file of readdirSync(srcDirectory, { recursive: true, encoding: 'utf8' })) {
+      if (!file.endsWith('.ts') || file === EXEMPT) continue;
+      const source = readFileSync(path.join(srcDirectory, file), 'utf8');
+      for (const symbol of FORBIDDEN_SYMBOLS) {
+        if (acquires(source, symbol)) offenders.push(`${file}: acquires ${symbol}`);
+      }
+      if (importsModule(source, 'better-sqlite3')) {
+        offenders.push(`${file}: imports better-sqlite3 directly`);
       }
     }
     expect(

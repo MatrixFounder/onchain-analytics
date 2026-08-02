@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error — the eval is plain .mjs by design (no build step, no SDK); only its data is read
 import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS } from '../eval/capabilities.mjs';
 import { toolSpecs } from '../src/tools/tool-specs.js';
+import { ADD_A_TOOL as CHECKLIST } from './inventory-channels.js';
 
 /**
  * RF-5 — the offline half of the fix.
@@ -58,13 +59,17 @@ describe('every capability an MCP tool serves has an eval case or a recorded rea
     // CAPABILITY_TOOLS, or record why not in CAPABILITY_EXCLUSIONS. "Nobody got round to it" is the
     // one state this refuses, because that is exactly what shipped.
     //
-    // WI-20: three sibling inventories need the same edit and none references the others, so the
-    // list is repeated here rather than discovered one failed gate at a time.
+    // WI-20: sibling inventories need the same edit and none references the others, so the list is
+    // named here rather than discovered one failed gate at a time. **It is imported, not restated**
+    // (adversarial cycle 4): the version written here had gone false in two of its three items —
+    // `e2e.stdio.test.ts` and `smoke-dist.mjs -> expectedNames` are both derived since TASK-011 and
+    // need no edit at all, so it sent the developer to hand-edit a derived assertion, which is the
+    // duplication this task deletes. It also omitted the snapshot, the freshness test and the
+    // documentation gate.
     expect(
       unaccounted,
-      'Wire it into eval/capabilities.mjs (CAPABILITY_TOOLS or CAPABILITY_EXCLUSIONS). A new TOOL ' +
-        'also needs: test/e2e.stdio.test.ts, scripts/smoke-dist.mjs -> expectedNames (fires only ' +
-        'after test AND build), and a named entry in docs/architectures/interfaces.md §5.',
+      'Wire it into eval/capabilities.mjs (CAPABILITY_TOOLS or CAPABILITY_EXCLUSIONS).\n\n' +
+        CHECKLIST,
     ).toEqual([]);
   });
 

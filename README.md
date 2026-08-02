@@ -2,7 +2,7 @@
 
 An on-chain analytics engine exposed as an **MCP server**: provider adapters (CoinGecko,
 DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → normalization into one canonical schema →
-two-level cache + credit budget guard → 8 workflow-oriented tools your agent can call.
+two-level cache + credit budget guard → 13 workflow-oriented tools your agent can call.
 
 **Русская версия:** [README.ru.md](README.ru.md)
 
@@ -46,8 +46,8 @@ two-level cache + credit budget guard → 8 workflow-oriented tools your agent c
 
 ## What you get
 
-**8 MCP tools.** One liveness check, four free/keyless data tools, three paid Nansen-backed
-alpha tools.
+**13 MCP tools.** One liveness check, one chain-registry tool, eight free/keyless data tools,
+and three paid Nansen-backed alpha tools.
 
 **Two chains:** `ethereum` and `solana`. Every tool takes an explicit `chain`.
 
@@ -148,7 +148,7 @@ Restart Claude Code, then confirm the tools appear:
 /mcp
 ```
 
-You should see **8 tools** under `onchain-intel`.
+You should see **13 tools** under `onchain-intel`.
 
 ---
 
@@ -711,7 +711,7 @@ resets the cache — and also the usage ledger, so the daily cap starts from zer
 
 ```
 packages/core/          engine: adapters, canonical types, cache, budget guard
-packages/mcp-server/    MCP server: 8 tools, env validation, stdio transport
+packages/mcp-server/    MCP server: 13 tools, env validation, stdio transport
 docs/                   architecture, ADR, roadmap, issue ledger
 n8n-workflows/          exported snapshotter workflows (separate always-on system)
 ```

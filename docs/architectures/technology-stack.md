@@ -147,7 +147,7 @@ onchain-analytics/
 │     │     ├─ chain-tvl.ts               # TASK-006
 │     │     ├─ resolve-capability.ts      # shared _meta.cache resolution helper (§5.1)
 │     │     └─ budget-meta.ts             # shared _meta.budget shape (§5.1.2)
-│     ├─ test/                            # 230 tests: e2e.stdio (SPAWN), e2e.inprocess
+│     ├─ test/                            # 285 tests: e2e.stdio (SPAWN), e2e.inprocess
 │     │                                   #   (InMemoryTransport), per-tool, degradation, wiring
 │     ├─ eval/                            # live eval harness over the free tier (run.mjs, probes.json)
 │     └─ scripts/

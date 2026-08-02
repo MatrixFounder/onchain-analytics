@@ -92,10 +92,14 @@ describe('eval/checks.mjs is keyed on tools that exist (R-126)', () => {
  * select behaviour rather than merely labelling it: the registry-vs-RPC `nativeSymbol` cross-check,
  * the `supplyVsConsensus` check that is the only probe in the project leaving the engine (TASK-009
  * R-89), and the CoinGecko-specific throttle. A tool rename is caught loudly elsewhere — but the
- * repair checklist that fires (`ADD_A_TOOL` in `e2e.stdio.test.ts`) names four places and this file
- * is not one of them, so the rename gets repaired everywhere a gate points and these branches
- * quietly stop matching. A cross-check that silently stops running reports nothing at all, which is
- * strictly worse than the `no-probe` row `run.mjs` already emits for a missing reference source.
+ * repair checklist that fires (`INVENTORY_CHANNELS` in `test/inventory-channels.ts`) does not name
+ * this file, so the rename gets repaired everywhere a gate points and these branches quietly stop
+ * matching. A cross-check that silently stops running reports nothing at all, which is strictly
+ * worse than the `no-probe` row `run.mjs` already emits for a missing reference source.
+ *
+ * (This sentence used to say the checklist "names four places". It named five by then, and the
+ * count moved again in cycle 4 — which is why the checklist is now one declaration with readers
+ * instead of a number repeated in three docstrings.)
  */
 describe('eval/run.mjs names only tools that exist (adversarial cycle 2)', () => {
   const runSource = readFileSync(

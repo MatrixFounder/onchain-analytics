@@ -9,6 +9,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { PingOutputSchema } from '../src/tools/ping.js';
 import { toolSpecs } from '../src/tools/tool-specs.js';
+import { ADD_A_TOOL as CHECKLIST } from './inventory-channels.js';
 
 /**
  * E2E test over REAL stdio (task 001-3, closes R-6, confirms R-9/R-10). Spawns `src/index.ts`
@@ -143,27 +144,15 @@ describe('onchain_ping — stdio E2E', () => {
     async () => {
       const c = await connect();
       const { tools } = await c.listTools(undefined, { timeout: CALL_TIMEOUT_MS });
-      // **Rewritten in adversarial cycle 3.** The previous text said this assertion is "the FIRST of
-      // four independent guards to fail when a tool is added". Since TASK-011 it is neither first
-      // nor a guard against addition: the expectation below is derived from `toolSpecs`, so both
-      // sides move together and this test stays green. Telling a developer to start here sends them
-      // to the one channel that cannot have failed. The five channels, in the order they actually
-      // redden, with the two that need a HUMAN decision marked — they stay independent on purpose,
-      // each protecting a different property, so the fix is a cross-reference, not a merge.
-      const ADD_A_TOOL =
-        'A tool was added or removed. FIVE independent inventories must agree. This assertion is ' +
-        'derived from the registry and does NOT fail on an addition — if you are reading it, the ' +
-        'wire disagrees with `toolSpecs` itself. The others, in the order they fail:\n' +
-        '  1. test/tools-list-contract.test.ts — the frozen tools/list snapshot, byte for byte.\n' +
-        '     REGENERATE DELIBERATELY: `pnpm snapshot:tools`, then READ the diff — it is the one\n' +
-        '     expectation not derived from the registry, and the hand-written lower bound in that\n' +
-        '     file is the only thing a silent deletion cannot regenerate away.\n' +
-        '  2. test/tool-inventory-in-sync.test.ts — regenerate with `pnpm gen:tools` and commit.\n' +
-        '  3. eval/capabilities.mjs -> CAPABILITY_TOOLS, or CAPABILITY_EXCLUSIONS ' +
-        '(test/eval-capability-coverage.test.ts) — HAND-MAINTAINED, one entry per capability.\n' +
-        '  4. docs/architectures/interfaces.md §5 must NAME the tool and carry a `// Capability:`\n' +
-        '     anchor within 25 lines of it (test/docs-counts.test.ts).\n' +
-        '  5. scripts/smoke-dist.mjs reads tool-inventory.json (pnpm smoke:dist — AFTER build).';
+      // **The checklist moved to `test/inventory-channels.ts` in adversarial cycle 4**, because it
+      // was itself a restated inventory and had drifted into three disagreeing copies. Cycle 3's
+      // version — written here, by hand — claimed FIVE channels while enumerating a different
+      // number and omitting the documentation gate, which fails seven times on an addition.
+      //
+      // What is still true and worth saying here: this assertion is derived from `toolSpecs`, so it
+      // does NOT fail when a tool is added. If you are reading it, the wire disagrees with the
+      // registry itself.
+      const ADD_A_TOOL = `${CHECKLIST}\n\nNote: THIS assertion is derived from the registry and does not fail on an addition.`;
       // Derived from the registry, never restated (TASK-011 R-116). The channel is unchanged —
       // this suite still spawns `src/index.ts` and reads the wire — only the EXPECTATION stopped
       // being a second hand-written list. What still cannot be derived, and is not, is "there are

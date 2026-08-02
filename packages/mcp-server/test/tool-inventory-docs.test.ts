@@ -164,7 +164,20 @@ const MAX_READABLE_BYTES = 4 * 1024 * 1024;
  * `open(2)` for ever — no vitest timeout covers a synchronous read — and `/dev/zero` grows a buffer
  * until the process dies. Git stores arbitrary symlink targets, so a branch can carry one.
  */
-function walk(directory: string, accumulator: string[] = []): string[] {
+interface WalkResult {
+  /** Files to scan for an inventory. */
+  readonly files: string[];
+  /** Regular files refused for size — asserted empty, never silently dropped. */
+  readonly oversize: string[];
+}
+
+/**
+ * Results are carried through the recursion rather than accumulated in a module-level array.
+ * The first version of the oversize reporting used a shared `const oversizeSkipped: string[] = []`,
+ * which two `walk('')` call sites would have appended to twice — a counter that double-counts is a
+ * worse diagnostic than none (cycle 4, caught in review of the cycle-4 fix itself).
+ */
+function walk(directory: string, result: WalkResult = { files: [], oversize: [] }): WalkResult {
   for (const entry of readdirSync(path.join(repoRoot, directory || '.'), { withFileTypes: true })) {
     // **Skipped by name only when it IS a directory** (cycle 3). Testing the name before the type
     // meant a plain FILE called `build`, `out`, `dist`, `coverage` or `DATA_DIR` was skipped too —
@@ -173,17 +186,27 @@ function walk(directory: string, accumulator: string[] = []): string[] {
     if (entry.isDirectory() && SKIP_DIRECTORIES.has(entry.name)) continue;
     const relative = directory ? `${directory}/${entry.name}` : entry.name;
     if (entry.isSymbolicLink()) {
-      // Read it only if it resolves to a plain file; never descend, for the reason above.
-      if (isReadableFile(relative)) accumulator.push(relative);
+      // Read it only if it resolves to a plain file; never descend, for the reason above. A symlink
+      // refused for size is NOT reported: its target is arbitrary and out of tree, so the cap is
+      // doing its job rather than hiding a document of ours.
+      if (isReadableFile(relative)) result.files.push(relative);
       continue;
     }
-    if (entry.isDirectory()) walk(relative, accumulator);
+    if (entry.isDirectory()) walk(relative, result);
     // The size cap binds regular files too, not only symlinks: `walk` used to push any `isFile()`
     // unconditionally, so the cap's own docstring ("files larger than this are not read") was false
     // for the ordinary case and a large committed export was decoded on every run (cycle 3).
-    else if (entry.isFile() && isReadableFile(relative)) accumulator.push(relative);
+    //
+    // An over-cap file is RECORDED, not merely dropped (cycle 4). Silently omitting it from
+    // discovery is the same failure shape as the `docs/out` hole this walk just closed — a document
+    // invisible to the gate, only at a 4 MiB entry price — and this repository's rule is that
+    // cleanup never happens without saying what it removed.
+    else if (entry.isFile()) {
+      if (isReadableFile(relative)) result.files.push(relative);
+      else result.oversize.push(relative);
+    }
   }
-  return accumulator;
+  return result;
 }
 
 /**
@@ -231,8 +254,10 @@ describe('every document that lists tools lists all of them (R-123)', () => {
     //
     //   `test/tools-list-contract.test.ts`  → 0 registered tools named (the snapshot it guards
     //                                          lives in the fixture file, which has its own entry)
-    //   `test/tool-inventory-docs.test.ts`  → 1 (`onchain_list_chains`, in prose; the other three
-    //                                          `onchain_*` tokens are PLANNED names, not registered)
+    //   `test/tool-inventory-docs.test.ts`  → 1 (`onchain_list_chains`, in prose. The file's other
+    //                                          `onchain_*` tokens are three PLANNED names and three
+    //                                          regex literals — none is a registered tool, which is
+    //                                          why `namedTools()` counts one)
     //
     // …against a threshold of 8. Deleting both left the suite green, which is the definition of
     // decoration. Worse, they bought a permanent exemption: the day one of those files replaces its
@@ -267,9 +292,19 @@ describe('every document that lists tools lists all of them (R-123)', () => {
     ).toStrictEqual([]);
   });
 
+  it('scanned every regular file — none was dropped for size without saying so', () => {
+    expect(
+      walk('').oversize,
+      `These files exceed ${MAX_READABLE_BYTES} bytes and were NOT scanned for a tool inventory. ` +
+        'The cap exists so a symlink cannot point the walk at /dev/zero; it is not a licence to ' +
+        'skip a committed document. Either exclude the path deliberately (EXCLUDED_PATH_PATTERNS, ' +
+        'with a reason) or raise the cap.',
+    ).toStrictEqual([]);
+  });
+
   it('discovers no unclassified file carrying an inventory', () => {
     const unclassified = walk('')
-      .filter((relative) => !isExcludedPath(relative))
+      .files.filter((relative) => !isExcludedPath(relative))
       .filter((relative) => !GATED_DOCUMENTS.includes(relative))
       .filter((relative) => !EXCLUDED_FILES.has(relative))
       .filter((relative) => {

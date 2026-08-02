@@ -79,6 +79,7 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 ## Discovered issues / work-items
 
 <!-- feedback:discovered-issues -->
+- **WI-29** [Критики-субагенты встают на 600 с: скилл требует сканер, роль без Bash](backlog/wi-29-600-bash.md) — status `open`, opened 2026-08-02
 - **WI-28** [Колонки TTL и кредитов в двух README не сверяются с кодом](backlog/wi-28-ttl-readme.md) — status `open`, opened 2026-08-02
 - **WI-27** [Три тула отдают модели весь ZodError вместо первого issue](backlog/wi-27-zoderror-issue.md) — status `open`, opened 2026-08-02
 - **WI-26** [Тесты blockscout делят продовый лимитер, поэтому вердикт прогона зависит от загрузки машины](backlog/wi-26-tests-share-the-production-throttle-singleton.md) — effort `S`, status `open`, opened 2026-08-01
