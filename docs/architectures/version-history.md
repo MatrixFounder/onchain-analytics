@@ -2,6 +2,28 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
+- 2026-08-02, **v4.7** — TASK-011 `single-tool-registry`: **the tool inventory became data.**
+
+  - **One registry, many readers.** `src/tools/registry.ts` holds the mechanism (`ToolSpec`,
+    `defineTool`, `ToolContext`), `src/tools/tool-specs.ts` the data, and `server.ts` became a loop.
+    Registration, the stdio suite, `smoke-dist`, the eval's capability axis and the documentation
+    gates all became readers of that one list. `needs` + a runtime projection make least privilege a
+    **fact** rather than a convention — a free tool physically cannot reach the budget store.
+  - **What deriving everything costs, and where that cost is paid.** Derived guards agree with the
+    registry by construction, so a _lost_ entry would leave all of them green. Three guards are
+    therefore deliberately NOT derived: the frozen byte-for-byte `tools/list` snapshot, a
+    hand-written lower bound asserted on the **live** list, and the documentation gate. Proven by
+    mutation: removing a tool fails three of them plus `smoke:dist`.
+  - **Four adversarial cycles, 0 CRITICAL / 0 HIGH, verdict WARNING.** The recurring defect was not
+    a wrong fix but a _partially applied_ one — the same fact corrected in one place while it lived
+    in three or four. It caught, among others: both READMEs still stating "8 MCP tools" after their
+    names were fixed (the task's own headline defect, half of it surviving all four cycles); a gate
+    written against a class that let that class through; and a repair checklist that had drifted
+    into three disagreeing copies. Numbers, mutations and the un-reviewed surface:
+    [reviews/task-011-adversarial.md](../reviews/task-011-adversarial.md).
+  - Test suite — **1161** (876 core + 285 mcp-server); the `tools/list` snapshot did not move once
+    across all four cycles, i.e. nothing in the review was wire-visible.
+
 - 2026-07-29, **v4.6** — documentation pass (`/update-docs` after TASK-009). No design decision
   changed; what changed is that the documents' own claims became checkable.
 
