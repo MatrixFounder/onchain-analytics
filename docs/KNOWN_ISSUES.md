@@ -15,6 +15,8 @@ symptom, workaround, and cross-links.
 > re-categorize an issue you MUST edit **both** the per-issue file *and* the matching line here.
 > These rules keep that hand-editing consistent.
 
+<!-- contract:defects -->
+
 **Per-issue file** — `docs/issues/<slug>.md`, YAML frontmatter then an H1 title and body:
 
 ```yaml
