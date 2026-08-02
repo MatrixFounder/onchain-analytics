@@ -105,6 +105,12 @@ describe('documentation counts match the code they describe (WI-21)', () => {
         'docs/ARCHITECTURE.md',
         /\*\*What the engine is today\*\* — (\w+) provider/g,
       ),
+      // The §3 one-line summary states the SAME number a few lines below the pattern above, and
+      // stated `ten` while that one said `twelve` — one file, one fact, two values. It survived
+      // v4.6's "counts corrected in eight places" pass because a gate only ever reads the sentence
+      // it was given, and nobody had given it this one (found while reviewing ARCHITECTURE.md
+      // after TASK-011).
+      ...claimsWithSource('docs/ARCHITECTURE.md', /the (\w+)\s*\n?adapters and their input/g),
       ...claimsWithSource(
         'docs/architectures/system-architecture.md',
         /Capability Registry, (\w+) provider adapters/g,

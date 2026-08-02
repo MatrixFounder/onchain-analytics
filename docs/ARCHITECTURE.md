@@ -120,11 +120,13 @@ the use cases. → [architectures/functional-architecture.md](architectures/func
 
 Two packages (`core` + `mcp-server`) and the detailed contracts of `@onchain-intel/core`: canonical
 zod types, `ProviderAdapter` / `CapabilityRegistry` (cache faults are best-effort), the chain
-registry and coverage modules, `providers.config.ts` (routes, allowlists, rate limits), the ten
+registry and coverage modules, `providers.config.ts` (routes, allowlists, rate limits), the twelve
 adapters and their input hardening, cache DDL + TTL table, the credit budget gate (ceiling formula
 anchored on `usageAtObserve`, atomic check-and-reserve, singleflight, post-call reconciliation, the
-velocity window), `safeFetch` / `throttle`, the read-only PG client, the test suite, and the
-component diagram. → [architectures/system-architecture.md](architectures/system-architecture.md)
+velocity window), `safeFetch` / `throttle`, the read-only PG client, the MCP tool registry
+(`ToolSpec` / `defineTool` — the inventory is data, and `needs` makes least privilege a runtime
+fact), the test suite, and the component diagram.
+→ [architectures/system-architecture.md](architectures/system-architecture.md)
 
 ## 4. Data Model (Conceptual)
 
