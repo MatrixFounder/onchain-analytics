@@ -65,6 +65,14 @@ export { routes, adapterRegistrations } from './providers.config.js';
 export { safeFetch, assertAllowedHost } from './net/safe-fetch.js';
 export { throttle } from './net/rate-limit.js';
 
+// The cache-TTL policy (WI-28). `.AGENTS.md` listed `ttlFor` among the symbols deliberately NOT
+// re-exported "until a future task gives a concrete reason to widen the public surface" — this is
+// that reason: five tables in three documents restate these seconds, and a gate that checks a
+// restatement has to be able to reach the number it restates. `NEGATIVE_TTL_SECONDS` stays
+// unexported: the first version of this line exported it too, on a justification ("both READMEs
+// restate these seconds") that is false for it — no document states it and no gate reads it.
+export { ttlFor } from './cache/ttl.js';
+
 // Concrete live adapters (task 003-4, R-5/R-6/R-7) — factories, not module singletons (mirrors
 // the CapabilityRegistry/CacheStore "factory, not singleton" principle, ARCHITECTURE.md §8), so
 // mcp-server's bootstrap (003-6/003-7) constructs its own instances and injects them into the

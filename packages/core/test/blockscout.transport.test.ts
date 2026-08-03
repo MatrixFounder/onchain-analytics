@@ -6,6 +6,7 @@ import { createBlockscoutAdapter } from '../src/index.js';
 import type { EntityLabel } from '../src/types/entity-label.js';
 import type { TokenHolders } from '../src/types/token-holders.js';
 import type { Throttle } from '../src/net/rate-limit.js';
+import { isolatedThrottle } from './helpers/isolated-throttle.js';
 
 /**
  * TASK-008 tasks 008-4 / 008-5 (R-74, R-75, R-78, R-79) — transport, normalization, degradation.
@@ -33,7 +34,16 @@ const KEY = 'proapi_secretvalue0123456789';
 const A1 = '0x1111111111111111111111111111111111111111';
 const A2 = '0x2222222222222222222222222222222222222222';
 
-/** Records every URL requested, so assertions can be made about what was actually sent. */
+/**
+ * Records every URL requested, so assertions can be made about what was actually sent.
+ *
+ * **`throttle` is injected, and that is not decoration (WI-26).** Omitting it hands the adapter the
+ * production singleton, whose bucket is shared by every test in this file: `{capacity: 5,
+ * refillPerSec: 2}` against `entity.labels`' weight of 3 empties in two calls, and every later test
+ * then slept on a real timer. This file took 23.5 s of a 24 s package run that way, and under load a
+ * single test once ran for 1 010 515 ms before failing on an assertion that had nothing to do with
+ * the cause. See `helpers/isolated-throttle.ts` for why the arithmetic is kept rather than stubbed.
+ */
 function adapterWith(
   body: unknown,
   status = 200,
@@ -43,6 +53,7 @@ function adapterWith(
   const adapter = createBlockscoutAdapter({
     now: () => FIXED_NOW,
     env,
+    throttle: isolatedThrottle(FIXED_NOW),
     fetchImpl: async (url) => {
       urls.push(String(url));
       return new Response(JSON.stringify(body), { status });
@@ -335,6 +346,7 @@ describe('blockscout — the fixes vdd-multi found unguarded', () => {
     const adapter = createBlockscoutAdapter({
       now: () => FIXED_NOW,
       env: { BLOCKSCOUT_PRO_API_KEY: KEY },
+      throttle: isolatedThrottle(FIXED_NOW),
       fetchImpl: () => Promise.reject(new TypeError('fetch failed: ECONNREFUSED')),
     });
     const error = await adapter
@@ -357,6 +369,7 @@ describe('blockscout — the fixes vdd-multi found unguarded', () => {
     const adapter = createBlockscoutAdapter({
       now: () => FIXED_NOW,
       env: { BLOCKSCOUT_PRO_API_KEY: KEY },
+      throttle: isolatedThrottle(FIXED_NOW),
       fetchImpl: () =>
         Promise.resolve(
           new Response('{}', { status: 200, headers: { 'content-length': '99999999' } }),
@@ -451,6 +464,7 @@ describe('blockscout — the fixes vdd-multi found unguarded', () => {
     const adapter = createBlockscoutAdapter({
       now: () => FIXED_NOW,
       env: {},
+      throttle: isolatedThrottle(FIXED_NOW),
       fetchImpl: () => Promise.resolve(new Response('<html>gateway</html>', { status: 200 })),
     });
     const error = await adapter
@@ -536,6 +550,7 @@ describe('blockscout — iteration 2 fixes', () => {
     const adapter = createBlockscoutAdapter({
       now: () => FIXED_NOW,
       env: {},
+      throttle: isolatedThrottle(FIXED_NOW),
       fetchImpl: () =>
         Promise.resolve(
           new Response(

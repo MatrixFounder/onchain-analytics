@@ -1,4 +1,4 @@
-import { throttle } from '../../net/rate-limit.js';
+import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { safeFetch } from '../../net/safe-fetch.js';
@@ -126,6 +126,10 @@ export interface DefillamaAdapterDeps {
    * `now`/`fetchImpl`/`chains` are, so a test can prove eviction without issuing 33 real requests
    * through the shared rate limiter. */
   maxDocuments?: number;
+  /** Injectable throttle, the same seam `blockscout`/`blockchain-info`/`nansen` expose (WI-26).
+   * Production omits it and gets the shared singleton; a test passes `createThrottle()` so its
+   * bucket is its own and the file's runtime stops depending on what else ran in the process. */
+  throttle?: Throttle;
 }
 
 /** This adapter's own private hand-off shape from its HTTP step to `normalize()` — `raw` is the
@@ -586,6 +590,7 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
   const chains = deps.chains ?? loadChainRegistry();
+  const throttle = deps.throttle ?? productionThrottle;
 
   /**
    * One shared, short-lived copy of `/v2/chains` (vdd-multi cycle 5, L-9).

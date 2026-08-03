@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { createDefillamaAdapter, loadChainRegistry } from '../src/index.js';
 import { ttlFor } from '../src/cache/ttl.js';
+import { isolatedThrottle } from './helpers/isolated-throttle.js';
 import type { DexVolumeResult } from '../src/index.js';
 
 /**
@@ -47,7 +48,14 @@ function adapterServing(
     calls.push(String(url));
     return new Response(JSON.stringify(document), { status });
   };
-  return { adapter: createDefillamaAdapter({ fetchImpl, now: () => FIXED_NOW }), calls };
+  return {
+    adapter: createDefillamaAdapter({
+      fetchImpl,
+      now: () => FIXED_NOW,
+      throttle: isolatedThrottle(FIXED_NOW),
+    }),
+    calls,
+  };
 }
 
 async function resolveDex(
@@ -88,7 +96,11 @@ describe('defillama dex.volume.history — transport (task 007-4, R-62)', () => 
       seen.push(init?.headers);
       return new Response(JSON.stringify(ETHEREUM_DOC), { status: 200 });
     };
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => FIXED_NOW });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => FIXED_NOW,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
     await adapter.fetch('dex.volume.history', { chain: 'ethereum' });
     // Keyless must stay PROVEN, not assumed: an accidental header here is how a free path quietly
     // starts depending on a key nobody provisioned.
@@ -191,7 +203,11 @@ describe('defillama dex.volume.history — document reuse (task 007-4, R-70)', (
       if (attempt === 1) throw new Error('network blip');
       return new Response(JSON.stringify(ETHEREUM_DOC), { status: 200 });
     };
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => FIXED_NOW });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => FIXED_NOW,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
 
     await expect(adapter.fetch('dex.volume.history', { chain: 'ethereum' })).rejects.toThrow(
       /network blip/,
@@ -440,7 +456,11 @@ describe('defillama dex.volume.history — normalize (task 007-5, R-67/R-68)', (
     let clock = FIXED_NOW;
     const fetchImpl: typeof fetch = async () =>
       new Response(JSON.stringify(ETHEREUM_DOC), { status: 200 });
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => clock });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => clock,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
 
     const raw = await adapter.fetch('dex.volume.history', { chain: 'ethereum' });
     clock += 1_800_000; // half an hour later, still inside the document TTL
@@ -485,7 +505,12 @@ describe('defillama dex.volume.history — adversarial cycle 1 regressions', () 
     // `maxDocuments: 3` rather than the production 32: the bound is what is under test, not its
     // value, and 33 sequential requests through the shared real-timer rate limiter would cost ~7s
     // of sleeping to prove the same thing.
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => FIXED_NOW, maxDocuments: 3 });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => FIXED_NOW,
+      maxDocuments: 3,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
 
     const covered = CHAINS.list()
       .filter((chain) => adapter.chainSupport?.(chain, 'dex.volume.history'))
@@ -552,7 +577,12 @@ describe('defillama dex.volume.history — adversarial cycle 1 regressions', () 
       await gate; // every download stays in flight until the test lets go
       return new Response(JSON.stringify(ETHEREUM_DOC), { status: 200 });
     };
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => FIXED_NOW, maxDocuments: 3 });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => FIXED_NOW,
+      maxDocuments: 3,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
 
     const covered = CHAINS.list()
       .filter((chain) => adapter.chainSupport?.(chain, 'dex.volume.history'))
@@ -580,7 +610,12 @@ describe('defillama dex.volume.history — adversarial cycle 1 regressions', () 
       calls.push(String(url));
       return new Response(JSON.stringify(ETHEREUM_DOC), { status: 200 });
     };
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => FIXED_NOW, maxDocuments: 3 });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => FIXED_NOW,
+      maxDocuments: 3,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
     const covered = CHAINS.list()
       .filter((chain) => adapter.chainSupport?.(chain, 'dex.volume.history'))
       .slice(0, 4);
@@ -605,7 +640,11 @@ describe('defillama dex.volume.history — adversarial cycle 1 regressions', () 
       calls.push(String(url));
       return new Response(JSON.stringify(ETHEREUM_DOC), { status: 200 });
     };
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => clock });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => clock,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
 
     await adapter.fetch('dex.volume.history', { chain: 'ethereum' });
     clock += 3_600_001; // past the window
@@ -622,7 +661,11 @@ describe('defillama dex.volume.history — adversarial cycle 1 regressions', () 
       calls.push(String(url));
       return new Response(JSON.stringify(ETHEREUM_DOC), { status: 200 });
     };
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => clock });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => clock,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
 
     await adapter.fetch('dex.volume.history', { chain: 'ethereum' });
     clock += ttlFor('dex.volume.history') * 1000 - 1;
@@ -813,7 +856,11 @@ describe('defillama dex.volume.history — the response-size cap is real here (R
         }),
         { status: 200 },
       );
-    const adapter = createDefillamaAdapter({ fetchImpl, now: () => FIXED_NOW });
+    const adapter = createDefillamaAdapter({
+      fetchImpl,
+      now: () => FIXED_NOW,
+      throttle: isolatedThrottle(FIXED_NOW),
+    });
 
     await expect(adapter.fetch('dex.volume.history', { chain: 'ethereum' })).rejects.toThrow(
       /exceeds the 2097152-byte cap/,
@@ -836,6 +883,7 @@ describe('normalize failures are negative-cached; fetch failures are not (existi
     const failing = createDefillamaAdapter({
       fetchImpl: vi.fn<typeof fetch>().mockRejectedValue(new Error('socket hang up')),
       now: () => FIXED_NOW,
+      throttle: isolatedThrottle(FIXED_NOW),
     });
     await expect(failing.fetch('dex.volume.history', { chain: 'ethereum' })).rejects.toThrow(
       /socket hang up/,

@@ -1,7 +1,14 @@
 /**
  * TTL-per-capability, in seconds (ARCHITECTURE.md §3.2 table, D6 ranges applied to M1's concrete
- * capability set). Rows copied literally from that table; `platform.*` there is expanded here into
- * its four concrete capabilities (`platform.identities`/`contracts`/`documents`/`credits`).
+ * capability set).
+ *
+ * **This table and §3.2 are now checked against each other** (WI-28,
+ * `mcp-server/test/readme-tool-table.test.ts`): §3.2 must carry a row for every routed capability, at
+ * the seconds applied here. Historically the rows were copied FROM §3.2; several later ones were
+ * added here first and back-filled into §3.2 when the gate was written, so neither direction is
+ * "the source" any more — the gate is. `platform.*` in §3.2 stands for every routed capability under
+ * that prefix, which today is five (`identities`/`contracts`/`documents`/`credits` plus
+ * `platform.metrics.history`), and the gate expands it that way.
  */
 const TTL_SECONDS: Readonly<Record<string, number>> = {
   'token.price': 60,
@@ -36,10 +43,12 @@ const TTL_SECONDS: Readonly<Record<string, number>> = {
   // pair of requests.
   'chain.supply': 600,
 
-  // Not explicit rows in ARCHITECTURE.md §3.2's TTL table — implementation decision (developer-
-  // guidelines §1.5 "implementation ambiguity"), documented here rather than silently guessed:
-  // `pool.info` shares its adapter (dexscreener) and its liquidity/volume-style volatility with
-  // `protocol.tvl`, not the "new"-freshness-critical `pairs.new` — same 300s bucket.
+  // Originated here rather than in §3.2 — implementation decisions (developer-guidelines §1.5
+  // "implementation ambiguity") documented rather than silently guessed. They were absent from §3.2
+  // until WI-28's gate demanded completeness and back-filled them; the rationale below is the one
+  // that document now carries. `pool.info` shares its adapter (dexscreener) and its
+  // liquidity/volume-style volatility with `protocol.tvl`, not the "new"-freshness-critical
+  // `pairs.new` — same 300s bucket.
   'pool.info': 300,
   // The two `*.history` capabilities are historical views of an already-3600s-bucketed live
   // capability; the table's own stated rationale for that 3600s row ("no point polling faster than

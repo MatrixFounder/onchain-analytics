@@ -1232,17 +1232,30 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
   (DB-SCHEMA §1.10).
 - **TTL by data type** (ADR-001 D6 ranges, made concrete for the M1 capabilities):
 
-  | Capability                            | TTL   | Rationale                                                                                                                          |
-  | ------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
-  | `token.price`                         | 60s   | D6: price 15–60s                                                                                                                   |
-  | `token.metadata`                      | 3600s | name/symbol/decimals barely change                                                                                                 |
-  | `wallet.balances.native`              | 60s   | D6: balances 1–5 min, lower bound — a balance changes with every tx                                                                |
-  | `pairs.new`                           | 30s   | freshness is the point of "new"                                                                                                    |
-  | `protocol.tvl`                        | 300s  | D6: TVL 5–30 min, lower bound                                                                                                      |
-  | `dex.volume.history`                  | 3600s | the vendor's own step is **one day** — a shorter TTL cannot buy a newer number, only a second identical download (R-64)            |
-  | `privacy.shielded_pool`, `platform.*` | 3600s | no point polling faster than the existing snapshotter's hourly cadence                                                             |
-  | `token.holders`                       | 3600s | low volatility (was credit-metered under `dune`; free under `blockscout` since TASK-008)                                           |
-  | `chain.supply`                        | 600s  | the value changes **only** when a block is found — the Bitcoin target interval, so a shorter TTL cannot buy a newer number (R-82c) |
+  This table is the **source** `packages/core/src/cache/ttl.ts` says its rows are copied from, and
+  since WI-28 that claim is a gate: `mcp-server/test/readme-tool-table.test.ts` requires every
+  routed capability to appear here with the TTL the code applies. It was incomplete for six
+  capabilities when the gate was written — `chain.tvl`, `pool.info`, the two `*.history` rows and
+  all three paid ones — i.e. the document the implementation names as its authority had been
+  silently behind it since M1 — `pool.info` and `privacy.shielded_pool.history` are M1 routes, not M2.
+
+  | Capability                                                  | TTL   | Rationale                                                                                                                          |
+  | ----------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
+  | `token.price`                                               | 60s   | D6: price 15–60s                                                                                                                   |
+  | `token.metadata`                                            | 3600s | name/symbol/decimals barely change                                                                                                 |
+  | `wallet.balances.native`                                    | 60s   | D6: balances 1–5 min, lower bound — a balance changes with every tx                                                                |
+  | `pairs.new`                                                 | 30s   | freshness is the point of "new"                                                                                                    |
+  | `protocol.tvl`                                              | 300s  | D6: TVL 5–30 min, lower bound                                                                                                      |
+  | `chain.tvl`                                                 | 300s  | an aggregate DeFiLlama recomputes on its own cadence — no faster-moving than a protocol's TVL, so the same bucket (R-53d)          |
+  | `pool.info`                                                 | 300s  | shares its adapter and its liquidity/volume-style volatility with `protocol.tvl`, not with `pairs.new`                             |
+  | `dex.volume.history`                                        | 3600s | the vendor's own step is **one day** — a shorter TTL cannot buy a newer number, only a second identical download (R-64)            |
+  | `privacy.shielded_pool`, `platform.*`                       | 3600s | no point polling faster than the existing snapshotter's hourly cadence                                                             |
+  | `privacy.shielded_pool.history`, `platform.metrics.history` | 3600s | historical views of an already-hourly capability — the row above's rationale applies unchanged                                     |
+  | `token.holders`                                             | 3600s | low volatility (was credit-metered under `dune`; free under `blockscout` since TASK-008)                                           |
+  | `chain.supply`                                              | 600s  | the value changes **only** when a block is found — the Bitcoin target interval, so a shorter TTL cannot buy a newer number (R-82c) |
+  | `smart-money.flows`                                         | 300s  | PAID (10 cr/miss): `netflow1hUsd` is a 1-hour rolling window, so a short TTL is genuinely earned here                              |
+  | `token.risk`                                                | 1800s | PAID (6 cr/miss): Nansen Score indicators are daily-ish quantitative scores, not tick data                                         |
+  | `entity.labels`                                             | 3600s | PAID (0/5/100 cr): ENS/CEX/fund attributions change over DAYS, and the `exhaustive` tier is the whole free-plan balance            |
 
 - **Hot layer bounded by BYTES, not only by entry count (WI-11).** `LruHotLayer`'s `max: 500` was
   sized when the largest cached value was a ~200 B `ProtocolTvlResult`, so the implied ceiling was

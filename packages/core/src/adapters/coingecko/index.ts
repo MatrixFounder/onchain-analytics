@@ -1,7 +1,7 @@
 import { normalizeAddress } from '../../chain/address.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
-import { throttle } from '../../net/rate-limit.js';
+import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import {
   truncateVendorText,
@@ -35,6 +35,10 @@ export interface CoingeckoAdapterDeps {
   /** Chain registry supplying the asset-platform id (TASK-006 R-54). Defaults to the shipped
    * snapshot; injectable for tests. */
   chains?: ChainRegistry;
+  /** Injectable throttle, the same seam `blockscout`/`blockchain-info`/`nansen` expose (WI-26).
+   * Production omits it and gets the shared singleton; a test passes `createThrottle()` so its
+   * bucket is its own and the file's runtime stops depending on what else ran in the process. */
+  throttle?: Throttle;
 }
 
 /** This adapter's own private hand-off shape from its HTTP step to `normalize()` (never seen by
@@ -91,6 +95,7 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
   const now = deps.now ?? Date.now;
   const env = deps.env ?? process.env;
   const chains = deps.chains ?? loadChainRegistry();
+  const throttle = deps.throttle ?? productionThrottle;
 
   return {
     id: 'coingecko',

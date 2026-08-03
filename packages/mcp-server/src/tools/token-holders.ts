@@ -9,6 +9,7 @@ import {
   type CapabilityRegistry,
 } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 /**
  * `onchain_token_holders` — the MCP surface for the `token.holders` capability.
@@ -124,13 +125,7 @@ export async function tokenHoldersHandler(
     source: outcome.cache.provider,
   });
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    const path = firstIssue && firstIssue.path.length > 0 ? firstIssue.path.join('.') : '(root)';
-    const message = firstIssue?.message ?? 'invalid output shape';
-    return {
-      ok: false,
-      reason: `provider returned data violating the tool contract: ${path}: ${message}`,
-    };
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
 
   return { ok: true, output: parsed.data, cache: outcome.cache };

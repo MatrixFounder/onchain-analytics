@@ -12,6 +12,7 @@ import {
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 /**
  * Input contract for `onchain_token_risk` (interfaces.md §5.1.2, R-43): same `chain` narrowing +
@@ -100,13 +101,7 @@ export async function tokenRiskHandler(
 
   const parsed = TokenRiskOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    const path = firstIssue && firstIssue.path.length > 0 ? firstIssue.path.join('.') : '(root)';
-    const message = firstIssue?.message ?? 'invalid output shape';
-    return {
-      ok: false,
-      reason: `provider returned data violating the tool contract: ${path}: ${message}`,
-    };
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
 
   const budget =

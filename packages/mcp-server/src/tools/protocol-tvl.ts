@@ -3,6 +3,7 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 /** The two supported networks (task 003-7 reviewer note, Major-2 — see `get-token.ts`'s
  * docstring for why the full `ChainSchema` isn't used here) — declared once and reused for both
@@ -96,13 +97,7 @@ export async function protocolTvlHandler(
 
   const parsed = ProtocolTvlOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    const path = firstIssue && firstIssue.path.length > 0 ? firstIssue.path.join('.') : '(root)';
-    const message = firstIssue?.message ?? 'invalid output shape';
-    return {
-      ok: false,
-      reason: `provider returned data violating the tool contract: ${path}: ${message}`,
-    };
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
   return { ok: true, output: parsed.data, cache: outcome.cache };
 }

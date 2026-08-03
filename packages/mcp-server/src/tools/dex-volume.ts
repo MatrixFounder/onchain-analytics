@@ -3,6 +3,7 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 const CAPABILITY = 'dex.volume.history';
 
@@ -110,10 +111,7 @@ export async function dexVolumeHandler(
   // `{ok:false, reason}`; it never throws out of the handler (M1 adversarial cycle 2, finding 1a).
   const parsed = DexVolumeOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return {
-      ok: false,
-      reason: `dex.volume.history result failed contract validation: ${parsed.error.message}`,
-    };
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
   return { ok: true, value: parsed.data, cache: outcome.cache };
 }

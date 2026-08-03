@@ -7,6 +7,7 @@ import {
   type CapabilityRegistry,
 } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 /**
  * TASK-006 (task 006-6, R-50): `chain` is an OPEN string resolved against the chain registry,
@@ -122,13 +123,7 @@ export async function newPairsHandler(
     fetchedAt: Date.now(),
   });
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    const path = firstIssue && firstIssue.path.length > 0 ? firstIssue.path.join('.') : '(root)';
-    const message = firstIssue?.message ?? 'invalid output shape';
-    return {
-      ok: false,
-      reason: `provider returned data violating the tool contract: ${path}: ${message}`,
-    };
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
   return { ok: true, output: parsed.data, cache: outcome.cache };
 }

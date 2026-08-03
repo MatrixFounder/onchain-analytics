@@ -6,6 +6,7 @@ import {
   routes,
   type ProviderAdapter,
 } from '../src/index.js';
+import { isolatedThrottle } from './helpers/isolated-throttle.js';
 
 /**
  * TASK-008 task 008-6 — "the provider is switched off" must be indistinguishable from "the provider
@@ -27,7 +28,7 @@ import {
 /** The registry as `index.ts` builds it, minus whichever adapters a test wants gone. */
 function registryWithout(...omit: string[]): CapabilityRegistry {
   const all: Array<[string, ProviderAdapter]> = [
-    ['blockscout', createBlockscoutAdapter({ env: {} })],
+    ['blockscout', createBlockscoutAdapter({ env: {}, throttle: isolatedThrottle() })],
     // No key in scope: this suite must not be able to reach Nansen even if something misroutes
     // (PLAN §0.1). `isAvailable()` reports the precondition instead of spending anything.
     ['nansen', createNansenAdapter({ env: {} })],
@@ -73,6 +74,7 @@ describe('blockscout switched off (008-6, OQ-2)', () => {
     // plan would be untested in exactly the situation it exists for.
     const offline = createBlockscoutAdapter({
       env: {},
+      throttle: isolatedThrottle(),
       fetchImpl: async () => new Response(JSON.stringify({ error: 'nope' }), { status: 401 }),
     });
     const withFailingProvider = new CapabilityRegistry(

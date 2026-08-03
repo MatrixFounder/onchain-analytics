@@ -166,7 +166,12 @@ export function loadEnv(raw?: NodeJS.ProcessEnv): Env {
 
   const result = EnvSchema.safeParse(raw ?? process.env);
   if (!result.success) {
-    const keys = [...new Set(result.error.issues.map((issue) => issue.path.join('.') || '(root)'))];
+    // `map(String)` before `join`: `issue.path` is `PropertyKey[]` and `join` throws on a symbol
+    // element. Second of the two sites — `tools/contract-violation.ts` is the other, and fixing
+    // only that one is the half-application this repo keeps diagnosing.
+    const keys = [
+      ...new Set(result.error.issues.map((issue) => issue.path.map(String).join('.') || '(root)')),
+    ];
     const message = `invalid environment configuration for: ${keys.join(', ')}`;
     console.error(`onchain-intel-mcp-server: ${message}`);
     throw new Error(message);

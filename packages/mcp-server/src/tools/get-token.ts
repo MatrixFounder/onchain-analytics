@@ -10,6 +10,7 @@ import {
   type Token,
 } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 /**
  * Input contract for `onchain_get_token` (ARCHITECTURE.md §5.1, R-16). `chain` is narrowed to just
@@ -112,7 +113,16 @@ export async function getTokenHandler(
     address,
   });
   if (!outcome.ok) return outcome;
-  return { ok: true, output: TokenSchema.parse(outcome.output), cache: outcome.cache };
+  // `safeParse`, never `parse` (WI-27, adversarial cycle 2). This line used to be `.parse`, so a
+  // provider result that violated the contract threw a ZodError out of the handler — and the SDK's
+  // own catch renders `error.message`, which for zod IS `JSON.stringify(issues, null, 2)`. That is
+  // the exact defect WI-27 removed from three tools while two more kept it by a different spelling,
+  // invisible to a gate that looked for `OutputSchema.safeParse`.
+  const parsed = TokenSchema.safeParse(outcome.output);
+  if (!parsed.success) {
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+  }
+  return { ok: true, output: parsed.data, cache: outcome.cache };
 }
 
 /**

@@ -677,7 +677,7 @@ node scripts/verify-provenance.mjs --update
 pnpm lint          # eslint
 pnpm format:check  # prettier
 pnpm typecheck     # tsc --noEmit, strict + noUncheckedIndexedAccess
-pnpm test          # vitest, 527 тестов
+pnpm test          # vitest (число тестов смотреть прогоном — записанное здесь только устаревает)
 pnpm build         # tsup + декларации
 ```
 

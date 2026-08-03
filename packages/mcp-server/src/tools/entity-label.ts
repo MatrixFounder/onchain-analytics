@@ -11,6 +11,7 @@ import {
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 /** The two supported networks (same narrowing as every other M1/M2 tool — see `get-token.ts`'s
  * docstring). Declared once, reused for both the input and output `chain` fields below. */
@@ -162,13 +163,7 @@ export async function entityLabelHandler(
     fetchedAt: Date.now(),
   });
   if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0];
-    const path = firstIssue && firstIssue.path.length > 0 ? firstIssue.path.join('.') : '(root)';
-    const message = firstIssue?.message ?? 'invalid output shape';
-    return {
-      ok: false,
-      reason: `provider returned data violating the tool contract: ${path}: ${message}`,
-    };
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
 
   const budget =

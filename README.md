@@ -670,7 +670,7 @@ legitimately succeed on the next attempt.
 pnpm lint          # eslint
 pnpm format:check  # prettier
 pnpm typecheck     # tsc --noEmit, strict + noUncheckedIndexedAccess
-pnpm test          # vitest, 527 tests
+pnpm test          # vitest (run it for the count — a frozen number here only rots)
 pnpm build         # tsup + declarations
 ```
 

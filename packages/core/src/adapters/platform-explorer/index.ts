@@ -1,4 +1,4 @@
-import { throttle } from '../../net/rate-limit.js';
+import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
 import type { ChainInfo } from '../../chain/registry-core.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
@@ -42,6 +42,10 @@ const ENDPOINT_BY_CAPABILITY: Record<string, string> = {
 export interface PlatformExplorerAdapterDeps {
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Injectable throttle, the same seam `blockscout`/`blockchain-info`/`nansen` expose (WI-26).
+   * Production omits it and gets the shared singleton; a test passes `createThrottle()` so its
+   * bucket is its own and the file's runtime stops depending on what else ran in the process. */
+  throttle?: Throttle;
 }
 
 /** This adapter's own private hand-off shape — `raw` is the untouched vendor JSON body;
@@ -164,6 +168,7 @@ export function createPlatformExplorerAdapter(
 ): ProviderAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
+  const throttle = deps.throttle ?? productionThrottle;
 
   return {
     id: 'platform-explorer',

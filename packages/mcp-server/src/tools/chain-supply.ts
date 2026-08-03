@@ -3,6 +3,7 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 const CAPABILITY = 'chain.supply';
 
@@ -65,10 +66,7 @@ export async function chainSupplyHandler(
   // `{ok:false, reason}` and never throws out of the handler.
   const parsed = ChainSupplyOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return {
-      ok: false,
-      reason: `chain.supply result failed contract validation: ${parsed.error.message}`,
-    };
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
   return { ok: true, value: parsed.data, cache: outcome.cache };
 }

@@ -4,6 +4,7 @@ import type { ProviderAdapter } from '../src/adapters/types.js';
 import { routes } from '../src/providers.config.js';
 import { createDashPlatformAdapter } from '../src/adapters/dash-platform/index.js';
 import { createPlatformExplorerAdapter } from '../src/adapters/platform-explorer/index.js';
+import { isolatedThrottle } from './helpers/isolated-throttle.js';
 
 // R-11 proof, on the REAL M1 configuration (F-3 reviewer note) — NOT a hand-rolled route table
 // and NOT a mocked "pretend dash-platform is down" adapter: this imports the actual `routes`
@@ -18,7 +19,14 @@ const FIXED_NOW = 1_700_000_000_000;
 function buildRegistry(fetchImpl: typeof fetch): CapabilityRegistry {
   const adapters = new Map<string, ProviderAdapter>([
     ['dash-platform', createDashPlatformAdapter({ now: () => FIXED_NOW })],
-    ['platform-explorer', createPlatformExplorerAdapter({ fetchImpl, now: () => FIXED_NOW })],
+    [
+      'platform-explorer',
+      createPlatformExplorerAdapter({
+        fetchImpl,
+        now: () => FIXED_NOW,
+        throttle: isolatedThrottle(FIXED_NOW),
+      }),
+    ],
   ]);
   return new CapabilityRegistry(routes, adapters);
 }

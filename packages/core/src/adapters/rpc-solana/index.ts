@@ -1,7 +1,7 @@
 import { normalizeAddress } from '../../chain/address.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
-import { throttle } from '../../net/rate-limit.js';
+import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
 import { safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { WalletSchema, type Wallet } from '../../types/wallet.js';
@@ -39,6 +39,10 @@ export interface RpcSolanaAdapterDeps {
   now?: () => number;
   /** Chain registry supplying family + curated RPC hosts (TASK-006 R-54/R-56). */
   chains?: ChainRegistry;
+  /** Injectable throttle, the same seam `blockscout`/`blockchain-info`/`nansen` expose (WI-26).
+   * Production omits it and gets the shared singleton; a test passes `createThrottle()` so its
+   * bucket is its own and the file's runtime stops depending on what else ran in the process. */
+  throttle?: Throttle;
 }
 
 interface RpcSolanaFetchResult {
@@ -174,6 +178,7 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
   const chains = deps.chains ?? loadChainRegistry();
+  const throttle = deps.throttle ?? productionThrottle;
 
   return {
     id: 'rpc-solana',

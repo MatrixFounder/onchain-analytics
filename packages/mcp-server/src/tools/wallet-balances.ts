@@ -10,6 +10,7 @@ import {
   type Wallet,
 } from '@onchain-intel/core';
 import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import { contractViolationReason } from './contract-violation.js';
 
 /**
  * Input contract for `onchain_wallet_balances` (ARCHITECTURE.md §5.1, R-17) — the literal
@@ -87,7 +88,13 @@ export async function walletBalancesHandler(
     address,
   });
   if (!outcome.ok) return outcome;
-  return { ok: true, output: WalletSchema.parse(outcome.output), cache: outcome.cache };
+  // `safeParse`, never `parse` — see `get-token.ts` for why this was the same WI-27 defect under a
+  // different spelling. `WalletSchema.balances` is an array, so the per-element scaling was here too.
+  const parsed = WalletSchema.safeParse(outcome.output);
+  if (!parsed.success) {
+    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+  }
+  return { ok: true, output: parsed.data, cache: outcome.cache };
 }
 
 /** The `ToolSpec` for `onchain_wallet_balances` — this name is declared here and nowhere else

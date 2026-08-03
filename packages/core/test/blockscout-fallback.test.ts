@@ -8,6 +8,7 @@ import type { CapabilityAttempt } from '../src/adapters/registry.js';
 import type { CacheGetResult, CacheStore } from '../src/adapters/cache-store.js';
 import type { ProviderAdapter } from '../src/adapters/types.js';
 import type { EntityLabel } from '../src/types/entity-label.js';
+import { isolatedThrottle } from './helpers/isolated-throttle.js';
 
 /**
  * vdd-multi TASK-008, H-1 — the free-first handoff, asserted by RUNNING both adapters.
@@ -96,6 +97,7 @@ function registryWith(
   const blockscout = createBlockscoutAdapter({
     now: () => 1_700_000_000_000,
     env: {},
+    throttle: isolatedThrottle(1_700_000_000_000),
     fetchImpl: () => Promise.resolve(new Response(JSON.stringify(vendorBody), { status: 200 })),
   });
   const paid = nansenSpy(paidLabels);
@@ -218,6 +220,7 @@ describe('entity.labels — free source first, paid source only when it cannot a
     const blockscout = createBlockscoutAdapter({
       now: () => 1_700_000_000_000,
       env: {},
+      throttle: isolatedThrottle(1_700_000_000_000),
       fetchImpl: () => Promise.resolve(new Response(JSON.stringify(NO_TAGS), { status: 200 })),
     });
     const unavailableNansen: ProviderAdapter = {
@@ -271,6 +274,7 @@ describe('entity.labels — free source first, paid source only when it cannot a
     const blockscout = createBlockscoutAdapter({
       now: () => 1_700_000_000_000,
       env: {},
+      throttle: isolatedThrottle(1_700_000_000_000),
       fetchImpl: () => Promise.resolve(new Response(JSON.stringify(LABELED), { status: 200 })),
     });
     const paid = nansenSpy(['Binance: Hot Wallet']);
@@ -322,6 +326,7 @@ describe('entity.labels — free source first, paid source only when it cannot a
     const blockscout = createBlockscoutAdapter({
       now: () => 1_700_000_000_000,
       env: {},
+      throttle: isolatedThrottle(1_700_000_000_000),
       fetchImpl: () => Promise.resolve(new Response(JSON.stringify(NO_TAGS), { status: 200 })),
     });
     const paid = nansenSpy(['Binance: Hot Wallet']);
