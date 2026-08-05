@@ -2,7 +2,7 @@
 # Managed by the agentic-development installer. Do not edit between the markers.
 
 # Framework content (symlink or local copy) and installer state.
-/.agentic-development/
+/.agentic-development
 /.agentic-installer-state.json
 
 # Framework components.
@@ -26,20 +26,19 @@
 
 # .claude runtime locks.
 /.claude/*.lock
+
+# Project-local entries (kept in version control).
+!/.agent/skills/vm-deploy
+!/.claude/skills/vm-deploy
 # <<< end agentic-development framework <<<
 
 # --- Project (non-framework) ---
-# Framework symlink — the trailing-slash rule /.agentic-development/ above matches the
-# directory form only; the real entry is a symlink to ../agentic-development, so ignore it
-# explicitly (a committed symlink pointing outside the repo would dangle on clone).
-/.agentic-development
 
-# External n8n-skills plugin — symlink-referenced (not vendored), like .agentic-development above
+# External n8n-skills plugin — symlink-referenced, not vendored (like /.agentic-development above).
+# Its per-skill links under .agent/skills/ and .claude/skills/ need no rule of their own: those two
+# directories are ignored wholesale by the managed block, and the installer un-ignores only entries
+# a fresh clone could still resolve — which these, resolving into ~/ExternalTools, cannot.
 /.n8n-skills
-
-# Project-owned skill: keep vm-deploy committed (the framework's own skills above stay ignored)
-!/.agent/skills/vm-deploy/
-!/.agent/skills/vm-deploy/**
 
 # OS / editor cruft
 .DS_Store

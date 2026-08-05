@@ -104,7 +104,7 @@ confirmed volumes of the first target don't justify more: Dash Platform — hund
 
 Dev/test infra runs in a Parallels Ubuntu VM on the Mac — reach it with **`ssh vm`** (never
 hardcode the IP). For any VM / Docker / psql operation follow the **`vm-deploy`** skill
-(`.agent/skills/vm-deploy/SKILL.md`): additive-only on Supabase, destructive ops need explicit
+(`skills/vm-deploy/SKILL.md`): additive-only on Supabase, destructive ops need explicit
 confirmation, and run SQL by **piping over stdin** into `docker exec -i` (never `-f /tmp/…` — that
 reads the container FS and runs a stale copy).
 
