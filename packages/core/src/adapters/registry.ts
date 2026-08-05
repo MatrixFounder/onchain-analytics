@@ -796,12 +796,12 @@ export class CapabilityRegistry {
       try {
         attempted.push(adapterId);
         // The deadline travels as the THIRD argument, unchanged (task 012-8). An adapter that
-        // ignores it degrades to its own per-hop timeout and is not broken by it (R-140e) — **10 of
-        // the 12 do exactly that today** (corrected in adversarial cycle 2, F-7: this said 11, which
-        // was the count on the day 012-8 landed and stopped being true in 012-9, when `nansen`
-        // joined `blockscout` in reading it). The registry still refuses every adapter it has not
-        // yet reached, above. Coverage by CAPABILITY, measured 2026-08-05: 4 of 20
-        // (`capability-manifest.ts`'s ENFORCEMENT section; the gap is WI-37).
+        // ignores it degrades to its own per-hop timeout and is not broken by it (R-140e) — the
+        // guarantee that made the uptake stageable, and still tested by TC-INT-07. **10 of the 12
+        // now read it** (WI-37); the two that do not are M1 stubs the loop never reaches, since
+        // `isAvailable()` refuses them a few lines above. Coverage by CAPABILITY, measured
+        // 2026-08-05: 20 of 20 (`capability-manifest.ts`'s ENFORCEMENT section, re-derived by
+        // TC-F5-GATE on every run rather than transcribed here).
         raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs);
       } catch (error) {
         // A PERMANENT refusal propagates as itself (vdd-multi cycle 5, H-1). Everything else in
@@ -906,18 +906,25 @@ export class CapabilityRegistry {
     // recognised the net-layer class. The SECOND disjunct is a duplicate on purpose: it catches a
     // path that arrives here with the time already gone WITHOUT having passed through that catch —
     // an adapter whose own error handling swallowed the typed class before the registry could see
-    // it. That is not hypothetical: `blockscout` re-messages every transport throw by CLASS NAME
-    // (M-7, so a URL carrying `?apikey=` cannot reach the model), so its deadline failure arrives
-    // as a plain `Error` with the typed one only on `cause`. Reporting "unavailable" there would
-    // tell the caller to retry a route that failed because WE ran out of time.
+    // it. Reporting "unavailable" there would tell the caller to retry a route that failed because
+    // WE ran out of time.
     //
-    // **The cause is TRACKED, and this comment is not its record** —
-    // `docs/backlog/wi-36-adapter-wrappers-flatten-typed-errors.md` (WI-36) holds the measurement
-    // (two of twelve adapters flatten it; `blockchain-info` is the latent second) and the options.
-    // This line compensates the OUTCOME only. **It stays even after WI-36 lands:** it covers all
-    // twelve adapters and every future one, while unwrapping fixes two. Pinned by TC-INT-11 in
-    // `test/registry.deadline.test.ts` — before that case existed, deleting this disjunct left all
-    // 1404 tests green, which is how WI-36 was found.
+    // **No shipped adapter is in that shape any more (WI-36, 2026-08-05), and the disjunct stays.**
+    // It was not hypothetical when this was written: `blockscout` and `blockchain-info` re-messaged
+    // every transport throw by CLASS NAME (M-7, so a URL carrying `?apikey=` cannot reach the
+    // model), so a deadline failure arrived as a plain `Error` with the typed one only on `cause`.
+    // Both now rethrow the listed transport classes as themselves
+    // (`net/safe-fetch.ts`'s `PASS_THROUGH_TRANSPORT_ERRORS`), so `deadlineHit` is set on those
+    // paths. The reason to keep this line is the one WI-36 itself gives, and it is a measurement
+    // rather than caution: the disjunct covers all TWELVE adapters and every future one, while
+    // unwrapping fixed two. Removing a general guard because a specific instance was fixed trades
+    // coverage for less coverage.
+    //
+    // Pinned by **TC-INT-11b** in `test/registry.deadline.test.ts`, which drives a fake adapter that
+    // reproduces exactly the shape those two had — the only way left to construct this branch's
+    // input. It used to be TC-INT-11, driving the real `blockscout`; that case still exists as
+    // TC-INT-11a and now asserts the opposite fact (the class arrives intact). Before either
+    // existed, deleting this disjunct left all 1404 tests green, which is how WI-36 was found.
     //
     // `DeadlineWouldExceedError` does not set `deadlineHit` — but it CAN still reach this branch
     // through the second disjunct, and an earlier version of this comment claimed it could not

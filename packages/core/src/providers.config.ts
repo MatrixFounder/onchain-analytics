@@ -314,7 +314,15 @@ export const adapterRegistrations: AdapterRegistration[] = [
     trust: 'authoritative',
   },
   // NEW (F-2) — not an HTTP host: Postgres wire protocol; the DSN itself is the access control,
-  // not a hostname allowlist. Registered here purely for the providers-FK reason (§4.2).
+  // not a hostname allowlist, so `hosts: []` is empty by nature rather than by omission.
+  //
+  // **`rateLimit` is APPLIED since WI-34.** This comment used to end "registered here purely for the
+  // providers-FK reason (§4.2)", which read the whole row as decoration — true of the rate limit for
+  // as long as no code called the limiter, and the reason PLAN §0.2a derived a call envelope through
+  // a control that did not exist. `pg-history.fetch()` now awaits
+  // `throttle('pg-history', RATE_LIMIT, 1, deadlineAtMs)`, and that wait is 30_000 of the E-PG
+  // envelope the two `*.history` deadlines come from. The pool's `max: 3` bounds CONCURRENCY, a
+  // different quantity, and never was this limit.
   {
     id: 'pg-history',
     hosts: [],

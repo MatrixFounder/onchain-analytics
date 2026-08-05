@@ -2,7 +2,7 @@ import { normalizeAddress } from '../../chain/address.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
-import { safeFetch } from '../../net/safe-fetch.js';
+import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { WalletSchema, type Wallet } from '../../types/wallet.js';
 import type { Chain } from '../../types/chain.js';
@@ -191,7 +191,12 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
     // No `chains` literal — `servesChain` owns that answer (vdd-multi cycle 6, M-7).
     capabilities: () => [{ id: 'wallet.balances.native' }],
     costOf: () => ({ credits: 0 }),
-    fetch: async (_cap: string, args: Record<string, unknown>): Promise<RpcSolanaFetchResult> => {
+    fetch: async (
+      _cap: string,
+      args: Record<string, unknown>,
+      /** WI-37 — forwarded to the limiter and to EVERY hop of the endpoint fallback loop below. */
+      deadlineAtMs?: number,
+    ): Promise<RpcSolanaFetchResult> => {
       const { chain, address } = extractFetchArgs(args, chains);
       const normalizedAddress = normalizeAddress(chain, address);
       const body = JSON.stringify({
@@ -201,7 +206,7 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
         params: [normalizedAddress],
       });
 
-      await throttle('rpc-solana', RATE_LIMIT);
+      await throttle('rpc-solana', RATE_LIMIT, 1, deadlineAtMs);
 
       // Per-chain endpoints + per-chain allowlist, walked in the order a human approved them.
       const endpoints = [...(chain.rpcHosts ?? [])];
@@ -215,6 +220,9 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
             { method: 'POST', headers: { 'content-type': 'application/json' }, body },
             allowlist,
             fetchImpl,
+            // Spread conditionally so a call without a deadline builds the same options object
+            // this loop built before WI-37.
+            { ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }) },
           );
           if (!response.ok) {
             // `hostOf`, not the full URL (vdd-multi cycle 6, security L-2): `rpcHosts` is a
@@ -241,6 +249,10 @@ export function createRpcSolanaAdapter(deps: RpcSolanaAdapterDeps = {}): Provide
           };
         } catch (error) {
           lastError = error;
+          // Our own time being up is true of every REMAINING endpoint, not of this one — see the
+          // identical break in `rpc-evm` for the full reasoning. The fallback list exists for
+          // endpoints that are down, and a deadline is not an endpoint's condition.
+          if (error instanceof DeadlineExceededError) break;
         }
       }
       throw lastError instanceof Error

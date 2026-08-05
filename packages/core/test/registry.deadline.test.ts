@@ -18,6 +18,7 @@ import {
   RateLimitRejectedError,
 } from '../src/net/rate-limit.js';
 import { createBlockscoutAdapter } from '../src/adapters/blockscout/index.js';
+import { createBlockchainInfoAdapter } from '../src/adapters/blockchain-info/index.js';
 import { adapterRegistrations, routes } from '../src/providers.config.js';
 
 /**
@@ -514,13 +515,19 @@ describe('resolve() ends a spent walk with the THIRD outcome (task 012-8, R-145/
    * TC-INT-07 (R-140e) — an adapter that IGNORES the parameter is not broken by it.
    *
    * GREEN AT PHASE 1 BY CONSTRUCTION, and deliberately so: 11 of the 12 production adapters were in
-   * exactly this shape after task 012-8 — **10 in the shipped tree**, once `nansen` took the
-   * parameter up in 012-9 (count corrected in adversarial cycle 2, F-7) — and the requirement is
-   * that they keep working, which is a
-   * statement about what must NOT change. Its power is a compile-level mutation: make
+   * exactly this shape after task 012-8, then 10 once `nansen` took the parameter up in 012-9 (count
+   * corrected in adversarial cycle 2, F-7) — and the requirement is that they keep working, which is
+   * a statement about what must NOT change. Its power is a compile-level mutation: make
    * `deadlineAtMs` a REQUIRED parameter of `ProviderAdapter.fetch` and the two-parameter fake below
-   * stops type-checking — together with those 11 adapters. The behavioural half of the same
-   * requirement is the other 61 test files of this package, which task 012-8 does not edit.
+   * stops type-checking.
+   *
+   * **WI-37 removed the population this case was standing in for, and the case stays.** No shipped
+   * adapter ignores the parameter any more (the two that do not read it are stubs that never run).
+   * That does not retire R-140e: the guarantee is what makes the parameter OPTIONAL, which is what
+   * lets a thirteenth adapter be added, or an existing one be temporarily reverted, without the
+   * registry changing. Deleting this case because nothing currently exercises it would be deleting
+   * the only statement of that contract — and would make `deadlineAtMs` de-facto required with no
+   * decision recorded anywhere.
    */
   it('TC-INT-07: a two-parameter fetch() still resolves normally under a deadline', async () => {
     const oblivious: ProviderAdapter = {
@@ -620,10 +627,13 @@ describe('blockscout takes the deadline (task 012-8, the only adapter that does 
    * our own time", a statement about us. Only the two together (class AND elapsed) tell the paths
    * apart.
    *
-   * The class is asserted through `cause`: `blockscout` wraps every transport throw and re-messages
-   * it by CLASS NAME (M-7 — `safeFetch` interpolates the full URL into three of its own errors, and
-   * this is the one adapter that puts a secret in a URL). The wrapper is what the adapter's contract
-   * requires; the cause chain is where the identity survives.
+   * **Where the class is asserted moved with WI-36.** It used to be read off `.cause`, because
+   * `blockscout` re-messaged every transport throw by CLASS NAME (M-7 — `safeFetch` interpolates the
+   * full URL into three of its own errors, and this is the one adapter that puts a secret in a URL),
+   * so the identity survived only on the cause chain. That flattening is what WI-36 removed: the
+   * listed transport classes now come back as themselves and the wrapper covers everything else. The
+   * assertion is therefore on the thrown error directly — the SAME property, read where it now lives,
+   * with the message-safety half kept because that is what the wrapper was buying.
    *
    * EXPECTED_FAIL_REASON (phase 1): with the deadline ignored, nothing rejects until the adapter's
    * own 5 000 ms hop timeout, which vitest's own 5 000 ms `testTimeout` reaches first — "Test timed
@@ -642,11 +652,11 @@ describe('blockscout takes the deadline (task 012-8, the only adapter that does 
     const elapsedMs = Date.now() - startedAt;
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const cause = (thrown as Error).cause;
-    expect(cause).toBeInstanceOf(DeadlineExceededError);
+    expect(thrown).toBeInstanceOf(DeadlineExceededError);
     // Stated separately because this is the confusion the two classes exist to prevent.
-    expect(cause).not.toBeInstanceOf(SafeFetchTimeoutError);
-    expect((thrown as Error).message).toContain('DeadlineExceededError');
+    expect(thrown).not.toBeInstanceOf(SafeFetchTimeoutError);
+    // The wrapper's own job, unchanged: no URL, hence no query string, hence no key.
+    expect((thrown as Error).message).not.toContain('?');
     // 2 000 ms is 40x the deadline and 2.5x below `REQUEST_TIMEOUT_MS` — a margin wide enough that a
     // loaded machine cannot flip the verdict, and narrow enough that the hop timeout cannot satisfy
     // it.
@@ -657,6 +667,10 @@ describe('blockscout takes the deadline (task 012-8, the only adapter that does 
 /**
  * TC-INT-11 — **ADDED BEYOND THE TASK'S ENUMERATED LIST, and here is the measurement that earned
  * it.**
+ *
+ * **The next three paragraphs describe the tree as it stood at task 012-8** — they are the reason
+ * this case exists, and WI-36 has since changed the fact they rest on. The correction is below, not
+ * folded in: the original argument is what makes the disjunct's retention defensible.
  *
  * The task's mandated mutation runs asked whether removing the terminal branch's SECOND disjunct
  * (`|| Date.now() >= effectiveDeadlineAtMs`) is caught by any test. Measured on the full tree:
@@ -674,18 +688,38 @@ describe('blockscout takes the deadline (task 012-8, the only adapter that does 
  * would encode my reading of `blockscout`'s catch, and it is the adapter's real behaviour that makes
  * the branch necessary.
  *
- * The unwrapping alternative — teach `blockscout` to rethrow `DeadlineExceededError` as itself — is
- * NOT taken here: it is behaviour change outside this task's stated scope (its uptake is "pass the
- * deadline to `throttle()` and `safeFetch()`"), and it trades a guard that works for every adapter
- * for a fix that works for one. **Filed instead as
- * `docs/backlog/wi-36-adapter-wrappers-flatten-typed-errors.md` (WI-36)**, which also records the
- * latent second instance (`blockchain-info` carries the identical wrapper and does not read the
- * deadline yet). This case stays green after WI-36 lands; if it ever goes green "by itself", the
- * disjunct's coverage has narrowed and the case must be re-pointed at an adapter that still
- * flattens.
+ * The unwrapping alternative — teach `blockscout` to rethrow `DeadlineExceededError` as itself — was
+ * NOT taken in 012-8: it is behaviour change outside that task's stated scope (its uptake is "pass
+ * the deadline to `throttle()` and `safeFetch()`"), and it trades a guard that works for every
+ * adapter for a fix that works for one. **Filed instead as
+ * `docs/backlog/wi-36-adapter-wrappers-flatten-typed-errors.md` (WI-36)**, which also recorded the
+ * latent second instance (`blockchain-info` carried the identical wrapper and did not read the
+ * deadline yet).
+ *
+ * ---------------------------------------------------------------------------------------------
+ * **WI-36 HAS NOW LANDED, and this case's instrument changed with it — the case's own rule, applied
+ * to itself.** The paragraph above ends: "if it ever goes green by itself, the disjunct's coverage
+ * has narrowed and the case must be re-pointed at an adapter that still flattens." It went green by
+ * itself, and there is no such adapter left: `blockscout` and `blockchain-info` were the only two,
+ * and both now rethrow the listed transport classes unwrapped
+ * (`net/safe-fetch.ts`'s `PASS_THROUGH_TRANSPORT_ERRORS`).
+ *
+ * So the case splits in two, because it was proving two things at once:
+ *
+ * - **TC-INT-11a — what the REAL adapter does now.** Same setup, and the assertion moved from the
+ *   walk's verdict to the fact underneath it: the typed class reaches the registry, so `tried[]`
+ *   records a deadline instead of "transport failure (DeadlineExceededError)". Driven through the
+ *   real `blockscout` for the reason the original case gives — a fake would encode a reading of its
+ *   `catch` rather than exercise it.
+ * - **TC-INT-11b — what the DISJUNCT still guards.** Its subject was never one adapter; it is the
+ *   registry's behaviour when SOME adapter swallows the class, and WI-36 explicitly keeps it
+ *   ("`|| Date.now() >= …` covers all twelve adapters including the ones that do not exist yet;
+ *   unwrapping fixes two"). With no adapter in that shape, a fake IS the correct instrument — it is
+ *   now the only way to construct the input the branch exists for, and using one is not a weakening
+ *   of the case but the consequence of the defect being gone.
  */
 describe('the terminal branch catches a SWALLOWED typed error (task 012-8, C-1 belt-and-braces)', () => {
-  it('TC-INT-11: blockscout wraps DeadlineExceededError, and the walk STILL ends as deadline-exceeded', async () => {
+  it('TC-INT-11a: blockscout now delivers DeadlineExceededError as itself, so `tried` says deadline', async () => {
     const throttle = createThrottle({ now: Date.now, wait: () => Promise.resolve() });
     const adapter = createBlockscoutAdapter({
       env: {},
@@ -710,9 +744,144 @@ describe('the terminal branch catches a SWALLOWED typed error (task 012-8, C-1 b
     expect('returned' in outcome).toBe(false);
     const thrown = (outcome as { thrown: unknown }).thrown;
     expect(thrown).toBeInstanceOf(CapabilityDeadlineExceededError);
-    // The whole point: WITHOUT the second disjunct this is `CapabilityUnavailableError` — "every
-    // source failed, retry later" — for a walk that failed because our own clock ran out.
     expect(thrown).not.toBeInstanceOf(CapabilityUnavailableError);
+    // WI-36's acceptance 2, stated as the thing an operator or a downstream reader actually sees.
+    // Before the fix this read `blockscout: transport failure from mcp.blockscout.com
+    // (DeadlineExceededError)` — the class named in prose, invisible to `instanceof`, and
+    // `deadlineHit` never set. `tried[]` is the only public window onto that flag, so it is the
+    // assertion; restoring the wrapper turns this red while every other assertion here stays green,
+    // which is exactly the coverage gap the record is about.
+    const reason = (thrown as CapabilityDeadlineExceededError).message;
+    expect(reason).toContain('deadline exceeded');
+    expect(reason).not.toContain('transport failure');
+    // …and the credential channel the wrapper existed to close is still closed (M-7).
+    expect(reason).not.toContain('apikey');
+    expect(reason).not.toContain('?');
+  });
+
+  it('TC-INT-11b: an adapter that DOES swallow the class still ends the walk as deadline-exceeded', async () => {
+    // The fake reproduces exactly what both real adapters did until WI-36, and nothing else — so
+    // the branch under test is fed its input without any adapter being in that shape any more.
+    const swallowing: ProviderAdapter = {
+      id: 'swallows',
+      capabilities: () => [],
+      costOf: () => ({ credits: 0 }),
+      fetch: async (_cap, _args, deadlineAtMs) => {
+        blockFor(60);
+        throw new Error('swallows: transport failure from example.test (DeadlineExceededError)', {
+          cause: new DeadlineExceededError('https://example.test/x', deadlineAtMs ?? 0),
+        });
+      },
+      normalize: (_cap, raw) => raw,
+    };
+    const registry = buildRegistry({ adapters: [swallowing], deadlineMs: 40 });
+
+    const outcome = await outcomeOf(registry.resolve(CAP, CHAIN, {}));
+
+    expect('returned' in outcome).toBe(false);
+    const thrown = (outcome as { thrown: unknown }).thrown;
+    // `deadlineHit` is false here — the class is on `.cause`, where `instanceof` cannot see it — so
+    // the SECOND disjunct is the only thing producing this verdict. Delete it and this goes
+    // `CapabilityUnavailableError`: "every source failed, retry later", for a walk that failed
+    // because our own clock ran out.
+    expect(thrown).toBeInstanceOf(CapabilityDeadlineExceededError);
+    expect(thrown).not.toBeInstanceOf(CapabilityUnavailableError);
+  });
+});
+
+/**
+ * WI-36 acceptance 1 — the typed class survives BOTH wrappers, with no secret in the message.
+ *
+ * Two adapters, one case each, because the record's own count is what made the fix worth doing: the
+ * cost was real on `blockscout` (it read the deadline) and LATENT on `blockchain-info` (identical
+ * wrapper, no deadline yet). WI-37 removed the latency in the same commit, so both are live now and
+ * both are asserted the same way.
+ *
+ * The assertion is deliberately in two halves that pull in opposite directions — `instanceof` must
+ * be TRUE (the wrapper is not allowed to destroy the class) and the message must carry no credential
+ * (the wrapper's own reason for existing must survive the change). One without the other is how this
+ * fix could go wrong in either direction.
+ */
+describe('WI-36 — the two wrapping adapters no longer flatten typed transport errors', () => {
+  const BINANCE = '0x28C6c06298d514Db089934071355E5743bf21d60';
+  const SECRET = 'proapi_secretvalue0123456789';
+
+  it('blockscout: a mid-flight deadline arrives as DeadlineExceededError, not as a plain Error', async () => {
+    const throttle = createThrottle({ now: Date.now, wait: () => Promise.resolve() });
+    const adapter = createBlockscoutAdapter({
+      // A key is what puts `?apikey=<secret>` into the URL `safeFetch` interpolates — this is the
+      // one adapter in the tree that authenticates that way, and the whole reason the wrapper
+      // existed. Without the key set, the message-safety half of this test would be vacuous.
+      env: { BLOCKSCOUT_PRO_API_KEY: SECRET },
+      throttle,
+      fetchImpl: () => new Promise<Response>(() => {}),
+    });
+
+    const thrown = await adapter
+      .fetch('entity.labels', { chain: CHAIN, tokenAddress: BINANCE }, Date.now() + 40)
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(thrown).toBeInstanceOf(DeadlineExceededError);
+    // Stated separately: this is the confusion the two classes exist to prevent, and a hop timeout
+    // here would mean the deadline never reached the transport.
+    expect(thrown).not.toBeInstanceOf(SafeFetchTimeoutError);
+    expect((thrown as Error).message).not.toContain(SECRET);
+    expect((thrown as Error).message).not.toContain('apikey');
+    expect((thrown as Error).message).not.toContain('?');
+  });
+
+  it('blockchain-info: the same, on the adapter that carried the wrapper latently', async () => {
+    const throttle = createThrottle({ now: Date.now, wait: () => Promise.resolve() });
+    const adapter = createBlockchainInfoAdapter({
+      throttle,
+      fetchImpl: () => new Promise<Response>(() => {}),
+    });
+
+    const thrown = await adapter.fetch('chain.supply', { chain: 'bitcoin' }, Date.now() + 40).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBeInstanceOf(DeadlineExceededError);
+    expect(thrown).not.toBeInstanceOf(SafeFetchTimeoutError);
+    // This vendor is keyless, so there is no secret to leak — the URL is still kept out of the
+    // message by the class's own redaction, which is the property the pass-through list rests on.
+    expect((thrown as Error).message).not.toContain('?');
+  });
+
+  it('a NON-listed transport failure is still wrapped — the fix did not open the channel', async () => {
+    // The other direction, and the one that would be a security regression rather than a defect:
+    // `isPassThroughTransportError` must not become "rethrow anything the transport threw".
+    // `safeFetch` raises a plain `Error` for a redirect chain that exceeds the cap, and its message
+    // is built from the URL — redacted there, but the class is untyped, so the adapter's wrapper is
+    // what the caller must still get.
+    const throttle = createThrottle({ now: Date.now, wait: () => Promise.resolve() });
+    const adapter = createBlockscoutAdapter({
+      env: { BLOCKSCOUT_PRO_API_KEY: SECRET },
+      throttle,
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(null, {
+            status: 302,
+            headers: { location: 'https://mcp.blockscout.com/v1/loop' },
+          }),
+        ),
+    });
+
+    const thrown = await adapter
+      .fetch('entity.labels', { chain: CHAIN, tokenAddress: BINANCE })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(DeadlineExceededError);
+    expect((thrown as Error).message).toContain('blockscout: transport failure');
+    expect((thrown as Error).message).not.toContain(SECRET);
   });
 });
 

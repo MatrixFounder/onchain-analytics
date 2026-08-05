@@ -25,11 +25,14 @@
   (`routes × chainSupport`), so they cannot drift from real behaviour. Both lists are truncated: an
   error whose stated purpose is to save the caller a wasted call must not itself dump 458 slugs
   into the model's context.
-- **PLANNED (T-012, DECIDED but not in code as of 2026-08-03).** **A call deadline expiring is a
-  THIRD, equally distinct outcome (ADR-002 D4, R-145) — not
-  merged with either error above.** `CapabilityDeadlineExceededError` will fire when the manifest's
-  (narrowed-only, never widened, R-144) `deadlineMs` runs out before any adapter on the route
-  satisfied the request. It reuses the SAME `tried` list `CapabilityUnavailableError` already
+- **SHIPPED (T-012, tasks 012-7/012-8).** **A call deadline expiring is a THIRD, equally distinct
+  outcome (ADR-002 D4, R-145) — not merged with either error above.**
+  `CapabilityDeadlineExceededError` fires when the manifest's (narrowed-only, never widened, R-144)
+  `deadlineMs` runs out before any adapter on the route satisfied the request. **One qualification
+  the original wording did not have** (OD-4 review, 2026-08-05): a walk in which every source was
+  entered and every one ANSWERED returns that answer past the ceiling and marks the overrun in
+  `_meta.timing.overrunMs` — the ceiling bounds SPENDING, not the moment of delivery
+  (`open-questions.md` OQ-T012-6). It reuses the SAME `tried` list `CapabilityUnavailableError` already
   carries — a deadline-caused skip is recorded there exactly like any other reason an adapter was
   never asked — so a partial walk still names which sources were never reached, rather than
   collapsing into an opaque timeout.
@@ -74,10 +77,9 @@
   shape) — it never degrades to an empty registry. An empty registry would answer "unknown chain"
   to every request while the process still looked healthy: a total outage wearing the costume of
   normal operation.
-- **PLANNED (T-012, DECIDED but not in code as of 2026-08-03). An unregistered policy `kind` or a
-  capability with no manifest entry will fail loudly at
-  `CapabilityRegistry` CONSTRUCTION, the same discipline as the chain registry above (ADR-002
-  D2/D3, R-135/R-138).** `mcp-server/src/index.ts:104` builds the one real registry at process
+- **SHIPPED (T-012, tasks 012-4/012-6). An unregistered policy `kind` or a capability with no
+  manifest entry fails loudly at `CapabilityRegistry` CONSTRUCTION, the same discipline as the chain
+  registry above (ADR-002 D2/D3, R-135/R-138).** `mcp-server/src/index.ts:104` builds the one real registry at process
   startup, so a bad `providers.config.ts` edit is a startup failure naming the offending capability
   and `kind`, never a surprise on the first matching `tools/call`.
 

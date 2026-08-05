@@ -36,25 +36,23 @@
  * - **E-HTTP5 = 50_000 ms** — the same shape on an adapter that overrides
  *   `REQUEST_TIMEOUT_MS = 5_000` (`blockscout/index.ts`, `blockchain-info/index.ts`):
  *   30_000 + 4 × 5_000.
- * - **E-PG = ≥10_000 ms with an unbounded tail** — `pg-history`. **Not the HTTP template** and not
- *   the limiter one either: it speaks the Postgres wire protocol, so there are no redirect hops,
- *   and — measured, 2026-08-04 — its `fetch()` never awaits `throttle()` at all, so
- *   `MAX_WAIT_MS` does not enter its envelope even though the registration declares
- *   `{capacity: 2, refillPerSec: 0.2}`. What actually bounds it is
- *   `connectionTimeoutMillis = 10_000` (`pg/read-client.ts`'s `DEFAULT_CONNECTION_TIMEOUT_MS`) for acquiring a connection, plus
- *   the query itself, for which no `statement_timeout` is set anywhere — the tail is unbounded
- *   in-process. (PLAN §0.2a expected the limiter to bound this leg; reading the adapter says it is
- *   not called.)
+ * - **E-PG = 50_000 ms** — `pg-history`. **Not the HTTP template**: it speaks the Postgres wire
+ *   protocol, so there are no redirect hops. Limiter wait up to `MAX_WAIT_MS = 30_000`
+ *   (`net/rate-limit.ts`) + the in-process query bound of 20_000
+ *   (`pg/read-client.ts`'s `DEFAULT_QUERY_TOTAL_TIMEOUT_MS`), which is itself the ceiling over
+ *   `connectionTimeoutMillis = 10_000` for acquiring a connection and `statement_timeout = 5_000`
+ *   for running the statement — the two bounds NESTED inside it, hence a sum and not an addend.
  *
- *   **Both halves of that are TRACKED, and this comment is not their record** — a defect filed only
- *   inside a docstring about deadline numbers is findable by nobody looking for it:
- *   **WI-34** (`docs/backlog/wi-34-pg-history-ratelimit-declared-not-enforced.md`) — the declared
- *   `rateLimit` nothing enforces; **WI-35**
- *   (`docs/backlog/wi-35-pg-read-path-has-no-query-timeout.md`) — the missing query bound. Neither
- *   is fixed here (both are outside task 012-4, and the first changes adapter behaviour). If either
- *   lands, THIS envelope changes and both `*.history` rows below need a fresh derivation record in
- *   the same commit — a limiter wait would add up to `MAX_WAIT_MS`, a query bound would replace the
- *   unbounded tail with a number.
+ *   **This number replaced "≥10_000 with an unbounded tail" when WI-34 and WI-35 landed together
+ *   (2026-08-05), and the previous version is worth keeping visible** because it is what a reader
+ *   would otherwise re-derive from an old comment. Until then this adapter's `fetch()` never awaited
+ *   `throttle()` at all — so `MAX_WAIT_MS` did not enter its envelope even though the registration
+ *   declared `{capacity: 2, refillPerSec: 0.2}` (**WI-34**,
+ *   `docs/backlog/wi-34-pg-history-ratelimit-declared-not-enforced.md`) — and no bound of any kind
+ *   applied to the query, making it the only I/O path in the package that could wait forever
+ *   (**WI-35**, `docs/backlog/wi-35-pg-read-path-has-no-query-timeout.md`). PLAN §0.2a had assumed
+ *   the limiter bounded this leg; it now does, and the assumption and the code agree for the first
+ *   time. Both `*.history` rows below carry the resulting derivation.
  * - **E-DASH = 0 ms** — `dash-platform` adds NOTHING to the five routes it shares with
  *   `platform-explorer`: `isAvailable()` is unconditionally `{ok:false}`
  *   (`dash-platform/index.ts`), so the registry skips it before any transport exists to wait on,
@@ -74,34 +72,48 @@
  * capabilities, 12 adapters), and this section exists because the per-row records below read as
  * statements about running code:
  *
- * - **2 of 12 adapters read the third `fetch(cap, args, deadlineAtMs)` argument at all** —
- *   `blockscout` (forwards it to `throttle()` and to `safeFetch`) and `nansen`. The other ten
- *   (`coingecko`, `dexscreener`, `defillama`, `rpc-evm`, `rpc-solana`, `platform-explorer`,
- *   `blockchain-info`, `dash-platform`, `pg-history`, `dune`) declare `fetch(cap, args)` and call
- *   `throttle(id, RATE_LIMIT)` with two arguments.
- * - **4 of 20 capabilities are therefore actually bounded by their row below** — `token.holders`,
- *   `entity.labels`, `smart-money.flows`, `token.risk`. For the other **16** the registry still
- *   refuses every source it has not yet REACHED (the pre-check in `adapters/registry.ts`), but no
- *   in-flight attempt is cancelled and no limiter wait is shortened: the ceiling is a declaration.
+ * - **10 of 12 adapters read the third `fetch(cap, args, deadlineAtMs)` argument** — `blockscout`,
+ *   `nansen`, `coingecko`, `dexscreener`, `defillama`, `rpc-evm`, `rpc-solana`, `platform-explorer`,
+ *   `blockchain-info`, `pg-history`. Each forwards it to the limiter
+ *   (`throttle(id, RATE_LIMIT, weight, deadlineAtMs)`) and to its transport — `safeFetch` for the
+ *   nine HTTP ones, `read-client.ts`'s query bound for `pg-history` — **except at the two points
+ *   where forwarding it would be wrong**: `nansen` stops at `checkAndReserve()`, because cancelling
+ *   after payment means paying without receiving (ADR-002 D4 §2), and `defillama`'s two
+ *   shared-document capabilities bound the CALLER'S WAIT instead of the download, because the
+ *   document is shared and one caller's expiry must not abort a transfer another is still awaiting.
+ *   "Unchanged" describes the value where it IS forwarded — never re-derived as a remainder.
+ * - **The remaining two — `dune` and `dash-platform` — are EXEMPT because they cannot spend time.**
+ *   Both are M1 stubs: `isAvailable()` is unconditionally `{ok:false}`, so the registry skips them
+ *   before any transport exists to wait on, and `fetch()` throws `NotImplementedInM1Error`. That is
+ *   the same fact as E-DASH = 0 above. The exemption is DERIVED — `capability-manifest.test.ts` puts
+ *   an adapter in the population by whether it imports a transport module at all, so the day a live
+ *   gRPC transport lands for `dash-platform` (ARCHITECTURE.md §11) it enters the population and the
+ *   five rows it routes go red until it reads the deadline. It is not an id list somebody maintains.
+ * - **20 of 20 capabilities are therefore actually bounded by their row below.**
  *
- * **This is sanctioned, not a regression.** R-140e ("an adapter that ignores the parameter is not
- * broken by it") is the accepted staging, and task 012-8 wrote down that 11 of the 12 adapters were
- * in that state on the day it landed (ten, plus `nansen` which took it up in 012-9). What was NOT
- * sanctioned is a comment saying a ceiling "cuts 75_000" of a capability nothing cancels — so every
- * row below now says which of the two it is, and the gap is tracked as
- * `docs/backlog/wi-37-call-deadline-declared-but-unenforced-on-ten-adapters.md`.
- *
- * A row marked **ENFORCED TODAY** loses nothing when WI-37 lands. A row marked **DECLARED, not
- * enforced today** becomes enforced by that work item alone, with no edit here — which is the point
- * of writing the distinction down rather than adjusting the numbers.
+ * **How this section read before WI-37, and why the distinction was worth writing down.** Until
+ * 2026-08-05 the figures were 2 of 12 and 4 of 20: `blockscout` (012-8) and `nansen` (012-9) were the
+ * only adapters that read the parameter, and for the other 16 capabilities the registry still refused
+ * every source it had not yet REACHED (the pre-check in `adapters/registry.ts`) while no in-flight
+ * attempt was cancelled and no limiter wait shortened. That staging was sanctioned — R-140e, "an
+ * adapter that ignores the parameter is not broken by it". What was NOT sanctioned was a comment
+ * saying a ceiling "cuts 75_000" of a capability nothing cancelled; adversarial cycle 2's F-5
+ * replaced fourteen such claims with the per-row markers below, and
+ * `docs/backlog/wi-37-call-deadline-declared-but-unenforced-on-ten-adapters.md` tracked the
+ * behaviour until this commit closed it.
  *
  * **Every one of the 20 rows carries its own marker, and a test counts them.** The first version of
  * this section marked the tier BLOCKS and left 11 rows with no findable claim of their own — the
  * defect F-5 is about, one level down: an assertion true in one place and absent in the others,
- * reported as complete. `capability-manifest.test.ts`'s **TC-F5-GATE** now requires exactly one
- * marker per routed capability AND checks each marker against a scan of the adapter sources, so the
- * 2-of-12 / 4-of-20 figures above are re-derived on every run instead of being transcribed. When
- * WI-37 lands, the markers must move with it or the gate goes red.
+ * reported as complete. `capability-manifest.test.ts`'s **TC-F5-GATE** requires exactly one marker
+ * per routed capability AND checks each marker against a scan of the adapter sources, so the
+ * 10-of-12 / 20-of-20 figures above are re-derived on every run instead of being transcribed. The
+ * markers moved with the code in this commit because the gate would otherwise be red — which is what
+ * writing the distinction down was for.
+ *
+ * **`**DECLARED, not enforced today**` is now unused, and stays spelled out here on purpose.** It is
+ * still the marker TC-F5-GATE expects on any row whose adapters do not all read the deadline, so the
+ * thirteenth adapter — or a stub that grows a transport — has a marker to move to.
  *
  * **Every number below is a STARTING assignment.** R-148(e) wants each one measured against ITS
  * capability's envelope rather than rounded to the nearest tier; a later change arrives with its own
@@ -188,14 +200,14 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
   // and left 11 of the 20 rows with nothing findable in them). `capability-manifest.test.ts`'s
   // TC-F5-GATE enforces one marker per row and checks each against the adapter sources.
   //
-  // All eight are DECLARED, not enforced today (see the ENFORCEMENT section above; measured
-  // 2026-08-05). An earlier version of this banner said 15_000 is BELOW `MAX_WAIT_MS = 30_000`, so
-  // "on a saturated token bucket these capabilities now refuse fast instead of sleeping up to 30 s",
-  // and called that UC-7. That is true of the MECHANISM and false of these eight rows: `coingecko`,
-  // `dexscreener`, `defillama`, `rpc-evm` and `rpc-solana` all call `throttle(id, RATE_LIMIT)` with
-  // two arguments, so the limiter never sees this number and the wait is still capped only by
-  // `MAX_WAIT_MS`. UC-7 is real where the deadline is threaded — `blockscout` (`token.holders`,
-  // `entity.labels`) and `nansen` — and is what these rows will get from WI-37, with no edit here.
+  // All eight are ENFORCED TODAY (see the ENFORCEMENT section above; measured 2026-08-05). An
+  // earlier version of this banner said 15_000 is BELOW `MAX_WAIT_MS = 30_000`, so "on a saturated
+  // token bucket these capabilities now refuse fast instead of sleeping up to 30 s", and called that
+  // UC-7. That was true of the MECHANISM and false of these eight rows, because `coingecko`,
+  // `dexscreener`, `defillama`, `rpc-evm` and `rpc-solana` all called `throttle(id, RATE_LIMIT)` with
+  // two arguments and the limiter never saw this number. WI-37 threaded it into all five, so the
+  // sentence is now true of the rows as well as of the mechanism — UC-7 is reachable on this tier
+  // rather than being a property of `blockscout` and `nansen`.
   //
   // The other side of the mechanism, unchanged and stated for the day it applies: a free vendor
   // that answers successfully but slower than 15 s starts being refused — the response to observing
@@ -210,8 +222,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // measured envelope: 90_000 (E-HTTP15 — `coingecko`, one attempt). applied: 15_000 — the
     // OWNER's ~15 s tier (OD-2), a ceiling and not a measurement; it would cut 75_000 — the entire
     // redirect tail plus most of the limiter wait — on a route that read it.
-    // **DECLARED, not enforced today** — `coingecko` calls `fetch(cap, args)` and
-    // `throttle(id, RATE_LIMIT)`, so nothing here is cancelled or shortened (ENFORCEMENT; WI-37).
+    // **ENFORCED TODAY** — `coingecko` forwards the deadline to `throttle()` and to `safeFetch`
+    // (WI-37; before it, this row's ceiling cancelled and shortened nothing).
     deadlineMs: 15_000,
   },
   'token.metadata': {
@@ -221,7 +233,7 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     ttlSeconds: 3600,
     // measured envelope: 90_000 (E-HTTP15 — `coingecko`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
-    // **DECLARED, not enforced today** — `coingecko` does not read the deadline (ENFORCEMENT; WI-37).
+    // **ENFORCED TODAY** — same adapter and same call path as `token.price` (WI-37).
     deadlineMs: 15_000,
   },
   'pairs.new': {
@@ -232,7 +244,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     ttlSeconds: 30,
     // measured envelope: 90_000 (E-HTTP15 — `dexscreener`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
-    // **DECLARED, not enforced today** — `dexscreener` does not read the deadline (ENFORCEMENT; WI-37).
+    // **ENFORCED TODAY** — `dexscreener` forwards the deadline to `throttle()` and `safeFetch`
+    // (WI-37).
     deadlineMs: 15_000,
   },
   'pool.info': {
@@ -246,7 +259,7 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     ttlSeconds: 300,
     // measured envelope: 90_000 (E-HTTP15 — `dexscreener`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
-    // **DECLARED, not enforced today** — `dexscreener` does not read the deadline (ENFORCEMENT; WI-37).
+    // **ENFORCED TODAY** — same adapter and same call path as `pairs.new` (WI-37).
     deadlineMs: 15_000,
   },
   'protocol.tvl': {
@@ -256,7 +269,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     ttlSeconds: 300,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
-    // **DECLARED, not enforced today** — `defillama` does not read the deadline (ENFORCEMENT; WI-37).
+    // **ENFORCED TODAY** — and this is the one `defillama` path with no shared document, so the
+    // deadline reaches `throttle()` and `safeFetch` directly and can cancel the request (WI-37).
     deadlineMs: 15_000,
   },
   'chain.tvl': {
@@ -269,7 +283,9 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     ttlSeconds: 300,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
-    // **DECLARED, not enforced today** — `defillama` does not read the deadline (ENFORCEMENT; WI-37).
+    // **ENFORCED TODAY**, by the OTHER of `defillama`'s two mechanisms: `/v2/chains` is a document
+    // SHARED between concurrent callers, so the ceiling bounds this caller's WAIT and deliberately
+    // does not abort a download somebody else is also awaiting (WI-37, `awaitSharedDocument`).
     deadlineMs: 15_000,
   },
   'dex.volume.history': {
@@ -287,7 +303,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     ttlSeconds: 3600,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
-    // **DECLARED, not enforced today** — `defillama` does not read the deadline (ENFORCEMENT; WI-37).
+    // **ENFORCED TODAY** — shared-document path, same as `chain.tvl`: the ceiling bounds the wait,
+    // not the shared download (WI-37).
     deadlineMs: 15_000,
   },
   'wallet.balances.native': {
@@ -298,8 +315,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // per-chain alternatives, never a sequence: `chainSupport()` leaves exactly one of them
     // eligible for a given chain). applied: 15_000 — owner ceiling (OD-2), not a measurement;
     // would cut 75_000.
-    // **DECLARED, not enforced today** — neither `rpc-evm` nor `rpc-solana` reads the deadline
-    // (ENFORCEMENT; WI-37).
+    // **ENFORCED TODAY** — both `rpc-evm` and `rpc-solana` forward it to `throttle()` and to every
+    // hop of their endpoint fallback loop, and stop walking that loop once it is spent (WI-37).
     deadlineMs: 15_000,
   },
 
@@ -330,9 +347,10 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // Its `fetch()` issues TWO readings, so the envelope of the whole call is twice that; the
     // cancellable unit the deadline governs is the attempt. applied: 15_000 — owner ceiling
     // (OD-2), not a measurement; would cut 35_000.
-    // **DECLARED, not enforced today** — `blockchain-info` does not read the deadline
-    // (ENFORCEMENT; WI-37). NOTE it is NOT covered by the ~15 s block banner above: this row sits
-    // in the E-HTTP5 block, which is why every row carries its own marker.
+    // **ENFORCED TODAY** — `blockchain-info` forwards it to `throttle()` and `safeFetch` on BOTH
+    // readings, so the ceiling is what stops the second being issued after the first spent the
+    // budget (WI-37). NOTE it is NOT covered by the ~15 s block banner above: this row sits in the
+    // E-HTTP5 block, which is why every row carries its own marker.
     deadlineMs: 15_000,
   },
 
@@ -374,8 +392,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // E-DASH = 0 and grows only when a live gRPC transport lands). applied: 15_000 — **OVERRIDE**
     // of the architecture's ~30_000, not an alignment: the route is single-live-adapter today (see
     // the banner). It is also the owner's ~15 s ceiling and not a measurement; it would cut 75_000.
-    // **DECLARED, not enforced today** — `platform-explorer` does not read the deadline
-    // (ENFORCEMENT above; WI-37).
+    // **ENFORCED TODAY** — `platform-explorer` forwards the deadline (WI-37); `dash-platform` is
+    // exempt because it spends no time at all, which is the same fact as E-DASH = 0.
     deadlineMs: 15_000,
   },
   'platform.identities': {
@@ -386,8 +404,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` = E-DASH 0,
     // grows with a live gRPC transport). applied: 15_000 — **OVERRIDE** of the architecture's
     // ~30_000 (single-live-adapter route, see the banner) and the owner's ceiling, not a
-    // measurement; would cut 75_000. **DECLARED, not enforced today** — `platform-explorer` does not
-    // read the deadline (ENFORCEMENT above; WI-37).
+    // measurement; would cut 75_000. **ENFORCED TODAY** — `platform-explorer` forwards the deadline
+    // (WI-37); `dash-platform` is exempt, spending no time (E-DASH = 0).
     deadlineMs: 15_000,
   },
   'platform.contracts': {
@@ -397,8 +415,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` = E-DASH 0,
     // grows with a live gRPC transport). applied: 15_000 — **OVERRIDE** of the architecture's
     // ~30_000 (single-live-adapter route, see the banner) and the owner's ceiling, not a
-    // measurement; would cut 75_000. **DECLARED, not enforced today** — `platform-explorer` does not
-    // read the deadline (ENFORCEMENT above; WI-37).
+    // measurement; would cut 75_000. **ENFORCED TODAY** — `platform-explorer` forwards the deadline
+    // (WI-37); `dash-platform` is exempt, spending no time (E-DASH = 0).
     deadlineMs: 15_000,
   },
   'platform.documents': {
@@ -408,8 +426,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` = E-DASH 0,
     // grows with a live gRPC transport). applied: 15_000 — **OVERRIDE** of the architecture's
     // ~30_000 (single-live-adapter route, see the banner) and the owner's ceiling, not a
-    // measurement; would cut 75_000. **DECLARED, not enforced today** — `platform-explorer` does not
-    // read the deadline (ENFORCEMENT above; WI-37).
+    // measurement; would cut 75_000. **ENFORCED TODAY** — `platform-explorer` forwards the deadline
+    // (WI-37); `dash-platform` is exempt, spending no time (E-DASH = 0).
     deadlineMs: 15_000,
   },
   'platform.credits': {
@@ -419,8 +437,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` = E-DASH 0,
     // grows with a live gRPC transport). applied: 15_000 — **OVERRIDE** of the architecture's
     // ~30_000 (single-live-adapter route, see the banner) and the owner's ceiling, not a
-    // measurement; would cut 75_000. **DECLARED, not enforced today** — `platform-explorer` does not
-    // read the deadline (ENFORCEMENT above; WI-37).
+    // measurement; would cut 75_000. **ENFORCED TODAY** — `platform-explorer` forwards the deadline
+    // (WI-37); `dash-platform` is exempt, spending no time (E-DASH = 0).
     deadlineMs: 15_000,
   },
 
@@ -428,6 +446,10 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
   // TIER ~30 s (OD-2) — up to two free adapters walked SEQUENTIALLY.
   // `platform-explorer` (HTTP) then `pg-history` (Postgres wire protocol — E-PG, not the HTTP
   // template). This is the architecture row that is CORRECT and stays untouched.
+  //
+  // Both rows are ENFORCED TODAY. Their measured envelope changed on 2026-08-05 when WI-34/WI-35
+  // gave the pg leg a rate limit and a time bound — see either row for why a LARGER envelope is the
+  // sign of that, not of a regression.
   // ===========================================================================================
   'privacy.shielded_pool.history': {
     // ADR-002 D3 names this one.
@@ -437,15 +459,20 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // rationale for that 3600s row ("no point polling faster than the existing hourly snapshotter
     // cadence") applies identically to their history counterparts."
     ttlSeconds: 3600,
-    // measured envelope: 100_000 with an unbounded tail — 90_000 (E-HTTP15, `platform-explorer`)
-    // + E-PG (`pg-history`: ≥10_000 to acquire a connection, then a query nothing in-process
-    // bounds; no redirect hops and no limiter wait, because that adapter never calls `throttle()`).
-    // applied: 30_000 — owner ceiling (OD-2), not a measurement; it would cut ≥70_000.
-    // **DECLARED, not enforced today** — and this row carried the strongest version of the false
-    // claim: an earlier record called this ceiling "the only in-process bound the pg leg's tail
-    // has at all". `pg-history` is handed no deadline (`fetch(cap, args)`) and `platform-explorer`
-    // reads none either, so the tail has NO in-process bound — which is WI-35, not this number
-    // (ENFORCEMENT above; WI-37).
+    // measured envelope: 140_000 — 90_000 (E-HTTP15, `platform-explorer`) + 50_000 (E-PG,
+    // `pg-history`: a limiter wait up to 30_000 plus the 20_000 in-process query bound; no redirect
+    // hops). applied: 30_000 — owner ceiling (OD-2), not a measurement; it cuts 110_000.
+    // **ENFORCED TODAY** — both adapters on this route read the deadline (WI-37).
+    //
+    // **The envelope moved twice in one commit, in opposite directions, and both halves are the
+    // point.** It was recorded as "100_000 with an unbounded tail", and this row carried the
+    // strongest version of the claim F-5 was about: an earlier record called this ceiling "the only
+    // in-process bound the pg leg's tail has at all", when in fact `pg-history` was handed no
+    // deadline and `platform-explorer` read none either, so the tail had NO in-process bound. WI-35
+    // gave the query one (the tail became 20_000) and WI-34 made the declared limiter real (adding
+    // up to 30_000 that had never been counted) — so the measured number GREW while the thing it
+    // measures became bounded. A ceiling that cuts more than before is not a regression here; it is
+    // the first version of this row where both numbers describe running code.
     deadlineMs: 30_000,
   },
   'platform.metrics.history': {
@@ -454,13 +481,11 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // Carried from `cache/ttl.ts` — same rationale as the row above (the two `*.history`
     // capabilities are historical views of an already-3600s-bucketed live capability).
     ttlSeconds: 3600,
-    // measured envelope: 100_000 with an unbounded tail — 90_000 (E-HTTP15, `platform-explorer`)
-    // + E-PG (`pg-history`: ≥10_000 connection acquisition plus an unbounded query; not the HTTP
-    // template — no hops, and no limiter wait, since that adapter never calls `throttle()`).
-    // applied: 30_000 — owner ceiling (OD-2), not a measurement; it would cut ≥70_000.
-    // **DECLARED, not enforced today** — neither `platform-explorer` nor `pg-history` reads the
-    // deadline, so the pg tail has no in-process bound at all (that gap is WI-35; the unenforced
-    // ceiling is WI-37, ENFORCEMENT above).
+    // measured envelope: 140_000 — 90_000 (E-HTTP15, `platform-explorer`) + 50_000 (E-PG,
+    // `pg-history`: limiter wait up to 30_000 + the 20_000 in-process query bound; not the HTTP
+    // template — no hops). applied: 30_000 — owner ceiling (OD-2), not a measurement; it cuts
+    // 110_000. **ENFORCED TODAY** — both adapters read the deadline (WI-37), and the pg leg's tail
+    // is a number rather than "unbounded" for the first time (WI-35).
     deadlineMs: 30_000,
   },
 

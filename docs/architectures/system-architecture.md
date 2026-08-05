@@ -340,12 +340,31 @@ loss of cache efficiency, **not** of correctness (the answers are identical).
 
 **Module: `src/adapters/*`** (D2/D3/D4/D8/D9, R-3, R-5…R-11)
 
-**PLANNED (T-012, not in code as of 2026-08-03).** Everything from here through "Architectural
-obligation" at the end of this subsection describes the target design this task will build.
-`packages/core/src/adapters/types.ts` still has the pre-T-012 shapes verified in TASK.md §1.1
-(`isSatisfying` as a literal function, no `tier`/`trust`, no deadline parameter) as of this writing.
+**SHIPPED (T-012, commit `6af4b19`, 2026-08-05).** Everything from here through "Architectural
+obligation" at the end of this subsection describes the design **as it is in code**, not a target.
+`packages/core/src/adapters/types.ts` carries the post-T-012 shapes: a serialisable
+`policy?: PolicyDescriptor` in place of a literal `isSatisfying` (`types.ts:214-262`, class
+dictionary in `adapters/policy.ts`), mandatory `tier`/`trust` on every registration
+(`types.ts:93,106,137,148`), and the optional `deadlineAtMs` parameter on `fetch()` (`types.ts:52`).
 Two owner decisions dated 2026-08-03 (OD-3, OD-4) are folded in below, replacing an earlier draft
 of this section that an architecture review (same date) found to misdescribe both.
+
+> **Superseded banner, kept rather than deleted.** Until 2026-08-05 this paragraph read "**PLANNED
+> (T-012, not in code as of 2026-08-03)** … `types.ts` still has the pre-T-012 shapes … as of this
+> writing". It was not updated when T-012 landed, so a PLANNED banner sat over sub-sections already
+> marked LANDED (`ttlFor()`) and SHIPPED (adapter uptake) **inside its own declared scope** — the
+> documentation-drift class WI-24/WI-28 exist to catch, in the one place no gate reads. Nine further
+> `PLANNED (T-012)` status markers inside this subsection's declared scope were corrected in the same
+> pass (lines 393/439/492/641/665/805 of the pre-edit file), together with a seventh on the
+> `deadlineMs`/`paidLegMs` table, which lives in `Module: src/cache/*` rather than here. One further
+> `PLANNED` remains below by design — the word inside the H1 narrative, which is prose about the
+> state before the fix and is now introduced as such. A status marker is a claim about running code,
+> so each now names the task that landed it.
+>
+> **Scope of the commit named above.** `6af4b19` is T-012 itself. The WI-34/WI-35/WI-36/WI-37
+> follow-up described further down (the applied `pg-history` limiter, the query bounds, 10-of-12
+> adapters reading the deadline) landed later on 2026-08-05 and is NOT in that commit — a reader who
+> checks `6af4b19` alone finds 2 of 12 adapters and 4 of 20 capabilities.
 
 ```ts
 export interface CapabilityDescriptor {
@@ -390,8 +409,14 @@ export interface AdapterRegistration {
 }
 ```
 
-**Provider tier — one classification, four readers (D8, R-150/R-151/R-152). PLANNED (T-012).**
-`tier` replaces four places that used to classify "is this provider paid" independently, none of
+**Provider tier — one classification, four readers (D8, R-150/R-151/R-152). LANDED (T-012, tasks
+012-2/012-3).** The "Old classification / Where" column below is the **historical** pre-T-012 map:
+those line references describe the tree before commit `6af4b19` and no longer resolve
+(the `PAID_PROVIDER_IDS` identifier is gone from `src/`; historical notes remain in
+`cache/sqlite-store.ts`, `cache/budget-store.ts` and `adapters/types.ts`).
+The "Becomes" column is what the tree does today — `types.ts:93,137`, `cache/budget-store.ts` writing
+`kind: registration.tier`, and `mcp-server/src/tools/budget-meta.ts` reading `r.tier === 'paid'`.
+`tier` replaced four places that used to classify "is this provider paid" independently, none of
 which could detect the others disagreeing:
 
 | Old classification                                           | Where                                   | Becomes                                                                               |
@@ -411,12 +436,13 @@ client pays our price (ADR-003 D4), and our own spend at a vendor is our unit ec
 client's contract. `_meta.budget`'s `{provider, creditsUsedToday}` shape (interfaces.md §5.1.2) is
 UNCHANGED by this — `tier` is not added to it.
 
-**L5 — obligation for Development, not fixed by this document.** `providers.config.ts`'s own
-docstring (currently line ~125) still reads "**10 entries** … every one now backed by a real
-adapter" — stale since TASK-008/TASK-009 raised the count to twelve, and untouched by this
-architecture pass (docs-only; that line is source code). Adding `tier`/`trust` to all twelve
-registrations is the natural moment to correct it in the same commit — recorded here so it is not
-rediscovered as a surprise during Development.
+**L5 — obligation for Development. DISCHARGED (T-012, task 012-2).** `providers.config.ts`'s own
+docstring used to read "**10 entries** … every one now backed by a real adapter" — stale since
+TASK-008/TASK-009 raised the count to twelve, and untouched by the architecture pass that recorded
+this (docs-only; that line is source code). It was corrected in the same commit that added
+`tier`/`trust` to all twelve registrations, exactly as this note asked. Kept rather than deleted:
+the obligation is the reason the correction happened, and a discharged obligation with no record
+reads as one that was never raised.
 
 🔴 **M6 — `BudgetMeta.provider` widens to `string` with a runtime check, not a `tier`-derived
 literal union; picked and justified, not left ambiguous.** `adapterRegistrations` is exported as a
@@ -436,7 +462,10 @@ into the type system") — a derived-but-still-precise literal union would reloc
 remove it. The wire shape is unaffected: `{provider: string, creditsUsedToday}` serializes
 identically to today's `{provider: 'nansen', ...}` for the one value either type can hold right now.
 
-**Source trust — declare-only (D9 slice, R-153/R-154/R-155). PLANNED (T-012).** Assignment, from
+**Source trust — declare-only (D9 slice, R-153/R-154/R-155). LANDED (T-012, task 012-2).** The
+field is declared on all twelve registrations and validated at construction
+(`assertValidAdapterRegistrations`, `types.ts:179-201`); "declare-only" still describes its
+CONSUMPTION, which is T-016. Assignment, from
 ADR-002 D9's own table plus a reasoned analogy (objective vendor/consensus data vs.
 third-party-edited content):
 
@@ -483,14 +512,14 @@ knowledge, with its own `SupportedChain` type duplicating the `chains:` literals
 `normalize()` remains the single narrowing point (R-54d), and the dependency direction does not
 invert: the adapter reads the registry, the registry knows nothing about adapters.
 
-**Nor will it be weakened by D2/D3/D4/D8/D9, once built (T-012).** `fetch()` will still return
-`unknown`, and only `normalize()`'s output will ever escape an adapter — a policy descriptor, a
+**Nor was it weakened by D2/D3/D4/D8/D9 (T-012, shipped).** `fetch()` still returns
+`unknown`, and only `normalize()`'s output ever escapes an adapter — a policy descriptor, a
 manifest, a deadline, a `tier`, a `trust` are all metadata ABOUT routing and accounting, never a
 shape the vendor's DTO is allowed to influence. ADR-002 explicitly rejects the nearest miss
 (configurable field-mapping instead of `normalize()`, §Что отклонено п.7) on exactly this ground.
 
-**Capability Registry** (`src/adapters/registry.ts`) routes on `(capability, chain)`. PLANNED
-(T-012):
+**Capability Registry** (`src/adapters/registry.ts`) routes on `(capability, chain)`. LANDED
+(T-012, tasks 012-1/012-4/012-6/012-8):
 
 ```ts
 export interface CapabilityRoute {
@@ -616,8 +645,14 @@ ADR-002 D2 specifies: if a construction-time audit of all 21 routes ever finds o
 needs to narrow chains BELOW what `chainSupport()` already expresses, the field returns with that
 route named as the consumer (open-questions.md records the closure).
 
-🔴 **H-D (HIGH, architecture review round 2, 2026-08-03) — the deletion's test blast radius,
-stated explicitly, not left implicit.** The type-level field is one thing; `CapabilityDescriptor.chains`
+**H-D (HIGH, architecture review round 2, 2026-08-03) — the deletion's test blast radius, stated
+explicitly, not left implicit. DISCHARGED (T-012, task 012-1).** The edits below were made and the
+suite is green; the line references are to the tree **as it was on 2026-08-03** and no longer
+resolve. It is kept in full because it is the worked example of the rule it exists to teach —
+"compiling past a type deletion is not the same as proving the mechanism it replaces is equivalent"
+— and because that rule is what a future field-removal needs, not the line numbers.
+
+The type-level field is one thing; `CapabilityDescriptor.chains`
 (a DIFFERENT field, on the adapter's OWN capability descriptor — §"Module: src/adapters/*" above) is
 untouched and must not be confused with it. What DOES need editing: route-level `chains` is set by
 **13 literals across 9 test files** — `packages/core/test/registry.test.ts:76,91,92,122,287`;
@@ -638,7 +673,7 @@ testing the thing its own title names. AC-19's "≥1195 green plus new tests" is
 task happens to trip over.
 
 **Policy descriptor + class registry (D2, R-133/R-134/R-135) — home: `src/adapters/policy.ts`.
-PLANNED (T-012).**
+LANDED (T-012, task 012-6).**
 
 ```ts
 export type PolicyDescriptor =
@@ -662,8 +697,8 @@ The resolved predicate is cached per route; `resolve()`'s existing `satisfies()`
 on a throwing policy, `registry.ts:238-254`, UNCHANGED) calls the cached predicate instead of a
 route's own literal function — zero behaviour change on the 21 real routes (R-135d).
 
-**Capability manifest (D3, R-136/R-137/R-138) — home: `src/capability-manifest.ts`. PLANNED
-(T-012).** A new tier-1 config module sibling in spirit to `mcp-server`'s `tool-specs.ts` (T-011,
+**Capability manifest (D3, R-136/R-137/R-138) — home: `src/capability-manifest.ts`. LANDED
+(T-012, tasks 012-4/012-5).** A tier-1 config module sibling in spirit to `mcp-server`'s `tool-specs.ts` (T-011,
 D7): one declarative, committed literal, replacing a table (`cache/ttl.ts`'s `TTL_SECONDS`) whose
 own comments already record hitting its `DEFAULT_TTL_SECONDS` fallback by accident three times,
 with a shape the compiler enforces instead of a row someone can forget to add.
@@ -746,7 +781,8 @@ undocumented TTL. What that gate does **not** read is the Derivation column's pr
 tell an alignment from an override; that limit is declared in the gate itself and is why the one
 override below is marked in the row.
 
-**Shape classification — 8 of 20 settled by ADR-002 D3 itself, 12 left to Development.**
+**Shape classification — 8 of 20 settled by ADR-002 D3 itself, the other 12 audited in task 012-4.
+All 20 rows are written.**
 
 | `shape`  | Settled capabilities                                        |
 | -------- | ----------------------------------------------------------- |
@@ -754,12 +790,15 @@ override below is marked in the row.
 | `set`    | `entity.labels`, `token.holders`, `wallet.balances.native`  |
 | `series` | `privacy.shielded_pool.history`, `platform.metrics.history` |
 
-The remaining 12 (`token.metadata`, `pairs.new`, `pool.info`, `protocol.tvl`, `dex.volume.history`,
+**The remaining 12 were audited and the table is complete — DONE (T-012, task 012-4).**
+`token.metadata`, `pairs.new`, `pool.info`, `protocol.tvl`, `dex.volume.history`,
 `privacy.shielded_pool`, `platform.identities`, `platform.contracts`, `platform.documents`,
-`platform.credits`, `smart-money.flows`, `token.risk`) need one pass over each adapter's actual
-`normalize()` output shape — a Development-time audit (open-questions.md OQ-T012-1), not a guess
-made here. This does not block T-012 itself (R-136 is checkable independently of the final
-classification), only the first commit that writes the full 20-row manifest.
+`platform.credits`, `smart-money.flows` and `token.risk` each needed one pass over the adapter's
+actual `normalize()` output shape rather than a guess made here. That audit ran, its per-row evidence
+lives beside each row in `packages/core/src/capability-manifest.ts` as an `AUDIT:` comment, and
+OQ-T012-1 is closed in `open-questions.md`. All 20 rows are written; the heading's "12 left to
+Development" is the state at the time this section was authored, kept because the split is what
+explains why half the rows cite ADR-002 and half cite a code reading.
 
 **Deadline budget tiers (E-4, R-148/R-149) — the STARTING tiers, not a final 20-row table.**
 
@@ -802,7 +841,8 @@ Do NOT retune nansen's own timeouts in this task — the owner considered and re
 2026-08-03; ~270_000 of the historical envelope is written down as a DERIVED, ACCEPTED cost of D4
 п.2's correctness rule, not a gap to close here.
 
-**Call deadline (D4, R-140…R-147) — PLANNED (T-012).** A pre-commitment budget for the cancellable
+**Call deadline (D4, R-140…R-147) — LANDED (T-012, tasks 012-7/012-8/012-9; adapter uptake
+completed by WI-37, 2026-08-05).** A pre-commitment budget for the cancellable
 phase, threaded as a plain scalar (never wrapped in an object, D4 п.3 rejects a duration, not a
 shape); the paid tail is a separate, honestly-budgeted number, per OD-3 above:
 
@@ -867,8 +907,15 @@ The allowlist check (`assertAllowedHost`) itself is UNCHANGED — the deadline a
 signals composed into each hop, never the per-hop host check (Boundaries, TASK.md §5: the SSRF gate
 is not touched by this task in substance).
 
-🔴 **H1 — the caller's own abort signal stops being silently clobbered, AND stops being conflated with
-either timeout signal.** Today, `safe-fetch.ts:365` builds each hop's options as
+**H1 — the caller's own abort signal stops being silently clobbered, AND stops being conflated with
+either timeout signal. SHIPPED (T-012, task 012-7).** The 🔴 marker and the present tense below
+described the tree BEFORE the fix and are kept as the derivation, because the argument — why the
+naive one-line fix reintroduces C-1 — is what stops the next author from writing it. What shipped is
+`composeHopAbort` in `net/safe-fetch.ts`, which records WHICH input fired and resolves the rejection
+class from that; the caller's own signal is honoured and returned unwrapped. Read the rest of this
+block as "the state that was, and the reasoning out of it", not as a description of running code.
+
+Before the fix, `safe-fetch.ts` built each hop's options as
 `{...currentOpts, redirect:'manual', signal}` with the PER-HOP timeout signal LAST, so any
 caller-supplied `currentOpts.signal` is unconditionally overwritten and never observed — `safeFetch`
 cannot currently be cancelled by its caller at all. The naive one-line fix — fold the caller's signal
@@ -1044,34 +1091,77 @@ pending abandons ITS wait and raises `CapabilityDeadlineExceededError` to its ow
 NOT cancel the leader, which keeps running for whoever else may still be awaiting it (including a
 caller whose looser deadline will still be satisfied).
 
-**Adapter uptake is incremental, not universal (R-140e).** The parameter will exist on every
-`ProviderAdapter.fetch()` signature after T-012; whether a GIVEN adapter's implementation reads it
-is a per-adapter decision. `blockscout` is upgraded in the SAME commit (its own `REQUEST_TIMEOUT_MS`
-docstring already commits to this — see the obligation below); the other eleven adapters may keep
-ignoring the parameter without that being a regression — they degrade exactly to today's
-per-hop-timeout-only behaviour, per D4 п.1.
+**Adapter uptake WAS incremental, and is now complete for every adapter that can wait (R-140e).**
+The parameter exists on every `ProviderAdapter.fetch()` signature; whether a GIVEN adapter's
+implementation reads it is a per-adapter decision, and R-140e's guarantee — that an adapter ignoring
+it degrades exactly to today's per-hop-timeout-only behaviour — still holds and is still tested
+(`registry.deadline.test.ts` TC-INT-07). It is what made the staged uptake safe, not a permanent
+state.
 
-**SHIPPED state, measured 2026-08-05 (adversarial cycle 2, F-5/F-6/F-7).** Two adapters read the
-parameter — `blockscout` (012-8) and `nansen` (012-9) — so **ten** ignore it, not eleven, and the
-ceiling is actually enforced on **4 of 20 capabilities** (`token.holders`, `entity.labels`,
-`smart-money.flows`, `token.risk`). On the other sixteen the registry still refuses sources it has
-not yet REACHED, but no in-flight attempt is cancelled and no limiter wait is shortened: the number
-in the table below is declared, not applied. That is what R-140e sanctions; what it does not sanction
-is reading the table as an admission-control bound — see
-`docs/backlog/wi-37-call-deadline-declared-but-unenforced-on-ten-adapters.md`, which T-014/ADR-003
-must clear before treating `deadlineMs` as one.
+**SHIPPED state, measured 2026-08-05 (WI-37).** **10 of 12 adapters read the parameter** —
+`blockscout`, `nansen`, `coingecko`, `dexscreener`, `defillama`, `rpc-evm`, `rpc-solana`,
+`platform-explorer`, `blockchain-info`, `pg-history` — each forwarding it to the limiter and to its
+transport, **except where the design forbids it**: `nansen` stops at `checkAndReserve()`, so its paid
+sub-calls receive none (H3, and the paragraph on admission control below), and `defillama`'s two
+shared-document capabilities bound the caller's WAIT rather than the shared download
+(`awaitSharedDocument`) so that one caller's expiry cannot abort a transfer another is awaiting. The other two, `dune` and `dash-platform`, are M1 stubs whose `isAvailable()`
+is unconditionally false and whose `fetch()` throws, so they spend no time and cannot weaken a
+ceiling (the same fact as E-DASH = 0 in `capability-manifest.ts`). The ceiling is therefore enforced
+on **20 of 20 capabilities**.
 
-🔴 **Architectural obligation carried into Development (ADR-002 D4, R-157).**
-`blockscout/index.ts`'s `REQUEST_TIMEOUT_MS` docstring (currently lines ~125-146) already ends "this
-docstring must be rewritten in the SAME commit, not after it". The rewrite must stop saying the
-deadline "does not exist yet", name the actual TWO-PHASE mechanism (a cancellable `deadlineAtMs`
-head, and — per OD-3 — an UNCANCELLABLE `paidLegMs` tail for any paid route), and KEEP the
+**What T-014/ADR-003 may read, stated precisely, because "`deadlineMs` is now an admission-control
+input" is true only of free-only routes.** On the three capabilities that reach `nansen`, the
+enforced ceiling bounds the CANCELLABLE HEAD alone; after `checkAndReserve()` nothing receives a
+deadline (H3), by design — cancelling there means paying without receiving. The worst case an
+admission controller has to reserve for is therefore `deadlineMs + (paidLegMs ?? 0)`, which for
+`entity.labels` is 60_000 + 270_000 ≈ **330_000**, not 60_000. Two obligations follow, and neither is
+met today: `paidLegMs` has **no runtime reader** — nothing under `packages/*/src` reads it; its only
+consumers are tests (the WI-28 doc gate, TC-UNIT-06 in `capability-manifest.test.ts`, and
+`entity-labels-deadline-arithmetic.test.ts`) — and it
+appears nowhere in `interfaces.md`, so nothing on the wire tells a client the second number exists.
+T-014 is where that field acquires its first runtime consumer.
+
+Both figures are re-derived on every test run **in `packages/core/src/capability-manifest.ts`**,
+whose ENFORCEMENT prose `capability-manifest.test.ts`'s TC-F5-GATE regexes and compares against a
+scan of the adapter sources and against each row's own ENFORCED/DECLARED marker. **The copies in
+THIS document are transcriptions and no gate reads them** — `docs-counts.test.ts` anchors on the
+route/adapter/tool counts, not on these.
+
+`deadline-uptake.test.ts` carries the behavioural half: its gate drives every adapter that can wait
+except `nansen` and requires the deadline to reach the limiter unchanged, and seven of them
+(`coingecko`, `dexscreener`, `defillama`, `rpc-evm`, `rpc-solana`, `platform-explorer`,
+`blockchain-info`) also get the two cases that prove an in-flight request is actually cancelled.
+`blockscout` (`registry.deadline.test.ts` TC-INT-08a/08b) and `nansen`
+(`nansen-deadline-boundary.test.ts`) are proved in their own files; `pg-history` has no cancellation
+analogue at all, because a Postgres statement cannot be recalled — its bound stops the waiting. The exemption for the two stubs is derived from whether an adapter
+imports a transport module at all — so the day a live gRPC transport lands for `dash-platform`
+(§11), it enters the population and the five rows it routes go red until it reads the deadline.
+
+**How this read before WI-37, since the intermediate state is the thing that misled a reader.** From
+012-9 to 2026-08-05 only `blockscout` (012-8) and `nansen` (012-9) read the parameter: ten ignored
+it, the ceiling
+was enforced on 4 of 20 capabilities, and on the other sixteen the registry still refused sources it
+had not yet REACHED while no in-flight attempt was cancelled and no limiter wait shortened. The
+number in the table below was declared, not applied — sanctioned by R-140e, but not safe to read as
+an admission-control bound, which is what
+`docs/backlog/wi-37-call-deadline-declared-but-unenforced-on-ten-adapters.md` recorded until this
+commit closed it.
+
+**Architectural obligation carried into Development (ADR-002 D4, R-157). DISCHARGED (T-012, task
+012-8).** `blockscout/index.ts`'s `REQUEST_TIMEOUT_MS` docstring ended "this docstring must be
+rewritten in the SAME commit, not after it", and it was: the rewrite landed with the deadline, stops
+saying the deadline "does not exist yet", names the TWO-PHASE mechanism (a cancellable `deadlineAtMs`
+head, and — per OD-3 — an UNCANCELLABLE `paidLegMs` tail for any paid route), and KEEPS the
 historical `30 + 4×5 (blockscout) + 30 + 4×15 (resync) + 3×(30 + 4×15) (nansen) ≈ 410s` derivation
-AS HISTORY — it is the only place that derivation is recorded, it is the reason the deadline exists
-at all, AND it is the source of the `~270_000` paid-leg figure this task's own manifest reuses
-rather than re-measuring. Landing the deadline without this rewrite in the same commit reproduces,
-in a file no doc-count gate reads, the exact documentation-drift class `docs-counts.test.ts`/WI-28
-already exist to catch elsewhere.
+AS HISTORY — the only place that derivation is recorded, the reason the deadline exists at all, and
+the source of the `~270_000` paid-leg figure the manifest reuses rather than re-measuring.
+
+The obligation is kept rather than deleted because its REASON outlives it: landing the deadline
+without that rewrite would have reproduced, in a file no doc-count gate reads, the exact
+documentation-drift class `docs-counts.test.ts` (WI-24) and `readme-tool-table.test.ts` (WI-28)
+exist to catch elsewhere — which is the same
+class this subsection's own six stale `PLANNED (T-012)` markers turned out to be, found by review
+on 2026-08-05 rather than by any gate.
 
 `providers.config.ts` holds the declarative routes plus the adapter registry (id →
 hosts/rate-limit/env):
@@ -1183,7 +1273,13 @@ export const adapterRegistrations: AdapterRegistration[] = [
     requiresEnv: [],
   },
   // Not an HTTP host: the Postgres wire protocol. The DSN itself is the access control, not a
-  // hostname allowlist. Registered here SOLELY for the providers FK (§4.2).
+  // hostname allowlist. `hosts: []` is therefore empty by nature, not by omission.
+  // **`rateLimit` is APPLIED since WI-34 (2026-08-05)** — this comment used to end "registered here
+  // SOLELY for the providers FK (§4.2)", which read the whole row as decorative and was true of the
+  // rate limit for as long as no code called the limiter. `pg-history.fetch()` now awaits
+  // `throttle('pg-history', RATE_LIMIT, 1, deadlineAtMs)`, and that wait contributes 30_000 to the
+  // E-PG envelope the two `*.history` deadlines are derived from. The pool's `max: 3` bounds
+  // CONCURRENCY, which is a different quantity and never was this limit.
   {
     id: 'pg-history',
     hosts: [],
@@ -1970,7 +2066,8 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
   | `token.risk`                                                | 1800s | PAID (6 cr/miss): Nansen Score indicators are daily-ish quantitative scores, not tick data                                         |
   | `entity.labels`                                             | 3600s | PAID (0/5/100 cr): ENS/CEX/fund attributions change over DAYS, and the `exhaustive` tier is the whole free-plan balance            |
 
-  **`deadlineMs`/`paidLegMs` by capability (D4, E-4/R-148/R-149) — PLANNED (T-012), the tier-based
+  **`deadlineMs`/`paidLegMs` by capability (D4, E-4/R-148/R-149) — LANDED (T-012, task 012-4; this
+  table aligned to the manifest and put under the extended WI-28 gate in 012-5), the tier-based
   STARTING assignment.** Assigned from the three budget tiers ("Deadline budget tiers" above) by
   each capability's known route composition (route/adapter data is already in `providers.config.ts`
   today; this does not wait on the `shape` classification, which is a separate axis). The two
@@ -1991,15 +2088,15 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
   (`platform-explorer` + `pg-history`, two live adapters in sequence): these rows are addressed by
   their capability list, never by line number.
 
-  | Capability                                                                                                                                    | `deadlineMs` | `paidLegMs`                                       | Derivation                                                                                                                                                                                                     |
-  | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `token.price`, `token.metadata`, `pairs.new`, `protocol.tvl`, `chain.tvl`, `pool.info`, `dex.volume.history`, `token.holders`, `chain.supply` | ~15_000      | — (free-only route)                               | single-free-adapter tier: one adapter, one attempt, no composite sub-calls — `token.holders` is `shape: 'set'` but still a single-adapter route (M-5: tier is route composition, not `shape`)                  |
-  | `wallet.balances.native`                                                                                                                      | ~15_000      | — (free-only route)                               | single-free-adapter tier: each of its two routes (`rpc-evm` XOR `rpc-solana`) is a single free adapter — also `shape: 'set'`, same M-5 note                                                                    |
-  | `privacy.shielded_pool`, `platform.identities/contracts/documents/credits`                                                                    | ~15_000      | — (free-only route)                               | **OVERRIDE, not an alignment:** `dash-platform.isAvailable()` is unconditionally false ⇒ zero attempts ⇒ single-LIVE-adapter route (`platform-explorer` alone). Back to ~30_000 when live gRPC lands           |
-  | `privacy.shielded_pool.history`, `platform.metrics.history`                                                                                   | ~30_000      | — (free-only route)                               | ≤2-free-adapters tier: `platform-explorer` + `pg-history`, two free adapters in sequence                                                                                                                       |
-  | `smart-money.flows`                                                                                                                           | ~60_000      | **~180_000** (measured: 2 × E-HTTP15)             | paid-composite tier, cancellable head (nansen-only route, free `/account` resync before reservation); 2 paid sub-calls (netflow+holders) under one reservation, measured at 2 × 90_000                         |
-  | `token.risk`                                                                                                                                  | ~60_000      | **~180_000** (measured: 2 × E-HTTP15)             | same shape as `smart-money.flows` — 2 paid sub-calls (indicators+token-information) under one reservation, measured at 2 × 90_000                                                                              |
-  | `entity.labels`                                                                                                                               | ~60_000      | **~270_000** (derived, OD-3 worked example above) | blockscout free leg + nansen free resync = cancellable head; 3 nansen sub-calls at `30+4×15`s each = the uncancellable leg, reusing `blockscout/index.ts`'s own historical derivation rather than re-measuring |
+  | Capability                                                                                                                                    | `deadlineMs` | `paidLegMs`                                       | Derivation                                                                                                                                                                                                                                                                                                                               |
+  | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `token.price`, `token.metadata`, `pairs.new`, `protocol.tvl`, `chain.tvl`, `pool.info`, `dex.volume.history`, `token.holders`, `chain.supply` | ~15_000      | — (free-only route)                               | single-free-adapter tier: one adapter, one attempt, no composite sub-calls — `token.holders` is `shape: 'set'` but still a single-adapter route (M-5: tier is route composition, not `shape`)                                                                                                                                            |
+  | `wallet.balances.native`                                                                                                                      | ~15_000      | — (free-only route)                               | single-free-adapter tier: each of its two routes (`rpc-evm` XOR `rpc-solana`) is a single free adapter — also `shape: 'set'`, same M-5 note                                                                                                                                                                                              |
+  | `privacy.shielded_pool`, `platform.identities/contracts/documents/credits`                                                                    | ~15_000      | — (free-only route)                               | **OVERRIDE, not an alignment:** `dash-platform.isAvailable()` is unconditionally false ⇒ zero attempts ⇒ single-LIVE-adapter route (`platform-explorer` alone). Back to ~30_000 when live gRPC lands                                                                                                                                     |
+  | `privacy.shielded_pool.history`, `platform.metrics.history`                                                                                   | ~30_000      | — (free-only route)                               | ≤2-free-adapters tier: `platform-explorer` + `pg-history` in sequence — but **not** two HTTP legs: the second speaks the Postgres wire protocol, so its envelope is **E-PG = 50_000** (30_000 limiter + the 20_000 in-process query bound), not the HTTP template. Measured envelope 140_000, applied 30_000, cuts 110_000 (WI-34/WI-35) |
+  | `smart-money.flows`                                                                                                                           | ~60_000      | **~180_000** (measured: 2 × E-HTTP15)             | paid-composite tier, cancellable head (nansen-only route, free `/account` resync before reservation); 2 paid sub-calls (netflow+holders) under one reservation, measured at 2 × 90_000                                                                                                                                                   |
+  | `token.risk`                                                                                                                                  | ~60_000      | **~180_000** (measured: 2 × E-HTTP15)             | same shape as `smart-money.flows` — 2 paid sub-calls (indicators+token-information) under one reservation, measured at 2 × 90_000                                                                                                                                                                                                        |
+  | `entity.labels`                                                                                                                               | ~60_000      | **~270_000** (derived, OD-3 worked example above) | blockscout free leg + nansen free resync = cancellable head; 3 nansen sub-calls at `30+4×15`s each = the uncancellable leg, reusing `blockscout/index.ts`'s own historical derivation rather than re-measuring                                                                                                                           |
 
 - **Hot layer bounded by BYTES, not only by entry count (WI-11).** `LruHotLayer`'s `max: 500` was
   sized when the largest cached value was a ~200 B `ProtocolTvlResult`, so the implied ceiling was
@@ -2247,11 +2344,45 @@ database operator is that the server-side role be SELECT-only as well (defense i
 → `privacy.shielded_pool.history`/`platform.metrics.history`, `normalize()` → `Snapshot[]`) and is
 registered in `providers` alongside the others (§4.2).
 
+**Bounded in time — TWO numbers, because they stop different things (WI-35, 2026-08-05).** Until
+this landed, `connectionTimeoutMillis` bounded ACQUIRING a connection and nothing bounded USING one,
+which made this the only I/O path in the package with no upper bound at all while every HTTP hop
+carried an `AbortSignal.timeout`.
+
+- **`statement_timeout: 5_000`** — a `pg` config field, sent as a startup parameter. **Server-side**:
+  Postgres cancels the statement and the pooled connection is returned. Derived rather than chosen —
+  `EXPLAIN (ANALYZE, BUFFERS)` over the dev VM's `onchain.snapshots` (2 390 rows, 2026-08-05)
+  measured 0.87 ms for the four-metric query and 0.23 ms for the one-metric one, so the bound is
+  ~5 700× the worst measurement; the margin covers a cold buffer cache, a much larger table and an
+  unlucky plan (the four-metric query is already on a Seq Scan).
+- **`DEFAULT_QUERY_TOTAL_TIMEOUT_MS = 20_000`** — an in-process race owned by this module.
+  **Client-side**: it stops the ENGINE waiting, which is the only bound that survives a server that
+  goes silent after the connection was established — the failure `statement_timeout` cannot reach,
+  and the one that hangs a single-threaded stdio server whole rather than one capability. The number
+  is a **sum constraint**: it must exceed `connectionTimeoutMillis` + `statement_timeout` (10 000 +
+  5 000) or the two inner bounds become unreachable and three diagnosable failures collapse into one.
+  `pg`'s own `query_timeout` is deliberately NOT also set — a second client-side timer with the same
+  job and no discriminator between them.
+
+It raises **`PgQueryTimeoutError`**, kept distinct from the sanitized failure message below: "the
+database answered with an error" and "the database did not answer at all" are different facts about
+an installation. `ReadQueryOptions.deadlineAtMs` (WI-37) narrows the in-process bound to whatever the
+caller has left, never widens it, and an already-spent deadline refuses before the pool is
+constructed; which of the two bounds is binding also decides the class — `DeadlineExceededError`
+(ours, ends the walk) versus `PgQueryTimeoutError` (this source's, the walk continues). Both are
+rethrown UNFLATTENED past the sanitizer, for the reason WI-36 gives one transport over: sanitize what
+came from outside, never what this module constructed.
+
+Together these make **E-PG = 50_000** (30_000 limiter + 20_000 query bound) — the envelope the two
+`*.history` capabilities' `deadlineMs` is derived from, recorded row-by-row in
+`packages/core/src/capability-manifest.ts`.
+
 **Pool hardening.** `pool.on('error', ...)` is attached immediately after `new Pool(...)`: an idle
 connection can drop independently of `query()`, and an unhandled `'error'` on an `EventEmitter`
 would otherwise take down the whole process (logged to stderr, then ignored).
-`connectionTimeoutMillis: 10000` and `max: 3` are **always** passed explicitly, never left to `pg`'s
-defaults. **All** failure paths — `pool.query(...)` and the **construction** of `new Pool(...)`
+`connectionTimeoutMillis: 10000`, `max: 3` and `statement_timeout: 5000` are **always** passed
+explicitly, never left to `pg`'s defaults. **All** failure paths — `pool.query(...)` and the
+**construction** of `new Pool(...)`
 itself (a constructor throw on an invalid DSN used to bypass the query try/catch and could leak
 host/port/user to the caller) — are sanitized to a single
 `'pg-history: database unavailable'` (`SANITIZED_QUERY_FAILURE_MESSAGE`, with `{cause: error}`). The

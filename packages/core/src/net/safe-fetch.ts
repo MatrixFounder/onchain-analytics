@@ -194,6 +194,53 @@ export class SafeFetchResponseTooLargeError extends Error {
   }
 }
 
+/**
+ * The transport errors an adapter may rethrow **as they are** — WI-36.
+ *
+ * **The defect this closes.** `blockscout` and `blockchain-info` caught every throw out of
+ * `safeFetch` and rewrapped it as `new Error('… transport failure … (<class name>)', {cause})`. The
+ * wrapper has a real reason (see the next paragraph), and the price was that the CLASS survived only
+ * on `.cause`, where `instanceof` cannot see it — so `CapabilityRegistry`'s
+ * `error instanceof DeadlineExceededError` was false for every blockscout call and `deadlineHit` was
+ * never set on that path. The outcome was restored one layer up by re-reading the clock, which
+ * recovers the VERDICT and not the FACT: a clock cannot tell "the deadline expired inside this
+ * adapter" from "it expired while we were doing something else".
+ *
+ * **Why the wrapper existed, and why removing it wholesale would be wrong (M-7).** Three of the
+ * errors below interpolate a URL, and `blockscout` is the one adapter in the tree that authenticates
+ * with a secret IN the URL (`?apikey=<key>`, the vendor's choice). An adapter error's `.message`
+ * travels into `tried[].reason` and from there to the model, so the wrapper was closing a real
+ * credential channel (D10).
+ *
+ * **What makes the list safe is a property of the classes, not a judgement by the adapter.** Every
+ * member redacts its own context AT CONSTRUCTION — `redactUrl` for the two that carry a URL,
+ * `redactContext` for `DeadlineExceededError`, and `SsrfBlockedError` never receives more than a
+ * hostname. So "safe to rethrow" is decided once, here, beside the classes, instead of being
+ * re-decided by each adapter that catches them; `test/safe-fetch.test.ts` holds the property with an
+ * `?apikey=` input per class, and requires every Error class this module exports to be either on
+ * this list or deliberately off it.
+ *
+ * **Untyped throws stay wrapped.** `safeFetch` also raises three plain `Error`s (non-https initial
+ * URL, non-https redirect target, redirect cap) and `fetchImpl` can raise anything at all. Those are
+ * not on the list and adapters keep wrapping them — which is also why the list is a list and not
+ * "rethrow anything that came from the transport".
+ */
+export const PASS_THROUGH_TRANSPORT_ERRORS = [
+  SsrfBlockedError,
+  SafeFetchTimeoutError,
+  DeadlineExceededError,
+  SafeFetchResponseTooLargeError,
+] as const;
+
+/**
+ * `true` when `error` is one of `PASS_THROUGH_TRANSPORT_ERRORS` — the single predicate an adapter's
+ * `catch` asks, so that adding a class to the list reaches every catch site at once and no adapter
+ * ever holds its own copy of the answer.
+ */
+export function isPassThroughTransportError(error: unknown): boolean {
+  return PASS_THROUGH_TRANSPORT_ERRORS.some((constructor) => error instanceof constructor);
+}
+
 function isRedirectStatus(status: number): boolean {
   return status >= 300 && status < 400;
 }

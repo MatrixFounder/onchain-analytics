@@ -182,9 +182,9 @@ The two native-token columns carry the failure they prevent:
 
 #### Artifact: `CapabilityManifest` + `PolicyDescriptor` (T-012, ADR-002 D2/D3) — compiled facts, not tables
 
-**PLANNED (T-012, not in code as of 2026-08-03).**
+**SHIPPED (T-012, commit `6af4b19`, 2026-08-05).**
 
-- **Description:** like `ChainInfo` above, these will be **not** canonical domain types in the D5
+- **Description:** like `ChainInfo` above, these are **not** canonical domain types in the D5
   sense (they describe how a capability is ROUTED, not an observation obtained from a provider) —
   committed TypeScript literals (`capabilityManifests` in `src/capability-manifest.ts`, the policy
   class dictionary in `src/adapters/policy.ts`), validated once at `CapabilityRegistry` construction

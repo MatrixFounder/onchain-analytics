@@ -437,16 +437,16 @@ export { ChainInputSchema, createChainInputSchema, canonicalizeChain };
 export { createCoverage, type Coverage };
 export { UnknownChainError, ChainRegistryLoadError, CapabilityNotCoveredOnChainError };
 
-// PLANNED (T-012, ADR-002 D2/D3/D4/D8 — not in code as of 2026-08-03): the policy-descriptor
-// registry, the capability manifest, and the third typed outcome `resolve()` will be able to
-// throw. `AdapterRegistration`'s new `tier`/`trust` fields will ride along on its EXISTING export
-// (system-architecture.md, adapters module) — no new export for them alone. `ttlFor` (already
-// exported from `./cache/ttl.js`, consumed by `readme-tool-table.test.ts`) will keep its signature
-// and export path UNCHANGED (R-138) — it becomes a reader of `capabilityManifests` internally,
-// which is not a public-API change.
-export { type PolicyDescriptor } from './adapters/policy.js'; // PLANNED, new module
-export { type CapabilityManifest, capabilityManifests } from './capability-manifest.js'; // PLANNED, new module
-export { CapabilityDeadlineExceededError }; // PLANNED, new error class beside CapabilityUnavailableError
+// SHIPPED (T-012, commit 6af4b19, 2026-08-05 — ADR-002 D2/D3/D4/D8): the policy-descriptor
+// registry, the capability manifest, and the third typed outcome `resolve()` can throw.
+// `AdapterRegistration`'s `tier`/`trust` fields ride along on its EXISTING export
+// (system-architecture.md, adapters module) — no new export for them alone. `ttlFor` (exported from
+// `./cache/ttl.js`, consumed by `readme-tool-table.test.ts`) kept its signature and export path
+// UNCHANGED (R-138) and is now a reader of `capabilityManifests` internally, which is not a
+// public-API change.
+export { type PolicyDescriptor } from './adapters/policy.js';
+export { type CapabilityManifest, capabilityManifests } from './capability-manifest.js';
+export { CapabilityDeadlineExceededError }; // beside CapabilityUnavailableError
 
 // packages/mcp-server/src/server.ts — the server factory (transport-agnostic, D3):
 export function createServer(deps: {

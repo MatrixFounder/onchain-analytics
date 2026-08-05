@@ -108,7 +108,13 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
     capabilities: () => [{ id: 'token.price' }, { id: 'token.metadata' }],
     // Keyless/demo tier is free — 0 credits regardless of args.
     costOf: () => ({ credits: 0 }),
-    fetch: async (_cap: string, args: Record<string, unknown>): Promise<CoingeckoFetchResult> => {
+    fetch: async (
+      _cap: string,
+      args: Record<string, unknown>,
+      // WI-37. See `ProviderAdapter.fetch` for what an ABSOLUTE moment buys over a duration; here
+      // it is forwarded unchanged to the two things this adapter waits on and re-derived nowhere.
+      deadlineAtMs?: number,
+    ): Promise<CoingeckoFetchResult> => {
       const { chain, address } = extractFetchArgs(args, chains);
       // Defensive re-normalization (task 003-4 reviewer note): the caller is expected to have
       // already normalized the address before it ever reaches here, but this adapter's own
@@ -145,8 +151,14 @@ export function createCoingeckoAdapter(deps: CoingeckoAdapterDeps = {}): Provide
           ? { 'x-cg-demo-api-key': demoApiKey }
           : {};
 
-      await throttle('coingecko', RATE_LIMIT);
-      const response = await safeFetch(url, { headers }, HOSTS, fetchImpl);
+      // The limiter FIRST, then the transport — the ordering `blockscout` established: refusing a
+      // wait already known to be longer than the time left is free, discovering it afterwards costs
+      // the whole wait. The options object is spread conditionally so a call WITHOUT a deadline
+      // builds exactly what it built before WI-37.
+      await throttle('coingecko', RATE_LIMIT, 1, deadlineAtMs);
+      const response = await safeFetch(url, { headers }, HOSTS, fetchImpl, {
+        ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+      });
       if (!response.ok) {
         throw new Error(`coingecko: HTTP ${response.status} for ${url}`);
       }

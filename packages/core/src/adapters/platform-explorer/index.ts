@@ -189,6 +189,8 @@ export function createPlatformExplorerAdapter(
     fetch: async (
       cap: string,
       args: Record<string, unknown>,
+      /** WI-37 — forwarded unchanged to the limiter and the transport, never re-derived. */
+      deadlineAtMs?: number,
     ): Promise<PlatformExplorerFetchResult> => {
       const { chain } = extractFetchArgs(args);
       const path = ENDPOINT_BY_CAPABILITY[cap];
@@ -197,8 +199,13 @@ export function createPlatformExplorerAdapter(
       }
       const url = `${BASE_URL}${path}`;
 
-      await throttle('platform-explorer', RATE_LIMIT);
-      const response = await safeFetch(url, {}, HOSTS, fetchImpl);
+      // The limiter first, then the transport — refusing a wait already known to be longer than
+      // the time left is free. The options object is spread conditionally so a call without a
+      // deadline builds exactly what it built before WI-37.
+      await throttle('platform-explorer', RATE_LIMIT, 1, deadlineAtMs);
+      const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
+        ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+      });
       if (!response.ok) {
         throw new Error(`platform-explorer: HTTP ${response.status} for ${url}`);
       }

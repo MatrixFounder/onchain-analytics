@@ -360,10 +360,19 @@ describe('blockscout — the fixes vdd-multi found unguarded', () => {
     expect(error!.message).not.toContain('ECONNREFUSED');
   });
 
-  it('M-14: the key survives nowhere in the CAUSE chain either', async () => {
-    // `cause` is attached deliberately, and `util.inspect`/a structured logger prints it. The root
-    // fix is in `safeFetch`, which now redacts the query string out of its own messages — so this
-    // holds for every adapter, not just the one that happens to wrap.
+  it('M-14: the key survives nowhere in a PASSED-THROUGH typed error either', async () => {
+    // Originally "…nowhere in the CAUSE chain either": `cause` is attached deliberately and
+    // `util.inspect`/a structured logger prints it, so redacting only `.message` would have been a
+    // half-fix. The root fix is in `safeFetch`, which redacts the query string out of its own
+    // messages — which holds for every adapter, not just the one that happens to wrap.
+    //
+    // **WI-36 moved where that error arrives, not whether it is redacted.**
+    // `SafeFetchResponseTooLargeError` is on `PASS_THROUGH_TRANSPORT_ERRORS`, so it now reaches the
+    // caller AS ITSELF rather than as `.cause` of a re-messaged wrapper — and being on that list is
+    // precisely a claim that it redacts its own context, which is what this case checks. The
+    // assertion follows the error; the property is unchanged and now covers a wider surface, since
+    // the redacted message is the one the caller reads directly.
+    //
     // Driven through the SIZE cap rather than the timeout: same redaction, no 5 s wait. (The
     // timeout path is asserted directly in `safe-fetch.test.ts`, where the bound is settable.)
     const adapter = createBlockscoutAdapter({
@@ -380,13 +389,17 @@ describe('blockscout — the fixes vdd-multi found unguarded', () => {
       .then(() => undefined)
       .catch((caught: unknown) => caught as Error & { cause?: unknown });
 
-    const cause = error!.cause as Error;
-    expect(cause.name).toBe('SafeFetchResponseTooLargeError');
-    expect(cause.message).not.toContain(KEY);
-    expect(cause.message).not.toContain('apikey');
-    expect(JSON.stringify({ m: cause.message, u: (cause as { url?: string }).url })).not.toContain(
+    expect(error!.name).toBe('SafeFetchResponseTooLargeError');
+    expect(error!.message).not.toContain(KEY);
+    expect(error!.message).not.toContain('apikey');
+    expect(JSON.stringify({ m: error!.message, u: (error as { url?: string }).url })).not.toContain(
       KEY,
     );
+    // And nothing hid the key one level down: whether a wrapper is present or not, the whole chain
+    // must be clean — that was this case's original claim and it still is.
+    expect(
+      JSON.stringify(error!.cause ?? null, Object.getOwnPropertyNames(error!.cause ?? {})),
+    ).not.toContain(KEY);
   });
 
   it('H-3: work is bounded BEFORE the per-row cost, not after', async () => {

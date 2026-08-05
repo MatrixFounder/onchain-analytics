@@ -2,7 +2,7 @@ import { isValidAddress, normalizeAddress } from '../../chain/address.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
-import { safeFetch } from '../../net/safe-fetch.js';
+import { isPassThroughTransportError, safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { EntityLabelSchema, type EntityLabel } from '../../types/entity-label.js';
 import { TokenHoldersSchema, type TokenHolders } from '../../types/token-holders.js';
@@ -360,6 +360,20 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
         },
       );
     } catch (error) {
+      // WI-36 — the typed transport errors go back UNWRAPPED, everything else is still re-messaged.
+      //
+      // The wrapper below is not being weakened: it exists because `safeFetch` interpolates a full
+      // URL into some of its errors and this is the one adapter that puts a secret in a URL, and it
+      // still covers every throw whose text this adapter cannot vouch for. What it must not do is
+      // destroy a CLASS the caller decides on. `CapabilityRegistry` reads
+      // `error instanceof DeadlineExceededError` to tell "our own time is up" (which ends the walk
+      // for every adapter) from "this source failed" (which does not) — and after a rewrap that test
+      // was false for every call through this adapter, because the class survived only on `.cause`.
+      //
+      // Safety is a property of the LISTED CLASSES, not a judgement made here: each one redacts its
+      // own context at construction, which is why the list lives beside them in `net/safe-fetch.ts`
+      // and is gated there. This adapter asks the question, it does not answer it.
+      if (isPassThroughTransportError(error)) throw error;
       // Name the failure CLASS, never the message — a vendor- or network-supplied string is exactly
       // what must not be echoed, and the URL that carries the key lives in some of them.
       const kind = error instanceof Error ? error.name : 'UnknownError';

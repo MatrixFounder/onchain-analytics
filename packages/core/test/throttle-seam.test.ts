@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { adapterRegistrations } from '../src/providers.config.js';
 
 /**
  * Every adapter that calls the limiter must let a caller INJECT one (WI-26).
@@ -100,8 +101,11 @@ function limiterBindings(text: string): string[] {
   );
 }
 
-/** Exactly the adapters that reach a rate-limited host. The other three (`dash-platform`, `dune`,
- * `pg-history`) never import the limiter: two are M1 stubs and one speaks Postgres. */
+/** Exactly the adapters that pace their traffic. The other two (`dash-platform`, `dune`) never
+ * import the limiter, and the gate below derives WHY rather than taking it on trust: both are M1
+ * stubs whose `fetch()` throws, so their declared `rateLimit` describes traffic that never happens.
+ * (`pg-history` was a third such name until WI-34 — it speaks Postgres rather than HTTP, which is a
+ * fact about its transport and was never a reason not to pace.) */
 const THROTTLING = [...SOURCES].filter(([, text]) => IMPORTS_LIMITER.test(text));
 
 describe('every throttling adapter exposes an injectable throttle (WI-26)', () => {
@@ -121,6 +125,8 @@ describe('every throttling adapter exposes an injectable throttle (WI-26)', () =
       'defillama',
       'dexscreener',
       'nansen',
+      // WI-34 — added the day this adapter stopped declaring a limit it did not apply.
+      'pg-history',
       'platform-explorer',
       'rpc-evm',
       'rpc-solana',
@@ -168,5 +174,131 @@ describe('every throttling adapter exposes an injectable throttle (WI-26)', () =
         '`deps.throttle ?? <binding>` resolution — i.e. at least one call site bypasses the seam ' +
         'and goes straight to the shared process bucket.',
     ).toStrictEqual([]);
+  });
+});
+
+// =============================================================================================
+// WI-34 — a DECLARED rate limit is an APPLIED rate limit
+// =============================================================================================
+
+/**
+ * The gate above asks "does every adapter that calls the limiter let a test inject one". This one
+ * asks the question one step earlier, and it is the question WI-34 is about: **does every adapter
+ * that DECLARES a rate limit actually call the limiter at all?**
+ *
+ * **Why the first gate could not see it, by construction.** Its population is decided by the IMPORT
+ * (a deliberate choice — cycle 1 defeated an earlier version by renaming a local binding), so an
+ * adapter that never imports the limiter is not in the checked set. `pg-history` declared
+ * `{capacity: 2, refillPerSec: 0.2}` and imported nothing, and this gate's own docstring recorded the
+ * three non-importers as harmless — true of the two stubs, false of the one available adapter among
+ * them. PLAN §0.2a then derived the E-PG call envelope THROUGH that declaration. A second reader of
+ * a control that does not exist already existed, and had already been wrong.
+ *
+ * **Population: every registration, because `rateLimit` is a required field of every registration.**
+ * Which makes the exemption the whole design question. WI-34 proposed "a declared list of
+ * exceptions — a line somebody writes deliberately". This derives it instead, from the property that
+ * actually justifies the exemption: an adapter whose `fetch()` does nothing but throw
+ * `NotImplementedInM1Error` generates no traffic, so there is no rate to limit. That is checkable
+ * from the source, and it fails CLOSED in the direction that matters — the day a stub grows a real
+ * `fetch()`, it stops matching and lands in the population on the same commit, whereas an id on an
+ * exception list would sit there silently.
+ *
+ * **What this deliberately does NOT assert:** that the limiter is called on every PATH through an
+ * adapter (`defillama` has three call sites; a fourth added without one would pass here). That is
+ * the residual the first gate's `bypasses` check partially covers, and it is stated rather than
+ * implied.
+ */
+
+/** The adapter imports the shared M1-stub error and its `fetch` does nothing but throw it. */
+const IS_M1_STUB =
+  /from '(?:\.\.\/)+adapters\/not-implemented-error\.js'|from '\.\.\/not-implemented-error\.js'/;
+/** …and the throw is really in `fetch`, not merely somewhere in the file. */
+const STUB_FETCH = /fetch:\s*async\s*\([^)]*\)\s*=>\s*\{\s*throw new NotImplementedInM1Error\(/;
+/** The local the adapter resolved the seam into — `const <name> = deps.throttle ?? …`. */
+const RESOLVED_LOCALS = /const\s+(\w+)\s*=\s*deps\.throttle\s*\?\?/g;
+
+describe('every registration that declares a rateLimit has an adapter that applies it (WI-34)', () => {
+  it('the population is the real registration table — otherwise everything below is vacuous', () => {
+    expect(adapterRegistrations).toHaveLength(12);
+    // `rateLimit` is required on `AdapterRegistration`, so "declares one" is every registration.
+    // Asserted rather than assumed: if the field ever became optional, the population of this gate
+    // would silently shrink to whoever still filled it in.
+    expect(adapterRegistrations.every((r) => r.rateLimit !== undefined)).toBe(true);
+    expect([...SOURCES.keys()].sort()).toStrictEqual(adapterRegistrations.map((r) => r.id).sort());
+  });
+
+  it('the exemption is DERIVED and lands on exactly the two stubs', () => {
+    const exempt = adapterRegistrations
+      .map((r) => r.id)
+      .filter((id) => {
+        const text = SOURCES.get(id) as string;
+        return IS_M1_STUB.test(text) && STUB_FETCH.test(text);
+      })
+      .sort();
+    expect(
+      exempt,
+      'An adapter is excused from applying its declared rate limit only by generating no traffic ' +
+        'at all. If this list grew, a real adapter is being read as a stub; if it shrank, a stub ' +
+        'grew a fetch() and now owes the limiter a call.',
+    ).toStrictEqual(['dash-platform', 'dune']);
+  });
+
+  it.each(adapterRegistrations.map((r) => r.id).sort())('%s', (id) => {
+    const text = SOURCES.get(id) as string;
+    if (IS_M1_STUB.test(text) && STUB_FETCH.test(text)) {
+      // The exemption is not taken on trust: a stub that is unreachable is what makes an unapplied
+      // limit harmless, so the unreachability is asserted here rather than described above.
+      expect(
+        /isAvailable:\s*\(\)\s*=>\s*\(\{\s*ok:\s*false/.test(text),
+        `${id} is excused from applying its rate limit because it never runs — but its ` +
+          'isAvailable() is not unconditionally false, so it CAN be reached.',
+      ).toBe(true);
+      return;
+    }
+
+    expect(
+      IMPORTS_LIMITER.test(text),
+      `${id}'s registration declares a rateLimit and its adapter never imports the limiter. The ` +
+        'declaration then reads as a control that exists — which is how PLAN §0.2a derived a call ' +
+        'envelope through a limiter nothing called (WI-34).',
+    ).toBe(true);
+
+    // Imported is not applied. Every local the adapter resolved the seam into must be AWAITED
+    // somewhere, or the seam is wiring with no consumer. Derived from the resolution line, so a
+    // rename cannot drop the adapter out of the check (WI-26 cycle 1's lesson).
+    const locals = [...text.matchAll(RESOLVED_LOCALS)].map((match) => match[1] as string);
+    expect(
+      locals.length,
+      `${id} imports the limiter but never resolves \`deps.throttle\``,
+    ).toBeGreaterThan(0);
+    const applied = locals.filter((local) => new RegExp(`await\\s+${local}\\(`).test(text));
+    expect(
+      applied,
+      `${id} resolves the limiter into ${locals.join(', ')} and never awaits it — the limit is ` +
+        'declared in providers.config.ts and applied by nothing.',
+    ).not.toStrictEqual([]);
+  });
+
+  it('the detectors DETECT — a resolved-but-never-awaited limiter is caught', () => {
+    // Positive control for the half that is easy to get wrong: the "applies it" check must fail on
+    // an adapter that has the import, the seam and the resolution and simply never calls it. This is
+    // the mutation WI-34's acceptance names ("remove the limiter application from any of the nine
+    // adapters → red"), run against a literal instead of by editing a real adapter.
+    const resolvedNeverAwaited = `import { throttle as productionThrottle } from '../../net/rate-limit.js';
+      const throttle = deps.throttle ?? productionThrottle;
+      const response = await safeFetch(url, {}, HOSTS, fetchImpl);`;
+    const locals = [...resolvedNeverAwaited.matchAll(RESOLVED_LOCALS)].map((m) => m[1] as string);
+    expect(locals).toStrictEqual(['throttle']);
+    expect(
+      locals.filter((l) => new RegExp(`await\\s+${l}\\(`).test(resolvedNeverAwaited)),
+    ).toStrictEqual([]);
+
+    // And the control in the other direction, so the check is not simply always red.
+    const applied = `${resolvedNeverAwaited}\n await throttle('x', RATE_LIMIT);`;
+    expect(
+      [...applied.matchAll(RESOLVED_LOCALS)]
+        .map((m) => m[1] as string)
+        .filter((l) => new RegExp(`await\\s+${l}\\(`).test(applied)),
+    ).toStrictEqual(['throttle']);
   });
 });

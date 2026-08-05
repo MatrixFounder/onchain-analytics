@@ -816,6 +816,29 @@ function manifestRowBlocks(source: string): Map<string, string> {
 }
 
 /**
+ * An IMPORT STATEMENT for one of the three modules through which an adapter can spend time on I/O —
+ * used by `spendsTimeAdapters` below to decide which adapters a call ceiling could possibly
+ * constrain.
+ *
+ * Matched against the RAW source and anchored to a line-initial `import`, deliberately: `codeOnly`
+ * blanks string CONTENTS, which is exactly where a module specifier lives, so running this over
+ * blanked source would report that no adapter imports anything. The anchor is what replaces the
+ * blanking — a comment line starts with `//` or ` *`, never with `import`, so prose about
+ * `net/safe-fetch.js` cannot put an adapter in the population.
+ */
+const TRANSPORT_IMPORTS =
+  /^import\s[^;]*from\s*'[^']*(?:net\/safe-fetch|net\/rate-limit|pg\/read-client)\.js'/m;
+
+function adapterSource(id: string): string {
+  const adaptersDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/adapters');
+  return readFileSync(path.join(adaptersDir, id, 'index.ts'), 'utf8');
+}
+
+function adapterCode(id: string): string {
+  return codeOnly(adapterSource(id));
+}
+
+/**
  * Adapter ids whose implementation READS the deadline — measured from
  * `src/adapters/<id>/index.ts`, comments and string contents blanked.
  *
@@ -828,22 +851,53 @@ function manifestRowBlocks(source: string): Map<string, string> {
  * | Escape                                                            | Why |
  * | -------------------------------------------------------------------- | --- |
  * | An adapter that RECEIVES the deadline under another parameter name (`fetch(cap, args, until)`) | The scan keys on the identifier `ProviderAdapter.fetch` declares. A rename would read as "does not take it" — fails CLOSED (the row would be required to say DECLARED while the code enforced), which is the safe direction. |
- * | An adapter that names `deadlineAtMs` and then ignores the binding | Presence in code is checked, never use. Measured 2026-08-05: no adapter is in that shape, and the behavioural proof for the two that read it is `registry.deadline.test.ts` TC-INT-08a/08b. |
+ * | An adapter that names `deadlineAtMs` and then ignores the binding | Presence in code is checked, never use. Measured 2026-08-05: no adapter is in that shape, and the behavioural proof is `registry.deadline.test.ts` TC-INT-08a/08b, which WI-37 extended to one case per adapter. |
  * | A read that lives in a sibling module and not in `index.ts`       | Single-file scan per adapter. `nansen` names it in `index.ts` as well as in `endpoints.ts`, so today nothing hides there; a future adapter that forwards from a helper only would read as unaware — again fails closed. |
  */
 function deadlineAwareAdapters(): Set<string> {
-  const adaptersDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/adapters');
   const aware = new Set<string>();
   for (const registration of adapterRegistrations) {
-    const file = path.join(adaptersDir, registration.id, 'index.ts');
-    const code = codeOnly(readFileSync(file, 'utf8'));
-    if (/\bdeadlineAtMs\b/.test(code)) aware.add(registration.id);
+    if (/\bdeadlineAtMs\b/.test(adapterCode(registration.id))) aware.add(registration.id);
   }
   return aware;
 }
 
-/** Capability → whether EVERY adapter its routes name reads the deadline. */
-function enforcedCapabilities(aware: Set<string>): Map<string, boolean> {
+/**
+ * Adapter ids that can SPEND TIME — i.e. reach a transport at all (WI-37).
+ *
+ * **Why the enforcement question needs this set.** A ceiling constrains waiting, so an adapter that
+ * never waits cannot weaken one. Two of the twelve are M1 stubs: `isAvailable()` is unconditionally
+ * false, so the registry skips them before anything is issued, and `fetch()` throws
+ * `NotImplementedInM1Error`. The manifest already carries the consequence as a number — **E-DASH =
+ * 0**, `dash-platform` contributing nothing to the five routes it shares with `platform-explorer`.
+ *
+ * **Derived, not listed, and that is the difference from the option WI-37 priced.** The record's
+ * option 2 ("only the live routes") was costed as "instead of a gate, an exception list remains".
+ * An id list would have to be maintained by whoever changes a stub. Membership by transport import
+ * cannot drift: the day `dash-platform` grows the live gRPC transport ARCHITECTURE.md §11 describes,
+ * it starts importing one of these modules, enters the population, and every row it routes goes red
+ * until it takes the deadline — which is exactly the condition the manifest's own banner names for
+ * revisiting those five rows.
+ *
+ * The alternative shape — giving the two stubs a `deadlineAtMs` parameter they ignore — was rejected
+ * for the reason this repo rejects every decorative seam: it would make the scan say "aware" about
+ * an adapter that does nothing with it, i.e. buy the count by writing the answer into the source.
+ */
+function spendsTimeAdapters(): Set<string> {
+  const spending = new Set<string>();
+  for (const registration of adapterRegistrations) {
+    // The RAW source, not `codeOnly`'s output — see `TRANSPORT_IMPORTS` for why blanking string
+    // contents would erase every module specifier this scan is looking for.
+    if (TRANSPORT_IMPORTS.test(adapterSource(registration.id))) spending.add(registration.id);
+  }
+  return spending;
+}
+
+/**
+ * Capability → whether its ceiling is actually enforced: every adapter its routes name either reads
+ * the deadline, or cannot spend time in the first place.
+ */
+function enforcedCapabilities(aware: Set<string>, spendsTime: Set<string>): Map<string, boolean> {
   const byCapability = new Map<string, string[]>();
   for (const route of routes) {
     byCapability.set(route.capability, [
@@ -854,7 +908,7 @@ function enforcedCapabilities(aware: Set<string>): Map<string, boolean> {
   return new Map(
     [...byCapability].map(([capability, ids]) => [
       capability,
-      [...new Set(ids)].every((id) => aware.has(id)),
+      [...new Set(ids)].every((id) => aware.has(id) || !spendsTime.has(id)),
     ]),
   );
 }
@@ -862,7 +916,8 @@ function enforcedCapabilities(aware: Set<string>): Map<string, boolean> {
 describe('TC-F5-GATE — every manifest row states its own enforcement, and the count is measured', () => {
   const blocks = manifestRowBlocks(manifestSource);
   const aware = deadlineAwareAdapters();
-  const enforced = enforcedCapabilities(aware);
+  const spendsTime = spendsTimeAdapters();
+  const enforced = enforcedCapabilities(aware, spendsTime);
 
   it('the scan found the real table and the real adapters — otherwise everything below is vacuous', () => {
     expect(blocks.size).toBe(20);
@@ -873,6 +928,31 @@ describe('TC-F5-GATE — every manifest row states its own enforcement, and the 
     // Both sides of the split are non-empty, or the comparison could not fail in one direction.
     expect(aware.size).toBeGreaterThan(0);
     expect(aware.size).toBeLessThan(adapterRegistrations.length);
+  });
+
+  it('the exemption is DERIVED and lands on exactly the two adapters that cannot spend time', () => {
+    // WI-37. The two sets must partition the twelve: an adapter either reaches a transport (and then
+    // owes the deadline a read) or does not (and then cannot weaken a ceiling). Nothing may be in
+    // neither category, because that would be an adapter doing I/O through a route this scan cannot
+    // see — the shape that would let the ENFORCEMENT count be wrong in the unsafe direction.
+    const exempt = adapterRegistrations
+      .map((r) => r.id)
+      .filter((id) => !spendsTime.has(id))
+      .sort();
+    expect(
+      exempt,
+      'An adapter is excused from reading the call deadline only by never waiting on anything. ' +
+        'If this list grew, an adapter stopped importing the transport it uses; if it shrank, a ' +
+        'stub grew one and now owes the deadline a read.',
+    ).toStrictEqual(['dash-platform', 'dune']);
+    // The exemption rests on unreachability, so the unreachability is asserted rather than
+    // described: `isAvailable()` unconditionally false is what makes E-DASH = 0 true.
+    for (const id of exempt) {
+      expect(/isAvailable:\s*\(\)\s*=>\s*\(\{\s*ok:\s*false/.test(adapterCode(id)), id).toBe(true);
+    }
+    // …and every exempt adapter is also unaware, or the two sets would overlap and the count of
+    // "adapters that read it" would silently include one that does nothing with it.
+    expect(exempt.filter((id) => aware.has(id))).toStrictEqual([]);
   });
 
   it('every routed capability carries EXACTLY ONE canonical marker', () => {
@@ -927,14 +1007,29 @@ describe('TC-F5-GATE — every manifest row states its own enforcement, and the 
       measuredEnforced,
       blocks.size,
     ]);
-    // The measurement itself, written out once so a reader of this file sees the numbers too.
-    expect([...aware].sort()).toStrictEqual(['blockscout', 'nansen']);
+    // The measurement itself, written out once so a reader of this file sees the names too.
+    // WI-37 moved this from two adapters to ten; the two absentees are the stubs, and their absence
+    // is what the exemption case above justifies rather than assumes.
+    expect([...aware].sort()).toStrictEqual([
+      'blockchain-info',
+      'blockscout',
+      'coingecko',
+      'defillama',
+      'dexscreener',
+      'nansen',
+      'pg-history',
+      'platform-explorer',
+      'rpc-evm',
+      'rpc-solana',
+    ]);
+    // Named, not counted: twenty of twenty, so a count alone could not tell this apart from a table
+    // that had lost a row and gained another.
     expect(
       [...enforced]
         .filter(([, isEnforced]) => isEnforced)
         .map(([capability]) => capability)
         .sort(),
-    ).toStrictEqual(['entity.labels', 'smart-money.flows', 'token.holders', 'token.risk']);
+    ).toStrictEqual([...new Set(routes.map((route) => route.capability))].sort());
   });
 
   it('the detectors DETECT and the DECLARED LIMITS are real', () => {
@@ -953,5 +1048,26 @@ describe('TC-F5-GATE — every manifest row states its own enforcement, and the 
     ).toBe(false);
     // LIMIT: presence in code is checked, never USE.
     expect(/\bdeadlineAtMs\b/.test(codeOnly('function f(deadlineAtMs) { return 1; }'))).toBe(true);
+
+    // Controls for the WI-37 exemption scan, same shape: an import of a transport module puts an
+    // adapter in the population, a mention of one in a comment or a string does not.
+    expect(TRANSPORT_IMPORTS.test("import { safeFetch } from '../../net/safe-fetch.js';")).toBe(
+      true,
+    );
+    expect(
+      TRANSPORT_IMPORTS.test("import { createReadClient } from '../../pg/read-client.js';"),
+    ).toBe(true);
+    // A multi-line import must still count — `blockchain-info`'s first import spans five lines, and
+    // a regex that stopped at the first newline would read the whole adapter as doing no I/O.
+    expect(
+      TRANSPORT_IMPORTS.test(
+        "import {\n  isPassThroughTransportError,\n  safeFetch,\n} from '../../net/safe-fetch.js';",
+      ),
+    ).toBe(true);
+    // …and prose about a transport module must not.
+    expect(TRANSPORT_IMPORTS.test('// one day this will use net/safe-fetch.js')).toBe(false);
+    expect(TRANSPORT_IMPORTS.test(" * imports from '../../net/safe-fetch.js' eventually")).toBe(
+      false,
+    );
   });
 });

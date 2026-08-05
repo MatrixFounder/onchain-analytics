@@ -2,7 +2,7 @@ import { normalizeAddress } from '../../chain/address.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
-import { safeFetch } from '../../net/safe-fetch.js';
+import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { WalletSchema, type Wallet } from '../../types/wallet.js';
 import type { Chain } from '../../types/chain.js';
@@ -145,7 +145,12 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
     // No `chains` literal — `servesChain` owns that answer (vdd-multi cycle 6, M-7).
     capabilities: () => [{ id: 'wallet.balances.native' }],
     costOf: () => ({ credits: 0 }),
-    fetch: async (_cap: string, args: Record<string, unknown>): Promise<RpcEvmFetchResult> => {
+    fetch: async (
+      _cap: string,
+      args: Record<string, unknown>,
+      /** WI-37 — forwarded to the limiter and to EVERY hop of the endpoint fallback loop below. */
+      deadlineAtMs?: number,
+    ): Promise<RpcEvmFetchResult> => {
       const { chain, address } = extractFetchArgs(args, chains);
       // Defensive re-normalization (003-4 reviewer note, applied here too): the caller is expected
       // to have already normalized the address, but the adapter's own HTTP step doesn't trust that.
@@ -157,7 +162,7 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
         params: [normalizedAddress, 'latest'],
       });
 
-      await throttle('rpc-evm', RATE_LIMIT);
+      await throttle('rpc-evm', RATE_LIMIT, 1, deadlineAtMs);
 
       // TASK-006 (task 006-8, R-56): endpoints and the SSRF allowlist BOTH come from this chain's
       // curated `rpcHosts` row — per chain, never merged. The allowlist handed to `safeFetch` is
@@ -183,6 +188,9 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
             { method: 'POST', headers: { 'content-type': 'application/json' }, body },
             allowlist,
             fetchImpl,
+            // Spread conditionally so a call without a deadline builds the same options object
+            // this loop built before WI-37.
+            { ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }) },
           );
           if (!response.ok) {
             // `hostOf`, not the full URL (vdd-multi cycle 6, security L-2): `rpcHosts` is a
@@ -216,6 +224,13 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
         } catch (error) {
           // Try the next endpoint in the primary->fallback chain before giving up entirely.
           lastError = error;
+          // …EXCEPT when our own time is up (WI-37). The fallback loop exists because ONE endpoint
+          // can be down while another answers; a spent deadline is not a fact about an endpoint, it
+          // is true of every remaining one. Continuing would burn the list on `safeFetch` entry
+          // checks and report the LAST endpoint's failure for a condition that had nothing to do
+          // with it. (The distinction is the limiter's `DeadlineExceededError` vs
+          // `DeadlineWouldExceedError` one layer down, applied to endpoints instead of providers.)
+          if (error instanceof DeadlineExceededError) break;
         }
       }
       throw lastError instanceof Error

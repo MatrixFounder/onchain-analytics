@@ -71,18 +71,20 @@ const MAX_WAIT_MS = 30_000;
  * `nansen`, whose bucket was idle and for whom those 31 s were entirely real.
  *
  * **Where 5_000 comes from.** It is the shortest per-hop timeout configured by an adapter that ALSO
- * hands this limiter a `deadlineAtMs` — `REQUEST_TIMEOUT_MS` in `blockscout/index.ts`; `safeFetch`'s
- * default is 15_000. With at least that much left when the hop is issued, blockscout's own timeout
- * expires no later than the deadline does, so a hop that fails is reported as `SafeFetchTimeoutError`
- * ("this vendor did not answer") — which is NOT terminal for the registry — instead of as our own
- * expiry, which is.
+ * hands this limiter a `deadlineAtMs` — `REQUEST_TIMEOUT_MS`, configured identically by
+ * `blockscout/index.ts` and `blockchain-info/index.ts`; `safeFetch`'s default is 15_000. With at
+ * least that much left when the hop is issued, that adapter's own timeout expires no later than the
+ * deadline does, so a hop that fails is reported as `SafeFetchTimeoutError` ("this vendor did not
+ * answer") — which is NOT terminal for the registry — instead of as our own expiry, which is.
  *
- * **The two adapters that share the number are not the same set** (cycle 3, perf). This cited
- * `blockchain-info/index.ts` beside blockscout, which configures the identical 5_000 — and, measured
- * 2026-08-05, has ZERO `deadlineAtMs` occurrences: it never passes one, never reaches this branch,
- * and so cannot exercise the guarantee above. Exactly two of the twelve adapters pass a deadline
- * (`blockscout`, `nansen`), and nansen's paid leg runs on the 15_000 default. So the derivation rests
- * on ONE adapter, and naming a second made the evidence look twice as wide as it is.
+ * **The evidence for that sentence was one adapter wide for three tasks, and is now two** (cycle 3,
+ * perf, then WI-37). The original text cited `blockchain-info` beside `blockscout` on the strength of
+ * the shared 5_000 — and, measured 2026-08-05, `blockchain-info` had ZERO `deadlineAtMs` occurrences:
+ * it never passed one, never reached this branch, and so could not exercise the guarantee, which made
+ * the evidence look twice as wide as it was. WI-37 threaded the deadline into it (and eight others),
+ * so the citation is now true for the reason it was originally written. **The NUMBER is unchanged**:
+ * 5_000 is still the shortest such timeout, because the eight adapters that joined either run on the
+ * 15_000 default or, for `pg-history`, on a 20_000 in-process query bound.
  *
  * **The pre-wait test alone does not establish it, which is why there are two.** `remainingMs -
  * waitMs` is a PREDICTION evaluated before `await wait(waitMs)`: a timer resolves no EARLIER than its

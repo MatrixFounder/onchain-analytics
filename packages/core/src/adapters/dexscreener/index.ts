@@ -109,13 +109,20 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
       chain.vendors['dexscreener'] != null && chain.nativeSymbol != null,
     capabilities: () => [{ id: 'pairs.new' }, { id: 'pool.info' }],
     costOf: () => ({ credits: 0 }),
-    fetch: async (_cap: string, args: Record<string, unknown>): Promise<DexscreenerFetchResult> => {
+    fetch: async (
+      _cap: string,
+      args: Record<string, unknown>,
+      /** WI-37 — forwarded unchanged to the limiter and the transport, never re-derived. */
+      deadlineAtMs?: number,
+    ): Promise<DexscreenerFetchResult> => {
       const { chain, limit } = extractFetchArgs(args, chains);
       const query = chain.nativeSymbol ?? chain.slug;
       const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
 
-      await throttle('dexscreener', RATE_LIMIT);
-      const response = await safeFetch(url, {}, HOSTS, fetchImpl);
+      await throttle('dexscreener', RATE_LIMIT, 1, deadlineAtMs);
+      const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
+        ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+      });
       if (!response.ok) {
         throw new Error(`dexscreener: HTTP ${response.status} for ${url}`);
       }

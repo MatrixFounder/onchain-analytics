@@ -1,7 +1,7 @@
 import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
-import { safeFetch } from '../../net/safe-fetch.js';
+import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { CapabilityNotCoveredOnChainError } from '../../chain/errors.js';
 import { DEFILLAMA_DEX_CHAINS } from './dex-chains.js';
 import { ttlFor } from '../../cache/ttl.js';
@@ -593,6 +593,49 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
   const throttle = deps.throttle ?? productionThrottle;
 
   /**
+   * The caller's ceiling applied to waiting for a **shared, in-flight document** (WI-37).
+   *
+   * **This adapter is the one that cannot simply forward the deadline, and the reason is its own
+   * document caches.** `chain.tvl` and `dex.volume.history` are served out of promises SHARED between
+   * concurrent callers — that sharing is the point (cycle 5, L-9: ten chains used to download the
+   * identical 458-row catalog ten times). Handing the first caller's `deadlineAtMs` to the `safeFetch`
+   * inside that shared body would let its expiry ABORT a download a second caller is also awaiting,
+   * one who may have a far larger budget. That is H-1's shape — one requester's limit cutting off
+   * another's — and it is the same thing WI-12 closed for in-flight cache entries.
+   *
+   * So the download stays caller-independent and the WAIT is what the deadline bounds: an abandoning
+   * caller leaves the transfer running, which is exactly what a document cache is for, and the next
+   * caller (or its retry) finds it complete. The bytes already paid for are not thrown away.
+   *
+   * `Date.now()`, deliberately, and NOT this adapter's injectable `now()`: a deadline is an absolute
+   * moment on the real clock, shared with `safeFetch`, the limiter and the registry. `deps.now` exists
+   * so tests can drive TTL windows, and reading it here would let a fixed test clock silently disable
+   * every deadline comparison in the file.
+   */
+  const awaitSharedDocument = async <T>(
+    document: Promise<T>,
+    deadlineAtMs: number | undefined,
+    what: string,
+  ): Promise<T> => {
+    if (deadlineAtMs === undefined) return document;
+    const remainingMs = deadlineAtMs - Date.now();
+    // Already spent: the same entry check `safeFetch` performs, for the same reason — a bound can
+    // only cut short a wait that was begun, and not beginning it is what a spent deadline means.
+    if (remainingMs <= 0) throw new DeadlineExceededError(what, deadlineAtMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bound = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new DeadlineExceededError(what, deadlineAtMs)), remainingMs);
+      timer.unref?.();
+    });
+    // `Promise.race` attaches handlers to `document`, so a shared download that fails AFTER this
+    // caller walked away is handled rather than unhandled — the failure mode that ends a stdio
+    // server on Node's default `--unhandled-rejections=throw`.
+    return Promise.race([document, bound]).finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
+    });
+  };
+
+  /**
    * One shared, short-lived copy of `/v2/chains` (vdd-multi cycle 5, L-9).
    *
    * `chain.tvl` reads ONE row out of a catalog that carries all 458, but the `CapabilityRegistry`
@@ -674,11 +717,15 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
   const fetchDexDocument = async (
     vendorName: string,
     includeSeries: boolean,
+    deadlineAtMs?: number,
   ): Promise<{ body: unknown; fetchedAt: number }> => {
     const key = `${vendorName}::${String(includeSeries)}`;
     const cached = dexDocuments.get(key);
     if (cached && now() - cached.at < DEX_DOCUMENT_TTL_MS) {
-      return { body: await cached.body, fetchedAt: cached.at };
+      return {
+        body: await awaitSharedDocument(cached.body, deadlineAtMs, 'defillama dex document'),
+        fetchedAt: cached.at,
+      };
     }
     // A no-chart request is served from a WITH-chart document when one is already cached (WI-15).
     // The `true` document is a strict superset — `normalizeDexVolume` returns `[]` for the series
@@ -694,7 +741,10 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
       const withChartKey = `${vendorName}::true`;
       const withChart = dexDocuments.get(withChartKey);
       if (withChart && now() - withChart.at < DEX_DOCUMENT_TTL_MS) {
-        return { body: await withChart.body, fetchedAt: withChart.at };
+        return {
+          body: await awaitSharedDocument(withChart.body, deadlineAtMs, 'defillama dex document'),
+          fetchedAt: withChart.at,
+        };
       }
     }
     // An expired entry we just looked at is dropped HERE, on the read path (cycle 3, logic L-6 /
@@ -769,13 +819,24 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
         if (dexDocuments.get(key) === entry) dexDocuments.delete(key);
       },
     );
-    return { body: await body, fetchedAt: entry.at };
+    // The caller that STARTED the download is bounded exactly like one that joined it: the entry is
+    // already in `dexDocuments`, so from this line on the promise is shared and the argument in
+    // `awaitSharedDocument` applies unchanged.
+    return {
+      body: await awaitSharedDocument(body, deadlineAtMs, 'defillama dex document'),
+      fetchedAt: entry.at,
+    };
   };
 
-  const fetchChainsCatalog = async (): Promise<{ body: unknown; fetchedAt: number }> => {
+  const fetchChainsCatalog = async (
+    deadlineAtMs?: number,
+  ): Promise<{ body: unknown; fetchedAt: number }> => {
     const cached = chainsCatalog;
     if (cached && now() - cached.at < CHAINS_CATALOG_TTL_MS) {
-      return { body: await cached.body, fetchedAt: cached.at };
+      return {
+        body: await awaitSharedDocument(cached.body, deadlineAtMs, 'defillama chains catalog'),
+        fetchedAt: cached.at,
+      };
     }
     const body = (async (): Promise<unknown> => {
       await throttle('defillama', RATE_LIMIT);
@@ -791,7 +852,10 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
     body.catch(() => {
       if (chainsCatalog === entry) chainsCatalog = null;
     });
-    return { body: await body, fetchedAt: entry.at };
+    return {
+      body: await awaitSharedDocument(body, deadlineAtMs, 'defillama chains catalog'),
+      fetchedAt: entry.at,
+    };
   };
 
   return {
@@ -815,7 +879,18 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
     // `dune`'s `costOf: () => ({credits: 0})` — which is a sleeping fail-closed inversion on a
     // CREDIT-METERED vendor — there is no meter here to under-report.
     costOf: () => ({ credits: 0 }),
-    fetch: async (cap: string, args: Record<string, unknown>): Promise<DefillamaFetchResult> => {
+    fetch: async (
+      cap: string,
+      args: Record<string, unknown>,
+      /**
+       * WI-37. Two DIFFERENT mechanisms below, and the split is this adapter's own shape rather
+       * than a preference: `protocol.tvl` issues a per-call request, so the deadline goes straight
+       * into the limiter and `safeFetch` and can genuinely cancel it; the other two are served from
+       * SHARED documents, where it bounds this caller's WAIT and leaves the download alone (see
+       * `awaitSharedDocument`).
+       */
+      deadlineAtMs?: number,
+    ): Promise<DefillamaFetchResult> => {
       if (cap === 'dex.volume.history') {
         const dexArgs = extractDexVolumeArgs(args, chains);
         const vendorName = dexArgs.chain.vendors['defillama'];
@@ -827,7 +902,7 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
             `defillama.fetch(dex.volume.history): no vendor name for ${dexArgs.chain.slug}`,
           );
         }
-        const document = await fetchDexDocument(vendorName, dexArgs.includeSeries);
+        const document = await fetchDexDocument(vendorName, dexArgs.includeSeries, deadlineAtMs);
         return {
           chain: dexArgs.chain,
           raw: document.body,
@@ -846,14 +921,19 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
         // t=598 s received 598-second-old TVL while every freshness signal it can read — `ageMs`
         // and `fetchedAt` — claimed ≤300 s. Reporting the catalog's own age makes the staleness
         // visible rather than removing it.
-        const catalog = await fetchChainsCatalog();
+        const catalog = await fetchChainsCatalog(deadlineAtMs);
         return { chain, raw: catalog.body, fetchedAt: catalog.fetchedAt };
       }
       const { chain, protocolSlug } = extractFetchArgs(args, chains);
       const url = `https://api.llama.fi/protocol/${encodeURIComponent(protocolSlug)}`;
 
-      await throttle('defillama', RATE_LIMIT);
-      const response = await safeFetch(url, {}, HOSTS, fetchImpl);
+      // `protocol.tvl` — the one path with no shared document, so the deadline is forwarded the
+      // ordinary way: limiter first, then the transport, spread conditionally so a call without a
+      // deadline builds the options object it built before WI-37.
+      await throttle('defillama', RATE_LIMIT, 1, deadlineAtMs);
+      const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
+        ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+      });
       if (!response.ok) {
         throw new Error(`defillama: HTTP ${response.status} for ${url}`);
       }

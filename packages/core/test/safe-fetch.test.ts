@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   assertAllowedHost,
   DeadlineExceededError,
+  isPassThroughTransportError,
+  PASS_THROUGH_TRANSPORT_ERRORS,
   safeFetch,
   SafeFetchResponseTooLargeError,
   SafeFetchTimeoutError,
@@ -894,5 +896,103 @@ describe('M-14 — a secret in the query string never reaches an error message o
     expect(error!.message).not.toContain(SECRET);
     expect(error!.url).not.toContain(SECRET);
     expect(error!.message).toContain('mcp.blockscout.com/v1/get_address_info');
+  });
+});
+
+// =============================================================================================
+// WI-36 — the pass-through list, and the property that makes it safe
+// =============================================================================================
+
+/**
+ * `PASS_THROUGH_TRANSPORT_ERRORS` is the answer to "which transport errors may an adapter rethrow
+ * unwrapped", declared once beside the classes instead of re-decided in each adapter's `catch`.
+ *
+ * The list is only as good as the property it rests on: **every member redacts its own context at
+ * construction**. So the gate is two-sided —
+ *
+ * 1. each member, constructed with a URL carrying `?apikey=<secret>`, must produce a `.message` with
+ *    neither the secret nor a query string in it (the ONE thing an adapter's wrapper was buying);
+ * 2. every Error class this module exports must be either ON the list or knowingly off it — so the
+ *    next class added has to make the decision rather than inherit one.
+ *
+ * (2) is the half that keeps this from decaying. WI-36 rejected the "prove the classes are safe by
+ * reading them" option precisely because such a list drifts on the next class; a check that
+ * enumerates the module's exports cannot drift silently.
+ */
+describe('WI-36 — every pass-through transport error redacts its own context', () => {
+  const SECRET = 'proapi_secretvalue0123456789';
+  const URL_WITH_SECRET = `https://mcp.blockscout.com/v1/get_address_info?address=0x1&apikey=${SECRET}`;
+
+  /** One constructed instance per listed class, each handed the credential-bearing URL. */
+  const INSTANCES: Array<[name: string, error: Error]> = [
+    // `SsrfBlockedError` never receives a URL at all — a hostname is all `assertAllowedHost` has,
+    // which is why it is on the list for a different reason than the other three. Handed the URL's
+    // HOST here, i.e. the most it could ever be given.
+    ['SsrfBlockedError', new SsrfBlockedError('mcp.blockscout.com')],
+    ['SafeFetchTimeoutError', new SafeFetchTimeoutError(URL_WITH_SECRET, 5_000)],
+    ['DeadlineExceededError', new DeadlineExceededError(URL_WITH_SECRET, 1_700_000_000_000)],
+    [
+      'SafeFetchResponseTooLargeError',
+      new SafeFetchResponseTooLargeError(URL_WITH_SECRET, 99_999_999, 1024),
+    ],
+  ];
+
+  it('the list is the one the module exports, and it is not empty', () => {
+    expect(PASS_THROUGH_TRANSPORT_ERRORS.length).toBeGreaterThan(0);
+    expect(INSTANCES.map(([name]) => name).sort()).toStrictEqual(
+      PASS_THROUGH_TRANSPORT_ERRORS.map((constructor) => constructor.name).sort(),
+    );
+  });
+
+  it.each(INSTANCES)('%s carries no secret and no query string', (_name, error) => {
+    expect(error.message).not.toContain(SECRET);
+    expect(error.message).not.toContain('apikey');
+    expect(error.message).not.toContain('?');
+    // Rendering the whole object is what a logger or a bare `console.error(err)` does — the channel
+    // M-14 closed, re-checked here for every class the list now invites adapters to pass through.
+    expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).not.toContain(SECRET);
+  });
+
+  it('`isPassThroughTransportError` recognises every member and nothing else', () => {
+    for (const [name, error] of INSTANCES) {
+      expect(isPassThroughTransportError(error), name).toBe(true);
+    }
+    // The negative side, which is what keeps an adapter's wrapper doing its job: an untyped throw —
+    // including the three plain `Error`s `safeFetch` itself raises — must still be wrapped.
+    expect(isPassThroughTransportError(new Error('safeFetch: exceeded 3 redirects'))).toBe(false);
+    expect(isPassThroughTransportError(new TypeError('fetch failed'))).toBe(false);
+    expect(isPassThroughTransportError('a string')).toBe(false);
+    expect(isPassThroughTransportError(undefined)).toBe(false);
+  });
+
+  it('every Error class this module exports has been DECIDED about, not defaulted', async () => {
+    // The anti-drift half. A new error class added to `safe-fetch.ts` lands here on the day it is
+    // written: it is either on the pass-through list (and then the redaction cases above cover it,
+    // because the first case in this block requires the two sets to match) or named below as
+    // deliberately wrapped.
+    const module: Record<string, unknown> = await import('../src/net/safe-fetch.js');
+    const exportedErrorClasses = Object.entries(module)
+      .filter(
+        ([, value]) =>
+          typeof value === 'function' &&
+          (value === Error || Object.prototype.isPrototypeOf.call(Error, value)),
+      )
+      .map(([name]) => name)
+      .sort();
+
+    const listed = PASS_THROUGH_TRANSPORT_ERRORS.map((constructor) => constructor.name);
+    /** Exported error classes deliberately NOT on the list — empty today, and that is the point:
+     * the moment it stops being empty, somebody wrote a reason here. */
+    const DELIBERATELY_WRAPPED: string[] = [];
+
+    expect(exportedErrorClasses.length).toBeGreaterThan(0);
+    expect(
+      exportedErrorClasses.filter(
+        (name) => !listed.includes(name) && !DELIBERATELY_WRAPPED.includes(name),
+      ),
+      'A new transport error class must state whether an adapter may rethrow it unwrapped. ' +
+        'Silence defaults it to "wrapped", which is how WI-36 lost a class into `.cause` for four ' +
+        'tasks — so silence is what this fails on.',
+    ).toStrictEqual([]);
   });
 });

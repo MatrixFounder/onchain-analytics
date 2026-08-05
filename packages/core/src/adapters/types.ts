@@ -33,11 +33,17 @@ export interface ProviderAdapter {
    * **Optional ON PURPOSE, and an adapter that ignores it is not broken (R-140e).** It then
    * degrades to exactly today's behaviour — its own per-hop `timeoutMs` and `MAX_WAIT_MS` — while
    * `CapabilityRegistry` still refuses every adapter it has not yet reached once the moment passes.
-   * **10 of the 12 adapters ignore it in the shipped tree** — `blockscout` (012-8) and `nansen`
-   * (012-9, where the paid leg makes the boundary a correctness condition) are the two that read it.
-   * (Adversarial cycle 2, F-7: this line said "11 … as of task 012-8", a count that was correct for
-   * one task and then read as the current state.) By CAPABILITY that is 4 of 20 — see the
-   * ENFORCEMENT section of `capability-manifest.ts` for the measurement and WI-37 for the gap.
+   * That guarantee is what made a staged uptake safe, it is still tested
+   * (`registry.deadline.test.ts` TC-INT-07), and it is no longer describing the shipped tree.
+   *
+   * **10 of the 12 adapters read it (measured 2026-08-05, WI-37)** — every one except `dune` and
+   * `dash-platform`, which are M1 stubs that spend no time at all: `isAvailable()` is
+   * unconditionally false and `fetch()` throws, so there is nothing for a ceiling to cut. By
+   * CAPABILITY that is 20 of 20. (This line has been wrong in both directions before — it said
+   * "11 … as of task 012-8", a count correct for one task and then read as the current state, and
+   * then "10 ignore it" after 012-9. It is now re-derived on every run: `capability-manifest.test.ts`'s
+   * TC-F5-GATE scans the adapter sources and fails if the ENFORCEMENT prose disagrees.) See that
+   * section of `capability-manifest.ts` for the measurement.
    *
    * An adapter that DOES read it must pass it on to `throttle()` and `safeFetch()` unchanged —
    * never re-derive a remainder from it — and must not honour it after a payment has committed

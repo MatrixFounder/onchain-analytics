@@ -214,11 +214,26 @@ review as "a bigger limit".
   of what a request costs; the budget guard (§3.2/§4.2) protects the budget regardless of how fast
   requests arrive. `retry-after` on a 429 and `X-Nansen-Credits-*` are two different headers driving
   two different mechanisms.
-- **PG read-only (R-12):** the engine issues `SELECT` only, enforced by a code-review gate. The
-  **recommendation for the DB operator** is that the Postgres role the engine connects as be
-  server-side SELECT-only (`GRANT SELECT ON SCHEMA onchain TO <role>`, no `INSERT/UPDATE/DELETE`) —
-  code discipline is not protection against a leaked key or DSN. This is defense in depth the engine
-  cannot provide for itself.
+- **PG read-only (R-12) — three controls, named in the order they actually hold.** This entry used
+  to name only the code-review gate as an engine-side control — the weakest of the three — and to
+  omit the one doing the work. (The operator recommendation below was already here and is unchanged;
+  the runtime guard was documented in `system-architecture.md` but not in this list of controls.)
+  1. **The SQL is static and every caller-supplied value is a bound parameter.** `pg-history` issues
+     one literal statement with `$1/$2/$3` (`adapters/pg-history/index.ts`); nothing an agent
+     supplies is ever concatenated into SQL. This is the PRIMARY control — it is what makes injection
+     impossible rather than merely non-obvious, and a new adapter that concatenated an agent-supplied
+     value would defeat everything below while still passing it.
+  2. **A runtime guard** in `pg/read-client.ts` (`SELECT_ONLY_RE`, R-27) rejects a statement that
+     does not begin with `SELECT`. Defense in depth, and deliberately described for what it is: it
+     constrains the FIRST TOKEN, so it is a guard against a wrong-shaped call, not a parser.
+  3. **A code-review gate**, the weakest, and last.
+
+  The **recommendation for the DB operator** is unchanged and independent of all three: the Postgres
+  role the engine connects as should be server-side SELECT-only
+  (`GRANT SELECT ON SCHEMA onchain TO <role>`, no `INSERT/UPDATE/DELETE`) — code discipline is not
+  protection against a leaked key or DSN. This is defense in depth the engine cannot provide for
+  itself.
+
 - **Supply chain / licenses:** the M1 dependencies — `@noble/hashes` (MIT), `bs58` (MIT), `pg`
   (MIT), `better-sqlite3` (MIT), `lru-cache` (ISC), `ulid` (MIT) — are all permissive and compatible
   with the engine's Apache-2.0 (D12). `@grpc/grpc-js` + `@grpc/proto-loader` (Apache-2.0) and a

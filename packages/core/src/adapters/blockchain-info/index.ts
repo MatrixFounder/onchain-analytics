@@ -7,7 +7,7 @@ import {
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
-import { safeFetch } from '../../net/safe-fetch.js';
+import { isPassThroughTransportError, safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { ChainSupplySchema, type ChainSupply } from '../../types/chain-supply.js';
 import type { ProviderAdapter } from '../types.js';
@@ -151,17 +151,30 @@ export function createBlockchainInfoAdapter(deps: BlockchainInfoAdapterDeps = {}
   }
   const rateLimit = RATE_LIMIT;
 
-  async function request(path: string): Promise<Response> {
+  async function request(path: string, deadlineAtMs?: number): Promise<Response> {
     const url = new URL(path, BASE);
-    await throttle('blockchain-info', rateLimit);
+    // The limiter first, then the transport (WI-37) — refusing a wait already known to be longer
+    // than the time left is free, discovering it afterwards costs the whole wait.
+    await throttle('blockchain-info', rateLimit, 1, deadlineAtMs);
 
     let response: Response;
     try {
       response = await safeFetch(url.toString(), { method: 'GET' }, ALLOWLIST, fetchImpl, {
         timeoutMs: REQUEST_TIMEOUT_MS,
         maxResponseBytes: MAX_RESPONSE_BYTES,
+        // ADDITIVE to `timeoutMs`, never a replacement: the hop timeout says "this vendor did not
+        // answer", the deadline says "we ran out of our own time", and `safeFetch` keeps them as
+        // two signals so the classes stay distinguishable. Spread conditionally so a call with no
+        // deadline builds byte-for-byte the options object it built before WI-37.
+        ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
       });
     } catch (error) {
+      // WI-36, same rule as `blockscout`'s catch — and this adapter is why the record called the
+      // defect a LATENT second instance rather than one: it carried the identical wrapper while not
+      // yet reading the deadline, so the flattening cost nothing and would have started costing on
+      // the day it took the parameter up. That day is this commit (WI-37), and the two arrived
+      // together on purpose: a fix that waits for its own symptom is a fix that ships after it.
+      if (isPassThroughTransportError(error)) throw error;
       // Name the failure CLASS, never the vendor's or the network's message.
       const kind = error instanceof Error ? error.name : 'UnknownError';
       throw new Error(`blockchain-info: transport failure from ${hostOf(BASE)} (${kind})`, {
@@ -191,7 +204,16 @@ export function createBlockchainInfoAdapter(deps: BlockchainInfoAdapterDeps = {}
      */
     isAvailable: () => ({ ok: true }),
 
-    async fetch(cap: string, args: Record<string, unknown>): Promise<SupplyFetchResult> {
+    async fetch(
+      cap: string,
+      args: Record<string, unknown>,
+      /**
+       * WI-37. This adapter issues TWO readings per call, so the ceiling is what stops the second
+       * from being issued when the first has already spent the budget — the manifest's row records
+       * the envelope as twice E-HTTP5 for exactly that reason, and until now nothing cut it.
+       */
+      deadlineAtMs?: number,
+    ): Promise<SupplyFetchResult> {
       if (cap !== CAPABILITY) {
         throw new Error(`blockchain-info: unsupported capability '${cap}'`);
       }
@@ -210,13 +232,13 @@ export function createBlockchainInfoAdapter(deps: BlockchainInfoAdapterDeps = {}
 
       // Two surfaces, two requests, sequential on purpose: they are throttled through one bucket,
       // and issuing them concurrently would only move the wait, not remove it.
-      const statsResponse = await request('/stats?format=json');
+      const statsResponse = await request('/stats?format=json', deadlineAtMs);
       const stats: unknown = await statsResponse.json();
       if (stats === null || typeof stats !== 'object' || Array.isArray(stats)) {
         throw new Error(`blockchain-info: /stats returned ${describe(stats)}, expected an object`);
       }
 
-      const circulatingResponse = await request('/q/totalbc');
+      const circulatingResponse = await request('/q/totalbc', deadlineAtMs);
       const circulatingBody = (await circulatingResponse.text()).trim();
 
       return {

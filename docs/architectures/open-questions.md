@@ -357,6 +357,53 @@ hit, so such a walk ends as `CapabilityUnavailableError`. The AC-8 case therefor
 Nothing in the code is wrong; the published envelope is an upper bound over independent legs, and
 reading it as "a single run that spends 140 s cancellably" is what does not hold.
 
+### WI-37 (2026-08-05) — `deadlineMs` is now usable as a T-014 admission-control input
+
+Recorded here because the constraint it lifts was the reason WI-37 was opened rather than deferred,
+and T-014/ADR-003 is where the consequence lands.
+
+**The state until 2026-08-05.** The manifest declared a `deadlineMs` for all 20 capabilities, and
+two of the twelve adapters read the third `fetch(cap, args, deadlineAtMs)` argument. On the other
+16 capabilities the ceiling bounded the NUMBER OF SOURCES the registry would still ask, not the
+DURATION of the attempt already in flight: an issued request ran its own hop timeout out in full, and
+a limiter wait stayed capped only by `MAX_WAIT_MS = 30_000` — twice the ceiling of the eight
+capabilities on the ~15 s tier. Sanctioned by R-140e as staging, but it made the number unsafe as a
+PROMISE: a network-facing server that accepted a call on the strength of its declared ceiling would
+have been declaring a bound it did not provide.
+
+**Now.** 10 of 12 adapters read the deadline and forward it unchanged to the limiter and to their
+transport; the two that do not are M1 stubs that spend no time at all (`isAvailable()` unconditionally
+false, `fetch()` throws), so the ceiling is enforced on **20 of 20** capabilities. The figures are
+re-derived on every test run — `capability-manifest.test.ts`'s TC-F5-GATE from the adapter sources,
+`deadline-uptake.test.ts` from behaviour, once per adapter.
+
+**What this licenses, and what it does not.** T-014 may use `deadlineMs` as an admission-control
+input **on a free-only route**: the engine now spends no more than the ceiling on the cancellable
+part of a call, and on those routes the cancellable part is the whole call.
+
+**On the three paid capabilities it is only half the number, and the other half has no reader.**
+`entity.labels`, `smart-money.flows` and `token.risk` reach `nansen`, where nothing after
+`checkAndReserve()` receives a deadline (H3) — deliberately, since cancelling there means paying and
+not receiving. The bound an admission controller must reserve is `deadlineMs + (paidLegMs ?? 0)`:
+60_000 + 270_000 ≈ **330_000** for `entity.labels`, against the 60_000 a naive reading gives. Today
+`paidLegMs` has no runtime consumer at all — nothing under `packages/*/src` reads it, and its only
+readers are tests (the WI-28 documentation gate, TC-UNIT-06 in `capability-manifest.test.ts`, and
+`entity-labels-deadline-arithmetic.test.ts`) — and it does not appear in `interfaces.md`, so a client
+cannot learn the second number exists. **T-014 owns
+both**: reading the pair, and putting it on the wire. Recorded here rather than in the manifest
+because it is a gap in what the ENGINE PUBLISHES, not in what it enforces.
+
+It also does
+**not** turn the ceiling into a latency contract — OQ-T012-6 above resolved that a walk in which every
+source answered returns its answer past the ceiling and marks the overrun, so the bound is on
+SPENDING, not on the moment of delivery. A network client still needs its own timeout. The two
+statements are compatible and are easy to conflate, which is why both are on this page.
+
+**Condition for revisiting.** A thirteenth adapter, or a stub that grows a transport: either enters
+the gate's population automatically, and the manifest rows it routes go red until it reads the
+deadline. The `**DECLARED, not enforced today**` marker stays defined in `capability-manifest.ts` for
+that day, unused today on purpose.
+
 ### T-012 (2026-08-03) — OQ-C, and a self-contradiction found in ADR-002's own D9 staging
 
 **OQ-C — the fate of `CapabilityRoute.chains` (ADR-002 D2). Resolved: deleted.** The field was read
