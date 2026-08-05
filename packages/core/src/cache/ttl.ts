@@ -1,100 +1,54 @@
+import { capabilityManifests } from '../capability-manifest.js';
+
 /**
- * TTL-per-capability, in seconds (ARCHITECTURE.md §3.2 table, D6 ranges applied to M1's concrete
- * capability set).
+ * Safety net for a capability string that has no manifest row — kept explicit (a conservative
+ * mid-range default, the `protocol.tvl` bucket) rather than throwing, so an unanticipated capability
+ * degrades gracefully instead of crashing the cache path.
  *
- * **This table and §3.2 are now checked against each other** (WI-28,
- * `mcp-server/test/readme-tool-table.test.ts`): §3.2 must carry a row for every routed capability, at
- * the seconds applied here. Historically the rows were copied FROM §3.2; several later ones were
- * added here first and back-filled into §3.2 when the gate was written, so neither direction is
- * "the source" any more — the gate is. `platform.*` in §3.2 stands for every routed capability under
- * that prefix, which today is five (`identities`/`contracts`/`documents`/`credits` plus
- * `platform.metrics.history`), and the gate expands it that way.
- */
-const TTL_SECONDS: Readonly<Record<string, number>> = {
-  'token.price': 60,
-  'token.metadata': 3600,
-  'wallet.balances.native': 60,
-  'pairs.new': 30,
-  'protocol.tvl': 300,
-  // TASK-006 (task 006-7, R-53d): `/v2/chains` is an aggregate DeFiLlama recomputes on its own
-  // cadence — a chain's total TVL does not move meaningfully faster than a protocol's, so it gets
-  // the same 300s bucket as `protocol.tvl` rather than a separately invented number.
-  'chain.tvl': 300,
-  // TASK-007 (task 007-1, R-64). The vendor's own step for this dataset is ONE DAY
-  // (`totalDataChart` is `[[unix_ts, usd], …]` with an exact 86400s stride — measured over 2825
-  // points, 2824 of them exactly one day apart), so a TTL shorter than a day cannot buy a fresher
-  // number. It can only buy a second identical 250KB download.
-  //
-  // The row is mandatory, not polish: without it this capability falls through to
-  // `DEFAULT_TTL_SECONDS = 300` below — a constant whose own docstring says it should not be hit.
-  // That exact accident already happened once, to all three of M2's PAID capabilities.
-  'dex.volume.history': 3600,
-  'privacy.shielded_pool': 3600,
-  'platform.identities': 3600,
-  'platform.contracts': 3600,
-  'platform.documents': 3600,
-  'platform.credits': 3600,
-  'token.holders': 3600,
-  // TASK-009 (R-82b). Mandatory, not polish: without this row the capability falls through to
-  // `DEFAULT_TTL_SECONDS` below, whose own docstring says it should not be hit — an accident that
-  // has already happened twice in this file (all three M2 paid capabilities, then
-  // `dex.volume.history`). 600s is the Bitcoin target block interval: the value changes ONLY when a
-  // block is found, so a shorter TTL cannot buy a fresher number, it can only buy a second identical
-  // pair of requests.
-  'chain.supply': 600,
-
-  // Originated here rather than in §3.2 — implementation decisions (developer-guidelines §1.5
-  // "implementation ambiguity") documented rather than silently guessed. They were absent from §3.2
-  // until WI-28's gate demanded completeness and back-filled them; the rationale below is the one
-  // that document now carries. `pool.info` shares its adapter (dexscreener) and its
-  // liquidity/volume-style volatility with `protocol.tvl`, not the "new"-freshness-critical
-  // `pairs.new` — same 300s bucket.
-  'pool.info': 300,
-  // The two `*.history` capabilities are historical views of an already-3600s-bucketed live
-  // capability; the table's own stated rationale for that 3600s row ("no point polling faster than
-  // the existing hourly snapshotter cadence") applies identically to their history counterparts.
-  'privacy.shielded_pool.history': 3600,
-  'platform.metrics.history': 3600,
-
-  // ---------------------------------------------------------------------------------------------
-  // M2 (TASK-005) — the first PAID capabilities. Explicit rows are mandatory here, not optional
-  // polish: adversarial review cycle 1 found (independently, by both the performance and the
-  // security critic) that these three were falling through to `DEFAULT_TTL_SECONDS` below — a
-  // constant whose own docstring says it "should not be hit", chosen as an M1 *free*-tier safety
-  // net. Letting the spend rate of the project's first paid provider be decided by that fallback
-  // is an accident, not a decision. Each row below is a deliberate cost-vs-freshness call.
-  // ---------------------------------------------------------------------------------------------
-  // Genuinely volatile: `netflow1hUsd` is a 1-hour rolling window, so a short TTL is correct here.
-  // (300s coincides with the old fallback — but now by decision, not by omission.) 10cr/miss.
-  'smart-money.flows': 300,
-  // Nansen Score risk/reward indicators are daily-ish quantitative scores, not tick data; caching
-  // for 30 minutes costs no meaningful freshness. 6cr/miss.
-  'token.risk': 1800,
-  // Entity/profiler labels change on a timescale of DAYS (ENS, CEX, fund attributions). This is
-  // also the most expensive call in the system — the `exhaustive: true` escalation is 100cr, the
-  // entire free-plan balance. At the old 300s fallback, an agent revisiting one address four times
-  // across a 25-minute investigation paid 400cr instead of 100cr. 1 hour is still conservative.
-  'entity.labels': 3600,
-};
-
-/**
- * Safety net for any capability string not present in `TTL_SECONDS` above — kept explicit (a
- * conservative mid-range default matching the `protocol.tvl` bucket) rather than throwing, so an
- * unanticipated future capability degrades gracefully instead of crashing the cache path. Should
- * not be hit for M1's known capability set (`providers.config.ts`'s `routes`).
+ * **Unreachable for the 20 ROUTED capabilities since task 012-5 — by a mechanism, not by
+ * discipline.** This constant's previous docstring said it "should not be hit for M1's known
+ * capability set". That was a hope, and it was disappointed three times: all three of M2's PAID
+ * capabilities shipped falling through to it (found by two adversarial critics, not by a test), then
+ * `dex.volume.history` did. What closes it now is `CapabilityRegistry`'s construction-time
+ * validation step 1 (`adapters/registry.ts`, task 012-4): a route whose capability has no
+ * `capabilityManifests` entry throws `MissingCapabilityManifestError` before the process serves
+ * anything, so a routed capability cannot reach this line at all — the omission that used to produce
+ * a silently-wrong TTL now produces a refusal to start.
+ *
+ * What can still reach it, and what it is therefore FOR: a capability string nothing routes — an
+ * internal caller's typo, a probe, a capability retired from `routes` but still called somewhere.
  */
 const DEFAULT_TTL_SECONDS = 300;
 
-/** Returns the TTL, in seconds, for `capability` (ARCHITECTURE.md §3.2). */
+/**
+ * Returns the TTL, in seconds, for `capability`.
+ *
+ * **A READER of the capability manifest since task 012-5 (R-138) — same name, same signature, same
+ * export path.** The seconds and every one of their rationales live in `capability-manifest.ts`'s
+ * `capabilityManifests`; the `TTL_SECONDS` table that used to sit in this file is gone, carried
+ * there byte-for-byte by task 012-4 (its TC-UNIT-05 pins all 20 against a list transcribed BEFORE
+ * the move, so a TTL edit disguised as a migration fails). Preserving this contract is what the
+ * migration was measured by: `mcp-server/test/readme-tool-table.test.ts` imports exactly this symbol
+ * from `@onchain-intel/core` and was not edited for it.
+ *
+ * The number is restated in five tables across three documents (both READMEs and
+ * `docs/architectures/system-architecture.md` §3.2). Those restatements are not trusted to stay
+ * true: WI-28's gate in `readme-tool-table.test.ts` checks each of them against this function, and
+ * §3.2 must additionally carry a row for EVERY routed capability. `platform.*` there stands for the
+ * five routed capabilities under that prefix, and the gate expands it that way.
+ */
 export function ttlFor(capability: string): number {
-  return TTL_SECONDS[capability] ?? DEFAULT_TTL_SECONDS;
+  return capabilityManifests[capability]?.ttlSeconds ?? DEFAULT_TTL_SECONDS;
 }
 
 /**
  * TTL for a NEGATIVE cache entry — a deterministic `normalize()` failure recorded so the next
  * identical call does not pay for the same rejected response again (issue L-1).
  *
- * Deliberately short, and deliberately NOT per-capability. The two forces pull opposite ways:
+ * Deliberately short, and deliberately NOT per-capability — which is why it did **not** move into
+ * the manifest with the positive TTLs above (task 012-5): the manifest is a per-capability table,
+ * and this number is a property of the failure path, not of any capability. The two forces pull
+ * opposite ways:
  *
  * - Longer is cheaper. `smart-money.flows` is 10cr per attempt and `entity.labels`' exhaustive tier
  *   is 100cr — the whole free-plan balance — so every second of negative TTL is money saved on a

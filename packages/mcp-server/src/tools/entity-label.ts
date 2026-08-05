@@ -10,7 +10,12 @@ import {
   type CapabilityRegistry,
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 /** The two supported networks (same narrowing as every other M1/M2 tool — see `get-token.ts`'s
@@ -116,7 +121,13 @@ export interface EntityLabelContext {
 const CAPABILITY = 'entity.labels';
 
 export type EntityLabelOutcome =
-  | { ok: true; output: EntityLabelOutput; cache: CacheMeta; budget?: BudgetMeta }
+  | {
+      ok: true;
+      output: EntityLabelOutput;
+      cache: CacheMeta;
+      timing?: TimingMeta;
+      budget?: BudgetMeta;
+    }
   | { ok: false; reason: string };
 
 /**
@@ -131,7 +142,10 @@ export type EntityLabelOutcome =
  * de-duplicated-validation precedent (adversarial cycle 1 fix I). `safeParse`, never `parse` — see
  * `smart-money-flows.ts`'s own `smartMoneyFlowsHandler` docstring for the full rationale.
  *
- * `_meta.budget` via `budgetMeta()` ONLY when `outcome.cache.status === 'miss'`.
+ * `_meta.budget` via `budgetMeta()` on every successful resolution, present exactly when the
+ * traversal ENTERED a paid adapter — see `smart-money-flows.ts`. This capability is the one where
+ * the difference is observable: `blockscout` first, `nansen` behind it, and the H-1 return hands back
+ * blockscout's answer — cached or fresh — after nansen has spent.
  */
 export async function entityLabelHandler(
   input: EntityLabelInput,
@@ -166,9 +180,13 @@ export async function entityLabelHandler(
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
 
-  const budget =
-    outcome.cache.status === 'miss' ? await budgetMeta(ctx.budgetStore, Date.now) : undefined;
-  return { ok: true, output: parsed.data, cache: outcome.cache, budget };
+  // Gated on the TRAVERSAL, never on `outcome.cache.status` (adversarial cycle 3, F-A). A `'hit'`
+  // is not evidence that nothing was spent: the registry's H-1 return can hand back an EARLIER
+  // adapter's cache hit after the walk entered and paid the source behind it, and a `'miss'` gate
+  // dropped `_meta.budget` on exactly that route. `budgetMeta` reports nothing when nobody was
+  // entered, which is what a pure hit is — so the branch has no work left to do.
+  const budget = await budgetMeta(ctx.budgetStore, Date.now, outcome.attempted);
+  return { ok: true, output: parsed.data, ...metaFrom(outcome), budget };
 }
 
 /** The `ToolSpec` for `onchain_entity_label` — this name is declared here and nowhere else (R-42). */

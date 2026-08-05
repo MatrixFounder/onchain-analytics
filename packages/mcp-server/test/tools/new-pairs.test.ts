@@ -8,9 +8,7 @@ import { NewPairsInputSchema, newPairsHandler } from '../../src/tools/new-pairs.
  * for the shared testing convention.
  */
 
-const ROUTES: CapabilityRoute[] = [
-  { capability: 'pairs.new', chains: ['ethereum', 'solana'], adapterIds: ['dexscreener'] },
-];
+const ROUTES: CapabilityRoute[] = [{ capability: 'pairs.new', adapterIds: ['dexscreener'] }];
 
 const FAKE_POOLS: Pool[] = [
   {

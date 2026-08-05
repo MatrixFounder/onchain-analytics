@@ -76,7 +76,10 @@ export const INVENTORY_CHANNELS: readonly InventoryChannel[] = [
   {
     gate: 'packages/mcp-server/scripts/smoke-dist.mjs',
     action: 'reads tool-inventory.json; regenerating it (channel 2) is the whole fix',
-    firesOnlyWhen: 'run after a build — `pnpm smoke:dist`, not `pnpm test`',
+    // No root `smoke:dist` script exists; the bare form answers `Command "smoke:dist" not found`
+    // (corrected in T-012, PLAN §0.5).
+    firesOnlyWhen:
+      'run after a build — `pnpm --filter @onchain-intel/mcp-server smoke:dist`, not `pnpm test`',
   },
 ];
 

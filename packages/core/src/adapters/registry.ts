@@ -1,12 +1,15 @@
 import { PassthroughCacheStore } from './cache-store.js';
 import type { CacheGetResult, CacheStore } from './cache-store.js';
+import { policyClasses, type PolicyPredicate } from './policy.js';
 import type { CapabilityRoute, ProviderAdapter } from './types.js';
 import { deriveArgsHash } from '../net/args-hash.js';
 import { NEGATIVE_TTL_SECONDS } from '../cache/ttl.js';
+import { capabilityManifests, type CapabilityManifest } from '../capability-manifest.js';
 import { createCoverage, type Coverage } from '../chain/coverage.js';
 import { loadChainRegistry } from '../chain/registry.js';
 import type { ChainRegistry } from '../chain/registry-core.js';
 import { CapabilityNotCoveredOnChainError } from '../chain/errors.js';
+import { DeadlineExceededError } from '../net/safe-fetch.js';
 
 /** One failed/unavailable attempt recorded while walking a route's `adapterIds` (R-24). */
 export interface CapabilityAttempt {
@@ -38,6 +41,135 @@ export class CapabilityUnavailableError extends Error {
     this.capability = details.capability;
     this.chain = details.chain;
     this.tried = details.tried;
+  }
+}
+
+/**
+ * The THIRD outcome of a capability traversal (ADR-002 D4, R-145, task 012-8): our own time budget
+ * is spent. Deliberately a sibling of `CapabilityUnavailableError` rather than a subclass — the
+ * distinction is the entire requirement, and `instanceof CapabilityUnavailableError` answering
+ * `true` for this class would erase it at every call site that already handles the older one.
+ *
+ * The three outcomes state three different facts, and a caller acts differently on each:
+ *
+ * | Class                              | Fact                                    | What the caller should do |
+ * | ---------------------------------- | --------------------------------------- | ------------------------- |
+ * | `CapabilityNotCoveredOnChainError` | this pair is not served, permanently    | stop asking               |
+ * | `CapabilityUnavailableError`       | every source failed or declined         | retry later               |
+ * | `CapabilityDeadlineExceededError`  | WE ran out of time; sources may be fine | retry with more time      |
+ *
+ * **OD-4 — expiry ALWAYS throws, and that is why this class carries `tried[]` instead of data.**
+ * The alternative considered (and rejected by the owner, 2026-08-03) was to return the
+ * truthful-but-unsatisfying answer of whoever DID reply before the clock ran out. "Nansen was not
+ * asked" and "Nansen answered: no labels" are different statements about a sanctioned address, and
+ * publishing the second when the first is true is the H-1 defect wearing a deadline's clothes. So
+ * `tried[]` names BOTH groups — who answered (and with what) before the moment passed, and who was
+ * never attempted at all — and no partial result is ever returned.
+ */
+export class CapabilityDeadlineExceededError extends Error {
+  readonly capability: string;
+  readonly chain: string;
+  readonly tried: CapabilityAttempt[];
+
+  constructor(details: { capability: string; chain: string; tried: CapabilityAttempt[] }) {
+    // Same rendering as `CapabilityUnavailableError`'s, with a different EMPTY-list wording: an
+    // empty `tried` here does not mean "no route registered" (that outcome throws the other class);
+    // it means the caller's own deadline had already passed when the call arrived, so there was
+    // nothing to attempt.
+    const triedText = details.tried.length
+      ? details.tried.map((t) => `${t.adapterId} (${t.reason})`).join(', ')
+      : 'no source was attempted — the requested deadline had already passed';
+    super(
+      `capability deadline exceeded: ${details.capability} on ${details.chain} — tried: ${triedText}`,
+    );
+    this.name = 'CapabilityDeadlineExceededError';
+    this.capability = details.capability;
+    this.chain = details.chain;
+    this.tried = details.tried;
+  }
+}
+
+/**
+ * Thrown by the `CapabilityRegistry` CONSTRUCTOR (validation step 1, task 012-4) when a route names
+ * a capability with no row in the manifest table (ADR-002 D3, R-136).
+ *
+ * **Construction, not `resolve()`, is deliberate.** A missing manifest is a configuration defect,
+ * and a lazy check would surface it on the first call of that one capability — in production,
+ * possibly months later, and only for whoever asked for it. Failing at construction means the
+ * process that owns the misconfigured table cannot start (`mcp-server`'s entry point), which is the
+ * same discipline `assertValidAdapterRegistrations()` (task 012-2) applies to registrations.
+ */
+export class MissingCapabilityManifestError extends Error {
+  readonly capability: string;
+
+  constructor(capability: string) {
+    super(
+      `no capability manifest for '${capability}' — every routed capability needs a row in ` +
+        `src/capability-manifest.ts (shape + ttlSeconds + deadlineMs, ADR-002 D3)`,
+    );
+    this.name = 'MissingCapabilityManifestError';
+    this.capability = capability;
+  }
+}
+
+/**
+ * Thrown by the `CapabilityRegistry` CONSTRUCTOR (validation step 1, adversarial cycle 2 F-8) when a
+ * manifest row EXISTS but carries a `deadlineMs` no arithmetic can use.
+ *
+ * **Its own class, not a reuse of `MissingCapabilityManifestError`.** "There is no row" and "the row
+ * is unusable" send a reader to two different places — the route table versus the manifest — and the
+ * message that fits one is a wrong lead for the other.
+ *
+ * **Why the check exists at all.** `resolve()` guards the CALLER's `requestedDeadlineAtMs` with
+ * `Number.isSafeInteger` and records the harm in place: `Math.min(a, NaN)` is `NaN`, `NaN <= 0` is
+ * `false`, and every later comparison then silently never fires. `manifest.deadlineMs` enters the
+ * SAME `Math.min` and was not checked at all — the identical defect, one argument to the left, and
+ * reachable without any caller at all (a hand-edited table, a JSON-shaped config, a future
+ * generated manifest).
+ *
+ * The value is rendered with `String(...)` rather than interpolated: a `deadlineMs` that arrived
+ * through a cast can be any type, and `String` states what was there for every one of them.
+ */
+export class InvalidCapabilityManifestError extends Error {
+  readonly capability: string;
+  readonly field: string;
+
+  constructor(capability: string, field: string, value: unknown) {
+    super(
+      `capability manifest for '${capability}' has an unusable ${field}: ${String(value)} — it must ` +
+        `be a positive safe integer (src/capability-manifest.ts, ADR-002 D3/D4)`,
+    );
+    this.name = 'InvalidCapabilityManifestError';
+    this.capability = capability;
+    this.field = field;
+  }
+}
+
+/**
+ * Thrown by the `CapabilityRegistry` CONSTRUCTOR (validation step 2, task 012-6) when a route's
+ * `policy.kind` names no class in `adapters/policy.ts`'s dictionary (ADR-002 D2, R-135).
+ *
+ * **Names BOTH the capability and the `kind`.** A message carrying only one of them sends the
+ * reader either to a route table to guess which entry, or to a class dictionary to guess which
+ * route wanted the missing name; the pair is what makes the diagnostic a single lookup.
+ *
+ * Construction, not `resolve()`, for the same reason as `MissingCapabilityManifestError` above: a
+ * `kind` that resolves nowhere is a configuration defect, and a lazy check would surface it on the
+ * first call of that one capability — in production, possibly months after the deploy, and only for
+ * whoever happened to ask for it (UC-2).
+ */
+export class UnregisteredPolicyClassError extends Error {
+  readonly capability: string;
+  readonly kind: string;
+
+  constructor(capability: string, kind: string) {
+    super(
+      `route '${capability}' names an unregistered policy class '${kind}' — every route policy ` +
+        `must resolve against the class dictionary in src/adapters/policy.ts (ADR-002 D2)`,
+    );
+    this.name = 'UnregisteredPolicyClassError';
+    this.capability = capability;
+    this.kind = kind;
   }
 }
 
@@ -80,6 +212,51 @@ export interface CapabilityResolution {
   source: string;
   cache: 'hit' | 'miss';
   ageMs?: number;
+  /**
+   * Adapter ids whose `fetch()` this traversal actually ENTERED, in walk order — including the one
+   * that answered, and including any that threw (adversarial cycle 2, F-4).
+   *
+   * **`source` is who ANSWERED; this is who was ASKED, and on this route they differ.** The walk
+   * enters a paid adapter and can still return an earlier adapter's answer: that is the semantics of
+   * `unsatisfying ??=` below (a truthful-but-unsatisfying free answer is kept and returned when the
+   * paid source turns out to have nothing either). `mcp-server`'s `_meta.budget` used to be derived
+   * from `source` alone, so an `entity.labels` miss that cost credits at `nansen` and came back
+   * labelled `blockscout` reported no spend at all — the under-reporting direction, which invites the
+   * agent to repeat a call it believes is free (R-41).
+   *
+   * **Deliberately NOT filtered by tier here.** `tier` lives on `AdapterRegistration` (ADR-002 D8)
+   * and this class is constructed from an INJECTED adapters map that need not correspond to
+   * `providers.config.ts` at all — reading the global registration table inside `resolve()` would
+   * contradict this class's own "routes and adapters are constructor parameters" contract and give
+   * the classification a second home. The registry states the traversal FACT; the one consumer that
+   * cares about paidness applies the classification where it already lives
+   * (`mcp-server/src/tools/budget-meta.ts`).
+   *
+   * **Omitted when empty** (a pure cache hit reached no adapter's `fetch()`), for the same reason
+   * `ageMs` is omitted on a miss rather than coerced: an absent field says "nothing happened here",
+   * an empty array invites the reader to look for a meaning it does not have.
+   */
+  attempted?: string[];
+  /**
+   * How far past `effectiveDeadlineAtMs` this answer was produced, in ms — present ONLY when it is
+   * positive (OQ-T012-6, owner decision 2026-08-05).
+   *
+   * **The call deadline bounds SPENDING, not answering, and this field is the price of saying so.**
+   * A walk in which every source was entered and every one answered can cross the ceiling on its
+   * last adapter: nothing was prevented and nothing was aborted, so neither the pre-check nor the
+   * translating catch fires, and the H-1 return hands back a complete answer late. The owner
+   * resolved that in favour of returning it — discarding data already paid for buys the caller
+   * nothing, and only the caller knows whether a late-but-complete answer is still worth something.
+   *
+   * What the decision does NOT permit is returning it **silently**. That is the shape this project
+   * has ruled against repeatedly (a healed metric that hides the vendor gap; a diagnostic nothing
+   * reads), and a caller that reads `deadlineMs` as a latency contract would never learn otherwise.
+   * So the overrun travels with the answer and `mcp-server` publishes it as `_meta.timing`.
+   *
+   * Measured at the moment of RETURN, against the same `effectiveDeadlineAtMs` the walk enforced —
+   * not against `manifest.deadlineMs`, which ignores a caller's own narrowing (R-144).
+   */
+  deadlineOverrunMs?: number;
 }
 
 /**
@@ -101,6 +278,16 @@ export class CapabilityRegistry {
    * waste when most tests never reach the coverage gate. */
   private coverageCache: Coverage | null = null;
   private chainsCache: ChainRegistry | null = null;
+  /**
+   * Each route's answer policy, resolved to a predicate ONCE at construction (task 012-6).
+   *
+   * **Keyed by the ROUTE OBJECT, not by capability.** One capability can be served by several
+   * routes (`wallet.balances.native` already ships as two), and a map keyed by capability would
+   * re-create the exact defect M-2 fixed in TASK-008: one route's policy judging another route's
+   * adapters. `resolve()` reads this map inside the per-route loop that also collects that route's
+   * `adapterIds`, so the pairing cannot come apart.
+   */
+  private readonly policies = new Map<CapabilityRoute, PolicyPredicate>();
 
   constructor(
     private readonly routes: CapabilityRoute[],
@@ -109,7 +296,80 @@ export class CapabilityRegistry {
     /** Chain registry used by the coverage gate (TASK-006 R-51). Defaults to the shipped snapshot
      * so production wiring cannot forget it; injectable so tests can use a synthetic registry. */
     private readonly chains: ChainRegistry | null = null,
-  ) {}
+    /**
+     * Per-capability manifest (ADR-002 D3, task 012-4). Same injection seam as `chains` one
+     * parameter to the left: the DEFAULT is the real shipped table, so production wiring cannot
+     * forget it, and a test that routes a synthetic capability passes its own small map instead of
+     * having to add a row to the production one.
+     */
+    private readonly manifests: Readonly<Record<string, CapabilityManifest>> = capabilityManifests,
+  ) {
+    // ------------------------------------------------------------------------------------------
+    // CONSTRUCTION-TIME VALIDATION. The ORDER of its steps is fixed here, in the docstring, before
+    // there is a second step to order — so that each requirement's negative test can break exactly
+    // one thing:
+    //
+    //   step 1 — every route's capability has a manifest row, and that row's `deadlineMs` is a
+    //            usable number                                    (task 012-4; the number, cycle 2 F-8)
+    //   step 2 — every route's policy names a known policy class  (task 012-6)
+    //
+    // A test for step 2 written against a route whose capability ALSO lacks a manifest would fail
+    // at step 1 and prove nothing about policies; stating the order is what makes that avoidable
+    // rather than a coincidence of how the loops happen to be written.
+    //
+    // The two steps are two SEPARATE loops, not two conditions in one: with a single loop the order
+    // would hold per ROUTE (route #1's policy checked before route #2's manifest), and the ordering
+    // test above would pass or fail depending on which row the broken route occupies. Step 1's own
+    // two parts (presence, then the number) DO share a loop, and must: there is no row to validate
+    // until it is known to exist, so per-route ordering is the only ordering they can have.
+    //
+    // **`Object.hasOwn`, never `=== undefined` on the index (adversarial cycle 2, F-8).** Both
+    // dictionaries are plain object literals, so `manifests['constructor']`, `['toString']`,
+    // `['valueOf']` and `['hasOwnProperty']` answer with `Object.prototype`'s members instead of
+    // `undefined` — a route named after one of them passed BOTH validations. Downstream that is
+    // silent: `nowMs + (row as CapabilityManifest).deadlineMs` is `NaN`, and `Date.now() >= NaN` is
+    // false at the per-adapter pre-check AND at the terminal branch, so the deadline for that
+    // capability is simply switched off; on the policy side `policyClasses['constructor']` resolves
+    // to `Object`, `UnregisteredPolicyClassError` never fires, and the route's answer policy
+    // fail-opens to "everything satisfies" — H-1 disabled by a name.
+    // ------------------------------------------------------------------------------------------
+    for (const route of this.routes) {
+      const manifest = Object.hasOwn(this.manifests, route.capability)
+        ? this.manifests[route.capability]
+        : undefined;
+      if (manifest === undefined) {
+        throw new MissingCapabilityManifestError(route.capability);
+      }
+      // The number, checked with the SAME test `resolve()` already applies to the CALLER's requested
+      // deadline (`Number.isSafeInteger`) — the two feed the same `Math.min`, and only one of them
+      // was guarded. A `NaN`/`Infinity`/string `deadlineMs` poisons that `min` exactly as a
+      // malformed request would, and `> 0` is added because a zero or negative budget makes every
+      // adapter unreachable while reading like a configured value.
+      if (!Number.isSafeInteger(manifest.deadlineMs) || manifest.deadlineMs <= 0) {
+        throw new InvalidCapabilityManifestError(
+          route.capability,
+          'deadlineMs',
+          manifest.deadlineMs,
+        );
+      }
+    }
+
+    for (const route of this.routes) {
+      if (route.policy === undefined) continue; // absence IS `{ kind: 'any' }`
+      // `Object.hasOwn` first — see the F-8 note above: a plain index lookup finds `Object`'s own
+      // inherited members and fail-opens the route's policy.
+      const build = Object.hasOwn(policyClasses, route.policy.kind)
+        ? policyClasses[route.policy.kind]
+        : undefined;
+      if (build === undefined) {
+        throw new UnregisteredPolicyClassError(route.capability, route.policy.kind);
+      }
+      // Resolved ONCE, per route, and cached — `resolve()` is on the request path and re-reading a
+      // descriptor per answer would buy nothing. It also means a class whose construction throws
+      // takes down the build rather than a request.
+      this.policies.set(route, build(route.policy));
+    }
+  }
 
   /**
    * The coverage matrix derived from THIS registry's routes and adapters (TASK-006 R-51/R-52).
@@ -137,8 +397,9 @@ export class CapabilityRegistry {
    * Routes `(capability, chain)` to an ordered adapter list and returns only the `normalize()`d
    * canonical result (ARCHITECTURE.md §3.2/§9.1 + task 003-2 reviewer note — the exact contract):
    *
-   * 1. Find the route matching `capability` where `chains` is unset or contains `chain`. No match
-   *    → `CapabilityUnavailableError` with an empty `tried` list (no route registered).
+   * 1. Find every route matching `capability` (chain narrowing happens per-adapter, step 2, via
+   *    `chainSupport()` — task 012-1, OQ-C). No match → `CapabilityUnavailableError` with an empty
+   *    `tried` list (no route registered).
    * 2. Walk `route.adapterIds` in order (priority + fallback, R-11):
    *    - No `ProviderAdapter` registered for that id in the constructor-injected `adapters` Map →
    *      treated exactly like an unavailable adapter (skip-to-next, `providers.config.ts`'s own
@@ -170,33 +431,104 @@ export class CapabilityRegistry {
    * failure means "this adapter couldn't answer, try the next one" (recorded in `tried`); a cache
    * failure means "the cache itself is unwell, but the adapter it wraps answered fine" — the cache
    * is a pure side channel and is never allowed to fail the call it's merely trying to memoize.
+   *
+   * **The call deadline (ADR-002 D4, task 012-8) — a THIRD outcome, never a partial answer.**
+   * `requestedDeadlineAtMs` is the caller's own ask; it can only NARROW the capability manifest's
+   * `deadlineMs`, never widen it (R-144), and `effectiveDeadlineAtMs = min(now + manifest.deadlineMs,
+   * requested ?? Infinity)` is computed ONCE and passed unchanged to every `fetch()` of the walk.
+   * Two malformed shapes are separated deliberately (see the computation below): a value that is not
+   * a safe integer is read as ABSENCE, while a well-formed moment already in the past is an
+   * immediate `CapabilityDeadlineExceededError` with an empty `tried`.
+   *
+   * Once the moment passes, the walk refuses every source it has not yet reached — free, with no
+   * `fetch()` and no cache read — and ends in `CapabilityDeadlineExceededError`, whose `tried[]`
+   * names BOTH groups: who answered (and with what) before the clock ran out, and who was never
+   * asked at all. It NEVER returns the truthful-but-unsatisfying answer of the first group instead
+   * (OD-4): "Nansen was not asked" and "Nansen answered: no labels" are different statements about
+   * a sanctioned address, and only one of them is true.
    */
   async resolve(
     capability: string,
     chain: string,
     args: Record<string, unknown>,
+    requestedDeadlineAtMs?: number,
   ): Promise<CapabilityResolution> {
     const tried: CapabilityAttempt[] = [];
     const chainInfo = this.getChainRegistry().tryResolve(chain);
 
     // TASK-006 (task 006-5): ALL routes for the capability contribute their adapters, in
-    // declaration order. Before this, a single `find()` picked the first route and `chains` on the
-    // route was what separated e.g. `wallet.balances.native` → `rpc-evm` from the same capability
-    // → `rpc-solana`. With the chain dimension moved into `chainSupport()`, that separation now
-    // happens per ADAPTER: an adapter that cannot serve the chain is skipped here, so removing the
-    // route-level `chains` literal changes nothing about which adapter answers.
+    // declaration order. Before TASK-006, a single `find()` picked the first route and a route-level
+    // `chains` literal was what separated e.g. `wallet.balances.native` → `rpc-evm` from the same
+    // capability → `rpc-solana`. TASK-006 moved that separation into `chainSupport()`, per ADAPTER
+    // (below) — an adapter that cannot serve the chain is skipped there, so the route-level literal
+    // became redundant the moment a predicate existed for the same distinction.
     //
-    // A route that still carries `chains` keeps being narrowed by it — the two mechanisms agree,
-    // and the literal is simply redundant where a predicate exists.
-    const matching = this.routes.filter(
-      (candidate) =>
-        candidate.capability === capability &&
-        (!candidate.chains || (candidate.chains as readonly string[]).includes(chain)),
-    );
+    // task 012-1 (OQ-C): the literal itself is now gone. An audit of all 21 production routes in
+    // `providers.config.ts` found none setting it, and the two mechanisms agreeing was exactly the
+    // risk — nothing forced them to keep agreeing on a future route. One mechanism now decides chain
+    // coverage: `chainSupport()`, checked below per adapter.
+    const matching = this.routes.filter((candidate) => candidate.capability === capability);
 
     if (matching.length === 0) {
       throw new CapabilityUnavailableError({ capability, chain, tried });
     }
+
+    // ------------------------------------------------------------------------------------------
+    // THE CALL DEADLINE (ADR-002 D4, R-140/R-144, task 012-8) — computed ONCE, here, and threaded
+    // UNCHANGED into every `adapter.fetch()` below. The same "fix it and pass it" discipline the
+    // budget gate applies to `dayBucketMs`: re-deriving it per adapter would hand each one a fresh
+    // full budget, which is exactly what carrying an ABSOLUTE moment rather than a duration exists
+    // to make unrepresentable (a moment forwards itself; a duration is re-granted by whoever
+    // forwards it).
+    //
+    // POSITION, relative to GATE 2 (coverage) below: above it, deliberately. The refusal for an
+    // already-spent caller deadline is specified as IMMEDIATE with `tried: []`, and the coverage
+    // gate is not free on a cold instance — `getCoverage()` builds the matrix over the 458-row chain
+    // registry on first use. Work done to describe an answer we have already refused to give is
+    // work the caller cannot observe and did not ask for. (The reverse order was considered: it
+    // would prefer the PERMANENT verdict "this pair is never served" over the temporal one. It was
+    // rejected because "immediate" is the specified contract for this branch, and because the
+    // caller who sent an expired deadline learns nothing actionable from a coverage fact it had no
+    // time to use.)
+    // ------------------------------------------------------------------------------------------
+    // `Object.hasOwn` for the same reason the constructor uses it (cycle 2, F-8): a bare index finds
+    // `Object.prototype`'s members, and `nowMs + undefined` is `NaN`, which turns every later
+    // deadline comparison false instead of failing.
+    const manifest = Object.hasOwn(this.manifests, capability)
+      ? this.manifests[capability]
+      : undefined;
+    if (manifest === undefined) {
+      // Unreachable via a routed capability: construction validated a manifest row for EVERY route
+      // (step 1), and `matching` is non-empty by the check above. Stated rather than asserted away
+      // with a `!`, because `manifests` is constructor-injected — a caller can hand in a map that
+      // disagrees with its own routes, and this is the same diagnostic construction would give.
+      throw new MissingCapabilityManifestError(capability);
+    }
+
+    // ONE clock sample for the whole decision — the validation, the refusal and the `min()` all
+    // read it, so they cannot disagree about what "now" was (the discipline `throttle()` already
+    // follows for refill/spend/refuse).
+    const nowMs = Date.now();
+    // L-1, FORM 1 — a value that is not a safe integer (`NaN`, a string arriving through a cast,
+    // `±Infinity`) is read as ABSENCE. The harm of leaving it unguarded is not a wrong deadline but
+    // an inert one: `Math.min(a, NaN)` is `NaN`, `NaN <= 0` is `false`, and every later comparison
+    // then silently never fires. T-012's only caller is this engine, which passes nothing; the first
+    // caller with any incentive to send a malformed value is T-014's paying client.
+    const requested =
+      requestedDeadlineAtMs !== undefined && Number.isSafeInteger(requestedDeadlineAtMs)
+        ? requestedDeadlineAtMs
+        : undefined;
+    // L-1, FORM 2 — a WELL-FORMED moment that has already passed is an immediate typed refusal, and
+    // deliberately not folded into form 1. "Absence" means the full manifest budget, i.e. strictly
+    // MORE time than the caller asked for, and R-144 forbids widening in either direction — including
+    // from "already out of time" to "no preference". (Clamping to `nowMs` was considered and
+    // rejected: for one tick it makes an expired deadline behave exactly like an absent one.)
+    // `tried: []` is the whole content of "immediate": no adapter was attempted, no cache slot was
+    // read, and the error says so rather than listing sources that were never asked.
+    if (requested !== undefined && requested <= nowMs) {
+      throw new CapabilityDeadlineExceededError({ capability, chain, tried });
+    }
+    const effectiveDeadlineAtMs = Math.min(nowMs + manifest.deadlineMs, requested ?? Infinity);
 
     /**
      * The walk plan: each adapter paired with the answer policy of the route that CONTRIBUTED it.
@@ -209,16 +541,23 @@ export class CapabilityRegistry {
      * policy kept it inert. Pairing at plan time makes the trap unrepresentable.
      *
      * De-duplicated by adapter id, first route wins — the pre-existing `new Set(...)` semantics.
+     *
+     * task 012-6: what is paired is now the predicate RESOLVED from that route's descriptor at
+     * construction (`this.policies`, keyed by the route object), instead of a literal function the
+     * route carried. The pairing itself is unchanged — `policy` is read from `route` inside the
+     * loop over `matching`, so an adapter can only ever be planned with the policy of the route
+     * that contributed it.
      */
-    const plan: { adapterId: string; isSatisfying?: (result: unknown) => boolean }[] = [];
+    const plan: { adapterId: string; policy?: PolicyPredicate }[] = [];
     const planned = new Set<string>();
     for (const route of matching) {
+      const policy = this.policies.get(route);
       for (const adapterId of route.adapterIds) {
         if (planned.has(adapterId)) continue;
         planned.add(adapterId);
         plan.push({
           adapterId,
-          ...(route.isSatisfying ? { isSatisfying: route.isSatisfying } : {}),
+          ...(policy ? { policy } : {}),
         });
       }
     }
@@ -234,9 +573,14 @@ export class CapabilityRegistry {
      *
      * Failing open restores the pre-policy behaviour, which is the only safe direction: a broken
      * policy must not be able to suppress a provider's real answer.
+     *
+     * task 012-6 changed WHAT is called here (a predicate resolved from the route's descriptor at
+     * construction) and nothing else: same fail-open, same single stderr line, same verdict. A
+     * policy CLASS that throws is a bug of this package rather than of a route literal, which makes
+     * the guard more necessary, not less.
      */
     const satisfies = (
-      policy: ((result: unknown) => boolean) | undefined,
+      policy: PolicyPredicate | undefined,
       value: unknown,
       adapterId: string,
     ): boolean => {
@@ -271,6 +615,46 @@ export class CapabilityRegistry {
      * full authority.
      */
     let hadFailure = false;
+    /**
+     * Whether the walk ran out of OUR OWN time, as opposed to running out of adapters (task 012-8).
+     *
+     * Set by exactly two things, and by nothing else: the pre-iteration check below (the clock has
+     * passed `effectiveDeadlineAtMs`) and the per-adapter catch recognising the NET-layer
+     * `DeadlineExceededError`. **`DeadlineWouldExceedError` never sets it** — a saturated bucket is
+     * a per-PROVIDER fact and the deadline is global, so treating one provider's backlog as the
+     * route's expiry would stop the walk before the paid adapter whose bucket is idle and for whom
+     * the remaining seconds are entirely real (H-A; H-1 one floor down).
+     */
+    let deadlineHit = false;
+    /**
+     * Every adapter whose `fetch()` was entered, in walk order (cycle 2, F-4) — see
+     * `CapabilityResolution.attempted` for what it is for and why it is not filtered by tier here.
+     *
+     * Appended at the CALL, not at its outcome: a `fetch()` that throws may still have spent money
+     * (nansen commits its reservation before the sub-calls that can fail), so "was it entered" is
+     * the question a budget reading has to ask, and "did it succeed" is not.
+     */
+    const attempted: string[] = [];
+    /**
+     * Attaches what is known only at RETURN time to whichever resolution is about to be returned:
+     * the walk's `attempted`, and the deadline overrun if there is one.
+     *
+     * Neither can be attached where a resolution is CONSTRUCTED. The `unsatisfying` one is built
+     * before the walk continues into the sources that spend — and those are exactly the ones it must
+     * name — and the overrun is by definition unknown until the walk stops. One function, so a third
+     * return-time fact needs no third edit at every `return` in the loop (there are three).
+     */
+    const withDiagnostics = (resolution: CapabilityResolution): CapabilityResolution => {
+      const overrunMs = Date.now() - effectiveDeadlineAtMs;
+      // `> 0`, so the field is absent on every ordinary call rather than present as `0`. Same rule
+      // as `attempted` and `ageMs`: an absent field says nothing happened, a zero invites a reader
+      // to look for a meaning it does not have.
+      const late = overrunMs > 0 ? { deadlineOverrunMs: overrunMs } : {};
+      const walk = attempted.length > 0 ? { attempted: [...attempted] } : {};
+      return Object.keys(late).length + Object.keys(walk).length > 0
+        ? { ...resolution, ...walk, ...late }
+        : resolution;
+    };
 
     // GATE 2 — coverage (TASK-006 R-51d). Positioned deliberately: after the route is known, but
     // BEFORE the cache read, before `isAvailable()`, before the budget gate and before any HTTP.
@@ -299,7 +683,46 @@ export class CapabilityRegistry {
 
     const argsHash = deriveArgsHash(capability, args);
 
-    for (const { adapterId, isSatisfying } of plan) {
+    for (const { adapterId, policy } of plan) {
+      // THE PRE-CHECK (task 012-8). First statement of the loop body, and ABOVE the cache read
+      // below — both positions are decisions:
+      //
+      // - **Above the cache read.** A deadline bounds what a call may SPEND, and serving a cached
+      //   entry is a way of spending it: the caller cannot predict which of its sources will be warm,
+      //   so "cheap enough to serve past the ceiling" is a distinction it never asked for. Refusing
+      //   to SERVE the entry is not the same as touching it — nothing here evicts or negative-writes,
+      //   so the next call that fits in budget still gets it (TC-INT-09 and TC-INT-10 assert the two
+      //   directions).
+      //
+      //   The original wording was "a deadline means: after this moment we do not answer", and it
+      //   was FALSE of this same method — the H-1 return below hands back a complete answer past the
+      //   ceiling when every source was entered and every one replied. OQ-T012-6 put the two
+      //   readings to the owner; the decision (2026-08-05) keeps that return and rewrites this
+      //   sentence, because a justification that the code contradicts is worse than none: the next
+      //   reader designs against it. The ceiling constrains SPENDING (time, and on a paid route
+      //   credits); it is not a promise about the moment of delivery, and `deadlineOverrunMs` on the
+      //   resolution is how a caller finds out when delivery slipped anyway.
+      // - **Time is the ONLY condition.** Never "some earlier adapter in this walk threw something
+      //   deadline-flavoured": `DeadlineWouldExceedError` is a fact about ONE provider's bucket,
+      //   and ORing it in here would let a free source's saturation skip every source behind it.
+      //
+      // `hadFailure` is set TOGETHER with `deadlineHit` (OD-4): a deadline is a failure of OUR
+      // availability, exactly like a missing key or a 5xx. Without it, the H-1 return below
+      // (`unsatisfying && !hadFailure`) would publish the answer of whoever replied before the
+      // clock ran out — "Nansen answered: no labels" where the truth is "Nansen was never asked".
+      //
+      // Costs one `Date.now()` and no network call at all, which is what makes it affordable to
+      // give every unreached adapter its own honest `tried[]` entry instead of a silent skip.
+      if (Date.now() >= effectiveDeadlineAtMs) {
+        deadlineHit = true;
+        hadFailure = true;
+        tried.push({
+          adapterId,
+          reason: 'deadline exceeded before this source could be attempted',
+        });
+        continue;
+      }
+
       const adapter = this.adapters.get(adapterId);
       if (!adapter) {
         // NOT a failure for the H-1 distinction, deliberately. An id in the route with no adapter
@@ -363,7 +786,7 @@ export class CapabilityRegistry {
         // H-1: the policy applies to CACHE HITS too. Checking only fresh results would let the
         // shadowing return through the cache the moment the first empty answer was stored —
         // and stored answers outlive the deploy that fixed the code.
-        if (satisfies(isSatisfying, cached.value, adapterId)) return hit;
+        if (satisfies(policy, cached.value, adapterId)) return withDiagnostics(hit);
         unsatisfying ??= hit;
         tried.push({ adapterId, reason: 'answered, but not with what was asked for [cached]' });
         continue;
@@ -371,7 +794,15 @@ export class CapabilityRegistry {
 
       let raw: unknown;
       try {
-        raw = await adapter.fetch(capability, args);
+        attempted.push(adapterId);
+        // The deadline travels as the THIRD argument, unchanged (task 012-8). An adapter that
+        // ignores it degrades to its own per-hop timeout and is not broken by it (R-140e) — **10 of
+        // the 12 do exactly that today** (corrected in adversarial cycle 2, F-7: this said 11, which
+        // was the count on the day 012-8 landed and stopped being true in 012-9, when `nansen`
+        // joined `blockscout` in reading it). The registry still refuses every adapter it has not
+        // yet reached, above. Coverage by CAPABILITY, measured 2026-08-05: 4 of 20
+        // (`capability-manifest.ts`'s ENFORCEMENT section; the gap is WI-37).
+        raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs);
       } catch (error) {
         // A PERMANENT refusal propagates as itself (vdd-multi cycle 5, H-1). Everything else in
         // this catch is treated as "this adapter could not answer right now, try the next one",
@@ -382,6 +813,20 @@ export class CapabilityRegistry {
         // discover it deeper (Nansen's exhaustive `entity.labels` tier has a narrower chain list
         // than the default tier, and `chainSupport()` cannot see `args.exhaustive`).
         if (error instanceof CapabilityNotCoveredOnChainError) throw error;
+        // C-1 TRANSLATION (task 012-8). The NET-layer `DeadlineExceededError` never leaves this
+        // method as itself: it carries a URL or a provider id and knows nothing of
+        // `{capability, chain, tried}`, which is precisely why there are two classes. Caught here,
+        // it sets `deadlineHit` and is otherwise recorded like any other failure.
+        //
+        // Unlike `CapabilityNotCoveredOnChainError` one line above, it does NOT rethrow
+        // immediately: the adapters behind this one still need their own `tried[]` entries, and the
+        // pre-check at the top of the loop produces them for free on the next iterations.
+        //
+        // `DeadlineWouldExceedError` (the limiter's saturated-bucket refusal) deliberately has NO
+        // branch here — it falls into the generic "this adapter could not answer, try the next one"
+        // handling below, without setting `deadlineHit`. That absence is the mechanism, not an
+        // omission: see the flag's own docstring.
+        if (error instanceof DeadlineExceededError) deadlineHit = true;
         // FETCH failures are NOT negative-cached (L-1). A transport error, a 429, a 5xx or a budget
         // refusal is transient by nature: the same call a second later can legitimately succeed.
         // Caching that verdict would turn a blip into a self-inflicted outage lasting the whole
@@ -410,7 +855,7 @@ export class CapabilityRegistry {
         // H-1. The result is cached above REGARDLESS — it is this adapter's truthful answer, the
         // cache key is scoped to `adapter.id`, and remembering "blockscout has nothing for X" is
         // what makes the next identical call skip straight to the provider that might.
-        if (satisfies(isSatisfying, result, adapterId)) return answer;
+        if (satisfies(policy, result, adapterId)) return withDiagnostics(answer);
         unsatisfying ??= answer;
         tried.push({ adapterId, reason: 'answered, but not with what was asked for' });
         continue;
@@ -450,7 +895,48 @@ export class CapabilityRegistry {
     // unreachable". On a stock install with no `NANSEN_API_KEY` that is the ORDINARY path, and it
     // silently voided R-40's contract (an explicit `isError` naming the missing key). It also makes
     // the `tried` entries below reachable, which is what a diagnostic has to be to be one.
-    if (unsatisfying && !hadFailure) return unsatisfying;
+    // `withDiagnostics` (F-4): the answer returned here is an EARLIER adapter's, and the sources the
+    // walk entered after it — the paid ones, on the only route where this branch is reachable — are
+    // exactly what a budget reading has to see. Attaching at construction would have named none.
+    if (unsatisfying && !hadFailure) return withDiagnostics(unsatisfying);
+
+    // OD-4 (task 012-8): expiry ALWAYS throws, and it throws the class that says whose fault it is.
+    //
+    // `deadlineHit` is the PRIMARY signal — set by the pre-check above or by the catch that
+    // recognised the net-layer class. The SECOND disjunct is a duplicate on purpose: it catches a
+    // path that arrives here with the time already gone WITHOUT having passed through that catch —
+    // an adapter whose own error handling swallowed the typed class before the registry could see
+    // it. That is not hypothetical: `blockscout` re-messages every transport throw by CLASS NAME
+    // (M-7, so a URL carrying `?apikey=` cannot reach the model), so its deadline failure arrives
+    // as a plain `Error` with the typed one only on `cause`. Reporting "unavailable" there would
+    // tell the caller to retry a route that failed because WE ran out of time.
+    //
+    // **The cause is TRACKED, and this comment is not its record** —
+    // `docs/backlog/wi-36-adapter-wrappers-flatten-typed-errors.md` (WI-36) holds the measurement
+    // (two of twelve adapters flatten it; `blockchain-info` is the latent second) and the options.
+    // This line compensates the OUTCOME only. **It stays even after WI-36 lands:** it covers all
+    // twelve adapters and every future one, while unwrapping fixes two. Pinned by TC-INT-11 in
+    // `test/registry.deadline.test.ts` — before that case existed, deleting this disjunct left all
+    // 1404 tests green, which is how WI-36 was found.
+    //
+    // `DeadlineWouldExceedError` does not set `deadlineHit` — but it CAN still reach this branch
+    // through the second disjunct, and an earlier version of this comment claimed it could not
+    // ("by construction the limiter only throws it while `remainingMs > 0`, i.e. strictly before
+    // `Date.now() >= effectiveDeadlineAtMs` can be true"). That is a statement about the moment of
+    // the THROW; the disjunct is evaluated later. A single-adapter route whose bucket refuses with
+    // `remainingMs = 1 ms` left arrives here after the millisecond has passed and ends as
+    // `CapabilityDeadlineExceededError`, even though the only failure was a saturated bucket.
+    //
+    // Corrected, not changed (adversarial cycle 2, F-7): the OUTCOME is defensible — the walk
+    // genuinely has no time left by then, and telling the caller "retry with more time" is truthful
+    // — so this is a narrowing of the claim, not a fix of behaviour. What the two classes still
+    // guarantee is the part that matters: a `DeadlineWouldExceedError` never STOPS the walk, so the
+    // adapters behind the saturated one are asked. The mirror of this note lives on
+    // `DeadlineWouldExceedError` in `net/rate-limit.ts`; cycle 2's F-2 made the window smaller by
+    // requiring the refusal to leave `MIN_POST_WAIT_REMAINDER_MS` behind it, but not empty.
+    if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {
+      throw new CapabilityDeadlineExceededError({ capability, chain, tried });
+    }
 
     throw new CapabilityUnavailableError({ capability, chain, tried });
   }

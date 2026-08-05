@@ -6,7 +6,12 @@ import {
   PoolSchema,
   type CapabilityRegistry,
 } from '@onchain-intel/core';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 /**
@@ -77,7 +82,8 @@ const CAPABILITY = 'pairs.new';
 const DEFAULT_LIMIT = 10;
 
 export type NewPairsOutcome =
-  { ok: true; output: NewPairsOutput; cache: CacheMeta } | { ok: false; reason: string };
+  | { ok: true; output: NewPairsOutput; cache: CacheMeta; timing?: TimingMeta }
+  | { ok: false; reason: string };
 
 /**
  * Pure handler — no address to (re-)normalize here, unlike `get-token.ts`/`wallet-balances.ts`.
@@ -125,7 +131,7 @@ export async function newPairsHandler(
   if (!parsed.success) {
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
-  return { ok: true, output: parsed.data, cache: outcome.cache };
+  return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }
 
 /** The `ToolSpec` for `onchain_new_pairs` — this name is declared here and nowhere else (R-18).

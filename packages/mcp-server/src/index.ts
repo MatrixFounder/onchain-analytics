@@ -18,11 +18,24 @@ import {
   createRpcEvmAdapter,
   createRpcSolanaAdapter,
   routes,
+  adapterRegistrations,
+  assertValidAdapterRegistrations,
   type BudgetStore,
   type ProviderAdapter,
 } from '@onchain-intel/core';
 import { loadEnv, toProcessEnv, type Env } from './env.js';
 import { createServer } from './server.js';
+
+// Task 012-2 (ADR-002 D8/D9, R-153/R-154) — every adapter registration must DECLARE its `tier` and
+// its `trust` rank. Deliberately at module scope, immediately after the imports and therefore
+// before `createCacheStore()`, `createBudgetStore()` and `CapabilityRegistry` are ever constructed:
+// an undeclared rank has to kill process START, not the first request that happens to route
+// through the offending adapter. Failing later would additionally leave a half-declared adapter set
+// bootstrapped into the `providers` table of an already-opened SQLite file.
+//
+// The compiler already rejects a literal missing either field; this is the same guarantee for
+// values that arrive through a cast or a runtime-assembled array (see the function's own docstring).
+assertValidAdapterRegistrations(adapterRegistrations);
 
 /**
  * Minimal shape of `package.json` needed here — just enough to read `version` once, so it is
@@ -66,13 +79,21 @@ function createProductionNansenAdapter(env: Env, budgetStore: BudgetStore): Prov
 /**
  * Assembles the ONE real, network-capable `CapabilityRegistry` for production (task 003-7,
  * ARCHITECTURE.md §3.2/§5.2 — "registry по умолчанию... строится один раз в index.ts, передаётся
- * в createServer"): all 10 real `ProviderAdapter`s from `@onchain-intel/core` (`coingecko`/
- * `dune` read `env` for their optional API keys; the other 7 are keyless or DSN-gated the same
- * way) + the real two-level cache (`createCacheStore()` — its `DATA_DIR` resolution already reads
+ * в createServer"): all 12 real `ProviderAdapter`s from `@onchain-intel/core` (`coingecko`/
+ * `blockscout`/`nansen` are handed the VALIDATED `env` for their API keys; the other 9 take no key
+ * — keyless, or DSN-gated through the same validated `env` in `pg-history`'s case) + the real
+ * two-level cache (`createCacheStore()` — its `DATA_DIR` resolution already reads
  * `process.env.DATA_DIR`, which `loadEnv()` above has already synced via `process.loadEnvFile()`
  * by the time this runs). `server.ts`'s own `registry` default is a separate, deliberately INERT
- * fallback (see its docstring) — this function is the only place the real 10-adapter set is ever
+ * fallback (see its docstring) — this function is the only place the real 12-adapter set is ever
  * constructed (single point, per this task's own instruction).
+ *
+ * **Counts corrected in task 012-2** (the same commit that edits all twelve registrations to add
+ * `tier`/`trust`, so the stale arithmetic was in the blast radius anyway). This said "all 10 real
+ * adapters ... the other 7" while the Map below held 12 — stale since TASK-008/TASK-009 — and the
+ * parenthetical named `dune` as an env reader, which it is not: `createDuneAdapter()` takes no
+ * argument at all. Both halves are fixed here, and 3 + 9 now equals the 12 entries actually
+ * constructed below; the old 2 + 7 did not equal its own 10 either.
  *
  * **`budgetStore` (M2, task 005-6) is a required parameter here** — `main()` constructs ONE real
  * `SqliteBudgetStore` (`createBudgetStore()`) and passes the SAME instance both here (for the

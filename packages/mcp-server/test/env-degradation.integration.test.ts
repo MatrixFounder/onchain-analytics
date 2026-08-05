@@ -32,7 +32,6 @@ import { loadEnv, toProcessEnv } from '../src/env.js';
 
 const HISTORY_ROUTE: CapabilityRoute = {
   capability: 'platform.metrics.history',
-  chains: ['dash'],
   adapterIds: ['pg-history'],
 };
 

@@ -2,7 +2,12 @@ import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 const CAPABILITY = 'dex.volume.history';
@@ -83,7 +88,8 @@ export interface DexVolumeContext {
 }
 
 export type DexVolumeOutcome =
-  { ok: true; value: DexVolumeOutput; cache: CacheMeta } | { ok: false; reason: string };
+  | { ok: true; value: DexVolumeOutput; cache: CacheMeta; timing?: TimingMeta }
+  | { ok: false; reason: string };
 
 export async function dexVolumeHandler(
   input: DexVolumeInput,
@@ -113,7 +119,7 @@ export async function dexVolumeHandler(
   if (!parsed.success) {
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
-  return { ok: true, value: parsed.data, cache: outcome.cache };
+  return { ok: true, value: parsed.data, ...metaFrom(outcome) };
 }
 
 export const dexVolumeToolSpec = defineTool({
@@ -131,6 +137,6 @@ export const dexVolumeToolSpec = defineTool({
   needs: ['registry'],
   handler: async (input, ctx) => {
     const outcome = await dexVolumeHandler(input, ctx);
-    return outcome.ok ? { ok: true, output: outcome.value, cache: outcome.cache } : outcome;
+    return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;
   },
 });

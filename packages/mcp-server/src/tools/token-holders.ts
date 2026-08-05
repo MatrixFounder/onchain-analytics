@@ -8,7 +8,12 @@ import {
   TokenHoldersSchema,
   type CapabilityRegistry,
 } from '@onchain-intel/core';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 /**
@@ -85,7 +90,8 @@ export interface TokenHoldersContext {
 const CAPABILITY = 'token.holders';
 
 export type TokenHoldersOutcome =
-  { ok: true; output: TokenHoldersOutput; cache: CacheMeta } | { ok: false; reason: string };
+  | { ok: true; output: TokenHoldersOutput; cache: CacheMeta; timing?: TimingMeta }
+  | { ok: false; reason: string };
 
 /**
  * Pure handler for `onchain_token_holders`.
@@ -128,7 +134,7 @@ export async function tokenHoldersHandler(
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
 
-  return { ok: true, output: parsed.data, cache: outcome.cache };
+  return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }
 
 /** The `ToolSpec` for `onchain_token_holders` — this name is declared here and nowhere else. */

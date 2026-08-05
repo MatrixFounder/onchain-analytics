@@ -80,6 +80,22 @@ export interface NansenEndpointDeps {
   apiKey: string;
   fetchImpl: typeof fetch;
   throttle?: Throttle;
+  /**
+   * The transport seam (task 012-9, PLAN §0.3 seam #1, owner decision OD-6 of 2026-08-03).
+   *
+   * **Why it exists at all.** `safeFetch` was a STATIC import here, and `fetchImpl` cannot stand in
+   * for it: `fetchImpl` receives a `RequestInit`, which carries no `deadlineAtMs`, so the one thing
+   * D4 п.2 makes a correctness condition — "nothing that runs after `checkAndReserve()` was handed a
+   * deadline" — was observable only on the limiter's half of the path. A contract test that checks
+   * the limiter and not the transport LOOKS like a check of the invariant while checking half of it;
+   * AC-8 was amended to forbid exactly that. The seam is what makes the whole statement testable.
+   *
+   * **Optional, mirroring `throttle?` above and NOT the mandatory `fetchImpl`** — a required key
+   * would be a breaking change for every existing construction of this interface. Defaulted at the
+   * ONE call site (`callEndpoint`) via `deps.safeFetchImpl ?? safeFetch`, so production behaviour is
+   * byte-identical when it is omitted.
+   */
+  safeFetchImpl?: typeof safeFetch;
 }
 
 /**
@@ -133,7 +149,14 @@ async function callEndpoint(
         }
       : { method: 'GET', headers: { apiKey: deps.apiKey } };
 
-  const response = await safeFetch(url, opts, HOSTS, deps.fetchImpl);
+  // **NO fifth argument, and its absence is the contract** (task 012-9, ADR-002 D4 п.2). Every
+  // endpoint below runs strictly AFTER `budget-gate.ts` committed the credit reservation for the
+  // SUM of this capability's sub-calls, so none of them may be handed a `deadlineAtMs`: cancelling
+  // work that is already paid for is "paid and did not receive", strictly worse than waiting for it.
+  // `test/nansen-deadline-boundary.test.ts` (TC-CONTRACT-01) asserts this directly on the seam
+  // rather than inferring it from an outcome.
+  const safeFetchFn = deps.safeFetchImpl ?? safeFetch;
+  const response = await safeFetchFn(url, opts, HOSTS, deps.fetchImpl);
 
   if (response.status === 429) {
     throw new NansenRateLimitedError(response.headers.get('retry-after'));

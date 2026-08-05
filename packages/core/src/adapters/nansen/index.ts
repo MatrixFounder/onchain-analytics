@@ -11,6 +11,7 @@ import type { BudgetStore } from '../../cache/budget-store.js';
 import { hasAddressValidator, normalizeAddress } from '../../chain/address.js';
 import { deriveArgsHash } from '../../net/args-hash.js';
 import type { Throttle } from '../../net/rate-limit.js';
+import type { safeFetch } from '../../net/safe-fetch.js';
 import { createNansenAccountState } from './account-state.js';
 import {
   createNansenBudgetGate,
@@ -90,6 +91,18 @@ export interface NansenAdapterDeps {
   now?: () => number;
   fetchImpl?: typeof fetch;
   throttle?: Throttle;
+  /**
+   * The transport seam (task 012-9, PLAN §0.3 seam #1, owner decision OD-6). Forwarded UNCHANGED to
+   * both legs of one logical call — the gate's free `/account` resync (`budget-gate.ts`) and the
+   * paid sub-calls (`endpoints.ts`) — so one injected spy observes both, and the only difference
+   * between them is the one this task is about: which of them was handed a `deadlineAtMs`.
+   *
+   * It has to exist HERE, and not only on `NansenEndpointDeps`, for the seam to be reachable: the
+   * endpoint deps are built INSIDE `fetch()`, so a caller who cannot pass this key cannot observe
+   * the transport at all, and the H3 contract test would be back to checking half the invariant.
+   * Optional, like `fetchImpl`/`throttle`; omitted, every call site defaults to the real `safeFetch`.
+   */
+  safeFetchImpl?: typeof safeFetch;
   /** Chain registry used to map our slug → Nansen's own chain token and to enforce per-capability
    * coverage in the TRANSPORT, not just in the gate (vdd-multi cycle 5, H-1). Same DI convention as
    * `rpc-evm`/`dexscreener`; defaults to the shipped snapshot. */
@@ -542,6 +555,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
         fetchImpl: deps.fetchImpl ?? fetch,
         env: deps.env ?? process.env,
         ...(deps.throttle ? { throttle: deps.throttle } : {}),
+        ...(deps.safeFetchImpl ? { safeFetchImpl: deps.safeFetchImpl } : {}),
       })
     : undefined;
 
@@ -592,128 +606,98 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
     // `CapabilityRegistry` already keeps `isAvailable()` from ever letting this be reached without
     // one, but a direct/out-of-band call still fails with a clear, typed message instead of
     // silently sending an `apiKey: undefined` header.
-    fetch: async (cap: string, args: Record<string, unknown>): Promise<unknown> =>
-      singleflight(deriveArgsHash(cap, args), async () => {
-        const env = deps.env ?? process.env;
-        const apiKey = env['NANSEN_API_KEY'];
-        if (!apiKey) {
-          throw new Error(
-            'nansen.fetch: NANSEN_API_KEY is required (isAvailable() should have blocked this)',
-          );
-        }
-        const endpointDeps: NansenEndpointDeps = {
-          apiKey,
-          fetchImpl: deps.fetchImpl ?? fetch,
-          ...(deps.throttle ? { throttle: deps.throttle } : {}),
-        };
-
-        if (!budgetStore || !gate) {
-          // Fail-closed (code review, 005-5 round 2 — OQ-2 non-bypassability; M-6, adversarial
-          // review cycle 1): this ungated branch is a TEST-ONLY escape hatch for isolated
-          // HTTP-contract testing. Consent is now an EXPLICIT opt-in boolean, never inferred from
-          // `fetchImpl` presence alone — see `NansenAdapterDeps.__ungatedForTestsOnly`'s own
-          // docstring for why that inference was proven false in-repo (`scripts/record-fixture.mjs`
-          // wraps the REAL global `fetch`). Reaching this branch withOUT the flag set means a
-          // genuinely paid Nansen call with ZERO budget accounting — silently, no throw, no stderr —
-          // exactly the money-leak OQ-2's "structurally non-bypassable" decision forbids. Refuse
-          // loudly instead of leaking credits.
-          if (deps.__ungatedForTestsOnly !== true) {
+    fetch: async (
+      cap: string,
+      args: Record<string, unknown>,
+      /**
+       * The absolute call deadline (ADR-002 D4, task 012-9). It reaches exactly two places, and the
+       * boundary between them is the COMMITTED credit reservation:
+       *
+       *   1. the singleflight FOLLOWER's wait (below) — a caller sharing an in-flight identical call
+       *      may give up on its own deadline; the leader it was waiting on is not cancelled;
+       *   2. `gate.ensureBudget()`, which passes it to the free `/account` resync and to nothing
+       *      after `checkAndReserve()` (`budget-gate.ts`).
+       *
+       * It reaches NOTHING else: not `endpointDeps` (so no sub-call and no limiter wait between
+       * sub-calls can be cut short), and not the ungated test-only path, which is `performSubCalls`
+       * all the way down. `ensureBudget()` is called ONCE per logical `fetch()` and its reservation
+       * covers all 2–3 sub-calls, so cancelling sub-call 2 would abandon work already paid for.
+       */
+      deadlineAtMs?: number,
+    ): Promise<unknown> =>
+      singleflight(
+        deriveArgsHash(cap, args),
+        async () => {
+          const env = deps.env ?? process.env;
+          const apiKey = env['NANSEN_API_KEY'];
+          if (!apiKey) {
             throw new Error(
-              'nansen.fetch: refusing an ungated paid call over the real transport — construct ' +
-                'createNansenAdapter() with a budgetStore (production) or set ' +
-                '__ungatedForTestsOnly: true (isolated HTTP-contract test only)',
+              'nansen.fetch: NANSEN_API_KEY is required (isAvailable() should have blocked this)',
             );
           }
-          const { result } = await performSubCalls(cap, args, endpointDeps, [], chains);
-          return result;
-        }
+          // **No `deadlineAtMs` here, deliberately** (task 012-9): these deps drive `performSubCalls`,
+          // which runs only after the reservation for the SUM of its sub-calls has been committed.
+          // The transport seam IS forwarded — it is how the contract test observes that the sub-calls
+          // were handed no deadline (`test/nansen-deadline-boundary.test.ts`, TC-CONTRACT-01).
+          const endpointDeps: NansenEndpointDeps = {
+            apiKey,
+            fetchImpl: deps.fetchImpl ?? fetch,
+            ...(deps.throttle ? { throttle: deps.throttle } : {}),
+            ...(deps.safeFetchImpl ? { safeFetchImpl: deps.safeFetchImpl } : {}),
+          };
 
-        // M-2(c) (adversarial review cycle 1): validated + normalized BEFORE ensureBudget() — a
-        // malformed chain/address must throw before any credits are ever reserved, never after.
-        validateArgs(cap, args, chains);
-
-        // M-2(a) (adversarial review cycle 1): `ensureBudget()` now runs INSIDE this try — a
-        // post-commit throw from it (its own warn-block best-effort try/catch already absorbs the
-        // expected ones, `budget-gate.ts`, but this is a second, defense-in-depth layer) is caught
-        // the SAME way a sub-call failure is, below. `reservation` starts `undefined` and is only
-        // ever assigned once `ensureBudget()` has genuinely resolved — this is what lets the catch
-        // tell "a reservation was committed, then something else failed" (reconcile + mark) apart
-        // from "ensureBudget() itself refused before committing anything" (nothing to reconcile,
-        // rethrow as-is — a `NansenBudgetExceededError` refusal must never mark `accountState`
-        // unreconciled, TC-INT-02 in `mcp-server`'s own degradation suite depends on this).
-        let reservation: NansenBudgetReservation | undefined;
-        // Guards against DOUBLE-APPLYING the signed delta (cycle-2 review L-1). The catch below
-        // cannot otherwise distinguish "reconcile never ran" from "reconcile ran, COMMITTED, and
-        // then threw". With `SqliteBudgetStore` that second case is unreachable (`recordDelta` is a
-        // single synchronous `stmt.run()`), but `BudgetStore` is explicitly forward-declared for a
-        // Postgres implementation (D7), where a commit followed by a dropped connection on the
-        // response read is ordinary — and re-applying the common `delta = -reservedTotal` full
-        // refund would DOUBLE-refund, silently widening the budget. Skipping the retry is the safe
-        // direction: `markUnreconciled()` still forces a resync, which self-corrects an
-        // un-refunded reservation, whereas a double refund does not self-correct.
-        let reconcileAttempted = false;
-        const subResponses: NansenEndpointResult[] = [];
-        try {
-          reservation = await gate.ensureBudget(cap, args);
-          const { result } = await performSubCalls(cap, args, endpointDeps, subResponses, chains);
-          reconcileAttempted = true;
-          try {
-            await reconcile({
-              subResponses,
-              reservedTotal: reservation.reservedTotal,
-              bucket: reservation.bucket,
-              ...(reservation.window === undefined ? {} : { window: reservation.window }),
-              budgetStore,
-              accountState,
-            });
-          } catch (reconcileError) {
-            // BEST-EFFORT, and the failure is absorbed HERE rather than in the catch below
-            // (vdd-multi cycle 4, logic L-3 + L-4). Two defects shared this one `await`:
-            //
-            // (L-4) The call is already PAID and `result` is already valid. Letting a bookkeeping
-            // write propagate meant `registry.ts` recorded the adapter as failed, nothing was
-            // cached, the tool returned `CapabilityUnavailableError`, and the agent's retry paid
-            // the full 10/6/100cr again — the exact post-payment-throw class `normalize.ts` was
-            // hardened against three separate times, left open on the last step. `SQLITE_BUSY`
-            // past the 5s busy timeout is realistic: `budget-store.ts` explicitly designs for
-            // several stdio sessions sharing one `cache.sqlite3`. The neighbouring contracts
-            // already work this way — the gate's warn block never fails a committed write over an
-            // observability side effect, and `registry.ts` treats a cache fault as non-fatal.
-            //
-            // (L-3) `markUnreconciled()` lived only in the `!reconcileAttempted` branch below, so
-            // in exactly the case its own comment was written for — "reconcile ran and threw" — the
-            // documented safety net never fired. It fires here instead.
-            //
-            // Ledger state after this path is conservative: the full reservation stays charged
-            // (never a phantom refund), and the forced resync rebases on the vendor's authoritative
-            // remainder on the next gate entry, which is what self-corrects the difference.
-            // `markUnreconciled()` FIRST, then the log — the ledger correction must not depend on
-            // stderr being writable.
-            accountState.markUnreconciled();
-            try {
-              // The write is itself wrapped (cycle-4 verification pass): stderr can throw EPIPE once
-              // the stdio client has closed — the very case `budget-gate.ts`'s warn block already
-              // guards against with this same shape. Unwrapped, that throw escaped this catch into
-              // the outer one, where `reconcileAttempted === true` skips the retry and rethrows,
-              // discarding the paid result again — i.e. it re-opened the exact hole this handler
-              // exists to close.
-              process.stderr.write(
-                `nansen reconcile: ledger write failed AFTER a paid call — reservation stays charged, ` +
-                  `next gate entry resyncs /account: ${reconcileError instanceof Error ? reconcileError.message : String(reconcileError)}\n`,
+          if (!budgetStore || !gate) {
+            // Fail-closed (code review, 005-5 round 2 — OQ-2 non-bypassability; M-6, adversarial
+            // review cycle 1): this ungated branch is a TEST-ONLY escape hatch for isolated
+            // HTTP-contract testing. Consent is now an EXPLICIT opt-in boolean, never inferred from
+            // `fetchImpl` presence alone — see `NansenAdapterDeps.__ungatedForTestsOnly`'s own
+            // docstring for why that inference was proven false in-repo (`scripts/record-fixture.mjs`
+            // wraps the REAL global `fetch`). Reaching this branch withOUT the flag set means a
+            // genuinely paid Nansen call with ZERO budget accounting — silently, no throw, no stderr —
+            // exactly the money-leak OQ-2's "structurally non-bypassable" decision forbids. Refuse
+            // loudly instead of leaking credits.
+            if (deps.__ungatedForTestsOnly !== true) {
+              throw new Error(
+                'nansen.fetch: refusing an ungated paid call over the real transport — construct ' +
+                  'createNansenAdapter() with a budgetStore (production) or set ' +
+                  '__ungatedForTestsOnly: true (isolated HTTP-contract test only)',
               );
-            } catch {
-              // Diagnostics are best-effort; never fail a paid, valid result over a log line.
             }
+            const { result } = await performSubCalls(cap, args, endpointDeps, [], chains);
+            return result;
           }
-          return result;
-        } catch (error) {
-          if (reservation && !reconcileAttempted) {
-            // M-2(b) (adversarial review cycle 1): a reservation WAS committed before this error —
-            // sum whatever sub-responses DID complete (possibly none, e.g. a malformed capability
-            // dispatch; possibly a partial set, e.g. sub-call #2 of a composite failed) through the
-            // SAME reconcile() path a successful call uses, so the unspent portion is refunded
-            // instead of the FULL reservation staying a phantom charge forever. Best-effort: a
-            // reconcile() failure here must never mask the ORIGINAL error that triggered this catch.
+
+          // M-2(c) (adversarial review cycle 1): validated + normalized BEFORE ensureBudget() — a
+          // malformed chain/address must throw before any credits are ever reserved, never after.
+          validateArgs(cap, args, chains);
+
+          // M-2(a) (adversarial review cycle 1): `ensureBudget()` now runs INSIDE this try — a
+          // post-commit throw from it (its own warn-block best-effort try/catch already absorbs the
+          // expected ones, `budget-gate.ts`, but this is a second, defense-in-depth layer) is caught
+          // the SAME way a sub-call failure is, below. `reservation` starts `undefined` and is only
+          // ever assigned once `ensureBudget()` has genuinely resolved — this is what lets the catch
+          // tell "a reservation was committed, then something else failed" (reconcile + mark) apart
+          // from "ensureBudget() itself refused before committing anything" (nothing to reconcile,
+          // rethrow as-is — a `NansenBudgetExceededError` refusal must never mark `accountState`
+          // unreconciled, TC-INT-02 in `mcp-server`'s own degradation suite depends on this).
+          let reservation: NansenBudgetReservation | undefined;
+          // Guards against DOUBLE-APPLYING the signed delta (cycle-2 review L-1). The catch below
+          // cannot otherwise distinguish "reconcile never ran" from "reconcile ran, COMMITTED, and
+          // then threw". With `SqliteBudgetStore` that second case is unreachable (`recordDelta` is a
+          // single synchronous `stmt.run()`), but `BudgetStore` is explicitly forward-declared for a
+          // Postgres implementation (D7), where a commit followed by a dropped connection on the
+          // response read is ordinary — and re-applying the common `delta = -reservedTotal` full
+          // refund would DOUBLE-refund, silently widening the budget. Skipping the retry is the safe
+          // direction: `markUnreconciled()` still forces a resync, which self-corrects an
+          // un-refunded reservation, whereas a double refund does not self-correct.
+          let reconcileAttempted = false;
+          const subResponses: NansenEndpointResult[] = [];
+          try {
+            // The deadline stops HERE (task 012-9): `ensureBudget()` forwards it to the free
+            // `/account` resync and to nothing past its own `checkAndReserve()`.
+            reservation = await gate.ensureBudget(cap, args, deadlineAtMs);
+            const { result } = await performSubCalls(cap, args, endpointDeps, subResponses, chains);
+            reconcileAttempted = true;
             try {
               await reconcile({
                 subResponses,
@@ -723,20 +707,79 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
                 budgetStore,
                 accountState,
               });
-            } catch {
-              // best-effort — see this block's own comment above.
+            } catch (reconcileError) {
+              // BEST-EFFORT, and the failure is absorbed HERE rather than in the catch below
+              // (vdd-multi cycle 4, logic L-3 + L-4). Two defects shared this one `await`:
+              //
+              // (L-4) The call is already PAID and `result` is already valid. Letting a bookkeeping
+              // write propagate meant `registry.ts` recorded the adapter as failed, nothing was
+              // cached, the tool returned `CapabilityUnavailableError`, and the agent's retry paid
+              // the full 10/6/100cr again — the exact post-payment-throw class `normalize.ts` was
+              // hardened against three separate times, left open on the last step. `SQLITE_BUSY`
+              // past the 5s busy timeout is realistic: `budget-store.ts` explicitly designs for
+              // several stdio sessions sharing one `cache.sqlite3`. The neighbouring contracts
+              // already work this way — the gate's warn block never fails a committed write over an
+              // observability side effect, and `registry.ts` treats a cache fault as non-fatal.
+              //
+              // (L-3) `markUnreconciled()` lived only in the `!reconcileAttempted` branch below, so
+              // in exactly the case its own comment was written for — "reconcile ran and threw" — the
+              // documented safety net never fired. It fires here instead.
+              //
+              // Ledger state after this path is conservative: the full reservation stays charged
+              // (never a phantom refund), and the forced resync rebases on the vendor's authoritative
+              // remainder on the next gate entry, which is what self-corrects the difference.
+              // `markUnreconciled()` FIRST, then the log — the ledger correction must not depend on
+              // stderr being writable.
+              accountState.markUnreconciled();
+              try {
+                // The write is itself wrapped (cycle-4 verification pass): stderr can throw EPIPE once
+                // the stdio client has closed — the very case `budget-gate.ts`'s warn block already
+                // guards against with this same shape. Unwrapped, that throw escaped this catch into
+                // the outer one, where `reconcileAttempted === true` skips the retry and rethrows,
+                // discarding the paid result again — i.e. it re-opened the exact hole this handler
+                // exists to close.
+                process.stderr.write(
+                  `nansen reconcile: ledger write failed AFTER a paid call — reservation stays charged, ` +
+                    `next gate entry resyncs /account: ${reconcileError instanceof Error ? reconcileError.message : String(reconcileError)}\n`,
+                );
+              } catch {
+                // Diagnostics are best-effort; never fail a paid, valid result over a log line.
+              }
             }
-            // Transport failure on any sub-call OR a synchronous throw for an unrecognized
-            // capability — either way, the NEXT `ensureBudget()` entry is forced to resync
-            // `/account` before trusting the local snapshot again (system-architecture.md §3.2
-            // "Post-call reconciliation + transport-failure/402 resync"). One mechanism covers both
-            // "network died" and "Nansen said 402" (`NansenPaymentRequiredError`, endpoints.ts) — no
-            // special-cased branch here for either.
-            accountState.markUnreconciled();
+            return result;
+          } catch (error) {
+            if (reservation && !reconcileAttempted) {
+              // M-2(b) (adversarial review cycle 1): a reservation WAS committed before this error —
+              // sum whatever sub-responses DID complete (possibly none, e.g. a malformed capability
+              // dispatch; possibly a partial set, e.g. sub-call #2 of a composite failed) through the
+              // SAME reconcile() path a successful call uses, so the unspent portion is refunded
+              // instead of the FULL reservation staying a phantom charge forever. Best-effort: a
+              // reconcile() failure here must never mask the ORIGINAL error that triggered this catch.
+              try {
+                await reconcile({
+                  subResponses,
+                  reservedTotal: reservation.reservedTotal,
+                  bucket: reservation.bucket,
+                  ...(reservation.window === undefined ? {} : { window: reservation.window }),
+                  budgetStore,
+                  accountState,
+                });
+              } catch {
+                // best-effort — see this block's own comment above.
+              }
+              // Transport failure on any sub-call OR a synchronous throw for an unrecognized
+              // capability — either way, the NEXT `ensureBudget()` entry is forced to resync
+              // `/account` before trusting the local snapshot again (system-architecture.md §3.2
+              // "Post-call reconciliation + transport-failure/402 resync"). One mechanism covers both
+              // "network died" and "Nansen said 402" (`NansenPaymentRequiredError`, endpoints.ts) — no
+              // special-cased branch here for either.
+              accountState.markUnreconciled();
+            }
+            throw error;
           }
-          throw error;
-        }
-      }),
+        },
+        deadlineAtMs,
+      ),
     // Real from THIS task (005-4): dispatches to normalize.ts's three pure functions. `raw` is
     // always this SAME adapter instance's own `fetch()` hand-off shape (never validated against a
     // schema here — that trust boundary is `fetch()`'s own return type, anti-corruption layer D4).

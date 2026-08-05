@@ -8,9 +8,7 @@ import { ProtocolTvlInputSchema, protocolTvlHandler } from '../../src/tools/prot
  * docstring for the shared testing convention.
  */
 
-const ROUTES: CapabilityRoute[] = [
-  { capability: 'protocol.tvl', chains: ['ethereum', 'solana'], adapterIds: ['defillama'] },
-];
+const ROUTES: CapabilityRoute[] = [{ capability: 'protocol.tvl', adapterIds: ['defillama'] }];
 
 const FAKE_TVL = {
   protocol: 'Uniswap',

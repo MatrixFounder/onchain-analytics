@@ -178,6 +178,51 @@ describe('security M-1 — the SSRF allowlist column is shape-checked at LOAD', 
       }
     }
   });
+
+  /**
+   * Adversarial cycle 1 (security), closed in cycle 3 — the key-in-path endpoint.
+   *
+   * `net/safe-fetch.ts` publishes `origin + pathname` in its timeout/deadline errors: the query is
+   * stripped (that is how blockscout authenticates), the path is kept as the only diagnostic, and
+   * `rpc-evm` rethrows those errors untouched — its own `hostOf()` narrowing covers only the errors
+   * it MAKES. The redactor's justification was "the path is ours, never a secret", which is exactly
+   * false for the Alchemy/Infura convention, where the key IS a path segment. This column is where
+   * such a URL would enter, so this is where it is refused.
+   */
+  it.each([
+    [
+      'an Alchemy-shaped key segment',
+      'https://eth-mainnet.g.alchemy.com/v2/RtGh7yQ2kLpZx9WvB3nMeUa1',
+    ],
+    [
+      'an Infura-shaped project id',
+      'https://mainnet.infura.io/v3/0123456789abcdef0123456789abcdef',
+    ],
+    ['a key as the only segment', 'https://rpc.example.com/aaaaaaaaaaaaaaaaaaaaaaaa'],
+  ])('rejects %s', (_label, url) => {
+    expect(() => buildChainRegistry(row([url]))).toThrow(ChainRegistryLoadError);
+  });
+
+  it('still accepts the short routes real endpoints use — the rule is not "no path"', () => {
+    // Over-rejecting would push a curator to drop the path and dial the wrong endpoint, so the
+    // admitted side is asserted as explicitly as the refused one.
+    expect(() =>
+      buildChainRegistry(
+        row(['https://rpc.example.com/eth', 'https://rpc.example.com/v1/mainnet']),
+      ),
+    ).not.toThrow();
+  });
+
+  it('the shipped snapshot carries no credential-shaped segment either', () => {
+    // The gate protects future edits; this says the rule and today's data agree, so the case above
+    // is not describing a repo that would fail its own check.
+    for (const chain of CHAINS.list()) {
+      for (const host of chain.rpcHosts ?? []) {
+        const longest = Math.max(...new URL(host).pathname.split('/').map((s) => s.length));
+        expect(longest, `${chain.slug} ${host}`).toBeLessThan(20);
+      }
+    }
+  });
 });
 
 describe('M-6 — a refusal never denies a capability it did not check', () => {

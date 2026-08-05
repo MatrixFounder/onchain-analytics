@@ -2,6 +2,155 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
+- 2026-08-05, **v4.9.3** — **OQ-T012-6 resolved by the owner: Reading A, with two conditions.** The
+  one branch T-012 shipped knowing it was contested — every source entered, every one answered, the
+  last one running past the ceiling — now has a decision instead of a note.
+
+  **The answer is returned, not thrown.** In that branch the deadline prevented nothing and aborted
+  nothing; the time, and on a paid route the credit, are already spent, so discarding the result does
+  not recover them — it converts complete data into "retry later", and the retry walks the same route
+  to the same answer. Whether a late-but-complete answer is worth anything is the caller's judgement,
+  because the caller set the deadline. It is also the reversible choice: throwing can be added later,
+  while subordinating H-1 to the clock destroys a property that cost a full adversarial iteration.
+
+  - **Condition 1 — the pre-check's justification was rewritten.** "A deadline means: after this
+    moment we do not answer" was false of the very method it annotated. The ceiling now reads as a
+    bound on SPENDING (time, and credits on a paid route), never as a promise about delivery.
+    Changed in `adapters/registry.ts` and in ADR-002's D4 passage — a justification the code
+    contradicts is worse than none, because the next reader designs against it.
+  - **Condition 2 — the overrun is reported.** `CapabilityResolution.deadlineOverrunMs` is stamped
+    in one place (`withDiagnostics`, beside `attempted`) and published as `_meta.timing.overrunMs`;
+    absent, never `0`, on every call that finished inside its budget. A silent late answer is the
+    shape this project has ruled against twice already.
+  - **The eleven handlers stopped hand-copying `_meta`.** Fifteen sites each wrote
+    `cache: outcome.cache`, so a second resolution-derived field meant fifteen chances to miss one —
+    which is exactly how cycle 3's F-A happened one layer up. They spread `metaFrom(outcome)` now,
+    and the next field is free.
+
+  `TC-OQ6-a…d` pin the return, the mark, the absence of the mark inside budget, and the untouched
+  `hadFailure` path; both directions were mutation-checked. Test suite — **1473** (1141 core + 332
+  mcp-server), green.
+
+- 2026-08-05, **v4.9.2** — T-012 adversarial cycle 3 and the fix pass that followed it. The cycle
+  ended at the review cap **without convergence** (all three critics still reporting), so this entry
+  records what was repaired afterwards on the owner's instruction, not a clean verdict.
+
+  - **Cycle 2's `_meta.budget` fix was incomplete on the branch it was written for**, and two
+    critics found it independently. The handlers still called `budgetMeta()` only on
+    `cache.status === 'miss'`, while the registry's H-1 return can hand back an EARLIER adapter's
+    **cache hit** after the walk entered and paid `nansen` — so the response said `'hit'`, carried no
+    budget, and the credit was invisible. Cache status is gone from the rule entirely: budget is
+    reported exactly when the traversal ENTERED a paid adapter, one condition in one place
+    (`budget-meta.ts`), and the load-bearing invariant behind that simplification ("the answering
+    adapter of a `'miss'` is itself among the entered") is asserted against the real registry
+    (TC-F-A-INV) rather than assumed.
+  - **The limiter's post-wait floor was a prediction nothing measured.** `remainingMs - waitMs >=
+floor` is arithmetic done BEFORE the sleep, and a timer is only guaranteed not to fire early —
+    so the attribution guarantee the floor exists for held under an assumption about the scheduler.
+    A second check now re-measures the budget on waking and refuses (`phase: 'observed'`) if the wait
+    overran; it deliberately does NOT refund, since that wait was paid in real time. The constant's
+    derivation also stopped citing `blockchain-info`, which configures the same 5 000 ms hop timeout
+    and passes **no** deadline at all — naming it made the evidence look twice as wide as it was.
+  - **`attempted` is now on the wire gate.** It was introduced in cycle 2 with a docstring promising
+    it never crosses the wire, and nothing checked that; the ordinary `return { ...outcome, … }`
+    refactor would have published our route composition with every test green.
+  - **A key-in-path RPC endpoint is refused where it is admitted, not where it is printed.**
+    `safeFetch` publishes `origin + pathname` and justified keeping the path with "the path is ours,
+    never a secret" — an assumption that the Alchemy/Infura convention breaks. `isApprovableRpcUrl`
+    now rejects an `rpcHosts` entry with a credential-shaped path segment at LOAD (security.md
+    §7.2.1), and `rpc-evm`'s comment claiming `safeFetch` "names only the hostname" — which it never
+    did — is corrected.
+  - **The vendor-text surface is measured instead of assumed bounded** (security.md §7.2.2): per-field
+    and per-row caps existed, and nobody had multiplied them out. < 17.5 KB per entity, 400 entries
+    per nansen response (the two vendor arrays are sliced independently), 512 KiB per blockscout call
+    by transport — produced by feeding oversized input through `normalize()` and weighing the output.
+
+  Test suite — **1467** (1137 core + 330 mcp-server), green. Zero credits spent, as for every
+  earlier T-012 entry.
+
+- 2026-08-05, **v4.9.1** — T-012 adversarial cycle 2: nine findings, two of them live defects, the
+  rest claims the code did not hold. **`raceWithTimeout` attaches its handlers before the
+  already-aborted check** — a caller that cancelled before the call left the in-flight fetch
+  rejection unhandled, which on Node's default ends a long-lived stdio server. **The limiter's
+  deadline refusal tests what a wait LEAVES**, not whether it fits: sleeping the budget down to a
+  sliver produced the TERMINAL deadline class one layer down and cancelled every adapter behind the
+  saturated one — H-1 from the branch written to prevent it. **`_meta.budget` follows the traversal,
+  not the winner:** `resolve()` returns `attempted` (adapters whose `fetch()` was entered) so a call
+  that pays `nansen` and returns `blockscout`'s answer still reports the spend. **The two
+  `providers` writers' conflict clauses agree** (the cache store no longer clobbers `notes`).
+  **Prototype-named capabilities and policy kinds are rejected** (`Object.hasOwn`, plus a
+  `Number.isSafeInteger` guard on `manifest.deadlineMs`) — such a route used to build a registry with
+  a `NaN` deadline and a fail-open policy. And the **deadline's enforcement is now stated by
+  measurement**: two adapters read `deadlineAtMs`, so four capabilities of twenty are actually
+  bounded and the rest carry a declared ceiling — sanctioned by R-140e, tracked as WI-37, and no
+  longer described as if it cut anything. That last record is **gated rather than written**: every
+  manifest row carries its own ENFORCED/DECLARED marker, and `capability-manifest.test.ts`'s
+  TC-F5-GATE checks each marker against the adapter sources plus both ratios in the prose, so
+  WI-37 cannot land leaving the document behind. Test suite — **1452** (1126 core + 326
+  mcp-server), green.
+
+- 2026-08-04, **v4.9** — T-012 `capability-manifest-and-call-deadline` **built**. Written on
+  2026-08-05, when the two cycle entries above were found filed as `v4.8.x` — below the version
+  `ARCHITECTURE.md`'s own index had been pointing at since the build — and the entry for the build
+  itself was found missing entirely. The index row is the authority on what landed; this is the
+  changelog line that should have accompanied it.
+
+  Ten tasks, seven accepted on the first round. The policy is a serialisable descriptor resolved
+  against a class registry and validated at construction (D2); 20 manifest rows, each deadline number
+  recorded with its measured envelope and the applied ceiling (D3); an absolute call deadline threads
+  `resolve→fetch→throttle→safeFetch` with real cancellation and stops at the credit reservation (D4);
+  `tier` collapsed four disagreeing classifications of paidness into one (D8); `trust` is
+  declare-only with the validator as its sole reader (D9 slice); `CapabilityRoute.chains` is deleted
+  (OQ-C). Enforcement is stated by measurement, not by intent: 4 capabilities of 20 are actually
+  bounded (WI-37). Suite 1195 → 1417, zero credits spent. **One claim is narrower than v4.8 stated**
+  — expiry does not throw in every branch, which is OQ-T012-6, open and unresolved.
+
+- 2026-08-03, **v4.8** — T-012 `capability-manifest-and-call-deadline`: **design phase, ahead of
+  code.** Recorded here so the index's version pointer resolves; every claim below is DECIDED, not
+  built, and no source file has moved as of this entry.
+
+  - **Four ADR-002 decisions land as one stage** (they touch the same files): the answer-sufficiency
+    policy becomes a serialisable descriptor resolved against a class registry (D2, two classes:
+    `any`, `someElementHasAny{fields}`); capabilities gain a manifest — `shape`/`ttlSeconds`/
+    `deadlineMs`/`shareable` (D3); an absolute `deadlineAtMs` threads
+    `resolve→fetch→throttle→safeFetch` (D4); provider `tier` collapses four disagreeing paid/free
+    classifications into one (D8). `trust` lands **declare-only** (D9 slice), and
+    `CapabilityRoute.chains` is deleted (OQ-C).
+  - **The deadline is a two-phase budget, and the architecture review is why.** The first draft
+    claimed the deadline turns the measured ~410s envelope into ~60s. It cannot: `nansen` makes ONE
+    `gate.ensureBudget()` and runs all 2–3 sub-calls under that single reservation
+    (`nansen/index.ts:656-657`), so ~270s sits **after** the credit commitment, where D4 п.2 forbids
+    cancellation. `deadlineMs` therefore bounds only the cancellable head; each paid capability
+    separately records a derived `paidLegMs`, and the stated worst case is their sum (~330s for
+    `entity.labels`). Owner decision 2026-08-03; retuning nansen's own timeouts was rejected.
+  - **A deadline never publishes a partial as fact.** ADR-002 D4 п.5 reads "ответил хотя бы один →
+    частичный результат", but a deadline is a fact about OUR availability, and the H-1 doctrine
+    (`adapters/registry.ts:443-455`) forbids dressing that as a fact about the data — returning the
+    partial would report "no entity labels" for a sanctioned address merely because the paid source
+    did not fit the budget. Expiry throws `CapabilityDeadlineExceededError` naming both which
+    sources answered and which were never asked. Owner decision 2026-08-03; ADR-002 is amended
+    rather than silently contradicted.
+  - **One ADR-002 self-contradiction and one deliberate deviation from it — both recorded rather
+    than resolved in silence.** The _self-contradiction_ is D9's stage: the impact table says T-016
+    while the later OQ-B closure says T-012 field + T-016 enabling — two passages of the same
+    document disagreeing, resolved in favour of the later and more specific one. The _deviation_ is
+    D4 п.5 above: the ADR is internally consistent there and we are departing from it on the
+    strength of our own H-1 doctrine. Conflating the two would misreport where the authority lies.
+  - Baseline at design time — **1195** (889 core + 306 mcp-server), green.
+  - **Amended the same day, during Planning — OD-5 and OD-6 close what the design had left to
+    Development.** Both were escalated rather than guessed, because a plan written against "or"
+    cannot be verified. **OD-5:** the two contested `trust` values are fixed —
+    `platform-explorer` = `authoritative` (D9's scale asks about the REDACTABILITY of content, not
+    the operator's official status; and this is the source D6 turns merging on FIRST, so a mislabel
+    would ship inside the first merge), `pg-history` = `community` as a **declared placeholder**
+    replaced by the per-ROW rank in T-016 — recorded as a placeholder precisely so a later reader
+    does not "correct" it. Closes OQ-T012-2 and OQ-T012-3; the T-012 open list drops from three
+    items to one (`shape` for 12 of 20 capabilities). **OD-6:** the `safeFetchImpl` deps key IS
+    built, rather than narrowing H3 to the limiter path — D4 п.2 is a correctness condition, and a
+    limiter-only test would look like it checks the invariant while checking half of it, the exact
+    failure mode AC-8 was amended to forbid. The reduced option is withdrawn, not left as a live
+    alternative; a cost overrun there is an escalation, not a silent scope cut.
+
 - 2026-08-02, **v4.7** — TASK-011 `single-tool-registry`: **the tool inventory became data.**
 
   - **One registry, many readers.** `src/tools/registry.ts` holds the mechanism (`ToolSpec`,

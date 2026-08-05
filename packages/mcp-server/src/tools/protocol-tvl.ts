@@ -2,7 +2,12 @@ import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 /** The two supported networks (task 003-7 reviewer note, Major-2 — see `get-token.ts`'s
@@ -62,7 +67,8 @@ export interface ProtocolTvlContext {
 const CAPABILITY = 'protocol.tvl';
 
 export type ProtocolTvlOutcome =
-  { ok: true; output: ProtocolTvlOutput; cache: CacheMeta } | { ok: false; reason: string };
+  | { ok: true; output: ProtocolTvlOutput; cache: CacheMeta; timing?: TimingMeta }
+  | { ok: false; reason: string };
 
 /** Pure handler — `defillama.normalize()` already returns this exact shape 1:1 (task 003-4), so
  * this handler's only job beyond `resolveCapability` is the defensive zod re-parse (the tool layer
@@ -99,7 +105,7 @@ export async function protocolTvlHandler(
   if (!parsed.success) {
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
-  return { ok: true, output: parsed.data, cache: outcome.cache };
+  return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }
 
 /** The `ToolSpec` for `onchain_protocol_tvl` — this name is declared here and nowhere else (R-19).

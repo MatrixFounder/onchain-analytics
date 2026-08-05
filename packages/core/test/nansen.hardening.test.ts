@@ -513,3 +513,103 @@ describe('M2 hardening — adversarial review cycle 1', () => {
     });
   });
 });
+
+/**
+ * Adversarial cycle 1 (security), measured in cycle 3 — how much attacker-influenced text one
+ * `entity.labels` call can put in front of the model.
+ *
+ * The per-field caps (`truncateVendorText`, `truncateStringArray`) and the row cap were each added
+ * for their own reason, and nobody had ever multiplied them out. "There are caps" is not a bound;
+ * the finding was that the SURFACE was unprotocoled, not that a cap was missing. Blockscout's half
+ * is bounded by transport (`MAX_RESPONSE_BYTES = 512 KiB` on every one of its calls), so the numbers
+ * that actually bind are nansen's, and they are measured here rather than restated: the case feeds
+ * inputs far over every cap and weighs the output.
+ *
+ * Recorded in `docs/architectures/security.md` §7.2.2. These assertions are the reason that section
+ * can state a number at all, and they fail if a future cap change moves it silently.
+ */
+describe('cycle 3 security — the vendor label text reaching the model is bounded, and MEASURED', () => {
+  /** Per entity: `name` (256) + 64 tags × 256, plus JSON punctuation. */
+  const PER_ENTITY_CEILING_BYTES = 17_500;
+  /** Rows kept from one vendor array (`MAX_VENDOR_ROWS`). */
+  const ROW_CEILING = 200;
+
+  const hostile = (length: number): string => 'A'.repeat(length);
+
+  it('one hostile entity weighs less than the per-entity ceiling', () => {
+    const entries = normalizeEntityLabels(
+      {
+        chain: 'ethereum',
+        search: {
+          body: {
+            tokens: [],
+            entities: [
+              {
+                name: hostile(20_000),
+                // Both over the item cap and over the per-item length cap.
+                tags: Array.from({ length: 500 }, () => hostile(4_000)),
+                labels: Array.from({ length: 500 }, () => hostile(4_000)),
+              },
+            ],
+          },
+          creditsUsedHeader: '0',
+        },
+      } as never,
+      () => 1,
+    );
+
+    expect(entries).toHaveLength(1);
+    const bytes = Buffer.byteLength(JSON.stringify(entries[0]), 'utf8');
+    // Sign of work: the input really was oversized, so a mapper that dropped the row entirely (and
+    // thus weighed nothing) cannot pass as "bounded".
+    expect(entries[0]?.name?.length).toBeGreaterThan(0);
+    expect(bytes).toBeLessThan(PER_ENTITY_CEILING_BYTES);
+    expect(bytes).toBeGreaterThan(1_000);
+  });
+
+  it('the row cap is what bounds the count, at the value the ceiling is computed from', () => {
+    const entries = normalizeEntityLabels(
+      {
+        chain: 'ethereum',
+        search: {
+          body: {
+            tokens: [],
+            entities: Array.from({ length: ROW_CEILING * 3 }, () => ({ name: 'x', tags: ['y'] })),
+          },
+          creditsUsedHeader: '0',
+        },
+      } as never,
+      () => 1,
+    );
+
+    expect(entries).toHaveLength(ROW_CEILING);
+  });
+
+  it('the two vendor arrays are capped SEPARATELY — the aggregate is twice the row ceiling', () => {
+    // `tokens[]` and `entities[]` are sliced independently, so the honest ceiling for one response
+    // is 2 × ROW_CEILING entries, not ROW_CEILING. Stating the smaller number would be the same
+    // class of error as never multiplying the caps out in the first place.
+    const entries = normalizeEntityLabels(
+      {
+        chain: 'ethereum',
+        vendorChain: 'ethereum',
+        search: {
+          body: {
+            // A token row needs a valid address to be kept at all (the mapper drops the rest), so
+            // this is the shape that actually exercises the second cap.
+            tokens: Array.from({ length: ROW_CEILING * 2 }, () => ({
+              name: 'x',
+              chain: 'ethereum',
+              address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+            })),
+            entities: Array.from({ length: ROW_CEILING * 2 }, () => ({ name: 'y', tags: [] })),
+          },
+          creditsUsedHeader: '0',
+        },
+      } as never,
+      () => 1,
+    );
+
+    expect(entries).toHaveLength(ROW_CEILING * 2);
+  });
+});

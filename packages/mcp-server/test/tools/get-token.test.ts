@@ -14,9 +14,7 @@ import { GetTokenInputSchema, getTokenHandler } from '../../src/tools/get-token.
 const ETH_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
 const SOL_ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
-const ROUTES: CapabilityRoute[] = [
-  { capability: 'token.price', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
-];
+const ROUTES: CapabilityRoute[] = [{ capability: 'token.price', adapterIds: ['coingecko'] }];
 
 const FAKE_TOKEN = {
   chain: 'ethereum' as const,

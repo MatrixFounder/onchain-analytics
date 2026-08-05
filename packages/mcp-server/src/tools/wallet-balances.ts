@@ -9,7 +9,12 @@ import {
   type CapabilityRegistry,
   type Wallet,
 } from '@onchain-intel/core';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 /**
@@ -66,7 +71,8 @@ export interface WalletBalancesContext {
 const CAPABILITY = 'wallet.balances.native';
 
 export type WalletBalancesOutcome =
-  { ok: true; output: WalletBalancesOutput; cache: CacheMeta } | { ok: false; reason: string };
+  | { ok: true; output: WalletBalancesOutput; cache: CacheMeta; timing?: TimingMeta }
+  | { ok: false; reason: string };
 
 /** Pure handler — see `get-token.ts`'s `getTokenHandler` docstring for the shared re-normalize-
  * before-cache-key rationale. */
@@ -94,7 +100,7 @@ export async function walletBalancesHandler(
   if (!parsed.success) {
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
-  return { ok: true, output: parsed.data, cache: outcome.cache };
+  return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }
 
 /** The `ToolSpec` for `onchain_wallet_balances` — this name is declared here and nowhere else

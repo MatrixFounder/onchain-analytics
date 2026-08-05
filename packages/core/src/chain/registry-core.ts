@@ -101,18 +101,44 @@ export interface ChainRegistryDeps {
 const CAIP2_RE = /^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/;
 
 /**
- * May this string be admitted to the per-chain SSRF allowlist? (vdd-multi cycle 6, security M-1.)
+ * Length at which a path segment stops reading as a route and starts reading as a credential
+ * (adversarial cycle 1, security; closed in cycle 3).
+ *
+ * **Why this belongs at LOAD time and not in the redactor.** `net/safe-fetch.ts` publishes
+ * `origin + pathname` in `SafeFetchTimeoutError`/`DeadlineExceededError` — the query string is
+ * stripped, because that is how `blockscout` authenticates, and the path is KEPT, because it is the
+ * only diagnostic those errors carry. The messages reach stderr and reach the model through
+ * `tried[].reason`. That is safe exactly as long as no URL we dial can carry a secret in its path —
+ * which is a property of this curated column, not of the redactor, and so is checked here. The
+ * alternative (a redactor that guesses which segments are secret) would blind the diagnostic for
+ * every legitimate long id while still guessing.
+ *
+ * 20 characters, chosen against the two vendors that make this shape common: an Alchemy key is 32
+ * alphanumerics under `/v2/`, an Infura project id is 32 hex under `/v3/`. Every path in the
+ * committed registry today is a short route (`/`, `/eth`, `/v1/mainnet`), so the rule costs nothing
+ * now and refuses the entry on the day someone pastes a keyed endpoint into the diff — which is the
+ * moment a human is looking at it (ADR-002 D1: hosts are tier-1 config in the commit, and a
+ * DB-mutable one would defeat the SSRF gate the same way).
+ */
+const CREDENTIAL_SEGMENT_MIN_LENGTH = 20;
+
+const RPC_URL_REQUIREMENT =
+  'rpcHosts entries must be https:// URLs with a plain hostname (no userinfo, no IP literal) and ' +
+  `no path segment of ${CREDENTIAL_SEGMENT_MIN_LENGTH}+ characters (that shape is an API key, and ` +
+  'the path is published in diagnostics)';
+
+/**
+ * May this string be admitted to the per-chain SSRF allowlist? (vdd-multi cycle 6, security M-1;
+ * the path rule from adversarial cycle 3.)
  *
  * Deliberately strict, because everything downstream trusts this column: `https:` only (no other
  * scheme can be reached anyway, so anything else is a curation mistake worth surfacing), no
  * userinfo (`https://looks-legit@evil.example` resolves to `evil.example` — the classic way to
- * make a hostile host read as a friendly one in review), and no IP literal (a curated allowlist
+ * make a hostile host read as a friendly one in review), no IP literal (a curated allowlist
  * entry should name a host a human recognizes; `safeFetch` does no private-range check, so a
- * loopback or metadata address here would simply be dialled).
+ * loopback or metadata address here would simply be dialled), and no credential-shaped path
+ * segment — see `CREDENTIAL_SEGMENT_MIN_LENGTH`.
  */
-const RPC_URL_REQUIREMENT =
-  'rpcHosts entries must be https:// URLs with a plain hostname (no userinfo, no IP literal)';
-
 function isApprovableRpcUrl(raw: string): boolean {
   let url: URL;
   try {
@@ -124,6 +150,9 @@ function isApprovableRpcUrl(raw: string): boolean {
   if (url.username !== '' || url.password !== '') return false;
   // `URL` wraps an IPv6 literal in brackets; IPv4 is four dotted decimal groups.
   if (url.hostname.startsWith('[') || /^\d{1,3}(\.\d{1,3}){3}$/.test(url.hostname)) return false;
+  // Split on `/` rather than measuring the whole path: `/v2/<32-char key>` is short overall, and it
+  // is the SEGMENT that is the secret.
+  if (url.pathname.split('/').some((s) => s.length >= CREDENTIAL_SEGMENT_MIN_LENGTH)) return false;
   return url.hostname.includes('.');
 }
 

@@ -82,8 +82,20 @@ const ROUTES: CapabilityRoute[] = [
   { capability: 'legacy.thing', adapterIds: ['nopredicate'] },
 ];
 
+/**
+ * Manifests for `ROUTES` above (task 012-4). `CapabilityRegistry` now validates at CONSTRUCTION that
+ * every routed capability has a manifest row, and `legacy.thing` is synthetic — it has no row in the
+ * production table and must not get one. Passing this small map as the fifth argument is the point
+ * of that parameter being injectable.
+ */
+const MANIFESTS = {
+  'smart-money.flows': { shape: 'point', ttlSeconds: 300, deadlineMs: 60_000 },
+  'chain.tvl': { shape: 'point', ttlSeconds: 300, deadlineMs: 15_000 },
+  'legacy.thing': { shape: 'point', ttlSeconds: 300, deadlineMs: 15_000 },
+} as const;
+
 function registryWith(adapters: Map<string, ProviderAdapter>): CapabilityRegistry {
-  return new CapabilityRegistry(ROUTES, adapters, undefined, CHAINS);
+  return new CapabilityRegistry(ROUTES, adapters, undefined, CHAINS, MANIFESTS);
 }
 
 describe('coverage gate — error type and content (R-51b/c)', () => {
@@ -168,7 +180,9 @@ describe('coverage gate — position in the gate order (R-51d)', () => {
       set: vi.fn(async () => Promise.resolve()),
     };
     const paid = spyAdapter('paid', { supports: ['ethereum'] });
-    const reg = new CapabilityRegistry(ROUTES, new Map([['paid', paid]]), cache, CHAINS);
+    // Fifth argument (task 012-4): `registryWith` does not cover this call site — it constructs the
+    // registry directly to inject a spying cache — so the manifest map is passed here too.
+    const reg = new CapabilityRegistry(ROUTES, new Map([['paid', paid]]), cache, CHAINS, MANIFESTS);
 
     await expect(reg.resolve('smart-money.flows', 'berachain', {})).rejects.toThrow(
       CapabilityNotCoveredOnChainError,
@@ -307,8 +321,20 @@ describe('coverage on the real providers.config (task 006-5)', () => {
     ).toBe(false);
   });
 
-  it('no route carries a `chains` literal any more (R-54)', () => {
-    expect(routes.filter((r) => r.chains !== undefined)).toEqual([]);
+  it('the `chains` field no longer exists on `CapabilityRoute` at all (task 012-1, OQ-C)', () => {
+    // Was a runtime check ("no production route happens to set `chains`") until task 012-1 deleted
+    // the field from the type entirely — a stronger guarantee than any route table could prove at
+    // runtime. Encoded as a compile-time trap instead: if `chains` is ever reintroduced on
+    // `CapabilityRoute`, this object literal stops erroring, `@ts-expect-error` becomes an unused
+    // directive, and the build fails loudly rather than letting the second mechanism creep back in
+    // silently (the exact drift OQ-C removed it to prevent).
+    const attempted: CapabilityRoute = {
+      capability: 'token.price',
+      // @ts-expect-error — CapabilityRoute has no `chains` field since task 012-1.
+      chains: ['ethereum'],
+      adapterIds: ['coingecko'],
+    };
+    expect(attempted.adapterIds).toEqual(['coingecko']);
   });
 
   it('widens free capabilities far beyond the two original chains', () => {

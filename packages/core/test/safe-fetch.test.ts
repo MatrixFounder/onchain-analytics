@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertAllowedHost,
+  DeadlineExceededError,
   safeFetch,
   SafeFetchResponseTooLargeError,
   SafeFetchTimeoutError,
@@ -488,6 +489,358 @@ describe('safeFetch [Phase 2, no real network — fetchImpl injected]', () => {
       expect(crossHostHeaders.has('x-cg-demo-api-key')).toBe(false);
       expect(crossHostHeaders.get('content-type')).toBe('application/json');
     });
+  });
+});
+
+/**
+ * Task 012-7 — the ABSOLUTE call deadline on the transport path (ADR-002 D4, R-142/R-143).
+ *
+ * **Why there are no injectable clocks here, stated once.** `SafeFetchOptions` is
+ * `{timeoutMs?, maxResponseBytes?, deadlineAtMs?}` — `safeFetch` has no dependency seam, and task
+ * 012-7 decides it does not get one (that would be a FOURTH seam where PLAN §0.3 names three, and
+ * OD-6 already decided their extent by name). The mechanism is instead the one this file already
+ * uses at line 138: a fake `fetchImpl` plus a TINY REAL timeout. Real, because `AbortSignal.timeout`
+ * runs on Node's own timers, which vitest's fake timers do not move — and mocking `AbortSignal`
+ * would leave the test with no input on which it can fail. Every wait below is 20-60 ms.
+ *
+ * **The margins are the determinism.** Each case that races two real timers keeps them at least
+ * 2.5x apart (20 vs 200, 25 vs 50), so the verdict cannot flip on a loaded machine; the one case
+ * that must land BETWEEN two hops blocks the event loop instead of sleeping on it, so no timer can
+ * fire while it is in flight.
+ */
+describe('call deadline — two distinguishable signals per hop (task 012-7)', () => {
+  const HOST = 'api.coingecko.com';
+  const ALLOW = [HOST];
+
+  /** Burns `ms` of wall clock WITHOUT yielding to the event loop.
+   *
+   * Deliberate, and the alternative was measured against the property the test asserts: with an
+   * `await setTimeout` delay, whether hop 3's entry pre-check or hop 2's in-flight `deadlineSignal`
+   * notices the expiry first is a scheduler race, and "exactly 2 calls" would then be a coin flip on
+   * a busy machine. Blocking makes the hop's own duration the only variable — no timer, deadline
+   * signal included, can fire while it is running, and the loop's next pre-check runs in a
+   * microtask, i.e. still before any pending timer. */
+  function blockFor(ms: number): void {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      /* spin — see the docstring: yielding here would reintroduce the race */
+    }
+  }
+
+  /** TC-UNIT-01 (R-142d) — the hop-by-hop remainder.
+   * EXPECTED_FAIL_REASON (phase 1, `deadlineAtMs` declared and ignored): all three hops run and the
+   * call RESOLVES with 200, so `rejects` reports "promise resolved instead of rejecting". */
+  it('TC-UNIT-01: a deadline that expires between hops stops the chain — hop 3 never starts', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(() => {
+        blockFor(5); // ends at ~5ms of the 40ms budget — hop 2 is entered with time to spare
+        return Promise.resolve(redirectResponse(`https://${HOST}/hop2`));
+      })
+      .mockImplementationOnce(() => {
+        blockFor(60); // ends at ~65ms — the budget is spent, but only AFTER hop 2 answered
+        return Promise.resolve(redirectResponse(`https://${HOST}/hop3`));
+      })
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse({ done: true })));
+
+    await expect(
+      safeFetch(`https://${HOST}/hop1`, {}, ALLOW, fetchImpl, {
+        timeoutMs: 5_000, // far away: this case is about the DEADLINE, not the hop timeout
+        deadlineAtMs: Date.now() + 40,
+      }),
+    ).rejects.toBeInstanceOf(DeadlineExceededError);
+
+    // The type alone would not distinguish "refused hop 3" from "aborted hop 3 mid-flight".
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  /** TC-UNIT-02 (R-142c) — a deadline already spent on entry.
+   * EXPECTED_FAIL_REASON (phase 1): the deadline is ignored, the single hop answers 200 and the
+   * call RESOLVES — "promise resolved instead of rejecting". */
+  it('TC-UNIT-02: a deadline already in the past is refused with no network call at all', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));
+
+    await expect(
+      safeFetch(`https://${HOST}/coins`, {}, ALLOW, fetchImpl, {
+        deadlineAtMs: Date.now() - 1,
+      }),
+    ).rejects.toBeInstanceOf(DeadlineExceededError);
+
+    // The pre-check is not made redundant by the signal race: a signal can only abort a call that
+    // has already been issued, and issuing it is the thing a spent deadline must prevent.
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  /** TC-UNIT-03 (C-1) — expiry MID-FLIGHT, the case the two signals exist for.
+   * EXPECTED_FAIL_REASON (phase 1): only the hop signal exists, so after 200ms the call rejects with
+   * `SafeFetchTimeoutError` — "expected SafeFetchTimeoutError to be an instance of
+   * DeadlineExceededError". */
+  it('TC-UNIT-03: a deadline expiring mid-flight reports the deadline, never the hop timeout', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+
+    const error = await safeFetch(`https://${HOST}/slow`, {}, ALLOW, fetchImpl, {
+      timeoutMs: 200,
+      deadlineAtMs: Date.now() + 20,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(DeadlineExceededError);
+    // Stated as its own assertion because this is the confusion C-1 is about: "we ran out of our
+    // own budget" must never be reported as "the vendor did not answer".
+    expect(error).not.toBeInstanceOf(SafeFetchTimeoutError);
+  });
+
+  /** TC-UNIT-04 (R-143d) — the caller's signal stops being overwritten.
+   * EXPECTED_FAIL_REASON (phase 1): `{...opts, signal}` still overwrites the caller's signal, so the
+   * abort is ignored and after 200ms the hop signal rejects — "expected SafeFetchTimeoutError to be
+   * [Error: caller changed its mind]". */
+  it("TC-UNIT-04: the caller's own abort reason travels out unwrapped", async () => {
+    const controller = new AbortController();
+    const reason = new Error('caller changed its mind');
+    const fetchImpl = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+
+    const pending = safeFetch(
+      `https://${HOST}/slow`,
+      { signal: controller.signal },
+      ALLOW,
+      fetchImpl,
+      {
+        timeoutMs: 200,
+      },
+    );
+    controller.abort(reason);
+
+    // `toBe`, not `toBeInstanceOf`: wrapping the caller's reason in one of our classes would tell
+    // the caller its own cancellation was a transport failure.
+    await expect(pending).rejects.toBe(reason);
+  });
+
+  /** TC-UNIT-05 (R-143c) — the no-deadline path is byte-for-byte what it was.
+   *
+   * GREEN AT PHASE 1 BY CONSTRUCTION, and that is the contract: it pins behaviour that must SURVIVE
+   * the change, so there is no state of the tree in which it is red and the task unfinished. Its
+   * power is shown by mutation instead (clamp `effectiveHopMs` to the remainder → this case still
+   * passes, since there is no remainder to clamp to; drop the per-hop timeout entirely → it dies).
+   * The other half of R-143c is the 30 cases above it, which this task did not edit. */
+  it('TC-UNIT-05: without a deadline every hop still gets the FULL timeout, reported as such', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(() => Promise.resolve(redirectResponse(`https://${HOST}/hop2`)))
+      .mockImplementationOnce(() => new Promise<Response>(() => {}));
+
+    const error = await safeFetch(`https://${HOST}/hop1`, {}, ALLOW, fetchImpl, {
+      timeoutMs: 20,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SafeFetchTimeoutError);
+    // The SECOND hop's error names the full 20ms, not a remainder of anything — today's behaviour.
+    expect((error as SafeFetchTimeoutError).timeoutMs).toBe(20);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  describe('TC-UNIT-06: with BOTH a deadline and a caller signal, each source reports its own type', () => {
+    /** EXPECTED_FAIL_REASON (phase 1): the deadline is ignored and the caller never aborts, so after
+     * 200ms the hop signal rejects — "expected SafeFetchTimeoutError to be an instance of
+     * DeadlineExceededError". */
+    it('the deadline expiring first gives DeadlineExceededError', async () => {
+      const controller = new AbortController(); // never aborted
+      const fetchImpl = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+
+      await expect(
+        safeFetch(`https://${HOST}/slow`, { signal: controller.signal }, ALLOW, fetchImpl, {
+          timeoutMs: 200,
+          deadlineAtMs: Date.now() + 20,
+        }),
+      ).rejects.toBeInstanceOf(DeadlineExceededError);
+    });
+
+    /** EXPECTED_FAIL_REASON (phase 1): the caller's signal is overwritten, so its abort is ignored
+     * and after 200ms the hop signal rejects — "expected SafeFetchTimeoutError to be [Error: caller
+     * gave up first]". */
+    it('the caller aborting first gives the caller its own reason back', async () => {
+      const controller = new AbortController();
+      const reason = new Error('caller gave up first');
+      const fetchImpl = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+
+      const pending = safeFetch(
+        `https://${HOST}/slow`,
+        { signal: controller.signal },
+        ALLOW,
+        fetchImpl,
+        { timeoutMs: 200, deadlineAtMs: Date.now() + 5_000 },
+      );
+      controller.abort(reason);
+
+      await expect(pending).rejects.toBe(reason);
+    });
+  });
+
+  /**
+   * TC-UNIT-06a — the ASYMMETRIC pin of `effectiveHopMs = timeoutMs` (UNCLAMPED).
+   *
+   * | Implementation             | `effectiveHopMs` | Fires first          | Verdict                 |
+   * | -------------------------- | ---------------- | -------------------- | ----------------------- |
+   * | unclamped (this repo)      | 50ms             | `deadlineSignal` (25)| `DeadlineExceededError` |
+   * | clamped `min(50, 25)`      | 25ms             | tie → `hopSignal`    | `SafeFetchTimeoutError` |
+   *
+   * The originally requested EXACT TIE (`remainingMs === timeoutMs`) is deliberately NOT used:
+   * `min(t, t) = t`, so both implementations build two identical timers and both answer
+   * `SafeFetchTimeoutError` — such a case cannot tell the two apart, and the cheapest ways to make
+   * it green are the two things the decision forbids (clamping the hop, or replacing the
+   * discriminator with a `Date.now() >= deadlineAtMs` read).
+   *
+   * EXPECTED_FAIL_REASON (phase 1): no deadline signal exists, so the 50ms hop timer rejects —
+   * "expected SafeFetchTimeoutError to be an instance of DeadlineExceededError".
+   */
+  it('TC-UNIT-06a: with the deadline 25ms out and the hop timeout 50ms, the DEADLINE wins', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+
+    await expect(
+      safeFetch(`https://${HOST}/slow`, {}, ALLOW, fetchImpl, {
+        timeoutMs: 50,
+        deadlineAtMs: Date.now() + 25,
+      }),
+    ).rejects.toBeInstanceOf(DeadlineExceededError);
+  });
+
+  /**
+   * TC-UNIT-07 — the SSRF gate is untouched, including under a deadline.
+   *
+   * GREEN AT PHASE 1 BY CONSTRUCTION, same class as TC-UNIT-05: a regression case cannot be red
+   * before the change it guards. Proven by mutation instead — hoisting `assertAllowedHost` out of
+   * the hop loop kills the first case below.
+   */
+  describe('TC-UNIT-07: the allowlist is still checked on every hop when a deadline is present', () => {
+    it('refuses an off-allowlist redirect target and never follows it', async () => {
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(redirectResponse('https://evil.example.com/steal'));
+
+      await expect(
+        safeFetch(`https://${HOST}/start`, {}, ALLOW, fetchImpl, {
+          deadlineAtMs: Date.now() + 5_000,
+        }),
+      ).rejects.toBeInstanceOf(SsrfBlockedError);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a non-https redirect target', async () => {
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(redirectResponse(`http://${HOST}/insecure`));
+
+      await expect(
+        safeFetch(`https://${HOST}/start`, {}, ALLOW, fetchImpl, {
+          deadlineAtMs: Date.now() + 5_000,
+        }),
+      ).rejects.toThrow(/https/i);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /** M-14 for the NEW class. `blockscout` authenticates with `?apikey=<key>`, so a deadline error
+   * built from a hop URL is on the same path the redaction of `SafeFetchTimeoutError` /
+   * `SafeFetchResponseTooLargeError` exists for (D10: secrets never in logs or error messages).
+   * EXPECTED_FAIL_REASON (phase 1): the deadline is ignored and the call RESOLVES — "promise
+   * resolved instead of rejecting". */
+  it('DeadlineExceededError redacts a query-string secret, exactly like its two siblings (M-14)', async () => {
+    const secret = 'proapi_secretvalue0123456789';
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));
+
+    const error = await safeFetch(
+      `https://mcp.blockscout.com/v1/get_address_info?address=0x1&apikey=${secret}`,
+      { method: 'GET' },
+      ['mcp.blockscout.com'],
+      fetchImpl,
+      { deadlineAtMs: Date.now() - 1 },
+    )
+      // `.then(() => undefined)` first, exactly like the M-14 block below: without it the awaited
+      // value is `DeadlineExceededError | Response` and no property of either can be read.
+      .then(() => undefined)
+      .catch((caught: unknown) => caught as DeadlineExceededError);
+
+    expect(error).toBeInstanceOf(DeadlineExceededError);
+    expect(error!.message).not.toContain(secret);
+    expect(error!.message).not.toContain('apikey');
+    expect(error!.at, 'the property is printed by inspectors too').not.toContain(secret);
+    expect(error!.message).toContain('mcp.blockscout.com/v1/get_address_info');
+  });
+});
+
+/**
+ * Adversarial cycle 2, finding F-1 — a caller signal that is ALREADY aborted when `safeFetch` is
+ * called must not leave the in-flight `fetchImpl` promise without a rejection handler.
+ *
+ * The hole and why the existing 30+ cases could not see it: every abort case above this one aborts
+ * AFTER the call started, which reaches `raceWithTimeout`'s listener path — where the `.then(…)`
+ * handlers are attached before anything can reject. The pre-aborted entry took the early-return
+ * branch instead, which used to reject and return BEFORE attaching them, while `fetchImpl` had
+ * already been invoked in the argument position (`safeFetch`'s call site builds the promise there).
+ * A real `fetch` handed an aborted signal rejects with `AbortError` immediately, so that promise
+ * rejected with nobody listening.
+ *
+ * Why that is fatal rather than untidy: on Node's default `--unhandled-rejections=throw` an
+ * unhandled rejection terminates the process, and this package's consumer is a LONG-LIVED stdio MCP
+ * server (`mcp-server/src/index.ts`) that installs no `process.on('unhandledRejection')` — its
+ * `main().catch(...)` cannot see a rejection that belongs to no awaited chain. Same class as the
+ * `capResponseStream` `cancel()` note (cycle 3, security L-1), one function up.
+ */
+describe('cycle 2 F-1 — a signal aborted BEFORE the call leaves no unhandled rejection', () => {
+  const HOST = 'api.coingecko.com';
+  const ALLOW = [HOST];
+
+  /**
+   * Behaves like the REAL `fetch`, which is the whole input of this case: handed a signal that is
+   * already aborted, it rejects with an `AbortError` instead of returning a pending promise. A
+   * `fetchImpl` that ignores its `signal` (what every other case here injects) never rejects, and a
+   * promise that never settles cannot be unhandled.
+   *
+   * **A plain function, NOT `vi.fn` — measured, not stylistic.** Vitest 4's mock records each
+   * returned promise's settled result, and doing so ATTACHES a handler to it: written with
+   * `vi.fn<typeof fetch>(...)` this very case passed against the unfixed `raceWithTimeout`, because
+   * the mock had already handled the rejection the assertion was looking for. A test double that
+   * quietly fixes the defect under test is worse than no test.
+   */
+  function abortAwareFetch(): { fetchImpl: typeof fetch; calls: () => number } {
+    let calls = 0;
+    const fetchImpl: typeof fetch = (_url, init) => {
+      calls += 1;
+      const signal = (init as RequestInit | undefined)?.signal ?? undefined;
+      if (signal?.aborted === true) {
+        return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'));
+      }
+      return Promise.resolve(jsonResponse({ ok: true }));
+    };
+    return { fetchImpl, calls: () => calls };
+  }
+
+  it('rejects with the caller’s own reason and the fetch rejection is handled', async () => {
+    const controller = new AbortController();
+    const reason = new Error('caller cancelled before the call');
+    controller.abort(reason);
+    const { fetchImpl, calls } = abortAwareFetch();
+
+    const leaked: unknown[] = [];
+    const record = (rejection: unknown): void => {
+      leaked.push(rejection);
+    };
+    process.on('unhandledRejection', record);
+    try {
+      await expect(
+        safeFetch(`https://${HOST}/x`, { signal: controller.signal }, ALLOW, fetchImpl),
+      ).rejects.toBe(reason);
+      // Node reports an unhandled rejection on the tick AFTER the microtask queue drains, so the
+      // verdict cannot be read synchronously — this wait is the measurement, not padding.
+      await new Promise((settle) => setTimeout(settle, 50));
+    } finally {
+      process.off('unhandledRejection', record);
+    }
+
+    // Sign of work: the fixture really did produce a rejecting promise for us to have handled.
+    expect(calls()).toBe(1);
+    expect(
+      leaked.map((rejection) => (rejection instanceof Error ? rejection.name : String(rejection))),
+      'the fetch promise rejected with nobody listening — on Node’s default this kills the process',
+    ).toStrictEqual([]);
   });
 });
 

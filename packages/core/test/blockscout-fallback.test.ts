@@ -256,46 +256,11 @@ describe('entity.labels — free source first, paid source only when it cannot a
     expect(error!.message).toContain('answered, but not with what was asked for');
   });
 
-  it('fails OPEN when the route policy itself throws, and never blames the provider (M-1)', async () => {
-    // A bug in the ROUTE's policy used to be recorded as a defect of the PROVIDER: the predicate ran
-    // inside the try that negative-caches a `normalize()` failure, so the policy's own message was
-    // written under the adapter's cache key for 60 s and travelled into the tool's isError text.
-    // The cache-hit call site had the opposite flaw — outside every try, so the throw escaped
-    // `resolve()` untyped.
-    const exploding = [
-      {
-        capability: 'entity.labels',
-        adapterIds: ['blockscout', 'nansen'],
-        isSatisfying: () => {
-          throw new Error('policy bug');
-        },
-      },
-    ];
-    const blockscout = createBlockscoutAdapter({
-      now: () => 1_700_000_000_000,
-      env: {},
-      throttle: isolatedThrottle(1_700_000_000_000),
-      fetchImpl: () => Promise.resolve(new Response(JSON.stringify(LABELED), { status: 200 })),
-    });
-    const paid = nansenSpy(['Binance: Hot Wallet']);
-    const registry = new CapabilityRegistry(
-      [...exploding],
-      new Map<string, ProviderAdapter>([
-        ['blockscout', blockscout],
-        ['nansen', paid.adapter],
-      ]),
-      new MemoryCacheStore(),
-    );
-    const args = { chain: 'ethereum', tokenAddress: BINANCE };
-
-    // Fresh path, then the cache-hit path — both must survive the same broken predicate.
-    for (const expected of ['miss', 'hit']) {
-      const outcome = await registry.resolve('entity.labels', 'ethereum', args);
-      expect(outcome.source, 'a throwing policy suppressed a real answer').toBe('blockscout');
-      expect(outcome.cache).toBe(expected);
-    }
-    expect(paid.calls, 'a policy bug must not divert traffic to the paid provider').toEqual([]);
-  });
+  // The fail-open guard (M-1) used to live here. Task 012-6 MOVED it to
+  // `test/policy-fail-open.test.ts`: producing a throwing predicate now requires mocking the policy
+  // class dictionary, `vi.mock` is file-global, and a mock here would make four of the cases above
+  // — including the H-1 regression — fail while making the pairing case below pass vacuously.
+  // This file mocks nothing.
 
   it('judges each adapter by the policy of the route that contributed it (M-2)', async () => {
     // Adapters used to be unioned across every matching route while the policy was taken from
@@ -305,22 +270,22 @@ describe('entity.labels — free source first, paid source only when it cannot a
       // Route A contributes blockscout and declares NO policy: its answer must be accepted as-is,
       // empty or not.
       { capability: 'entity.labels', adapterIds: ['blockscout'] },
-      // Route B contributes nansen and demands a non-empty answer.
+      // Route B contributes nansen and demands an answer that actually carries labels.
       {
         capability: 'entity.labels',
         adapterIds: ['nansen'],
-        // Must be a policy blockscout's EMPTY answer fails, or the mutation "apply route B's
-        // policy to route A's adapter" cannot be detected: that answer is an array of ONE entry
-        // carrying no labels, so a bare `length > 0` is true for it and the test passes either way.
-        isSatisfying: (result: unknown) =>
-          Array.isArray(result) &&
-          result.some(
-            (entry) =>
-              typeof entry === 'object' &&
-              entry !== null &&
-              Array.isArray((entry as { labels?: unknown }).labels) &&
-              (entry as { labels: unknown[] }).labels.length > 0,
-          ),
+        // The field is `labels` alone, NOT the production route's `['name','tags','labels']`, and
+        // that is the whole mechanism: the policy must be one blockscout's EMPTY answer FAILS, or
+        // the mutation "apply route B's policy to route A's adapter" cannot be detected. That
+        // answer is an array of ONE entry carrying no labels — `length > 0` is true for it — so a
+        // policy it satisfies would leave this test green under the mutation.
+        //
+        // task 012-6: converted from a literal predicate to a descriptor. Same verdict on the same
+        // fixtures; what changed is that the predicate is now resolved from the class dictionary
+        // when the registry is constructed.
+        // `as const` because the literal is inferred through an UNANNOTATED local: without it
+        // `kind` widens to `string` and the spread into `CapabilityRegistry` stops compiling.
+        policy: { kind: 'someElementHasAny' as const, fields: ['labels'] },
       },
     ];
     const blockscout = createBlockscoutAdapter({

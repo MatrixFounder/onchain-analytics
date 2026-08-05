@@ -57,13 +57,59 @@ export {
   canonicalizeChain,
 } from './chain/input-schema.js';
 
-export { CapabilityRegistry } from './adapters/registry.js';
-export type { CapabilityDescriptor, ProviderAdapter, CapabilityRoute } from './adapters/types.js';
+export {
+  CapabilityRegistry,
+  MissingCapabilityManifestError,
+  // task 012-6 — same reason as its sibling above: the process that constructs the real registry
+  // lives in the OTHER package, so the error that stops start-up has to be nameable from there.
+  UnregisteredPolicyClassError,
+  // task 012-8 — the THIRD traversal outcome (ADR-002 D4). Exported because the layer that turns an
+  // outcome into an `isError` tool response lives in `mcp-server`, and R-145's whole content is that
+  // this one is DISTINGUISHABLE from `CapabilityUnavailableError`: a class that cannot be named
+  // across the package boundary can only be told apart by parsing a message.
+  CapabilityDeadlineExceededError,
+} from './adapters/registry.js';
+// task 012-6 (ADR-002 D2) — the route answer policy as data. The TYPE is exported because
+// `CapabilityRoute` (already on this surface) carries it; the class dictionary is NOT, because
+// nothing outside this package resolves a descriptor and "a test wants it" is not a reason this
+// file accepts for widening the public surface.
+export type { PolicyDescriptor } from './adapters/policy.js';
+// task 012-4 — the capability manifest (ADR-002 D3). Exported for the same reason
+// `assertValidAdapterRegistrations` is: the process that constructs the real registry lives in the
+// OTHER package, so the table it validates against and the error that stops start-up both have to
+// be reachable from there.
+export { capabilityManifests, type CapabilityManifest } from './capability-manifest.js';
+export type {
+  CapabilityDescriptor,
+  ProviderAdapter,
+  CapabilityRoute,
+  AdapterRegistration,
+  AdapterTier,
+  AdapterTrust,
+} from './adapters/types.js';
+// task 012-2 — exported because the CALLER of this check is `mcp-server`'s process entry point:
+// the whole point of the gate is that a registration missing `tier`/`trust` stops process start,
+// and start happens in the other package. `AdapterRegistration` joins the surface for the same
+// reason (it is this function's parameter type).
+export { assertValidAdapterRegistrations } from './adapters/types.js';
 
 export { routes, adapterRegistrations } from './providers.config.js';
 
 export { safeFetch, assertAllowedHost } from './net/safe-fetch.js';
 export { throttle } from './net/rate-limit.js';
+// task 012-7 — the two NETWORK-layer deadline outcomes. Exported for the reason the classes are two
+// and not one: the registry (012-8) tells them apart with `instanceof` — `DeadlineExceededError`
+// ends the traversal, `DeadlineWouldExceedError` moves it to the next adapter.
+//
+// NARROWED by adversarial cycle 2 (F-7): this comment also claimed "mcp-server's tool layer reports
+// the two as different facts". It does not, and nothing in the package ever did — `Deadline` appears
+// **zero** times in `packages/mcp-server/src` (measured 2026-08-05), and `resolve-capability.ts`
+// collapses every throw from `resolve()` into `error.message`. Both classes reach a tool caller as
+// the text of `CapabilityDeadlineExceededError`'s message, which is a registry class and not one of
+// these two. The export is still justified by the registry's own use and by the tests that construct
+// them; a tool layer that acts on the distinction is a change nobody has made.
+export { DeadlineExceededError } from './net/safe-fetch.js';
+export { DeadlineWouldExceedError } from './net/rate-limit.js';
 
 // The cache-TTL policy (WI-28). `.AGENTS.md` listed `ttlFor` among the symbols deliberately NOT
 // re-exported "until a future task gives a concrete reason to widen the public surface" — this is
@@ -146,6 +192,13 @@ export {
 
 export { createCacheStore } from './cache/two-level-store.js';
 export { getCacheStats } from './cache/stats.js';
+
+// The cache SEAM itself, not just the factory (adversarial cycle 3). `CapabilityRegistry`'s third
+// constructor parameter is a `CacheStore`, so a consumer that wants anything other than the shipped
+// two-level store — a test that needs a warm entry for ONE provider, for instance — could not name
+// the type it was already required to pass. Types only: the implementations stay behind their
+// factories, per the "factory, not singleton" rule above.
+export type { CacheStore, CacheGetResult } from './adapters/cache-store.js';
 
 // M2 (TASK-005, R-34/R-35, task 005-2) — the provider-agnostic credit-budget ledger, same
 // "factory, not singleton" injection convention as `createCacheStore` above. `BudgetStore` itself

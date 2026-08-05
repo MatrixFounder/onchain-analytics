@@ -122,24 +122,68 @@ is mandatory when `exhaustive: true`.
 
 ```ts
 export interface BudgetMeta {
-  provider: 'nansen';
+  provider: string; // the PAID adapter this reading belongs to (T-012 012-3 — was the literal 'nansen')
   creditsUsedToday: number; // usage.credits_used of the current day bucket, AFTER this call
 }
 ```
 
-It is present **only** when the capability is paid AND actually executed (`_meta.cache.status ===
-'miss'`). On a hit the gate, `costOf()` and the network are not exercised at all (UC-5), so
-`_meta.budget` is **absent entirely** rather than coerced to `0`/`null` — the same principle as
-`_meta.cache.ageMs` on a miss (§3.2).
+It is present **exactly** when the traversal ENTERED a paid adapter — that is, when
+`CapabilityResolution.attempted` contains an adapter registered `tier: 'paid'`. When it entered none,
+nothing can have been spent and `_meta.budget` is **absent entirely** rather than coerced to
+`0`/`null` — the same principle as `_meta.cache.ageMs` on a miss (§3.2).
 
-The read does **not** go through `CapabilityRegistry.resolve()`'s return type: that type is shared
-by all twelve adapters and must not grow for the sake of one paid provider. The three tool handlers
-instead read `budgetStore.getUsage('nansen', dayBucketMs(Date.now()))` with a **separate** SQLite
-SELECT after `registry.resolve()` has returned — purely for display, never part of the gate decision
-(which has already happened inside `nansen.fetch()`, §3.2). `BudgetStore` is injected into those
-three handlers the same way `registry` is. Both degradation paths — no injected store, or a store
-that throws — resolve to `undefined`: visibility must never turn an otherwise successful call into
-an error.
+The condition used to read "paid AND actually executed (`_meta.cache.status === 'miss'`)". That is
+a statement about the ANSWERING adapter, and the two part company on the H-1 return (§9.1): the
+registry hands back the first unsatisfying answer, which on a warm cache is a `'hit'` built for the
+free source, while the walk behind it entered and paid. The `'miss'` reading then dropped
+`_meta.budget` on a call that had just spent credits (T-012 adversarial cycle 3, F-A) — an
+under-report, which is the expensive direction, because an agent that believes a call was free
+repeats it. Cache status no longer appears in the rule; a pure hit satisfies it by entering nobody.
+
+**`_meta.timing` — the call answered past its own ceiling (OQ-T012-6, owner decision 2026-08-05):**
+
+```ts
+export interface TimingMeta {
+  overrunMs: number; // ms past the effective deadline; always > 0 when the object is present
+}
+```
+
+Present **only** when a walk crossed `deadlineMs` and still returned. That happens in exactly one
+branch: every source was entered, every one answered, and the last of them ran long — so nothing was
+prevented and nothing was aborted, and the H-1 return (§9.1) hands back a complete answer. The owner
+resolved that such an answer is returned rather than discarded; the time and, on a paid route, the
+credit are already spent, and only the caller can judge whether a late-but-complete answer is still
+useful.
+
+Two consequences a client must design around:
+
+1. **`deadlineMs` is a bound on what a call may SPEND, not a latency contract.** A response can
+   arrive after it. A caller that needs a wall-clock guarantee applies its own timeout — which is
+   also what ADR-003's network client will do.
+2. **Late is never silent.** The absent key means "inside budget"; it is never `{overrunMs: 0}`, on
+   the same principle as `_meta.cache.ageMs` on a miss.
+
+The read does **not** go through `CapabilityRegistry.resolve()`'s return type as a CREDIT figure:
+that type is shared by all twelve adapters and must not grow a budget field for the sake of one paid
+provider. The three tool handlers instead read `budgetStore.getUsage(<paid id>,
+dayBucketMs(Date.now()))` with a **separate** SQLite SELECT after `registry.resolve()` has returned —
+purely for display, never part of the gate decision (which has already happened inside
+`nansen.fetch()`, §3.2). `BudgetStore` is injected into those three handlers the same way `registry`
+is. Both degradation paths — no injected store, or a store that throws — resolve to `undefined`:
+visibility must never turn an otherwise successful call into an error.
+
+**Which paid id (T-012 012-3, corrected by adversarial cycle 2's F-4).** 012-3 replaced the
+hardcoded `getUsage('nansen')` with a reading keyed on the ANSWERING provider
+(`CapabilityResolution.source`), which under-reports on the only route where a free adapter comes
+first: on `entity.labels` the walk enters and PAYS `nansen`, `nansen`'s answer is unsatisfying too,
+and the registry returns `blockscout`'s — so a call that spent credits reported none. `resolve()`
+therefore also returns **`attempted`**, the adapter ids whose `fetch()` the traversal actually
+entered (a traversal fact, tier-free — the registry never classifies paidness), and the handlers pass
+it to `budgetMeta()`, which reports the paid adapter among them. Under-reporting is the expensive
+direction: an agent that believes a call was free repeats it (R-41). The WIRE shape is unchanged;
+`attempted` never reaches a client. `tier` itself is NEVER added to this object, or to `_meta`
+anywhere else, on any of the 13 tools (R-152) — the internal cost-tier classification is our unit
+economics, not part of the client's contract (ADR-002 D8, ADR-003 D4).
 
 #### 5.1.3 The two registry-backed tools (TASK-006) — free
 
@@ -392,6 +436,17 @@ export {
 export { ChainInputSchema, createChainInputSchema, canonicalizeChain };
 export { createCoverage, type Coverage };
 export { UnknownChainError, ChainRegistryLoadError, CapabilityNotCoveredOnChainError };
+
+// PLANNED (T-012, ADR-002 D2/D3/D4/D8 — not in code as of 2026-08-03): the policy-descriptor
+// registry, the capability manifest, and the third typed outcome `resolve()` will be able to
+// throw. `AdapterRegistration`'s new `tier`/`trust` fields will ride along on its EXISTING export
+// (system-architecture.md, adapters module) — no new export for them alone. `ttlFor` (already
+// exported from `./cache/ttl.js`, consumed by `readme-tool-table.test.ts`) will keep its signature
+// and export path UNCHANGED (R-138) — it becomes a reader of `capabilityManifests` internally,
+// which is not a public-API change.
+export { type PolicyDescriptor } from './adapters/policy.js'; // PLANNED, new module
+export { type CapabilityManifest, capabilityManifests } from './capability-manifest.js'; // PLANNED, new module
+export { CapabilityDeadlineExceededError }; // PLANNED, new error class beside CapabilityUnavailableError
 
 // packages/mcp-server/src/server.ts — the server factory (transport-agnostic, D3):
 export function createServer(deps: {

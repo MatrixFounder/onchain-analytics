@@ -187,8 +187,16 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
           if (!response.ok) {
             // `hostOf`, not the full URL (vdd-multi cycle 6, security L-2): `rpcHosts` is a
             // full-URL column and this message reaches the model via `tried[].reason`. A curated
-            // endpoint could one day carry a key in its path or query; `safeFetch`'s own errors
-            // already name only the hostname for exactly this reason.
+            // endpoint could one day carry a key in its path or query.
+            //
+            // This used to add "`safeFetch`'s own errors already name only the hostname for exactly
+            // this reason", which was false (adversarial cycle 1): `redactUrl` strips the QUERY and
+            // keeps `origin + pathname`, so a key-in-path endpoint would have leaked through
+            // `SafeFetchTimeoutError`/`DeadlineExceededError` — errors this loop rethrows untouched,
+            // where the wrapping above cannot help. What actually holds the line is one layer
+            // further back: `isApprovableRpcUrl` refuses such an entry when the registry LOADS
+            // (cycle 3). This narrowing stays regardless — it is cheap, and it also covers the
+            // query, which the load-time rule does not.
             throw new Error(`rpc-evm: HTTP ${response.status} for ${hostOf(endpoint)}`);
           }
           const raw = (await response.json()) as JsonRpcResponse;

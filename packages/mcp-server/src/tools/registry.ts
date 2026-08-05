@@ -3,7 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BudgetStore, CapabilityRegistry } from '@onchain-intel/core';
 import type { z } from 'zod';
 import type { BudgetMeta } from './budget-meta.js';
-import type { CacheMeta } from './resolve-capability.js';
+import type { CacheMeta, TimingMeta } from './resolve-capability.js';
 
 /**
  * The single source of the MCP tool inventory (TASK-011, ADR-002 D7).
@@ -78,7 +78,7 @@ export interface ToolContext {
  * elsewhere.)
  */
 export type ToolOutcome<TOutput> =
-  | { ok: true; output: TOutput; cache?: CacheMeta; budget?: BudgetMeta }
+  | { ok: true; output: TOutput; cache?: CacheMeta; timing?: TimingMeta; budget?: BudgetMeta }
   | { ok: false; reason: string };
 
 /**
@@ -178,6 +178,11 @@ function toCallToolResult<TOutput extends Record<string, unknown>>(
   const meta = {
     ...(outcome.cache ? { cache: outcome.cache } : {}),
     ...(outcome.budget ? { budget: outcome.budget } : {}),
+    // `timing` is present only when the answer crossed its own ceiling (OQ-T012-6): the owner's
+    // decision returns such an answer rather than discarding it, and this is the half of the
+    // decision that keeps "late" from being invisible. On every ordinary call the key is absent,
+    // so no existing `_meta` assertion moves.
+    ...(outcome.timing ? { timing: outcome.timing } : {}),
   };
   return {
     content: [{ type: 'text', text: JSON.stringify(outcome.output) }],

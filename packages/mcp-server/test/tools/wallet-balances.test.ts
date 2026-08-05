@@ -16,7 +16,7 @@ const ETH_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
 const SOL_ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 const ROUTES: CapabilityRoute[] = [
-  { capability: 'wallet.balances.native', chains: ['ethereum'], adapterIds: ['rpc-evm'] },
+  { capability: 'wallet.balances.native', adapterIds: ['rpc-evm'] },
 ];
 
 const FAKE_WALLET = {

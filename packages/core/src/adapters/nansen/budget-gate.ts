@@ -243,6 +243,18 @@ export interface NansenBudgetGateDeps {
   fetchImpl?: typeof fetch;
   env?: NodeJS.ProcessEnv;
   throttle?: Throttle;
+  /**
+   * The transport seam (task 012-9, PLAN §0.3 seam #1, owner decision OD-6), same shape and same
+   * default as `NansenEndpointDeps.safeFetchImpl`.
+   *
+   * It exists on BOTH sides of the reservation on purpose. The free `/account` resync below is the
+   * one network step that MUST be handed the deadline, and the paid sub-calls are the ones that must
+   * never be — a contract test that could observe only the paid side would be unable to tell "the
+   * boundary holds" from "the deadline was never threaded at all", and one that could observe only
+   * the limiter would be checking the half of the path that spends no money. One injected transport
+   * observes both legs, and the ONLY difference between them is the argument this task is about.
+   */
+  safeFetchImpl?: typeof safeFetch;
 }
 
 /** `ensureBudget()`'s success shape (task 005-3) — `bucket` is the SAME `dayBucketMs` fixed at
@@ -363,7 +375,9 @@ function needsResync(
  * 2. Resyncs `/account` (`refreshAccount()`) ONLY when `needsResync()` says the current snapshot
  *    can't be trusted — NOT on every call (`/account` is free in credits but not in rate-limit
  *    slot/latency). A resync failure throws HERE, before `costOf`/`checkAndReserve` ever run —
- *    fail-closed, no valid ceiling to compute against a stale/absent snapshot.
+ *    fail-closed, no valid ceiling to compute against a stale/absent snapshot. **This step, and only
+ *    this side of step 4, receives the caller's `deadlineAtMs`** (task 012-9): it is free and
+ *    cancellable, so a spent deadline may end the call here — where nothing has been paid for yet.
  * 3. Computes the exact price (`costOf()`, cost-of.ts) under the now-current live `plan`, and
  *    fail-closes (`NansenBudgetExceededError`, never reaching `BudgetStore`) if that price isn't
  *    finite (R-37 MIN-3 — an unrecognized capability or a cost-table key that doesn't exist).
@@ -391,12 +405,17 @@ function needsResync(
  * seam of the adapter's own `fetch()`, never a second, bypassable call site).
  */
 export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
-  ensureBudget(cap: string, args: Record<string, unknown>): Promise<NansenBudgetReservation>;
+  ensureBudget(
+    cap: string,
+    args: Record<string, unknown>,
+    deadlineAtMs?: number,
+  ): Promise<NansenBudgetReservation>;
 } {
   const now = deps.now ?? Date.now;
   const fetchImpl = deps.fetchImpl ?? fetch;
   const env = deps.env ?? process.env;
   const throttleFn = deps.throttle ?? productionThrottle;
+  const safeFetchFn = deps.safeFetchImpl ?? safeFetch;
   const warnRatio = deps.budgetWarnRatio ?? DEFAULT_WARN_RATIO;
 
   /**
@@ -406,7 +425,7 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
    * `bucket` in the SAME logical step as the HTTP call (no paid call in between) so the anchor
    * this snapshot forms can never go stale before it's saved.
    */
-  async function refreshAccount(bucket: number): Promise<void> {
+  async function refreshAccount(bucket: number, deadlineAtMs?: number): Promise<void> {
     const apiKey = env['NANSEN_API_KEY'];
     if (!apiKey) {
       // Defensive re-check (coingecko's fetch()-level re-normalization precedent,
@@ -427,8 +446,22 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
     // resync) instead of over-spend.
     const usageAtObserve = await deps.budgetStore.getUsage('nansen', bucket);
 
-    await throttleFn('nansen', RATE_LIMIT);
-    const response = await safeFetch(ACCOUNT_URL, { headers: { apiKey } }, HOSTS, fetchImpl);
+    // **The deadline reaches BOTH steps of the free leg** (task 012-9, ADR-002 D4 п.2). This resync
+    // costs zero credits and is roughly half of the measured cancellable part of a Nansen call, so
+    // cutting the deadline off at `ensureBudget()`'s front door — the earlier wording of the rule —
+    // would deny it to precisely the step the cancellable window exists for. The boundary is the
+    // COMMITTED reservation (`checkAndReserve()` below), not this function.
+    //
+    // The weight is stated positionally as `1` (its default) because `deadlineAtMs` is the fourth
+    // parameter; the limiter's behaviour is unchanged by naming it.
+    await throttleFn('nansen', RATE_LIMIT, 1, deadlineAtMs);
+    const response = await safeFetchFn(
+      ACCOUNT_URL,
+      { headers: { apiKey } },
+      HOSTS,
+      fetchImpl,
+      deadlineAtMs === undefined ? {} : { deadlineAtMs },
+    );
     if (!response.ok) {
       throw new Error(`nansen budget gate: /account resync failed with HTTP ${response.status}`);
     }
@@ -500,11 +533,12 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
   async function ensureBudget(
     cap: string,
     args: Record<string, unknown>,
+    deadlineAtMs?: number,
   ): Promise<NansenBudgetReservation> {
     const bucket = dayBucketMs(now());
 
     if (needsResync(deps.accountState.get(), bucket, deps.accountState)) {
-      await refreshAccount(bucket);
+      await refreshAccount(bucket, deadlineAtMs);
     }
 
     const cost = costOf(deps.accountState, cap, args);
@@ -546,6 +580,17 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
             ...(maxCalls === undefined ? {} : { maxCalls }),
           };
 
+    // ⟵ THE PAID BOUNDARY (task 012-9, ADR-002 D4 п.2, R-141/AC-10). Everything above this line was
+    // told the deadline; from the moment this call returns `{ok:true}`, nothing is — not the first
+    // sub-call, not sub-calls 2..N, not the limiter waits between them. The reservation is for the
+    // SUM of the sub-calls' prices, so abandoning a later one after paying for all of them is the
+    // same "paid and did not receive", one step later.
+    //
+    // **No `deadlineAtMs <= now()` re-check is made here, and that is a decision.** The registry
+    // already refuses to enter an adapter with a spent deadline (`registry.ts`'s per-adapter
+    // pre-check), so a check here would be dead code on every production path; and D4 п.2 asks for
+    // the deadline to be THREADED to the free work, not for a new refusal to be invented at the
+    // till. Adding one would also change `NansenBudgetExceededError`'s meaning for direct callers.
     const result = await deps.budgetStore.checkAndReserve(
       'nansen',
       bucket,

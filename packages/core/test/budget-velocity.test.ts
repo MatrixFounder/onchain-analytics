@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SqliteBudgetStore } from '../src/cache/budget-store.js';
+import type { AdapterRegistration } from '../src/adapters/types.js';
 import {
   DAILY_CAP_OFF,
   MAX_CALLS_OFF,
@@ -27,10 +28,35 @@ const PROVIDER = 'nansen';
 const DAY = dayBucketMs(1_784_800_000_000);
 const WINDOW = velocityWindowMs(1_784_800_000_000);
 
+/**
+ * The registration every store in this file bootstraps from — a REAL `AdapterRegistration`, not a
+ * cast (task 012-3).
+ *
+ * All three fixtures here used to read
+ * `[{ id: PROVIDER, hosts: [...], rateLimit: { rps: 1 } }] as never`. The cast silenced the
+ * compiler on a `rateLimit` shape that never existed (`TokenBucketConfig` is
+ * `{capacity, refillPerSec}`) and, once 012-2 made `tier`/`trust` required, on those too — so the
+ * breakage skipped the build and arrived at RUNTIME one task later, the moment
+ * `bootstrapProviders` started binding `registration.tier` into a `TEXT NOT NULL` column.
+ * `as never` is removed rather than kept with the fields filled in: it is the mechanism that hid
+ * this one, and it would hide the next.
+ *
+ * `tier: 'paid'` / `trust: 'authoritative'` are `nansen`'s real ranks (`providers.config.ts`), not
+ * placeholders — the whole point of this file is a PAID provider's velocity brake.
+ */
+const NANSEN_REGISTRATION: AdapterRegistration = {
+  id: PROVIDER,
+  hosts: ['api.nansen.ai'],
+  rateLimit: { capacity: 1, refillPerSec: 1 },
+  requiresEnv: ['NANSEN_API_KEY'],
+  tier: 'paid',
+  trust: 'authoritative',
+};
+
 function store(): SqliteBudgetStore {
   return new SqliteBudgetStore({
     dbPath: ':memory:',
-    providers: [{ id: PROVIDER, hosts: ['api.nansen.ai'], rateLimit: { rps: 1 } }] as never,
+    providers: [NANSEN_REGISTRATION],
   });
 }
 
@@ -134,7 +160,7 @@ describe('the window check shares the reservation transaction', () => {
     const path = await import('node:path');
     const dir = mkdtempSync(path.join(tmpdir(), 'sec1-'));
     const dbPath = path.join(dir, 'cache.sqlite3');
-    const providers = [{ id: PROVIDER, hosts: ['api.nansen.ai'], rateLimit: { rps: 1 } }] as never;
+    const providers = [NANSEN_REGISTRATION];
     const a = new SqliteBudgetStore({ dbPath, providers });
     const b = new SqliteBudgetStore({ dbPath, providers });
     try {
@@ -391,7 +417,7 @@ describe('Q-3 — the call limit is the only bound a ZERO-credit tier can hit', 
     const path = await import('node:path');
     const dir = mkdtempSync(path.join(tmpdir(), 'q3-'));
     const dbPath = path.join(dir, 'cache.sqlite3');
-    const providers = [{ id: PROVIDER, hosts: ['api.nansen.ai'], rateLimit: { rps: 1 } }] as never;
+    const providers = [NANSEN_REGISTRATION];
     try {
       const first = new SqliteBudgetStore({ dbPath, providers });
       await first.checkAndReserve(PROVIDER, DAY, 12, 2500, {

@@ -49,11 +49,21 @@ export const DEFAULT_TIMEOUT_MS = 15_000;
  */
 export const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10MB
 
-/** Per-call overrides for `safeFetch` (adversarial cycle 1, fix B) — both optional, both default
- * to the conservative module constants above. */
+/** Per-call overrides for `safeFetch` (adversarial cycle 1, fix B) — all optional; the first two
+ * default to the conservative module constants above, the third to "no deadline at all". */
 export interface SafeFetchOptions {
   timeoutMs?: number;
   maxResponseBytes?: number;
+  /**
+   * ABSOLUTE moment (epoch-ms, `Date.now()` scale) after which this call must stop — NEVER a
+   * duration (ADR-002 D4 point 3, task 012-7). A duration would have to be re-derived at every
+   * step that forwards it, and durations between steps do not add up: each hop of a redirect chain
+   * would silently get a fresh full budget. A moment forwards itself.
+   *
+   * Omitted (`undefined`) means no deadline, and then this module behaves EXACTLY as it did before
+   * task 012-7: one `AbortSignal.timeout(timeoutMs)` per hop and nothing else.
+   */
+  deadlineAtMs?: number;
 }
 
 /**
@@ -71,8 +81,19 @@ export interface SafeFetchOptions {
  * present and future caller, and D10 ("secrets never in logs or error messages") stops depending on
  * each adapter remembering to wrap. Nothing in the repo reads `.url` programmatically — checked.
  *
- * `pathname` is kept because it is what makes the error diagnosable at all, and it is ours: the
- * path is built from our own capability routing, never from a secret.
+ * `pathname` is kept because it is what makes the error diagnosable at all. "It is ours: the path is
+ * built from our own capability routing, never from a secret" was the whole argument, and it was an
+ * assumption about every present and future URL this function is handed — the one shape that breaks
+ * it is the RPC endpoint whose key IS the path (`https://…/v2/<key>`, the Alchemy/Infura
+ * convention), and `rpc-evm` dials a curated list of full URLs. Adversarial cycle 1 raised it; cycle
+ * 3 closed it where the URL is admitted rather than where it is printed:
+ * `chain/registry-core.ts`'s `isApprovableRpcUrl` REFUSES an `rpcHosts` entry with a
+ * credential-shaped path segment, at load, as a `ChainRegistryLoadError`. So the sentence above is
+ * now enforced instead of assumed, and the diagnostic keeps its path.
+ *
+ * A redactor that guessed which segments are secret was the alternative, and it is worse in both
+ * directions: it would blind `/api/v2/addresses/0x…` (a long, entirely public id) while still
+ * guessing at whatever the next vendor invents.
  */
 function redactUrl(url: string): string {
   try {
@@ -99,6 +120,57 @@ export class SafeFetchTimeoutError extends Error {
     super(`safeFetch: timed out after ${timeoutMs}ms fetching ${safe}`);
     this.url = safe;
     this.name = 'SafeFetchTimeoutError';
+  }
+}
+
+/**
+ * `redactUrl` for a context string that may not be a URL at all.
+ *
+ * `DeadlineExceededError` is raised on TWO paths: the transport path, where the context is a URL
+ * that can carry `?apikey=<secret>` (M-14 — `blockscout` authenticates that way because the vendor
+ * chose to), and the limiter path (`net/rate-limit.ts`), where it is `provider "<id>"` and there is
+ * no URL to redact. `redactUrl` answers `<unparseable url>` for the second, which would erase the
+ * only diagnostic the limiter has. Redaction stays INSIDE the error class for the M-14 reason:
+ * closing the channel here closes it for every present and future call site, rather than depending
+ * on each of them remembering to redact.
+ */
+function redactContext(text: string): string {
+  try {
+    const parsed = new URL(text);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    // Not a URL — nothing to redact, and the string is ours (`provider "<id>"`), not a vendor's.
+    return text;
+  }
+}
+
+/**
+ * Thrown when the ABSOLUTE call deadline (`SafeFetchOptions.deadlineAtMs`, ADR-002 D4) has already
+ * passed — the NETWORK-layer class, task 012-7.
+ *
+ * It is deliberately NOT `SafeFetchTimeoutError`: that one means "this vendor did not answer within
+ * the per-hop timeout", i.e. a statement about the vendor, while this one means "we ran out of our
+ * OWN time budget" — a statement about us, and the only one that may end a capability traversal.
+ * Confusing the two is defect C-1 (task 012-7 §"two signals per hop"): a traversal that never sees
+ * this class ends in `CapabilityUnavailableError`, which OD-4/R-145 forbid.
+ *
+ * **This class does not reach the caller of a capability.** The registry catches it and translates
+ * it into `CapabilityDeadlineExceededError` (task 012-8), which carries `{capability, chain, tried}`
+ * — none of which exists down here, which is exactly why there are two classes and not one.
+ *
+ * `at` is the REDACTED context (see `redactContext`): the origin+path of the hop on the transport
+ * path, `provider "<id>"` on the limiter path.
+ */
+export class DeadlineExceededError extends Error {
+  public readonly at: string;
+  constructor(
+    at: string,
+    public readonly deadlineAtMs: number,
+  ) {
+    const safe = redactContext(at);
+    super(`deadline exceeded (deadlineAtMs=${deadlineAtMs}) at ${safe}`);
+    this.at = safe;
+    this.name = 'DeadlineExceededError';
   }
 }
 
@@ -156,27 +228,132 @@ function stripCrossHostHeaders(
   return filtered;
 }
 
+/** One hop's cancellation: the single signal `fetchImpl` is given, the reason THIS hop's abort must
+ * reject with, and a teardown for the listeners that decide it. */
+interface HopAbort {
+  /** The one composed signal handed to `fetchImpl` and raced against. */
+  signal: AbortSignal;
+  /** The rejection reason, resolved by WHICH INPUT fired — never by which branch noticed. */
+  reason: () => unknown;
+  /** Detaches this hop's recorder listeners. The caller's signal outlives the hop (and the call),
+   * so a hop that settles normally must not leave a listener on it — 4 hops per call, forever. */
+  release: () => void;
+}
+
 /**
- * Races `fetchPromise` against `signal`'s own abort event, rejecting with a
- * `SafeFetchTimeoutError` the moment `signal` aborts — regardless of whether `fetchPromise`
- * itself ever settles. This extra listener (rather than relying solely on passing `signal` into
- * `fetchImpl` and trusting it to reject on abort) is deliberate: an injected TEST `fetchImpl` that
- * never resolves (and never inspects its own `signal` argument) must still time out, exactly like
- * a real hung `fetch()` call would once the real implementation honors the abort signal.
+ * Composes a hop's cancellation sources into the ONE signal `fetch` accepts, while REMEMBERING
+ * WHICH SOURCE FIRED (task 012-7, defects C-1 and H1).
+ *
+ * **Why remembering is the whole mechanism.** `AbortSignal.any` reports that ONE OF its inputs
+ * aborted and never which; and reading `deadlineSignal.aborted` inside the composed signal's own
+ * handler answers a different question — "has it aborted BY NOW" — whose answer depends on timer
+ * construction order rather than on what happened. Each input therefore gets its own listener, and
+ * the FIRST one to fire writes the verdict that `reason()` later reads. Per the DOM specification a
+ * source signal's abort event fires before its dependent signals' (signal abort, steps 5 then 6),
+ * so the verdict is always written before the composed handler asks for it.
+ *
+ * The three outcomes are three different facts, and the caller must be able to act on them:
+ *
+ * | Fired            | Rejection                                                    |
+ * | ---------------- | ------------------------------------------------------------ |
+ * | deadline         | `DeadlineExceededError` — our own budget is spent            |
+ * | caller's signal  | the caller's OWN reason, unwrapped — it already knows why    |
+ * | hop timeout      | `SafeFetchTimeoutError` — the vendor did not answer in time  |
+ *
+ * **Byte-for-byte compatibility (R-143c):** with neither a deadline nor a caller signal there is
+ * exactly one input, and it is passed through as-is — no `AbortSignal.any` wrapper, one
+ * `AbortSignal.timeout` per hop, exactly as before this task.
+ */
+function composeHopAbort(inputs: {
+  hopSignal: AbortSignal;
+  deadline: { signal: AbortSignal; atMs: number } | undefined;
+  callerSignal: AbortSignal | undefined;
+  url: string;
+  effectiveHopMs: number;
+}): HopAbort {
+  const { hopSignal, deadline, callerSignal, url, effectiveHopMs } = inputs;
+
+  let firedBy: 'hop' | 'deadline' | 'caller' | undefined;
+  const detachers: Array<() => void> = [];
+
+  const record = (source: 'hop' | 'deadline' | 'caller', signal: AbortSignal | undefined): void => {
+    if (signal === undefined) return;
+    // Already aborted on entry (a caller that cancelled before this hop started): no event will
+    // ever fire, so the state IS the verdict. `??=` throughout — only the FIRST source counts.
+    if (signal.aborted) {
+      firedBy ??= source;
+      return;
+    }
+    const onAbort = (): void => {
+      firedBy ??= source;
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    detachers.push(() => signal.removeEventListener('abort', onAbort));
+  };
+
+  // Order matters ONLY for signals already aborted on entry, where there is no event order to read.
+  // The caller comes first there: it is the one source that can be aborted before we were called.
+  record('caller', callerSignal);
+  record('deadline', deadline?.signal);
+  record('hop', hopSignal);
+
+  const sources = [hopSignal, deadline?.signal, callerSignal].filter(
+    (signal): signal is AbortSignal => signal !== undefined,
+  );
+
+  return {
+    signal: sources.length === 1 ? hopSignal : AbortSignal.any(sources),
+    reason: () => {
+      if (firedBy === 'deadline' && deadline !== undefined) {
+        return new DeadlineExceededError(url, deadline.atMs);
+      }
+      if (firedBy === 'caller' && callerSignal !== undefined) {
+        // NOT wrapped in anything of ours: the caller asked for this and already knows why.
+        return callerSignal.reason;
+      }
+      return new SafeFetchTimeoutError(url, effectiveHopMs);
+    },
+    release: () => {
+      for (const detach of detachers) detach();
+    },
+  };
+}
+
+/**
+ * Races `fetchPromise` against `signal`'s own abort event, rejecting the moment `signal` aborts —
+ * regardless of whether `fetchPromise` itself ever settles. This extra listener (rather than
+ * relying solely on passing `signal` into `fetchImpl` and trusting it to reject on abort) is
+ * deliberate: an injected TEST `fetchImpl` that never resolves (and never inspects its own `signal`
+ * argument) must still time out, exactly like a real hung `fetch()` call would once the real
+ * implementation honors the abort signal.
+ *
+ * **It no longer MANUFACTURES the rejection (task 012-7, defect C-1).** It used to build a
+ * `SafeFetchTimeoutError` unconditionally, having no way to know which of the hop's cancellation
+ * sources actually fired — so a deadline expiring mid-flight was reported as a vendor timeout, and
+ * a caller's own `abort()` as one too. The reason now comes from `abortReason`, which
+ * `composeHopAbort` closes over the answer to "which INPUT signal fired".
+ *
+ * **`fetchPromise`'s handlers are attached FIRST, before the already-aborted check (cycle 2, F-1).**
+ * The order is the whole fix, not tidiness. `fetchPromise` is built in the CALLER's argument list,
+ * so by the time this function runs the request has already been issued; a real `fetch` handed a
+ * signal that was aborted before the call rejects with `AbortError` immediately. The previous order
+ * — reject, `return`, never attach — left that rejection with no handler at all, and on Node's
+ * default `--unhandled-rejections=throw` an unhandled rejection ENDS THE PROCESS. The consumer is a
+ * long-lived stdio MCP server whose `main().catch(...)` cannot see a rejection belonging to no
+ * awaited chain, so "a caller cancelled early" was a way to kill the server.
+ *
+ * Attaching first changes nothing else: `signal.aborted` is still read synchronously and still wins,
+ * because a `.then` handler can only run in a later microtask. The settled promise's `reject(...)`
+ * is then a no-op on an already-rejected one — which is precisely how the rejection becomes handled
+ * rather than swallowed.
  */
 function raceWithTimeout(
   fetchPromise: Promise<Response>,
   signal: AbortSignal,
-  url: string,
-  timeoutMs: number,
+  abortReason: () => unknown,
 ): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
-    const onAbort = (): void => reject(new SafeFetchTimeoutError(url, timeoutMs));
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener('abort', onAbort, { once: true });
+    const onAbort = (): void => reject(abortReason());
     fetchPromise.then(
       (response) => {
         signal.removeEventListener('abort', onAbort);
@@ -187,6 +364,11 @@ function raceWithTimeout(
         reject(error instanceof Error ? error : new Error(String(error)));
       },
     );
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -324,11 +506,29 @@ function capResponseStream(response: Response, url: string, maxBytes: number): R
  *   `https:` — cycle 1's non-https check only ever covered redirect targets, leaving the very
  *   first hop uncovered; this closes that gap symmetrically.
  *
+ * **Call deadline (task 012-7, ADR-002 D4 — `options.deadlineAtMs`):** an ABSOLUTE epoch-ms moment
+ * the whole call must respect, redirect hops included. Two things follow, and they are two
+ * mechanisms rather than one because a deadline that expires mid-flight is the ordinary case, not
+ * the exotic one — every route ends on somebody's last hop, and a last hop has no next iteration:
+ * - On ENTRY to each hop, a remainder of `<= 0` throws `DeadlineExceededError` with no network call.
+ * - DURING each hop, a second `AbortSignal.timeout(remainder)` runs beside the per-hop one. The hop
+ *   timeout is NOT shortened to the remainder (see the `effectiveHopMs` comment in the loop for the
+ *   defect that would reintroduce), and the class thrown is decided by WHICH signal fired, not by
+ *   which branch noticed the abort.
+ *
+ * **The caller's own `opts.signal` is honoured** (H1). It used to be overwritten by the internal
+ * timeout signal — silently, so an external cancellation did nothing. It is now composed in, and if
+ * it is what aborted the hop, ITS OWN reason is what the caller gets back, unwrapped.
+ *
+ * With neither a deadline nor a caller signal, all of the above collapses to exactly the previous
+ * behaviour: one `AbortSignal.timeout(timeoutMs)` per hop, rejecting with `SafeFetchTimeoutError`.
+ *
  * `fetchImpl` is injectable (default: the global `fetch`) so this is unit-testable without any
  * real network access — tests supply a fake that returns canned `Response`s per hop.
  *
  * @throws {SsrfBlockedError} for the initial URL or any redirect hop outside `allowlist`.
  * @throws {SafeFetchTimeoutError} if any hop doesn't settle within the timeout.
+ * @throws {DeadlineExceededError} if `options.deadlineAtMs` passes before the call completes.
  * @throws {SafeFetchResponseTooLargeError} if a response's `Content-Length` exceeds the cap.
  */
 export async function safeFetch(
@@ -340,6 +540,11 @@ export async function safeFetch(
 ): Promise<Response> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  const deadlineAtMs = options.deadlineAtMs;
+  // Read ONCE, before the loop: `currentOpts` is rebuilt on a cross-host redirect, and reading the
+  // caller's signal out of the rebuilt copy each time would tie a cancellation contract to header
+  // stripping. `?? undefined` because `RequestInit['signal']` is nullable.
+  const callerSignal = opts.signal ?? undefined;
 
   // Adversarial cycle 2, fix 4 — the non-https rejection previously only applied to REDIRECT
   // targets (fix B3, cycle 1); the INITIAL url got no such check at all. Mirrored here so a
@@ -360,13 +565,49 @@ export async function safeFetch(
   for (;;) {
     assertAllowedHost(currentHostname, allowlist);
 
-    const signal = AbortSignal.timeout(timeoutMs);
-    const response = await raceWithTimeout(
-      fetchImpl(currentUrl, { ...currentOpts, redirect: 'manual', signal }),
-      signal,
-      currentUrl,
-      timeoutMs,
-    );
+    // The DUPLICATE check, and it is not made redundant by `deadlineSignal` below: a signal can
+    // only abort a call that has already been issued, and issuing it is exactly what a spent
+    // deadline must prevent (R-142c). Costs nothing on the hop that is still in budget.
+    if (deadlineAtMs !== undefined && deadlineAtMs - Date.now() <= 0) {
+      throw new DeadlineExceededError(currentUrl, deadlineAtMs);
+    }
+
+    // `effectiveHopMs = timeoutMs` — UNCLAMPED BY THE DEADLINE, and that is a decision, not an
+    // omission (task 012-7, plan review 2). Clamping to `min(timeoutMs, deadlineAtMs - now)` makes
+    // both timers expire in the SAME millisecond; `hopSignal` is constructed first, so it wins
+    // every tie, and `DeadlineExceededError` is then never born. Downstream that is C-1 verbatim:
+    // the registry never sets `deadlineHit`, the traversal ends in `CapabilityUnavailableError`,
+    // and OD-4/R-145 forbid exactly that outcome. The remainder is already carried by
+    // `deadlineSignal`, so clamping buys nothing and costs the discriminator.
+    const effectiveHopMs = timeoutMs;
+    const hop = composeHopAbort({
+      hopSignal: AbortSignal.timeout(effectiveHopMs),
+      // Rebuilt from the ABSOLUTE moment on every hop, which is what stops the budget from being
+      // re-granted in full to each of the up-to-4 hops (`MAX_REDIRECTS = 3`).
+      deadline:
+        deadlineAtMs === undefined
+          ? undefined
+          : {
+              signal: AbortSignal.timeout(Math.max(0, deadlineAtMs - Date.now())),
+              atMs: deadlineAtMs,
+            },
+      callerSignal,
+      url: currentUrl,
+      effectiveHopMs,
+    });
+
+    let response: Response;
+    try {
+      response = await raceWithTimeout(
+        // `signal` is LAST here as before, but it no longer discards the caller's: `hop.signal`
+        // composes it in (H1 — the previous version silently overwrote `opts.signal`).
+        fetchImpl(currentUrl, { ...currentOpts, redirect: 'manual', signal: hop.signal }),
+        hop.signal,
+        hop.reason,
+      );
+    } finally {
+      hop.release();
+    }
 
     // Early rejection only — never a licence to skip the counter (see the function's docstring).
     assertResponseSizeWithinCap(response, currentUrl, maxResponseBytes);

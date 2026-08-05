@@ -25,12 +25,83 @@
   (`routes × chainSupport`), so they cannot drift from real behaviour. Both lists are truncated: an
   error whose stated purpose is to save the caller a wasted call must not itself dump 458 slugs
   into the model's context.
+- **PLANNED (T-012, DECIDED but not in code as of 2026-08-03).** **A call deadline expiring is a
+  THIRD, equally distinct outcome (ADR-002 D4, R-145) — not
+  merged with either error above.** `CapabilityDeadlineExceededError` will fire when the manifest's
+  (narrowed-only, never widened, R-144) `deadlineMs` runs out before any adapter on the route
+  satisfied the request. It reuses the SAME `tried` list `CapabilityUnavailableError` already
+  carries — a deadline-caused skip is recorded there exactly like any other reason an adapter was
+  never asked — so a partial walk still names which sources were never reached, rather than
+  collapsing into an opaque timeout.
+
+  🔴 **A deadline never returns a partial result as if it were an answer** (owner decision
+  2026-08-03). ADR-002 D4 п.5 reads «ответил хотя бы один → частичный результат», but a deadline is
+  a fact about OUR availability, and the H-1 doctrine two bullets above forbids publishing that as a
+  fact about the DATA. Expiry therefore sets `hadFailure` and throws, naming both groups — which
+  sources answered and which were never asked. Returning the surviving answer instead would report
+  "this address has no entity labels" for a mixer or sanctioned address whenever the paid source
+  merely failed to fit the budget: a false negative delivered with full authority, which is the
+  exact defect H-1 exists to prevent. ADR-002 is amended to record the deviation (R-156), not
+  silently contradicted.
+
+  The one thing that error can NEVER mean: a paid request already
+  paid for was cut off before it finished. Credits are reserved **inside** `fetch()`, at
+  `gate.ensureBudget()` → `checkAndReserve()` (`adapters/nansen/index.ts:657`) — which happens
+  **once, before** the 2–3 sub-calls that one reservation covers, not at each HTTP dispatch. The
+  deadline stops being honoured at that **commit point**, so neither a sub-call nor a throttle wait
+  _between_ sub-calls ever receives it: cancelling between sub-call 1 and sub-call 2 would pay for
+  work we then throw away, which is the same loss D4 п.2 forbids. The limiter (`throttle()`) and
+  the transport (`safeFetch()`) both gain the SAME optional `deadlineAtMs`, computed once per
+  `resolve()` call and threaded down unchanged, rather than re-deriving a fresh per-step timeout —
+  the latter is what produced the historical ~410s envelope.
+
+  **What this bounds, stated as arithmetic rather than as a promise.** Because credits commit inside
+  `fetch()`, the deadline governs only the phase before that commitment. For `entity.labels` that
+  head has a **measured envelope of ~140s** — blockscout `30 + 4×5` = **50s**, plus the `/account`
+  resync `30 + 4×15` = **90s**. The paid-composite tier **caps** it at ~60s: that number is a
+  deliberate cut, not a measurement, so a head that would have run longer now fails with
+  `CapabilityDeadlineExceededError` instead of reaching the paid source. The tail is uncancellable
+  and unchanged at ~270s (three nansen sub-calls under one reservation, `3 × (30 + 4×15)` = `3 × 90`).
+  Worst case is therefore **cap + tail ≈ 330s**, not ~60s. Today's ~410s is not a bound at all,
+  since nothing anywhere is cancelled. Each paid capability records `paidLegMs` beside `deadlineMs`
+  with its derivation (R-149), because a bound with no arithmetic beside it is how the 410s number
+  was born — and a bound with _wrong_ arithmetic beside it is worse, since R-149 makes this text the
+  source a code comment gets copied from.
+
 - **A corrupt or missing chain registry fails loudly at startup (TASK-006, R-60d):**
   `loadChainRegistry()` raises `ChainRegistryLoadError` when the registry data is missing,
   malformed, or violates an invariant (duplicate `caip2`/`slug`, colliding alias, bad CAIP-2
   shape) — it never degrades to an empty registry. An empty registry would answer "unknown chain"
   to every request while the process still looked healthy: a total outage wearing the costume of
   normal operation.
+- **PLANNED (T-012, DECIDED but not in code as of 2026-08-03). An unregistered policy `kind` or a
+  capability with no manifest entry will fail loudly at
+  `CapabilityRegistry` CONSTRUCTION, the same discipline as the chain registry above (ADR-002
+  D2/D3, R-135/R-138).** `mcp-server/src/index.ts:104` builds the one real registry at process
+  startup, so a bad `providers.config.ts` edit is a startup failure naming the offending capability
+  and `kind`, never a surprise on the first matching `tools/call`.
+
+  🔴 **The manifest table is INJECTED, not imported** — a defaulted constructor parameter, exactly as
+  the chain registry already is (`adapters/registry.ts:109-111`). This is not symmetry for its own
+  sake: `CapabilityRegistry` is a factory, not a singleton, and the parameter defaults to the real
+  table, so any test that constructs a registry over a capability with no manifest row would go red.
+  The blast radius was **measured, not assumed** — it is **two `new CapabilityRegistry(...)` calls,
+  both in one file**: `packages/core/test/coverage.test.ts:86` (inside the `registryWith` helper)
+  and `:171` (a direct call). Both are built over the same `ROUTES` literal containing the synthetic
+  `legacy.thing` (`:79-84`), and each needs its own one-line edit to pass a synthetic manifest map
+  as the 5th argument — the helper does not cover `:171`.
+
+  Two capabilities that look like the same problem are **not**: `ghost` (`coverage.test.ts:255`) is
+  an argument to `createCoverage({routes})` and `x` (`:127`, `:139`) is a string handed to a
+  `CapabilityNotCoveredOnChainError` constructor — neither passes through registry validation.
+  Naming them here would have inflated the justification with cases that do not hold, which is the
+  same defect as an unmeasured count.
+
+  Validation order is fixed and stated: **manifest presence first, then policy `kind`** — so
+  R-135(b)'s bad-`kind` fixture (which supplies its own manifest map) can construct exactly one
+  broken thing. R-154's missing-`trust` check is **not** part of this ordering at all: it lives in
+  `assertValidAdapterRegistrations(array)`, which never touches the registry constructor.
+
 - An input validation failure (zod, including the `superRefine` address check) stays an MCP
   tool-error, not a process crash (inherited from M0).
 - Retry / circuit-breaker on top of an individual provider call is **not introduced** — YAGNI at

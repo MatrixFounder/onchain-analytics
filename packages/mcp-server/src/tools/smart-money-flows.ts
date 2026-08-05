@@ -11,7 +11,12 @@ import {
   type SmartMoneyFlow,
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 /**
@@ -69,7 +74,13 @@ export interface SmartMoneyFlowsContext {
 const CAPABILITY = 'smart-money.flows';
 
 export type SmartMoneyFlowsOutcome =
-  | { ok: true; output: SmartMoneyFlowsOutput; cache: CacheMeta; budget?: BudgetMeta }
+  | {
+      ok: true;
+      output: SmartMoneyFlowsOutput;
+      cache: CacheMeta;
+      timing?: TimingMeta;
+      budget?: BudgetMeta;
+    }
   | { ok: false; reason: string };
 
 /**
@@ -83,9 +94,13 @@ export type SmartMoneyFlowsOutcome =
  * data violating the tool's own contract degrades to `{ok:false, reason}`, mirroring
  * `protocol-tvl.ts`'s established `safeParse` precedent (adversarial cycle 2, finding 1a).
  *
- * `_meta.budget` (interfaces.md §5.1.2): read via `budgetMeta()` ONLY when `outcome.cache.status
- * === 'miss'` — on a `'hit'` the gate/`costOf()`/network never ran at all, so there is nothing new
- * to report (the budget figure would be stale/misleading, not merely omitted for tidiness).
+ * `_meta.budget` (interfaces.md §5.1.2): read via `budgetMeta()` on every successful resolution, and
+ * present in the response exactly when the traversal ENTERED a paid adapter. It used to be gated on
+ * `outcome.cache.status === 'miss'`, on the reasoning that a `'hit'` means the gate/`costOf()`/network
+ * never ran — true of the ANSWERING adapter, and not of the walk: the registry's H-1 return can hand
+ * back an earlier adapter's cache hit after entering and paying the source behind it (adversarial
+ * cycle 3, F-A). The condition now lives in one place, `budgetMeta()`, which reports nothing when the
+ * walk entered nobody — the pure-hit case the old gate was aiming at.
  */
 export async function smartMoneyFlowsHandler(
   input: SmartMoneyFlowsInput,
@@ -112,9 +127,13 @@ export async function smartMoneyFlowsHandler(
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
 
-  const budget =
-    outcome.cache.status === 'miss' ? await budgetMeta(ctx.budgetStore, Date.now) : undefined;
-  return { ok: true, output: parsed.data, cache: outcome.cache, budget };
+  // Gated on the TRAVERSAL, never on `outcome.cache.status` (adversarial cycle 3, F-A). A `'hit'`
+  // is not evidence that nothing was spent: the registry's H-1 return can hand back an EARLIER
+  // adapter's cache hit after the walk entered and paid the source behind it, and a `'miss'` gate
+  // dropped `_meta.budget` on exactly that route. `budgetMeta` reports nothing when nobody was
+  // entered, which is what a pure hit is — so the branch has no work left to do.
+  const budget = await budgetMeta(ctx.budgetStore, Date.now, outcome.attempted);
+  return { ok: true, output: parsed.data, ...metaFrom(outcome), budget };
 }
 
 /**

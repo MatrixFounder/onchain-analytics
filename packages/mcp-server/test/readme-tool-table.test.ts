@@ -3,6 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createNansenAdapter, routes, ttlFor } from '@onchain-intel/core';
+// Task 012-5, in a SEPARATE statement so the import above stays byte-identical: AC-5 is "the gate's
+// own `ttlFor` code is not edited", and a diff that leaves line 5 untouched is how that is checked
+// mechanically rather than by reading.
+import { capabilityManifests, type CapabilityManifest } from '@onchain-intel/core';
 import { toolSpecs } from '../src/tools/tool-specs.js';
 
 /**
@@ -351,5 +355,334 @@ describe('the architecture TTL table is complete and matches the code (WI-28)', 
         : [`${row.stated}: table says ${row.ttl ?? '—'}, cache/ttl.ts says ${ttls[0] ?? '—'}`];
     });
     expect(wrong, `${ARCHITECTURE} §3.2 disagrees with cache/ttl.ts.`).toStrictEqual([]);
+  });
+});
+
+// =============================================================================================
+// The SIXTH table — `deadlineMs`/`paidLegMs` by capability (task 012-5, extending WI-28)
+// =============================================================================================
+
+/**
+ * **This is the mechanism of AC-13.** A manifest row carrying a `deadlineMs` with no matching
+ * documented derivation now fails the SAME gate that already catches an undocumented TTL, instead of
+ * depending on a reviewer noticing. `capability-manifest.test.ts`'s TC-UNIT-08 is the other half and
+ * a deliberately weaker one: it checks that a two-number record EXISTS beside each field, never that
+ * the number is the one the architecture approved. That comparison is here.
+ *
+ * The table read is "`deadlineMs`/`paidLegMs` by capability" in
+ * `docs/architectures/system-architecture.md`, anchored on its own bold heading — never scanned
+ * across the document, for the reason the TTL gate above records: several other tables in this file
+ * open with a backticked id in the first cell.
+ *
+ * **Reached** (one positive control below per row — a detector with no control can be added dead):
+ *
+ * | Form                                                                        |
+ * | ----------------------------------------------------------------------------- |
+ * | A documented `deadlineMs` differing from the manifest's                      |
+ * | A `deadlineMs` cell stating no number at all (`TBD`) while the manifest has one |
+ * | A `paidLegMs` documented for a capability whose manifest carries none         |
+ * | A manifest `paidLegMs` the table records as `—`                               |
+ * | A routed capability with no row in the table                                  |
+ * | A row naming a capability nothing routes                                      |
+ * | One row grouping capabilities whose manifest deadlines differ                 |
+ * | The anchor going stale — the gate fails loudly rather than passing vacuously   |
+ * | The `a/b/c` capability shorthand expanding to the wrong ids                    |
+ *
+ * **NOT reached — measured, not hypothesised** (each asserted in "the DECLARED LIMITS are real"):
+ *
+ * | Escape                                                                | Why |
+ * | ----------------------------------------------------------------------- | --- |
+ * | **The Derivation column's prose.** A row with the right number and an absent, wrong or self-contradicting derivation passes. **So this gate cannot tell an OVERRIDE from an ALIGNMENT** — it accepts whatever number the manifest holds once the cell is updated. That is why 012-5's own override (`privacy.shielded_pool` + four `platform.*`, ~30_000 → ~15_000) had to be marked as an override in the manifest FIRST (012-4) and carry its reason and revert condition in the document: this gate would have accepted the rewritten row silently either way. | Numbers are compared; prose is not read. Reading it would mean judging an argument, which no regex does. |
+ * | Anything outside the anchored section — a contradicting copy of a row before or after it | The section is bounded by its heading and the next sibling bullet, deliberately (see the TTL gate's note on the four other tables in this file). |
+ * | A row DUPLICATED inside the section with the same numbers               | Every row is checked against the manifest independently; two consistent rows are two passes. Nothing here counts how many times a capability is stated. |
+ * | Every manifest field except `deadlineMs`/`paidLegMs` — `shape`, `ttlSeconds`, `shareable` | Out of scope by design: TTL has its own half of this gate above, `shape` has TC-UNIT-07 next door. |
+ *
+ * **A limit of the DIAGNOSTIC rather than of detection**, stated because the message misleads: a
+ * correct number written **without the `~`** is read as "no number stated" and reported as
+ * `documents no deadlineMs`. It fails closed — which is the important half — but it cannot tell a
+ * formatting change from a deleted row.
+ */
+
+interface DeadlineRow {
+  stated: string;
+  covered: string[];
+  deadlineMs: number | null;
+  paidLegMs: number | null;
+}
+
+/**
+ * `~15_000` → 15000; `**~270_000** (derived, OD-3 worked example above)` → 270000;
+ * `— (free-only route)` and `TBD (R-149)` → null.
+ *
+ * **The `~` is required, not decoration.** Without it the `OD-3` in `entity.labels`' own cell reads
+ * as the number 3. Requiring the tilde is what keeps a document reference out of the value column.
+ */
+function millis(cell: string): number | null {
+  const digits = /~\s*(\d[\d_]*)/.exec(cell);
+  return digits ? Number((digits[1] as string).replace(/_/g, '')) : null;
+}
+
+/**
+ * `platform.identities/contracts/documents/credits` → the four ids it abbreviates;
+ * `platform.*` → every routed id under the prefix; anything else → itself.
+ *
+ * The slash form is the document's, not this gate's invention, and it is the CAPABILITY LIST that
+ * addresses the overridden row — never its line number, because the row directly beneath it is
+ * visually identical and correct (`capability-manifest.ts`'s override banner).
+ */
+function expandCapabilityId(id: string, routed: string[]): string[] {
+  if (id.endsWith('.*')) return routed.filter((c) => c.startsWith(id.slice(0, -1)));
+  const [first, ...rest] = id.split('/');
+  if (first === undefined) return [];
+  const namespace = first.slice(0, first.lastIndexOf('.') + 1);
+  return [first, ...rest.map((tail) => `${namespace}${tail}`)];
+}
+
+/** The rows of the anchored deadline table; `[]` when the anchor itself has gone stale. */
+function deadlineRows(markdown: string, routed: string[]): DeadlineRow[] {
+  const after = markdown.split(/^\s*\*\*`deadlineMs`\/`paidLegMs` by capability/m)[1];
+  if (after === undefined) return [];
+  return (after.split(/^- \*\*/m)[0] as string).split('\n').flatMap((line) => {
+    // A first cell that OPENS with a backtick — the header (`| Capability |`) and the separator
+    // row do not, so neither is mistaken for data.
+    const cells = /^\s*\|\s*(`[^|]*`)\s*\|([^|]*)\|([^|]*)\|/.exec(line);
+    if (!cells) return [];
+    const ids = [...(cells[1] as string).matchAll(/`([^`]+)`/g)].map((m) => m[1] as string);
+    return [
+      {
+        stated: ids.join(', '),
+        covered: ids.flatMap((id) => expandCapabilityId(id, routed)),
+        deadlineMs: millis(cells[2] as string),
+        paidLegMs: millis(cells[3] as string),
+      },
+    ];
+  });
+}
+
+const show = (value: number | null): string => (value === null ? '—' : String(value));
+
+/** Every disagreement between the documented table and the manifest, NAMED by capability. */
+function deadlineDefects(
+  markdown: string,
+  routed: string[],
+  manifests: Readonly<Record<string, CapabilityManifest>>,
+): string[] {
+  const defects: string[] = [];
+  const documented = new Set<string>();
+
+  for (const row of deadlineRows(markdown, routed)) {
+    const unrouted = row.covered.filter((capability) => !routed.includes(capability));
+    if (unrouted.length > 0) {
+      defects.push(`${row.stated}: names ${unrouted.join(', ')}, which nothing routes`);
+      continue;
+    }
+    if (row.covered.length === 0) {
+      defects.push(`${row.stated}: expands to no capability at all`);
+      continue;
+    }
+    for (const capability of row.covered) documented.add(capability);
+
+    const deadlines = [...new Set(row.covered.map((c) => manifests[c]?.deadlineMs ?? null))];
+    const paidLegs = [...new Set(row.covered.map((c) => manifests[c]?.paidLegMs ?? null))];
+    // Named per capability, not counted and not summarised as "the group disagrees": a row here
+    // can cover nine capabilities, and a failure that does not say WHICH one moved is a failure the
+    // reader has to re-derive by hand (the "name the offenders" rule this project already applies
+    // to its alerting).
+    const perCapability = (field: 'deadlineMs' | 'paidLegMs'): string =>
+      row.covered.map((c) => `${c}=${show(manifests[c]?.[field] ?? null)}`).join(', ');
+    if (deadlines.length > 1) {
+      defects.push(
+        `${row.stated}: one row, but the manifest gives them different deadlineMs ` +
+          `(${perCapability('deadlineMs')})`,
+      );
+      continue;
+    }
+    if (paidLegs.length > 1) {
+      defects.push(
+        `${row.stated}: one row, but the manifest gives them different paidLegMs ` +
+          `(${perCapability('paidLegMs')})`,
+      );
+      continue;
+    }
+    const expectedDeadline = deadlines[0] ?? null;
+    const expectedPaidLeg = paidLegs[0] ?? null;
+    if (row.deadlineMs !== expectedDeadline) {
+      defects.push(
+        `${row.stated}: table says deadlineMs ${show(row.deadlineMs)}, ` +
+          `the manifest applies ${show(expectedDeadline)}`,
+      );
+    }
+    if (row.paidLegMs !== expectedPaidLeg) {
+      defects.push(
+        `${row.stated}: table says paidLegMs ${show(row.paidLegMs)}, ` +
+          `the manifest applies ${show(expectedPaidLeg)}`,
+      );
+    }
+  }
+
+  for (const capability of routed) {
+    if (!documented.has(capability)) {
+      defects.push(`${capability}: the manifest gives it a deadlineMs the table never documents`);
+    }
+  }
+  return defects;
+}
+
+describe('the architecture deadline table states the numbers the manifest applies (WI-28, AC-13)', () => {
+  const ARCHITECTURE = 'docs/architectures/system-architecture.md';
+  const routed = [...new Set(routes.map((route) => route.capability))];
+
+  it('documents every routed capability, at the deadline the manifest applies', () => {
+    const markdown = read(ARCHITECTURE);
+    // Sign of work FIRST — and exactly what it buys, no more. A row the regex stops matching would
+    // already fail the completeness check below (its capabilities go undocumented), so this is not
+    // what keeps the gate from passing vacuously. What the exact count buys is the OTHER direction:
+    // an eighth row, or a non-data line the parser starts treating as one, becomes visible here
+    // instead of being quietly checked or quietly ignored.
+    expect(deadlineRows(markdown, routed).length).toBe(7); // the exact row count, not a floor
+    expect(routed).toHaveLength(20);
+
+    expect(
+      deadlineDefects(markdown, routed, capabilityManifests),
+      `${ARCHITECTURE}'s "\`deadlineMs\`/\`paidLegMs\` by capability" table disagrees with ` +
+        '`capability-manifest.ts`. AC-13: a deadline number is allowed to exist only where its ' +
+        'derivation is written down — this is the test that makes that a failure, not a review note.',
+    ).toStrictEqual([]);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Controls. Everything below runs the gate against a SYNTHETIC document and a synthetic
+  // manifest, so a control says something about the detector rather than about today's numbers.
+  // -------------------------------------------------------------------------------------------
+
+  const CONTROL_ROUTED = ['token.price', 'entity.labels'];
+  const CONTROL_MANIFESTS: Readonly<Record<string, CapabilityManifest>> = {
+    'token.price': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000 },
+    'entity.labels': { shape: 'set', ttlSeconds: 3600, deadlineMs: 60_000, paidLegMs: 270_000 },
+  };
+  const FREE_ROW = '  | `token.price` | ~15_000 | — (free-only route) | one free adapter |';
+  const PAID_ROW = '  | `entity.labels` | ~60_000 | **~270_000** (derived) | paid composite |';
+
+  /** The anchor, a header, the given rows, and one row PAST the section boundary. */
+  function synthetic(...rows: string[]): string {
+    return [
+      '  **`deadlineMs`/`paidLegMs` by capability (synthetic)** — prose the gate does not read.',
+      '',
+      '  | Capability | `deadlineMs` | `paidLegMs` | Derivation |',
+      '  | ---------- | ------------ | ----------- | ---------- |',
+      ...rows,
+      '',
+      '- **the next sibling bullet ends the section**',
+      '  | `token.price` | ~1 | ~2 | beyond the boundary; never read |',
+    ].join('\n');
+  }
+
+  const defectsOf = (...rows: string[]): string[] =>
+    deadlineDefects(synthetic(...rows), CONTROL_ROUTED, CONTROL_MANIFESTS);
+
+  it('is not simply always red: the correct pair of rows passes', () => {
+    expect(deadlineRows(synthetic(FREE_ROW, PAID_ROW), CONTROL_ROUTED)).toHaveLength(2);
+    expect(defectsOf(FREE_ROW, PAID_ROW)).toStrictEqual([]);
+  });
+
+  it('the gate DETECTS each reached form', () => {
+    expect(
+      defectsOf('  | `token.price` | ~30_000 | — | a number nobody applied |', PAID_ROW),
+      'a documented deadline differing from the manifest',
+    ).toStrictEqual(['token.price: table says deadlineMs 30000, the manifest applies 15000']);
+
+    expect(
+      defectsOf('  | `token.price` | TBD (R-149) | — | no number at all |', PAID_ROW),
+      'a cell stating no number while the manifest has one',
+    ).toStrictEqual(['token.price: table says deadlineMs —, the manifest applies 15000']);
+
+    expect(
+      defectsOf(
+        '  | `token.price` | ~15_000 | ~9_000 | a paid leg that does not exist |',
+        PAID_ROW,
+      ),
+      'a paidLegMs documented for a free capability',
+    ).toStrictEqual(['token.price: table says paidLegMs 9000, the manifest applies —']);
+
+    expect(
+      defectsOf(FREE_ROW, '  | `entity.labels` | ~60_000 | — | the paid leg dropped |'),
+      'a manifest paidLegMs the table records as absent',
+    ).toStrictEqual(['entity.labels: table says paidLegMs —, the manifest applies 270000']);
+
+    expect(defectsOf(PAID_ROW), 'a routed capability with no row').toStrictEqual([
+      'token.price: the manifest gives it a deadlineMs the table never documents',
+    ]);
+
+    expect(
+      defectsOf(FREE_ROW, PAID_ROW, '  | `token.retired` | ~15_000 | — | routed nowhere |'),
+      'a row naming a capability nothing routes',
+    ).toStrictEqual(['token.retired: names token.retired, which nothing routes']);
+
+    expect(
+      defectsOf('  | `token.price`, `entity.labels` | ~15_000 | — | one row, two tiers |'),
+      'one row grouping capabilities whose manifest deadlines differ — and the message names ' +
+        'which of them holds which number',
+    ).toStrictEqual([
+      'token.price, entity.labels: one row, but the manifest gives them different deadlineMs ' +
+        '(token.price=15000, entity.labels=60000)',
+    ]);
+
+    // The anchor going stale is the failure this whole file exists to avoid passing quietly.
+    const noAnchor = synthetic(FREE_ROW, PAID_ROW).replace('`deadlineMs`/`paidLegMs`', '`removed`');
+    expect(deadlineRows(noAnchor, CONTROL_ROUTED)).toStrictEqual([]);
+    expect(
+      deadlineDefects(noAnchor, CONTROL_ROUTED, CONTROL_MANIFESTS),
+      'a stale anchor must fail loudly, never pass over an empty list',
+    ).toHaveLength(2);
+
+    // The `a/b` shorthand: an expansion that produced the wrong ids would report them as unrouted.
+    expect(expandCapabilityId('platform.identities/contracts/documents/credits', [])).toStrictEqual(
+      ['platform.identities', 'platform.contracts', 'platform.documents', 'platform.credits'],
+    );
+  });
+
+  it('the DECLARED LIMITS are real: these forms are NOT reached, and that is written down', () => {
+    // Executable form of the "NOT reached" table above. Asserting the limits keeps that table from
+    // drifting away from the code and turns any future widening into a visible edit HERE.
+    expect(
+      defectsOf('  | `token.price` | ~15_000 | — |  |', PAID_ROW),
+      'LIMIT: the Derivation column is not read — an empty, wrong or self-contradicting ' +
+        'derivation passes, so this gate cannot tell an OVERRIDE from an ALIGNMENT',
+    ).toStrictEqual([]);
+
+    expect(
+      defectsOf(
+        FREE_ROW,
+        PAID_ROW,
+        // Same capability, same numbers, stated twice — nothing counts occurrences.
+        FREE_ROW,
+      ),
+      'LIMIT: a row duplicated inside the section is two independent passes',
+    ).toStrictEqual([]);
+
+    const contradictedOutside = [
+      '  | `token.price` | ~99_000 | ~99_000 | a copy BEFORE the anchor |',
+      synthetic(FREE_ROW, PAID_ROW),
+    ].join('\n');
+    expect(
+      deadlineDefects(contradictedOutside, CONTROL_ROUTED, CONTROL_MANIFESTS),
+      'LIMIT: anything outside the anchored section is invisible, in both directions',
+    ).toStrictEqual([]);
+
+    const otherShape: Readonly<Record<string, CapabilityManifest>> = {
+      'token.price': { shape: 'series', ttlSeconds: 999, deadlineMs: 15_000 },
+      'entity.labels': { shape: 'point', ttlSeconds: 1, deadlineMs: 60_000, paidLegMs: 270_000 },
+    };
+    expect(
+      deadlineDefects(synthetic(FREE_ROW, PAID_ROW), CONTROL_ROUTED, otherShape),
+      'LIMIT: only `deadlineMs`/`paidLegMs` are compared — `shape` and `ttlSeconds` are other ' +
+        "gates' jobs (the TTL half above, TC-UNIT-07 next door)",
+    ).toStrictEqual([]);
+
+    expect(
+      defectsOf('  | `token.price` | 15_000 | — | the tilde dropped |', PAID_ROW),
+      'LIMIT of the DIAGNOSTIC: a correct number written without `~` fails CLOSED, but is ' +
+        'reported as if the row stated nothing',
+    ).toStrictEqual(['token.price: table says deadlineMs —, the manifest applies 15000']);
   });
 });

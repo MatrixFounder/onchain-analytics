@@ -90,6 +90,15 @@ an untrusted source is not a gate.
    literal, and a malformed entry is a **load error** of the same class as a duplicate `caip2`. On
    top of that, `hostOf()` in both adapters throws instead of returning the input string: for a
    security control, the default behaviour on unparsed input is "drop", not "trust".
+   **A path segment of 20+ characters is refused by the same rule** (T-012 adversarial cycle 3): the
+   Alchemy/Infura convention puts the API key IN the path (`https://…/v2/<32 chars>`), and
+   `net/safe-fetch.ts` publishes `origin + pathname` in its timeout and deadline errors — messages
+   that reach stderr and reach the model through `tried[].reason`. The redactor strips the query
+   (because that is how `blockscout` authenticates) and keeps the path, justified by "the path is
+   ours, never a secret". That sentence was an assumption about every URL the redactor might ever be
+   handed; refusing the entry here is what makes it a fact. Redacting at the printer instead would
+   blind legitimate long ids (`/api/v2/addresses/0x…`) while still guessing at the next vendor's
+   convention.
 5. **Both RPC adapters, not just EVM.** Both `rpc-evm` and `rpc-solana` are confined to the same
    perimeter — endpoints and allowlist come only from the requested chain's `rpcHosts`. A
    module-level `ENDPOINT` constant (Solana mainnet) combined with advertised coverage for ANY `svm`
@@ -130,6 +139,37 @@ hundreds of chains, `wallet.balances.native` on dozens. The coverage matrix make
 single outbound-HTTP point; the allowlist remains per-adapter; redirect checking on every hop,
 `SENSITIVE_HEADER_RE`, and the exclusion of env values from the cache key are unchanged. The
 registry adds **data** to the existing mechanism; it does not replace the mechanism.
+
+#### 7.2.2. How much vendor-authored text one call can put in front of the model (T-012, cycle 3)
+
+Token names, tags and entity labels are chosen by whoever deployed the contract or edited the
+explorer entry, and every one of them is rendered into the model's context. Per-field caps have
+existed since vdd-multi cycle 5 (`truncateVendorText`, `truncateStringArray`, the zod `.max()`
+backstops) and a row cap since cycle 1 — each added for its own reason, and **the product was never
+taken**. "There are caps" is not a bound; the finding this section answers was that the SURFACE was
+unstated, not that a cap was missing.
+
+**Measured, 2026-08-05** (`packages/core/test/nansen.hardening.test.ts`, the `cycle 3 security`
+block — the numbers are produced by feeding inputs over every cap and weighing the output, not by
+restating constants):
+
+| Path                        | What binds                                               | Ceiling                  |
+| --------------------------- | -------------------------------------------------------- | ------------------------ |
+| `entity.labels`, nansen     | `MAX_VENDOR_ROWS` × (`name` 256 + 64 tags × 256)         | < 17.5 KB per entity     |
+| `entity.labels`, nansen     | `tokens[]` and `entities[]` are sliced **independently** | 400 entries per response |
+| `entity.labels`, blockscout | transport: `MAX_RESPONSE_BYTES`                          | 512 KiB per call         |
+
+The two vendor arrays being capped separately is the part a reader gets wrong: the ceiling is twice
+the row cap, not the row cap. `blockscout` needs no field arithmetic — its transport cap bounds
+everything downstream of it, which is why that adapter's number is a byte count and nansen's is a
+product. Nansen runs on the 10 MB `safeFetch` default, so for it the field and row caps are what
+bind.
+
+This is a **bound, not a defence**. Text inside it is still attacker-chosen, and the mitigations that
+matter are elsewhere: the tool descriptions tell the model these strings are vendor data, and no
+label value reaches a shell, a query or a URL. What the numbers buy is the ability to notice a
+change — a future cap edit that multiplies the surface fails the gate above instead of passing
+review as "a bigger limit".
 
 ### 7.3. Attack surface and hardening
 

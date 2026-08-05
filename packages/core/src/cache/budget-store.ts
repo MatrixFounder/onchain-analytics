@@ -128,16 +128,20 @@ const WINDOW_RETENTION_MS = 3_600_000;
  * constructed against this file first (a standalone `new SqliteBudgetStore({dbPath: ':memory:'})`
  * must work on its own, TC-UNIT-07).
  *
- * **Why this bootstrap upsert writes `kind: 'unknown'` (deliberately NOT `SqliteCacheStore`'s
- * 'free'/'paid' `PAID_PROVIDER_IDS` classification):** replicating that classification here would
- * require hardcoding specific provider ids (starting with `'nansen'`) into this file's own
- * production code — the one thing this task's own scope note explicitly forbids ("the only
- * `'nansen'` mention allowed is in tests, as a string provider id"). `providers.kind` is already
- * documented (`ddl.ts`) as purely informational, read by no logic anywhere — this store only
- * needs the ROW to exist to satisfy the FK, never a correct classification. Uses
- * `ON CONFLICT (id) DO NOTHING` (not `DO UPDATE`, unlike `SqliteCacheStore`'s own bootstrap) so a
- * `SqliteBudgetStore` constructed against a file a `SqliteCacheStore` already correctly classified
- * never clobbers that classification with `'unknown'`.
+ * **The bootstrap upsert writes `registration.tier` (task 012-3), and the anti-clobber rule that
+ * used to govern it is SUPERSEDED — not quietly dropped.** Until 012-3 this method wrote a literal
+ * `kind: 'unknown'` and reconciled with `ON CONFLICT (id) DO NOTHING`, and both halves had a
+ * stated reason: the classification lived in `SqliteCacheStore` as a hardcoded `PAID_PROVIDER_IDS`
+ * set, replicating it here would have meant hardcoding provider ids into this file too, and
+ * `DO NOTHING` then protected a row a `SqliteCacheStore` had already classified correctly from
+ * being overwritten with `'unknown'` by a budget store opened against the same file afterwards.
+ * ADR-002 D8 removed the premise: `tier` is a required field of every `AdapterRegistration`, so
+ * **both writers now derive the same value from the same registration** and there is nothing left
+ * to clobber — the "protection" would only preserve a STALE row (every pre-012-3 file has all
+ * twelve rows sitting at `'unknown'` forever). Hence `ON CONFLICT (id) DO UPDATE SET
+ * kind = excluded.kind`, the exact form `SqliteCacheStore.bootstrapProviders()` already used. The
+ * old rule is recorded here rather than deleted because the diff otherwise reads as a protection
+ * being removed, which is the one thing it must not be mistaken for.
  *
  * **`PRAGMA foreign_keys = ON` is re-issued on THIS connection** (connection-scoped, not persisted
  * in the file, DB-SCHEMA-CONCEPT §1.6) — proven by `recordDelta`/`checkAndReserve` for an
@@ -260,14 +264,24 @@ export class SqliteBudgetStore implements BudgetStore {
     }
   }
 
-  /** See the class docstring's "Why this bootstrap upsert writes `kind: 'unknown'`" note. */
+  /**
+   * Upserts every registration into `providers` so the FK target exists before any `usage` write —
+   * writing `registration.tier` into `kind`, and reconciling an existing row rather than leaving
+   * it (see the class docstring's superseded-anti-clobber note for why the reconciliation flipped).
+   *
+   * **No default for a missing `tier`.** `providers.kind` is `TEXT NOT NULL` (`ddl.ts`), so a
+   * registration that reaches here without one makes better-sqlite3 refuse to bind `undefined` —
+   * loudly, at construction, naming the parameter. A `?? 'free'` would turn that into a silent
+   * invented value, which is exactly what R-150(c) forbids: a rank that can be omitted is a rank
+   * that gets defaulted (`assertValidAdapterRegistrations()` is the same guarantee, earlier).
+   */
   private bootstrapProviders(registrations: AdapterRegistration[]): void {
-    const insert = this.db.prepare(
-      `INSERT INTO providers (id, kind, notes) VALUES (@id, 'unknown', NULL)
-       ON CONFLICT (id) DO NOTHING`,
+    const upsert = this.db.prepare(
+      `INSERT INTO providers (id, kind, notes) VALUES (@id, @kind, NULL)
+       ON CONFLICT (id) DO UPDATE SET kind = excluded.kind`,
     );
     for (const registration of registrations) {
-      insert.run({ id: registration.id });
+      upsert.run({ id: registration.id, kind: registration.tier });
     }
   }
 

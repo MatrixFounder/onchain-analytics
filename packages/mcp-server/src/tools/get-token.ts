@@ -9,7 +9,12 @@ import {
   type CapabilityRegistry,
   type Token,
 } from '@onchain-intel/core';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 /**
@@ -82,7 +87,8 @@ export interface GetTokenContext {
 const CAPABILITY = 'token.price';
 
 export type GetTokenOutcome =
-  { ok: true; output: GetTokenOutput; cache: CacheMeta } | { ok: false; reason: string };
+  | { ok: true; output: GetTokenOutput; cache: CacheMeta; timing?: TimingMeta }
+  | { ok: false; reason: string };
 
 /**
  * Pure handler for `onchain_get_token` — separated from `defineTool` (SDK wiring),
@@ -122,7 +128,7 @@ export async function getTokenHandler(
   if (!parsed.success) {
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
-  return { ok: true, output: parsed.data, cache: outcome.cache };
+  return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }
 
 /**

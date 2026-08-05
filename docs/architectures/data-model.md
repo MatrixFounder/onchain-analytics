@@ -180,16 +180,67 @@ The two native-token columns carry the failure they prevent:
 - **Business rule:** the absence of a probe means **`unverified`, not `unsupported`** (R-58d). What
   the engine actually gates on is described in §4.2.3.
 
+#### Artifact: `CapabilityManifest` + `PolicyDescriptor` (T-012, ADR-002 D2/D3) — compiled facts, not tables
+
+**PLANNED (T-012, not in code as of 2026-08-03).**
+
+- **Description:** like `ChainInfo` above, these will be **not** canonical domain types in the D5
+  sense (they describe how a capability is ROUTED, not an observation obtained from a provider) —
+  committed TypeScript literals (`capabilityManifests` in `src/capability-manifest.ts`, the policy
+  class dictionary in `src/adapters/policy.ts`), validated once at `CapabilityRegistry` construction
+  and held in process memory, never in the cache DB or in Postgres (D1 — tier-1 config in the
+  commit).
+- **Key attributes:** `CapabilityManifest` is a DISCRIMINATED union, not a flat interface (H4,
+  architecture review 2026-08-03 — a flat shape would let a future `merge` field attach to a
+  `point` manifest with no compiler objection): `{shape:'point', ttlSeconds, deadlineMs,
+shareable?}` or `{shape:'set'|'series', ttlSeconds, deadlineMs, shareable?}`, both variants also
+  carrying an optional `paidLegMs` — present only when the capability's route can reach a
+  `tier:'paid'` adapter, documenting the UNCANCELLABLE tail past a committed credit reservation
+  (OD-3, owner 2026-08-03; worst case for such a capability is `deadlineMs + paidLegMs`, never
+  `deadlineMs` alone). `PolicyDescriptor` — a discriminated union, `{ kind: 'any' }` or `{ kind:
+'someElementHasAny', fields: string[] }`.
+- **Relationships:** every `CapabilityRoute.capability` must resolve to exactly one
+  `CapabilityManifest` entry, and every `CapabilityRoute.policy.kind`, when present, must resolve
+  against the policy dictionary — both are enforced the same way the chain registry enforces its
+  own invariants (§4.2.1: at construction, never at first request), in a FIXED order (manifest
+  presence checked before policy `kind`) so a negative test can isolate exactly one failure (C2,
+  architecture review 2026-08-03). 🔴 **M-6 correction (architecture review round 2, 2026-08-03):**
+  only the MANIFEST map is an injected, defaulted constructor parameter on `CapabilityRegistry`
+  (`manifests: Readonly<Record<string, CapabilityManifest>> = capabilityManifests` —
+  system-architecture.md, "Capability Registry") — the same seam the chain registry already uses one
+  parameter to the left — so a test route table with synthetic capabilities supplies its own small
+  manifest map instead of inheriting the real 20-row one. The POLICY class dictionary is a
+  **module-level registry** (`src/adapters/policy.ts`, system-architecture.md "Policy descriptor +
+  class registry"), not a constructor parameter, and needs no injection of its own: a test exercising
+  an unregistered `kind` expresses the bad value in the ROUTE itself (`{ policy: { kind: 'bogus' } }`),
+  which is the thing under test either way — there is no scenario where a test needs a DIFFERENT
+  policy dictionary, only a route referencing a `kind` the real one does not have. (An earlier draft
+  of this section said "both maps are injected... one parameter to the left" — two maps cannot both
+  occupy one parameter position, and the code only injects the one that has a real reason to vary.)
+- **Business rules:** manifest carries no `chains`/`providers`/`price` (those are derived from
+  `chainSupport()`, `routes`, `costOf()` respectively — the identical "one fact, one place" rule the
+  chain registry already applies to coverage, §4.2.3); a `policy.kind` or `capability` unresolved
+  against either artifact is a construction-time failure, never a silent default.
+
 ### 4.2. Logical model — the cache DB (`DATA_DIR/cache.sqlite3`)
 
 The full DDL is in §3.2, module `src/cache/*`. In brief: `providers(id PK)` ← `cache_entries(provider
 FK, capability, args_hash, value_json, created_at, expires_at, UNIQUE(provider,capability,
 args_hash))`. Portable types (`TEXT`/`INTEGER`), epoch-ms `INTEGER`, app-generated `TEXT` ULID ids,
 `PRAGMA foreign_keys=ON` — DB-SCHEMA-CONCEPT §1 applied literally to a new context (a cache, not an
-analytical snapshot: the upsert semantics in §3.2 differ from the append-only `snapshots`). **All ten
-`adapterRegistrations` (including `pg-history`) are upserted into `providers` at startup** — no cache
-hit or miss can reference a nonexistent `provider`, and the FK holds for every adapter registered in
-`providers.config.ts`.
+analytical snapshot: the upsert semantics in §3.2 differ from the append-only `snapshots`). **All
+twelve `adapterRegistrations` (including `pg-history`) are upserted into `providers` at startup** —
+no cache hit or miss can reference a nonexistent `provider`, and the FK holds for every adapter
+registered in `providers.config.ts`. `providers.kind` (`'free' | 'paid'`, informational — no logic
+reads it) is populated from `AdapterRegistration.tier` (T-012 task 012-3, ADR-002 D8). Both writers
+of this column (`SqliteCacheStore.bootstrapProviders()` and `SqliteBudgetStore.bootstrapProviders()`)
+read that ONE field on the same registration; before 012-3 they disagreed — one derived `kind` from a
+private `PAID_PROVIDER_IDS` set, the other hardcoded `'unknown'` (system-architecture.md, "Provider
+tier"). **Their conflict clauses are also identical now (adversarial cycle 2, F-3):**
+`ON CONFLICT (id) DO UPDATE SET kind = excluded.kind`, updating the column both writers OWN and
+leaving `notes` alone. The cache store used to add `notes = excluded.notes` with a literal `NULL`, so
+merely constructing it erased an operator's note while constructing the budget store preserved it —
+the same file's content depending on which store opened it last.
 
 **M2 addition (TASK-005, R-34): `usage(provider FK, day, credits_used)`** — the same cache DB, the
 same `providers` registry as the FK target, and **no migration** of `providers`/`cache_entries` (the
@@ -402,17 +453,20 @@ advertises, what the transport will build a request for, and what the refusal me
 available — because an adapter that answers the same question in two places eventually answers it
 two different ways.
 
-**Two different refusals that must not be merged (R-51b):**
+**Three different refusals that must not be merged (R-51b, and D4/R-145 since T-012):**
 
-| Situation                                                                 | Error type                          | What it means to the agent                              |
-| ------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------- |
-| The (capability, chain) pair is not covered                               | `CapabilityNotCoveredOnChainError`  | "It is not here and will not be — look at alternatives" |
-| The pair is covered but the provider is unavailable (no key, vendor down) | `CapabilityUnavailableError` (R-24) | "This could work — fix the config or retry later"       |
+| Situation                                                                 | Error type                             | What it means to the agent                                        |
+| ------------------------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------- |
+| The (capability, chain) pair is not covered                               | `CapabilityNotCoveredOnChainError`     | "It is not here and will not be — look at alternatives"           |
+| The pair is covered but the provider is unavailable (no key, vendor down) | `CapabilityUnavailableError` (R-24)    | "This could work — fix the config or retry later"                 |
+| The manifest's call deadline expired before a satisfying answer arrived   | `CapabilityDeadlineExceededError` (D4) | "We ran out of our own time budget — this is not a vendor outage" |
 
-Merging the two would send the agent into an endless retry where retrying is pointless, and
-conversely make it give up where adding a key is enough. `CapabilityNotCoveredOnChainError` is
-raised from `validateArgs()`, i.e. **before** `ensureBudget()` — no credits are reserved to discover
-it.
+Merging any of the three would send the agent into an endless retry where retrying is pointless, or
+conversely make it give up where adding a key (or simply retrying later) is enough.
+`CapabilityNotCoveredOnChainError` is raised from `validateArgs()`, i.e. **before** `ensureBudget()`
+— no credits are reserved to discover it. `CapabilityDeadlineExceededError` reuses the SAME `tried`
+list the other two carry (system-architecture.md, "Call deadline"), naming which sources the walk
+never reached because time ran out first.
 
 ### 4.3. Data diagram
 

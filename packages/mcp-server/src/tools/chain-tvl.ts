@@ -2,7 +2,12 @@ import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 const CAPABILITY = 'chain.tvl';
@@ -41,7 +46,8 @@ export interface ChainTvlContext {
 }
 
 export type ChainTvlOutcome =
-  { ok: true; value: ChainTvlOutput; cache: CacheMeta } | { ok: false; reason: string };
+  | { ok: true; value: ChainTvlOutput; cache: CacheMeta; timing?: TimingMeta }
+  | { ok: false; reason: string };
 
 export async function chainTvlHandler(
   input: ChainTvlInput,
@@ -60,7 +66,7 @@ export async function chainTvlHandler(
   if (!parsed.success) {
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
-  return { ok: true, value: parsed.data, cache: outcome.cache };
+  return { ok: true, value: parsed.data, ...metaFrom(outcome) };
 }
 
 export const chainTvlToolSpec = defineTool({
@@ -75,6 +81,6 @@ export const chainTvlToolSpec = defineTool({
   needs: ['registry'],
   handler: async (input, ctx) => {
     const outcome = await chainTvlHandler(input, ctx);
-    return outcome.ok ? { ok: true, output: outcome.value, cache: outcome.cache } : outcome;
+    return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;
   },
 });

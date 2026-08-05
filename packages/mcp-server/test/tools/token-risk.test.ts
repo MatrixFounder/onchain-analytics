@@ -11,9 +11,7 @@ import { TokenRiskInputSchema, tokenRiskHandler } from '../../src/tools/token-ri
 const ETH_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
 const SOL_ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
-const ROUTES: CapabilityRoute[] = [
-  { capability: 'token.risk', chains: ['ethereum', 'solana'], adapterIds: ['nansen'] },
-];
+const ROUTES: CapabilityRoute[] = [{ capability: 'token.risk', adapterIds: ['nansen'] }];
 
 const FAKE_RISK_SCORE = {
   chain: 'ethereum' as const,

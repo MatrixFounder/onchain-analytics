@@ -129,20 +129,37 @@ const MAX_RESPONSE_BYTES = 512 * 1024;
  * worst case on a single-threaded stdio server. A free explorer that has not answered in 5 s is not
  * about to, so failing fast is what keeps free-first from being expensive.
  *
- * **What this does NOT do, stated because an earlier version of this comment claimed otherwise.**
- * `safeFetch` builds `AbortSignal.timeout(timeoutMs)` INSIDE its redirect loop, so the bound is per
- * HOP and `MAX_REDIRECTS = 3` means four of them; and nansen's default `entity.labels` tier issues
- * three sequential sub-calls, each with its own throttle wait. The real envelope is therefore
- * ~30 + 4×5 s here plus ~30 + 4×15 s of budget resync plus 3×(30 + 4×15) s of nansen — several
- * hundred seconds, not the ~120 s the first version of this docstring asserted. That number was
- * repeated, not derived. This constant removes ~40 s from it; it does not bound it.
+ * **What this constant does NOT do, and what does it instead.** `safeFetch` builds
+ * `AbortSignal.timeout(timeoutMs)` INSIDE its redirect loop, so the bound is per HOP and
+ * `MAX_REDIRECTS = 3` means four of them. This number is therefore one hop's ceiling and was never
+ * the call's; the bound on the WALK is the call deadline, which — since task 012-8 — exists.
  *
- * The actual bound has to be a deadline for the whole `resolve()` walk, which does not exist yet.
- * It is now DECIDED but not yet built: ADR-002 D4
- * (`docs/onchain-analytics/ADR-002-configurable-routing.md`) closes OQ-4 with an absolute
- * `deadlineAtMs` carried through `throttle()` and `safeFetch`, cancelling only work that has not
- * yet cost money. Landing that (T-012) is what turns this paragraph from a limitation into history
- * — and this docstring must be rewritten in the SAME commit, not after it.
+ * **The historical envelope, kept as history because it is the derivation of the numbers the
+ * manifest now reuses.** Before the deadline, the worst case of one `entity.labels` traversal was
+ * `30 + 4×5` s here, plus `30 + 4×15` s of nansen's cold-start `/account` budget resync, plus
+ * `3×(30 + 4×15)` s of nansen's own sub-calls — **≈ 410 s**, several hundred seconds rather than
+ * the ~120 s an even earlier version of this comment asserted (that number was repeated, not
+ * derived). Of that envelope, ~140 s is cancellable work and ~270 s is the paid leg; both halves
+ * are cited by name in `capability-manifest.ts`'s `entity.labels` row, which reuses this derivation
+ * instead of inventing its own.
+ *
+ * **The mechanism, and the split it turns on (ADR-002 D4 §2, OD-3).** `CapabilityRegistry.resolve()`
+ * computes an ABSOLUTE `effectiveDeadlineAtMs = min(now + manifest.deadlineMs, requested)` once per
+ * call and passes it to `fetch(cap, args, deadlineAtMs)`; this adapter forwards it unchanged to
+ * `throttle()` (which refuses instead of sleeping past it) and to `safeFetch` (which refuses on hop
+ * entry and aborts a hop in flight). Cancellation is real, not advisory — but it covers ONE of the
+ * two halves:
+ *
+ * | Part                                  | Bound                | Cancellable | Measured | Applied |
+ * | ------------------------------------- | -------------------- | ----------- | -------- | ------- |
+ * | before any reservation commits        | `deadlineMs`         | YES         | ~140 s   | 60 s    |
+ * | after `checkAndReserve()` (paid leg)  | `paidLegMs`          | NO          | ~270 s   | 270 s   |
+ *
+ * So `entity.labels`' worst case is ≈ 330 s, not 60 s: the deadline can abort this adapter's
+ * attempt or nansen's pre-payment resync, and it stops at the moment a credit is spent, because
+ * cancelling there would mean paying without receiving. **A reading of this comment that concludes
+ * "the deadline bounds the whole call" is the error OD-3 found and is wrong in the expensive
+ * direction** — the uncancellable tail is longer than the part the ceiling governs.
  */
 const REQUEST_TIMEOUT_MS = 5_000;
 
@@ -292,14 +309,28 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
    * `(provider, capability, normalizedArgs)`, where it is not an argument — and every error below
    * names a HOST, never a URL.
    */
-  async function request(base: string, path: string, query: Record<string, string>, weight = 1) {
+  async function request(
+    base: string,
+    path: string,
+    query: Record<string, string>,
+    weight = 1,
+    // Task 012-8: the registry's own `effectiveDeadlineAtMs`, forwarded VERBATIM. Never a duration
+    // re-derived here — that is what would re-grant a full budget to each of the (up to four) hops
+    // `safeFetch` can make. `undefined` (a direct caller that passes nothing) restores exactly the
+    // pre-012-8 behaviour: `MAX_WAIT_MS` in the limiter and `REQUEST_TIMEOUT_MS` per hop.
+    deadlineAtMs?: number,
+  ) {
     const url = new URL(path, base);
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
 
     const apiKey = env['BLOCKSCOUT_PRO_API_KEY'];
     if (apiKey !== undefined && apiKey.length > 0) url.searchParams.set('apikey', apiKey);
 
-    await throttle('blockscout', rateLimit, weight);
+    // The limiter gets it FIRST, and that ordering is the point: `entity.labels` costs three tokens
+    // against a `{capacity: 5, refillPerSec: 2}` bucket, so a burst puts this call seconds behind a
+    // deficit it can measure against the deadline before anything is sent. Refusing a wait we know
+    // is longer than the time left is free; discovering it afterwards costs the whole wait.
+    await throttle('blockscout', rateLimit, weight, deadlineAtMs);
 
     // M-7 (adversarial cycle 1). `safeFetch` interpolates the FULL URL into three of its own
     // errors — timeout, response-too-large, redirect cap — and this is the only adapter in the repo
@@ -316,7 +347,17 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
         fetchImpl,
         // H-3/H-5: explicit bounds rather than `safeFetch`'s 10 MB / 15 s defaults. See the two
         // constants for why each default was wrong for this adapter specifically.
-        { timeoutMs: REQUEST_TIMEOUT_MS, maxResponseBytes: MAX_RESPONSE_BYTES },
+        //
+        // `deadlineAtMs` is ADDITIVE to `timeoutMs`, never a replacement (task 012-8): the hop
+        // timeout says "this vendor did not answer", the deadline says "we ran out of our own
+        // time", and `safeFetch` keeps them as two separate signals so the classes it throws stay
+        // distinguishable. Spread conditionally so a call without a deadline builds byte-for-byte
+        // the options object it built before this task.
+        {
+          timeoutMs: REQUEST_TIMEOUT_MS,
+          maxResponseBytes: MAX_RESPONSE_BYTES,
+          ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+        },
       );
     } catch (error) {
       // Name the failure CLASS, never the message — a vendor- or network-supplied string is exactly
@@ -371,7 +412,14 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
     // per-adapter throttle and the capability TTL cache (PLAN §3).
     costOf: () => ({ credits: 0 }),
 
-    fetch: async (cap: string, args: Record<string, unknown>): Promise<BlockscoutFetchResult> => {
+    // Task 012-8 — the ONE adapter that reads the deadline in that task. It is free, keyless and
+    // first on the `entity.labels` route, so it is also the one whose lateness is most expensive:
+    // every second it spends is a second the PAID source behind it does not get.
+    fetch: async (
+      cap: string,
+      args: Record<string, unknown>,
+      deadlineAtMs?: number,
+    ): Promise<BlockscoutFetchResult> => {
       const chain = chains.resolve(requireString(args, 'chain'));
       const chainId = evmChainId(chain);
       if (chainId === undefined) {
@@ -408,10 +456,19 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
         // which `normalizeHolders` already accepts. It wraps that in the model-directed
         // `instructions`/`notes` fields, which is precisely what `sanitize.ts` exists for, and the
         // transport-boundary test now proves the sanitizer is actually invoked on this path too.
-        const body = await request(FACADE_HOST, '/v1/direct_api_call', {
-          chain_id: String(chainId),
-          endpoint_path: `/api/v2/tokens/${tokenAddress}/holders`,
-        });
+        const body = await request(
+          FACADE_HOST,
+          '/v1/direct_api_call',
+          {
+            chain_id: String(chainId),
+            endpoint_path: `/api/v2/tokens/${tokenAddress}/holders`,
+          },
+          // Default weight of 1 — one upstream REST endpoint behind this one (see
+          // `WEIGHT_ADDRESS_INFO` for the other path). Stated positionally because the deadline
+          // follows it.
+          1,
+          deadlineAtMs,
+        );
         return { kind: 'holders', chain: chain.slug, tokenAddress, body };
       }
 
@@ -465,6 +522,7 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
           { chain_id: String(chainId), address },
           // Three upstreams behind one request — see `WEIGHT_ADDRESS_INFO`.
           WEIGHT_ADDRESS_INFO,
+          deadlineAtMs,
         );
         return { kind: 'labels', chain: chain.slug, address, body };
       }

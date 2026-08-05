@@ -32,21 +32,6 @@ export interface SqliteCacheStoreOptions {
  * what this does and, just as importantly, does NOT do (no retention/size cap — that's M2). */
 const DEFAULT_SWEEP_EVERY_N_WRITES = 50;
 
-/**
- * `providers.kind` classification (DDL comment: "'free' | 'paid' — informational, reflects D4
- * priority"). `AdapterRegistration` itself carries no such field (D4's "free→paid priority" is a
- * routing/config-authoring concept, not a machine-readable property of a registration) — this is a
- * small, explicit, sourced lookup instead of a guessed heuristic: ARCHITECTURE.md §3.2's own
- * nine-adapter summary table documents `dune` as the sole credit-metered (Dune Query API credits)
- * provider among the nine; every other M1 adapter is keyless or works on a free tier. Purely
- * informational — no logic reads this column yet — defaults anything not listed here to `'free'`.
- */
-// M2 (TASK-005, task 005-1) added 'nansen' — the first M2 paid adapter, alongside M1's 'dune'.
-// Purely informational `providers.kind` classification (no logic reads this column) — omitting a
-// paid adapter here would silently diverge from this documented "paid providers listed here"
-// invariant, not fail loudly.
-const PAID_PROVIDER_IDS = new Set<string>(['dune', 'nansen']);
-
 interface CacheEntryRow {
   value_json: string;
   created_at: number;
@@ -144,20 +129,34 @@ export class SqliteCacheStore implements CacheStore {
 
   /**
    * Upserts every adapter registration into `providers` before any `cache_entries` row can
-   * reference it (ARCHITECTURE.md §3.2/§4.2 — bootstrap from ALL 9 `adapterRegistrations`,
+   * reference it (ARCHITECTURE.md §3.2/§4.2 — bootstrap from ALL 12 `adapterRegistrations`,
    * including `pg-history`, F-2).
+   *
+   * **`kind` IS `registration.tier`, copied verbatim (ADR-002 D8, task 012-3).** This method used
+   * to hold a `PAID_PROVIDER_IDS` set of its own, justified by a comment claiming
+   * "`AdapterRegistration` itself carries no such field". Task 012-2 made that false — `tier` is a
+   * required field of every registration — and both the set and the claim are gone: a lookup that
+   * has to be kept in step with the registration table is a second classification, and two
+   * classifications agree only until the day they do not (a thirteenth adapter, or a vendor moving
+   * a capability behind a paywall). `SqliteBudgetStore.bootstrapProviders()` writes the same value
+   * from the same field, so the two writers can no longer disagree about one file.
+   *
+   * **The conflict clause updates `kind` ONLY (adversarial cycle 2, F-3).** It used to also set
+   * `notes = excluded.notes`, with `excluded.notes` being the literal `NULL` this method inserts —
+   * so merely CONSTRUCTING a cache store erased whatever `providers.notes` held, while
+   * `SqliteBudgetStore`'s clause left it alone. The two writers then disagreed about the same file
+   * after all: what a `cache.sqlite3` held depended on which store opened it last, which is the
+   * exact property the paragraph above declares impossible. `kind` is the only column either writer
+   * derives from a registration; a column no writer OWNS must not be overwritten by one of them
+   * (`notes` is operator-facing free text — nothing in this package produces a value for it).
    */
   private bootstrapProviders(registrations: AdapterRegistration[]): void {
     const upsert = this.db.prepare(
-      `INSERT INTO providers (id, kind, notes) VALUES (@id, @kind, @notes)
-       ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, notes = excluded.notes`,
+      `INSERT INTO providers (id, kind, notes) VALUES (@id, @kind, NULL)
+       ON CONFLICT (id) DO UPDATE SET kind = excluded.kind`,
     );
     for (const registration of registrations) {
-      upsert.run({
-        id: registration.id,
-        kind: PAID_PROVIDER_IDS.has(registration.id) ? 'paid' : 'free',
-        notes: null,
-      });
+      upsert.run({ id: registration.id, kind: registration.tier });
     }
   }
 

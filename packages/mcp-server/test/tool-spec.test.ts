@@ -191,6 +191,41 @@ describe('defineTool reproduces all three response shapes (R-128)', () => {
     expect(result['_meta']).toStrictEqual({ cache, budget });
   });
 
+  /**
+   * OQ-T012-6, condition 2 — the overrun has to REACH the wire, not merely exist on the resolution.
+   *
+   * The owner's decision has two halves, and the second one ("late is never silent") is only kept by
+   * the renderer. `core` proves the registry stamps `deadlineOverrunMs` (TC-OQ6-b) and the plumbing
+   * typechecks — neither of which would notice a renderer that quietly dropped the key, leaving a
+   * field that exists everywhere except where a client can read it. That is this project's own
+   * "a diagnostic nobody reads is not a diagnostic", arrived at from the far end.
+   */
+  it('publishes `_meta.timing` when the answer crossed its ceiling (OQ-T012-6)', async () => {
+    const cache = { status: 'hit' as const, ageMs: 12, provider: 'probe', capability: 'probe.cap' };
+    const timing = { overrunMs: 119 };
+    const spec = defineTool({
+      ...base,
+      name: 'probe_timing_meta',
+      handler: (input) => ({ ok: true as const, output: { seen: input.value }, cache, timing }),
+    });
+    const result = await call(spec, { value: 'x' });
+    expect(result['_meta']).toStrictEqual({ cache, timing });
+  });
+
+  it('omits `_meta.timing` on an ordinary call — absent, never `{overrunMs: 0}`', async () => {
+    // The other direction: if the key appeared on every response the mark would stop meaning
+    // anything, and `_meta` would grow for every client on every call to say "nothing happened".
+    const cache = { status: 'miss' as const, provider: 'probe', capability: 'probe.cap' };
+    const spec = defineTool({
+      ...base,
+      name: 'probe_no_timing_meta',
+      handler: (input) => ({ ok: true as const, output: { seen: input.value }, cache }),
+    });
+    const result = await call(spec, { value: 'x' });
+    expect(result['_meta']).toStrictEqual({ cache });
+    expect(Object.hasOwn(result['_meta'] as object, 'timing')).toBe(false);
+  });
+
   // "the outcome's `reason`", not "the chosen reason": this probe's handler does choose its string,
   // but the retired phrasing implied `reason` is always curated, which is false on the capability
   // path (see `ToolOutcome`'s docstring). Renamed in cycle 4 so the wording is not reintroduced by

@@ -5,12 +5,14 @@ import { CapabilityRegistry, CapabilityUnavailableError } from '../src/adapters/
 import type { CapabilityRoute, ProviderAdapter } from '../src/adapters/types.js';
 import { deriveArgsHash } from '../src/net/args-hash.js';
 import type { Chain } from '../src/types/chain.js';
+import type { ChainInfo } from '../src/chain/registry-core.js';
 
 interface MockAdapterOpts {
   id: string;
   isAvailable?: () => { ok: true } | { ok: false; reason: string };
   fetchImpl?: (cap: string, args: Record<string, unknown>) => Promise<unknown>;
   normalizeImpl?: (cap: string, raw: unknown) => unknown;
+  chainSupport?: (chain: ChainInfo, capability: string) => boolean;
 }
 
 function makeAdapter(opts: MockAdapterOpts): ProviderAdapter & {
@@ -31,6 +33,7 @@ function makeAdapter(opts: MockAdapterOpts): ProviderAdapter & {
     fetch: vi.fn(fetchImpl),
     normalize: vi.fn(normalizeImpl),
     ...(opts.isAvailable ? { isAvailable: opts.isAvailable } : {}),
+    ...(opts.chainSupport ? { chainSupport: opts.chainSupport } : {}),
   };
   return adapter;
 }
@@ -72,24 +75,42 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
       fetchImpl: async () => raw,
       normalizeImpl: (_cap, r) => ({ priceUsd: (r as typeof raw).price }),
     });
-    const routes: CapabilityRoute[] = [
-      { capability: 'token.price', chains: ['ethereum', 'solana'], adapterIds: ['coingecko'] },
-    ];
+    const routes: CapabilityRoute[] = [{ capability: 'token.price', adapterIds: ['coingecko'] }];
     const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]));
 
     const resolution = await registry.resolve('token.price', CHAIN, { address: '0xabc' });
 
-    expect(resolution).toEqual({ result: { priceUsd: 123 }, source: 'coingecko', cache: 'miss' });
+    // `attempted` (cycle 2, F-4) — the adapters the walk ENTERED, which is the fact a paid-route
+    // budget reading needs and `source` cannot give once a route has more than one adapter.
+    expect(resolution).toEqual({
+      result: { priceUsd: 123 },
+      source: 'coingecko',
+      cache: 'miss',
+      attempted: ['coingecko'],
+    });
     expect(resolution.result).not.toBe(raw);
-    expect(adapter.fetch).toHaveBeenCalledWith('token.price', { address: '0xabc' });
+    // Task 012-8: the THIRD argument is the walk's `effectiveDeadlineAtMs` (ADR-002 D4). Matched as
+    // `expect.any(Number)` rather than a value — `token.price`'s manifest budget is what fixes it,
+    // and pinning the number here would make this case a second, silent owner of that row. Its own
+    // value is asserted in `registry.deadline.test.ts` (TC-UNIT-01/02), where the manifest is
+    // injected. THE ONLY EDIT task 012-8 made to a pre-existing test file, and it is mechanical:
+    // `toHaveBeenCalledWith` matches the full argument list, so one more argument fails it.
+    expect(adapter.fetch).toHaveBeenCalledWith(
+      'token.price',
+      { address: '0xabc' },
+      expect.any(Number),
+    );
   });
 
   it('selects the route whose chains list matches the requested chain, not a same-capability route for a different chain', async () => {
-    const evm = makeAdapter({ id: 'rpc-evm' });
-    const solana = makeAdapter({ id: 'rpc-solana' });
+    const evm = makeAdapter({ id: 'rpc-evm', chainSupport: (chain) => chain.slug === 'ethereum' });
+    const solana = makeAdapter({
+      id: 'rpc-solana',
+      chainSupport: (chain) => chain.slug === 'solana',
+    });
     const routes: CapabilityRoute[] = [
-      { capability: 'wallet.balances.native', chains: ['ethereum'], adapterIds: ['rpc-evm'] },
-      { capability: 'wallet.balances.native', chains: ['solana'], adapterIds: ['rpc-solana'] },
+      { capability: 'wallet.balances.native', adapterIds: ['rpc-evm'] },
+      { capability: 'wallet.balances.native', adapterIds: ['rpc-solana'] },
     ];
     const registry = new CapabilityRegistry(
       routes,
@@ -119,7 +140,6 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
     const routes: CapabilityRoute[] = [
       {
         capability: 'privacy.shielded_pool',
-        chains: ['dash'],
         adapterIds: ['dash-platform', 'platform-explorer'],
       },
     ];
@@ -284,7 +304,6 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
     const routes: CapabilityRoute[] = [
       {
         capability: 'privacy.shielded_pool',
-        chains: ['dash'],
         adapterIds: ['dash-platform', 'platform-explorer'],
       },
     ];
@@ -355,7 +374,12 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
 
       const resolution = await registry.resolve('token.price', CHAIN, { address: '0xabc' });
 
-      expect(resolution).toEqual({ result: { priceUsd: 42 }, source: 'coingecko', cache: 'miss' });
+      expect(resolution).toEqual({
+        result: { priceUsd: 42 },
+        source: 'coingecko',
+        cache: 'miss',
+        attempted: ['coingecko'],
+      });
       expect(adapter.fetch).toHaveBeenCalledTimes(1);
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('cache.set failed'));
       stderrSpy.mockRestore();
@@ -370,7 +394,12 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
 
       const resolution = await registry.resolve('token.price', CHAIN, { address: '0xabc' });
 
-      expect(resolution).toEqual({ result: { priceUsd: 7 }, source: 'coingecko', cache: 'miss' });
+      expect(resolution).toEqual({
+        result: { priceUsd: 7 },
+        source: 'coingecko',
+        cache: 'miss',
+        attempted: ['coingecko'],
+      });
       expect(adapter.fetch).toHaveBeenCalledTimes(1);
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('cache.get failed'));
       stderrSpy.mockRestore();

@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createThrottle,
+  DeadlineWouldExceedError,
   RateLimitRejectedError,
   throttle as productionThrottle,
 } from '../src/net/rate-limit.js';
+import { DeadlineExceededError } from '../src/net/safe-fetch.js';
 
 /** Builds an injectable, real-timer-free clock: `now()` returns a controllable counter; `wait(ms)`
  * never actually sleeps — it advances the same counter by `ms` and resolves immediately, so tests
@@ -275,5 +277,298 @@ describe('throttle weight', () => {
     for (const bad of [0, -1, 1.5, Number.NaN]) {
       await expect(throttle('blockscout', config, bad)).rejects.toThrow(/weight must be/);
     }
+  });
+});
+
+/**
+ * Task 012-7 — the limiter under an ABSOLUTE call deadline (ADR-002 D4, R-146; AC-9).
+ *
+ * **Entirely on virtual clocks, and that is a gate requirement, not a style preference** (PLAN §0.7,
+ * the residual risk left behind when WI-26 closed): every case below builds its own
+ * `createThrottle({now, wait})`, so no new branch can reach for the production singleton's shared
+ * bucket and start depending on what else the process ran. Real timers are not merely unnecessary
+ * here — they would reintroduce exactly the 46.8 s of sleep WI-26 removed.
+ */
+describe('call deadline — two typed refusals, one per fact (task 012-7)', () => {
+  /** One token per 20 s: the second call's honest wait is 20 000 ms — under `MAX_WAIT_MS`, so
+   * today's limiter really does sit it out. That is what a deadline has to be able to cut short. */
+  const SLOW = { capacity: 1, refillPerSec: 0.05 };
+
+  /** TC-UNIT-08 (R-146a / AC-9) — the wait stops being unconditional.
+   * EXPECTED_FAIL_REASON (phase 1, the 4th parameter declared and ignored): the deadline changes
+   * nothing, `wait(20000)` is called and the call RESOLVES — "promise resolved instead of
+   * rejecting". */
+  it('TC-UNIT-08: a saturated bucket under an expiring deadline is not sat out', async () => {
+    // The control is half of the claim: without a deadline this same second call DOES wait 20 s.
+    // Measured here rather than asserted in prose, so the comparison cannot drift.
+    const control = fakeClock();
+    const controlThrottle = createThrottle(control);
+    await controlThrottle('blockscout', SLOW);
+    await controlThrottle('blockscout', SLOW);
+    expect(control.waitCalls).toEqual([20_000]);
+
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    await throttle('blockscout', SLOW); // consumes the only token, no wait
+
+    await expect(throttle('blockscout', SLOW, 1, clock.now() + 1_000)).rejects.toThrow(/deadline/i);
+    expect(clock.waitCalls).toEqual([]);
+  });
+
+  /** TC-UNIT-09 — a spent deadline refuses without waiting at all.
+   * EXPECTED_FAIL_REASON (phase 1): the deadline is ignored, `wait(500)` is called and the call
+   * RESOLVES — "promise resolved instead of rejecting". */
+  it('TC-UNIT-09: remaining <= 0 gives DeadlineExceededError with no wait call whatsoever', async () => {
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    const config = { capacity: 1, refillPerSec: 2 }; // 500ms per token
+
+    await throttle('blockscout', config); // consumes the only token
+
+    // The boundary itself (exactly zero left) and a deadline already behind us — both are the same
+    // fact ("our time is up"), and both must refuse before the bucket's arithmetic matters.
+    await expect(throttle('blockscout', config, 1, clock.now())).rejects.toBeInstanceOf(
+      DeadlineExceededError,
+    );
+    await expect(throttle('blockscout', config, 1, clock.now() - 5)).rejects.toBeInstanceOf(
+      DeadlineExceededError,
+    );
+    expect(clock.wait).not.toHaveBeenCalled();
+  });
+
+  /** TC-UNIT-10 (H-A) — the two facts are two classes.
+   * EXPECTED_FAIL_REASON (phase 1): the deadline is ignored, `wait(2500)` is called and the call
+   * resolves; since this case captures with `.catch`, the resolution surfaces as
+   * "expected undefined to be an instance of DeadlineWouldExceedError". */
+  it('TC-UNIT-10: remaining > 0 but the bucket cannot make it gives DeadlineWouldExceedError', async () => {
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    const config = { capacity: 5, refillPerSec: 2 }; // blockscout's real numbers
+
+    await throttle('blockscout', config, 5); // empties the bucket; the next weight-5 call needs 2500ms
+
+    const error = await throttle('blockscout', config, 5, clock.now() + 2_000).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(DeadlineWouldExceedError);
+    // Merging the two classes is H-1 one floor down: "blockscout's bucket is backed up" would end
+    // the traversal before `nansen`, whose bucket is idle and for whom those 2 s are real.
+    expect(error).not.toBeInstanceOf(DeadlineExceededError);
+    expect((error as Error).message).toContain('blockscout');
+    expect(clock.wait).not.toHaveBeenCalled();
+  });
+
+  /** TC-UNIT-11 — both refusals refund, proven by the NEXT caller's behaviour rather than by
+   * reading private bucket state.
+   * EXPECTED_FAIL_REASON (phase 1): the deadline is ignored, so the first `rejects` assertion fails
+   * with "promise resolved \"undefined\" instead of rejecting" before the refund can be observed at
+   * all. */
+  it('TC-UNIT-11: both deadline refusals refund the reservation — no inherited backlog', async () => {
+    const config = { capacity: 1, refillPerSec: 2 }; // 500ms per token
+
+    // Branch A — remaining <= 0.
+    const clockA = fakeClock();
+    const throttleA = createThrottle(clockA);
+    await throttleA('blockscout', config);
+    await expect(throttleA('blockscout', config, 1, clockA.now())).rejects.toBeInstanceOf(
+      DeadlineExceededError,
+    );
+    await throttleA('blockscout', config); // no deadline — waits for ONE token, not two
+    expect(clockA.waitCalls).toEqual([500]);
+
+    // Branch B — remaining > 0, bucket too slow.
+    const clockB = fakeClock();
+    const throttleB = createThrottle(clockB);
+    await throttleB('blockscout', config);
+    await expect(throttleB('blockscout', config, 1, clockB.now() + 100)).rejects.toBeInstanceOf(
+      DeadlineWouldExceedError,
+    );
+    await throttleB('blockscout', config);
+    expect(clockB.waitCalls).toEqual([500]);
+  });
+
+  /** TC-UNIT-12 (R-146b) — the no-deadline path keeps its exact type AND text.
+   *
+   * GREEN AT PHASE 1 BY CONSTRUCTION: it pins behaviour that must SURVIVE the change, so it cannot
+   * be red before it. Its power is shown by mutation (any rewording of the saturation branch, or
+   * letting the new 4th parameter reach that branch, kills the string equality). The other half of
+   * R-146b is the 17 cases above, which this task did not edit. */
+  it('TC-UNIT-12: with no deadline the saturation rejection is byte-for-byte what it was', async () => {
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    const config = { capacity: 1, refillPerSec: 0.001 };
+
+    await throttle('saturated-provider', config);
+    const error = await throttle('saturated-provider', config, 1, undefined).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(RateLimitRejectedError);
+    expect((error as Error).message).toBe(
+      'throttle: rejected for provider "saturated-provider": computed wait 1000000ms exceeds the ' +
+        '30000ms fairness cap (saturated bucket)',
+    );
+    expect(clock.wait).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Adversarial cycle 2, finding F-2 — the refusal tests what the wait LEAVES, not whether it fits.
+ *
+ * The hole the four cases above could not see: every one of them makes `waitMs` STRICTLY greater
+ * than `remainingMs`, so all four are green under `waitMs > remainingMs` and under
+ * `remainingMs - waitMs < floor` alike. What was admitted was the whole band in between — starting
+ * with the exact equality, which the old comparison let through by construction. A caller admitted
+ * there sleeps out its entire budget and wakes with nothing, and the layer below then answers with
+ * `DeadlineExceededError`, the class that ENDS the traversal for every adapter behind it. The
+ * registry-level consequence is `TC-F2-INT` in `registry.deadline.test.ts`; these two cases pin the
+ * arithmetic that causes it.
+ */
+describe('cycle 2 F-2 — a wait that leaves no useful budget is refused, not served', () => {
+  /** The floor is `MIN_POST_WAIT_REMAINDER_MS`, a module-private constant (like `MAX_WAIT_MS`,
+   * which `rate-limit.test.ts` has always mirrored rather than imported). 5 000 ms — the shortest
+   * `REQUEST_TIMEOUT_MS` any adapter in the repo configures. */
+  const FLOOR_MS = 5_000;
+
+  it('TC-F2-UNIT-a: waitMs === remainingMs refuses instead of sleeping the budget away', async () => {
+    const clock = fakeClock();
+    const throttle = createThrottle(clock);
+    const config = { capacity: 1, refillPerSec: 2 }; // 500 ms per token
+
+    await throttle('blockscout', config); // consumes the only token; the next call needs 500 ms
+
+    const error = await throttle('blockscout', config, 1, clock.now() + 500).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(DeadlineWouldExceedError);
+    // The class matters as much as the refusal: the terminal one would cancel the next provider.
+    expect(error).not.toBeInstanceOf(DeadlineExceededError);
+    expect(clock.wait).not.toHaveBeenCalled();
+    // The refund is what keeps a refused call from worsening the backlog it refused over.
+    await throttle('blockscout', config);
+    expect(clock.waitCalls).toEqual([500]);
+  });
+
+  it('TC-F2-UNIT-b: the boundary is the floor — one ms under refuses, exactly the floor waits', async () => {
+    const config = { capacity: 1, refillPerSec: 2 }; // 500 ms per token
+
+    // Under the floor by 1 ms: 500 ms of wait against 5 499 ms left leaves 4 999 ms.
+    const tight = fakeClock();
+    const tightThrottle = createThrottle(tight);
+    await tightThrottle('blockscout', config);
+    const error = await tightThrottle(
+      'blockscout',
+      config,
+      1,
+      tight.now() + 500 + FLOOR_MS - 1,
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(DeadlineWouldExceedError);
+    expect((error as DeadlineWouldExceedError).minRemainderMs).toBe(FLOOR_MS);
+    expect((error as Error).message).toContain('4999ms of the 5499ms');
+    expect(tight.wait).not.toHaveBeenCalled();
+
+    // Exactly the floor: the same wait against 5 500 ms leaves 5 000 ms, and is served.
+    const ample = fakeClock();
+    const ampleThrottle = createThrottle(ample);
+    await ampleThrottle('blockscout', config);
+    await expect(
+      ampleThrottle('blockscout', config, 1, ample.now() + 500 + FLOOR_MS),
+    ).resolves.toBeUndefined();
+    expect(ample.waitCalls).toEqual([500]);
+  });
+});
+
+/**
+ * Adversarial cycle 3 (performance critic) — the floor was a PREDICTION, and nothing measured it.
+ *
+ * `remainingMs - waitMs >= floor` is evaluated before `await wait(waitMs)`. A timer is only
+ * guaranteed not to fire early; it may fire arbitrarily late. So on a loaded event loop the call
+ * admitted by that arithmetic wakes with less than the floor anyway, issues its hop, and produces
+ * exactly the `DeadlineExceededError` — the TERMINAL class — that F-2 added the floor to avoid. The
+ * guarantee the constant's docstring states ("blockscout's own hop timeout expires no later than the
+ * deadline does") was therefore a property of the scheduler, not of this function.
+ *
+ * The clock below overruns every wait by a fixed amount, which is the only way to make the
+ * difference between predicting and measuring observable at all.
+ */
+describe('cycle 3 — the floor is re-checked AFTER the wait, not only predicted before it', () => {
+  const FLOOR_MS = 5_000;
+
+  /** `fakeClock`, except every wait costs `overrunMs` more than it was asked for. */
+  function overrunningClock(overrunMs: number, startMs = 0) {
+    let current = startMs;
+    const waitCalls: number[] = [];
+    return {
+      now: () => current,
+      wait: vi.fn((ms: number) => {
+        waitCalls.push(ms);
+        current += ms + overrunMs;
+        return Promise.resolve();
+      }),
+      waitCalls,
+    };
+  }
+
+  it('TC-C3-UNIT-a: an overrunning wait is refused on waking, as `observed`', async () => {
+    const clock = overrunningClock(200);
+    const throttle = createThrottle(clock);
+    const config = { capacity: 1, refillPerSec: 2 }; // 500 ms per token
+
+    await throttle('blockscout', config); // consumes the only token
+
+    // 500 ms of wait against 5 500 ms leaves exactly the floor — admitted by TC-F2-UNIT-b above.
+    const error = await throttle('blockscout', config, 1, clock.now() + 500 + FLOOR_MS).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(DeadlineWouldExceedError);
+    // Not the terminal class: an overrun is still a fact about THIS provider's bucket, so the
+    // adapters behind it must still be asked.
+    expect(error).not.toBeInstanceOf(DeadlineExceededError);
+    expect((error as DeadlineWouldExceedError).phase).toBe('observed');
+    // 5 500 − (500 + 200): what was MEASURED, not what was predicted.
+    expect((error as DeadlineWouldExceedError).remainingMs).toBe(4_800);
+    // The refusal is post-wake — the wait really was served, which is what distinguishes this case
+    // from the predicted one (`expect(clock.wait).not.toHaveBeenCalled()` there).
+    expect(clock.waitCalls).toEqual([500]);
+  });
+
+  it('TC-C3-UNIT-b: the post-wake refusal does NOT refund — the wait earned the token', async () => {
+    // The other two refusals refund because they never waited. This one slept the full interval, and
+    // the deficit it leaves is repaid by the lazy refill the next caller performs. Refunding as well
+    // would credit the bucket twice for one interval; the next wait is where that shows.
+    const clock = overrunningClock(200);
+    const throttle = createThrottle(clock);
+    const config = { capacity: 1, refillPerSec: 2 };
+
+    await throttle('blockscout', config);
+    const refused = await throttle('blockscout', config, 1, clock.now() + 500 + FLOOR_MS).catch(
+      (caught: unknown) => caught,
+    );
+    // The premise, stated: this case is about the POST-WAKE path, and says nothing about a call
+    // that was simply admitted. (Without this, the case passes identically when no post-wake check
+    // exists at all — it discriminates only the `bucket.tokens += weight` mutant below.)
+    expect(refused).toBeInstanceOf(DeadlineWouldExceedError);
+    expect((refused as DeadlineWouldExceedError).phase).toBe('observed');
+
+    // t = 700 ms, bucket still at −1. The refill owed for 700 ms is 1.4 tokens, so this caller is
+    // 0.6 short and waits 300 ms. Had the refusal refunded, the bucket would be full and this would
+    // not wait at all — a token created out of a refusal.
+    await throttle('blockscout', config);
+    expect(clock.waitCalls.map((ms) => Math.round(ms))).toEqual([500, 300]);
+  });
+
+  it('TC-C3-UNIT-c: a wait that does NOT overrun is still served — the check is not a tax', async () => {
+    const clock = overrunningClock(0);
+    const throttle = createThrottle(clock);
+    const config = { capacity: 1, refillPerSec: 2 };
+
+    await throttle('blockscout', config);
+    await expect(
+      throttle('blockscout', config, 1, clock.now() + 500 + FLOOR_MS),
+    ).resolves.toBeUndefined();
+    expect(clock.waitCalls).toEqual([500]);
   });
 });

@@ -9,9 +9,13 @@ import type { AdapterRegistration, CapabilityRoute } from './adapters/types.js';
  * is now derived from `adapter.chainSupport()` (the coverage matrix, §4.2.3) instead of being
  * restated here — one fact, one place. `CapabilityRegistry.resolve()` collects the adapters of
  * every route matching the capability and skips those whose predicate says no, which is exactly
- * what the literal used to do for `wallet.balances.native` (`rpc-evm` vs `rpc-solana`). The field
- * remains part of `CapabilityRoute` and is still honoured if set — nothing forces a caller with
- * its own route table to migrate.
+ * what the literal used to do for `wallet.balances.native` (`rpc-evm` vs `rpc-solana`).
+ *
+ * **task 012-1 (OQ-C): the `chains?: Chain[]` field itself is gone from `CapabilityRoute`.** An
+ * audit of all 21 routes below found none setting it — TASK-006 removed the only mechanism that
+ * READ it here, but left the field declared and still honoured by `CapabilityRegistry.resolve()`'s
+ * filter, which meant two agreeing-by-coincidence mechanisms could still silently drift apart on a
+ * future route. There is now exactly one place chain coverage is decided: `chainSupport()`.
  *
  * No real adapter registers any of these ids yet (tasks 003-4/003-5 build the actual adapters);
  * `CapabilityRegistry.resolve()` looks adapters up in a caller-supplied `Map<id, ProviderAdapter>`
@@ -82,26 +86,23 @@ export const routes: CapabilityRoute[] = [
   // entire point of the change: a credit is spent only where the free source cannot answer. The
   // registry walks the list in order, so this is not a preference hint — it is the spend rule.
   //
-  // H-1 (vdd-multi TASK-008) — `isSatisfying` is the other half of that spend rule. Order alone was
+  // H-1 (vdd-multi TASK-008) — `policy` is the other half of that spend rule. Order alone was
   // not enough: the registry falls through only on a THROW, so `blockscout` truthfully answering
   // "I have no tags for this address" terminated the route and shadowed nansen for the whole
   // `ttlFor('entity.labels') = 3600` window — which is the ordinary case, not the tail (the
   // recorded USDC probe has empty tags). Fixing it inside the adapter would have meant teaching
   // `blockscout` that nansen exists; the policy belongs here, as data, beside the order it refines.
+  //
+  // task 012-6 (ADR-002 D2): was a literal predicate, is now a descriptor resolved against the
+  // class dictionary in `adapters/policy.ts` when the registry is constructed. Same verdict on
+  // every TASK-008 fixture, with ONE deliberate tightening: the retired literal tested
+  // `typeof name === 'string'`, so an entry whose `name` was the EMPTY STRING satisfied it —
+  // exactly the contentless record H-1 is about. `test/policy.test.ts` pins both the equivalence
+  // and the divergence.
   {
     capability: 'entity.labels',
     adapterIds: ['blockscout', 'nansen'],
-    isSatisfying: (result) =>
-      Array.isArray(result) &&
-      result.some((entry) => {
-        if (entry === null || typeof entry !== 'object') return false;
-        const label = entry as { name?: unknown; tags?: unknown; labels?: unknown };
-        return (
-          typeof label.name === 'string' ||
-          (Array.isArray(label.tags) && label.tags.length > 0) ||
-          (Array.isArray(label.labels) && label.labels.length > 0)
-        );
-      }),
+    policy: { kind: 'someElementHasAny', fields: ['name', 'tags', 'labels'] },
   },
   { capability: 'token.risk', adapterIds: ['nansen'] },
   // R-82 (TASK-009) — BTC supply, keyless and free. The narrowest route in this table: one adapter,
@@ -122,12 +123,25 @@ export const routes: CapabilityRoute[] = [
  * without touching call-site code; `requiresEnv` is informational only (the adapter's own
  * `isAvailable()` is the actual availability decision).
  *
- * **10 entries** (ARCHITECTURE.md §3.2/§5.3), every one now backed by a real adapter. This comment
+ * **12 entries** (ARCHITECTURE.md §3.2/§5.3), every one now backed by a real adapter. This comment
  * used to read "exactly 9 entries — no real adapter implementation exists for any of them yet",
  * which described the M1 config-only state and stopped being true across tasks 003-4/003-5
- * (M1 adapters) and 005-1 (`nansen`, the 10th and the first PAID one). Corrected vdd-multi cycle 4.
+ * (M1 adapters) and 005-1 (`nansen`, the 10th and the first PAID one). It then read "10 entries"
+ * for a whole two tasks after TASK-008 (`blockscout`) and TASK-009 (`blockchain-info`) had made it
+ * twelve — corrected in task 012-2, the task that edits all twelve entries anyway.
  * `dune` is the one entry whose adapter is deliberately still an interface stub — its
  * `isAvailable()` is unconditionally `{ok:false}` until a query is authored.
+ *
+ * **`tier` and `trust` (task 012-2, ADR-002 D8 + the D9 slice) are REQUIRED on every entry.**
+ * `tier` is the ONE classification of paidness in the codebase and is a static property of the
+ * VENDOR RELATIONSHIP — never derived from `costOf()`, which varies with the arguments and the live
+ * account plan. `trust` ranks how editable the returned CONTENT is; in T-012 it is declare-only,
+ * read by nothing but `assertValidAdapterRegistrations()` (R-155), and the two non-obvious
+ * assignments — `platform-explorer` and `pg-history` — are owner decision **OD-5 (2026-08-03)**,
+ * with the reasoning recorded inline at each. Both fields' full contracts live on
+ * `AdapterRegistration` in `adapters/types.ts`; the assignments are pinned by name in
+ * `test/adapter-registrations.test.ts` rather than restated here, so this docstring cannot drift
+ * away from the literals below it.
  */
 export const adapterRegistrations: AdapterRegistration[] = [
   {
@@ -135,12 +149,19 @@ export const adapterRegistrations: AdapterRegistration[] = [
     hosts: ['api.coingecko.com', 'pro-api.coingecko.com'],
     rateLimit: { capacity: 10, refillPerSec: 0.5 },
     requiresEnv: [],
+    tier: 'free',
+    // Named `authoritative` by ADR-002 D9 itself.
+    trust: 'authoritative',
   },
   {
     id: 'dexscreener',
     hosts: ['api.dexscreener.com'],
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
+    tier: 'free',
+    // Not named by D9; ranked by the scale's own question (is the CONTENT editable by outsiders?) —
+    // vendor-observed DEX pair/pool data, nobody submits it.
+    trust: 'authoritative',
   },
   {
     id: 'defillama',
@@ -174,6 +195,9 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // Bounding a wide sweep belongs at the tool layer, not here.
     rateLimit: { capacity: 10, refillPerSec: 5 },
     requiresEnv: [],
+    tier: 'free',
+    // Named `authoritative` by ADR-002 D9 itself.
+    trust: 'authoritative',
   },
   // interface/config-stub in M1 — isAvailable() unconditionally returns false (§3.2 decision):
   {
@@ -181,6 +205,12 @@ export const adapterRegistrations: AdapterRegistration[] = [
     hosts: ['api.dune.com'],
     rateLimit: { capacity: 2, refillPerSec: 0.1 },
     requiresEnv: ['DUNE_API_KEY'],
+    // PAID. `tier` describes the VENDOR RELATIONSHIP, not today's implementation: the adapter is
+    // still an interface stub whose `costOf()` returns 0 and whose `isAvailable()` is
+    // unconditionally false, but Dune's Query API is credit-metered and the registration is what
+    // the paid-boundary machinery reads. Deriving this from `costOf()` would have read `free`.
+    tier: 'paid',
+    trust: 'authoritative',
   },
   // R-73 (TASK-008). ONE host: `mcp.blockscout.com`, the facade, which serves BOTH capabilities.
   //
@@ -233,27 +263,55 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // at which point it becomes its own task with a measurement attached.
     rateLimit: { capacity: 5, refillPerSec: 2 },
     requiresEnv: [],
+    tier: 'free',
+    // ADR-002 D9's own worked example, quoted: "everything it hands back is edited by outsiders".
+    // The token/address metadata behind `entity.labels` is user-submitted, so the rank is a fact
+    // about the CONTENT — it says nothing about the vendor's competence or the API's reliability.
+    trust: 'community',
   },
   {
     id: 'rpc-evm',
     hosts: ['ethereum-rpc.publicnode.com', 'eth.drpc.org'],
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
+    tier: 'free',
+    // Consensus data read straight off a node — the chain itself is the origin.
+    trust: 'authoritative',
   },
   {
     id: 'rpc-solana',
     hosts: ['api.mainnet-beta.solana.com'],
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
+    tier: 'free',
+    // Consensus data read straight off a node — the chain itself is the origin.
+    trust: 'authoritative',
   },
   // F-3: no live host in M1 — interface + fixture-contract only; hosts get filled in whenever the
   // deferred backlog task for a live gRPC transport lands (§11):
-  { id: 'dash-platform', hosts: [], rateLimit: { capacity: 5, refillPerSec: 1 }, requiresEnv: [] },
+  {
+    id: 'dash-platform',
+    hosts: [],
+    rateLimit: { capacity: 5, refillPerSec: 1 },
+    requiresEnv: [],
+    tier: 'free',
+    // Consensus data (Platform's own state) — the chain itself is the origin.
+    trust: 'authoritative',
+  },
   {
     id: 'platform-explorer',
     hosts: ['platform-explorer.pshenmic.dev'],
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
+    tier: 'free',
+    // **Owner decision OD-5 (2026-08-03), closing OQ-T012-2 — NOT a default.** The operator is a
+    // community one, and the first instinct was to read that as `community`. D9's scale asks about
+    // the EDITABILITY OF THE CONTENT, not the officialness of the operator: these are counters
+    // machine-aggregated from the chain, which no outsider can edit, so `community` would describe
+    // them incorrectly. The mislabel would also have been expensive rather than cosmetic — this is
+    // the very source ADR-002 D6 turns merging on FIRST (routes `privacy.shielded_pool.history`
+    // and `platform.metrics.history`), so a wrong rank would ship inside the first merge we deliver.
+    trust: 'authoritative',
   },
   // NEW (F-2) — not an HTTP host: Postgres wire protocol; the DSN itself is the access control,
   // not a hostname allowlist. Registered here purely for the providers-FK reason (§4.2).
@@ -262,6 +320,16 @@ export const adapterRegistrations: AdapterRegistration[] = [
     hosts: [],
     rateLimit: { capacity: 2, refillPerSec: 0.2 },
     requiresEnv: ['ONCHAIN_PG_URL'],
+    tier: 'free',
+    // **PLACEHOLDER with an assigned replacement — do NOT "correct" this to `authoritative`.**
+    // Owner decision OD-5 (2026-08-03), closing OQ-T012-3. This is deliberately the LOWEST rank on
+    // the scale, and it is NOT a judgement about our own ledger: trust in this adapter is a
+    // property of the individual ROW (its `source` column — `derived` rows are computed by us,
+    // vendor rows carry the vendor's own rank), and `AdapterRegistration` has no per-row
+    // expressiveness at all. Until the real per-row mechanism exists — the `source → trust`
+    // dictionary in **T-016** — the conservative rank is the one that over-values nothing.
+    // Replacing it before T-016 lands would be an upgrade with no mechanism behind it.
+    trust: 'community',
   },
   // 10th entry — M2 (TASK-005, R-29, task 005-1), first PAID adapter. Values copied literally
   // from ARCHITECTURE.md §3.2 "Десятый адаптер": the same conservative start already used by 5 of
@@ -287,6 +355,11 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // because "under all four" is what the requirement says and this is not that.
     rateLimit: { capacity: 15, refillPerSec: 10 },
     requiresEnv: ['NANSEN_API_KEY'],
+    // PAID — named as such by ADR-002 D9, and the only registration whose adapter actually spends
+    // credits today. Note what `tier` does NOT come from: `nansen`'s `costOf()` prices per endpoint
+    // off a real table under the live account plan, so it varies per call while this does not.
+    tier: 'paid',
+    trust: 'authoritative',
   },
   // 12th entry — TASK-009 (R-81), keyless and secret-free. `requiresEnv` is empty not by grace (as
   // with `blockscout`, where a key exists but is not yet enforced) but because the vendor offers no
@@ -307,5 +380,13 @@ export const adapterRegistrations: AdapterRegistration[] = [
     hosts: ['blockchain.info'],
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
+    // FREE — keyless, no account, nothing metered. This is the registration that makes the
+    // "`tier` is never derived from `costOf()`" rule concrete rather than theoretical: this
+    // adapter's `costOf()` returns `Number.POSITIVE_INFINITY` when it is switched off by
+    // configuration (a fail-closed toggle, see its own docstring), and a `costOf() > 0 ⇒ paid`
+    // reading would therefore classify a free vendor as paid the moment someone disables it.
+    tier: 'free',
+    // Objective chain aggregates published by the vendor; no user submissions in this surface.
+    trust: 'authoritative',
   },
 ];

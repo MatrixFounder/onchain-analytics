@@ -2,7 +2,12 @@ import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
-import { resolveCapability, type CacheMeta } from './resolve-capability.js';
+import {
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  metaFrom,
+} from './resolve-capability.js';
 import { contractViolationReason } from './contract-violation.js';
 
 const CAPABILITY = 'chain.supply';
@@ -50,7 +55,8 @@ export interface ChainSupplyContext {
 }
 
 export type ChainSupplyOutcome =
-  { ok: true; value: ChainSupplyOutput; cache: CacheMeta } | { ok: false; reason: string };
+  | { ok: true; value: ChainSupplyOutput; cache: CacheMeta; timing?: TimingMeta }
+  | { ok: false; reason: string };
 
 export async function chainSupplyHandler(
   input: ChainSupplyInput,
@@ -68,7 +74,7 @@ export async function chainSupplyHandler(
   if (!parsed.success) {
     return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
   }
-  return { ok: true, value: parsed.data, cache: outcome.cache };
+  return { ok: true, value: parsed.data, ...metaFrom(outcome) };
 }
 
 export const chainSupplyToolSpec = defineTool({
@@ -86,6 +92,6 @@ export const chainSupplyToolSpec = defineTool({
   needs: ['registry'],
   handler: async (input, ctx) => {
     const outcome = await chainSupplyHandler(input, ctx);
-    return outcome.ok ? { ok: true, output: outcome.value, cache: outcome.cache } : outcome;
+    return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;
   },
 });

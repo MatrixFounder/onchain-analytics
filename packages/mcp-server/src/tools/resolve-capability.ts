@@ -18,10 +18,49 @@ export interface CacheMeta {
  * still `unknown` here; each tool's own handler re-validates it against ITS canonical zod output
  * schema before returning (the anti-corruption layer doesn't stop at the Registry boundary — the
  * MCP tool layer re-asserts the exact contract it advertises, task 003-7). */
+/**
+ * `_meta.timing` — present ONLY when the answer was produced past the call's own ceiling
+ * (OQ-T012-6, owner decision 2026-08-05).
+ *
+ * The deadline bounds what a call may SPEND, not the moment it may answer: a walk whose sources were
+ * all entered and all answered can cross the ceiling on its last adapter, and the owner resolved that
+ * such an answer is returned rather than discarded — nothing was prevented, nothing was aborted, and
+ * throwing away data already paid for buys the caller nothing.
+ *
+ * Returning it **silently** is what the decision does not permit, and this object is the other half.
+ * A caller that treats `deadlineMs` as a latency contract learns here that it is not one, and a
+ * caller for whom late data is worthless can discard it — that judgement belongs to whoever set the
+ * deadline, not to the engine.
+ *
+ * An object rather than a bare number so `_meta` keeps one shape (`cache`, `budget`, `timing` are
+ * all objects), and absent rather than `{overrunMs: 0}` on the ordinary call — the same rule
+ * `ageMs` and `attempted` follow.
+ */
+export interface TimingMeta {
+  /** Milliseconds past the effective deadline. Always > 0 when this object is present. */
+  overrunMs: number;
+}
+
 export interface ResolveSuccess {
   ok: true;
   output: unknown;
   cache: CacheMeta;
+  /** See {@link TimingMeta}. Absent on every call that finished inside its ceiling. */
+  timing?: TimingMeta;
+  /**
+   * `CapabilityResolution.attempted` forwarded verbatim — the adapters whose `fetch()` the
+   * traversal actually entered, which is NOT the same set as `cache.provider` (adversarial cycle 2,
+   * F-4). Read by `budgetMeta()` and by nothing else: it never reaches the wire, and no tool's zod
+   * output schema grows to carry it (the same rule `_meta.cache` follows).
+   *
+   * That last sentence was a promise with no gate behind it until cycle 3 — the only thing keeping
+   * the field off the wire was that each handler builds its return value field by field, and the
+   * ordinary `return { ...outcome, … }` refactor would have published our route composition with
+   * every test still green. `test/tool-response-shape.test.ts` now scans for the key.
+   *
+   * Absent whenever the registry omitted it (a pure cache hit entered nobody).
+   */
+  attempted?: string[];
 }
 
 /** Failure outcome — `reason` is always `error.message` from whatever `registry.resolve()` threw
@@ -69,8 +108,32 @@ export async function resolveCapability(
         provider: resolution.source,
         capability,
       },
+      ...(resolution.attempted !== undefined ? { attempted: resolution.attempted } : {}),
+      ...(resolution.deadlineOverrunMs !== undefined
+        ? { timing: { overrunMs: resolution.deadlineOverrunMs } }
+        : {}),
     };
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/**
+ * The `_meta` a resolution produces, ready to be spread into a handler's return value.
+ *
+ * **Exists so "which fields of a resolution reach `_meta`" is answered ONCE.** Fifteen call sites
+ * across eleven tools each wrote `cache: outcome.cache` by hand, so `_meta` gaining a second
+ * resolution-derived field meant fifteen edits and fifteen chances to miss one — which is precisely
+ * how adversarial cycle 3's F-A happened one layer up (one rule, three handlers, one of them wrong).
+ * Handlers now spread this instead, and the next field is free.
+ *
+ * Accepts anything carrying the two fields, not `ResolveSuccess` specifically: three tools re-wrap
+ * their own outcome (`value` → `output`) inside `defineTool`, and that re-wrap must forward the same
+ * meta rather than a hand-copied subset of it.
+ */
+export function metaFrom(source: { cache: CacheMeta; timing?: TimingMeta }): {
+  cache: CacheMeta;
+  timing?: TimingMeta;
+} {
+  return { cache: source.cache, ...(source.timing ? { timing: source.timing } : {}) };
 }
