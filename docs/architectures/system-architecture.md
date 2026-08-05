@@ -532,6 +532,13 @@ export interface CapabilityRoute {
   // `{ kind: 'any' }`. Applied to cache hits too, unchanged (H-1 — otherwise shadowing returns
   // through the cache).
   policy?: PolicyDescriptor;
+
+  // DESIGNED (T-013, OQ-T013-2) — a SECOND, route-level activation gate, on top of the manifest's
+  // `mergeable` eligibility (R-159). Name is illustrative (Development's call, same discretion
+  // R-159(a) gives the manifest field); the TYPE-LEVEL requirement is fixed here: a boolean (or
+  // boolean-shaped descriptor), checked at construction against `capabilityManifests[capability]`
+  // (see "Merge mechanism" below for the full reasoning and the constructor validation it adds).
+  merge?: boolean;
 }
 
 export class CapabilityRegistry {
@@ -557,6 +564,12 @@ export class CapabilityRegistry {
   //   1. `manifests[route.capability]` must exist → else `MissingCapabilityManifestError(capability)`.
   //   2. ONLY once (1) passes: if `route.policy` is set, its `kind` must resolve in the policy
   //      class dictionary → else `UnregisteredPolicyClassError(capability, kind)`.
+  //   3. DESIGNED (T-013, R-183) — ONLY once (1) passes: if `route.merge` is `true`, the manifest
+  //      row found in step 1 must carry `mergeable: true` on its `set | series` arm → else a new
+  //      construction-time error naming the capability and the missing eligibility (UC-20). Placed
+  //      after step 1 (it reads the SAME manifest row) and independent of step 2 (merge and policy
+  //      are orthogonal route properties) — a route wrong on BOTH reports step 2's finding first,
+  //      an arbitrary but deterministic tie-break, not a claim that one defect matters more.
   // The order is what makes each requirement's negative test isolate exactly one bad thing (C2): a
   // test exercising ONLY R-135's bad-`kind` path supplies a `manifests` map covering its own
   // synthetic capability (so step 1 passes silently) and sets an invalid `policy.kind` (so step 2
@@ -622,6 +635,17 @@ export class CapabilityRegistry {
     cache: 'hit' | 'miss';
     ageMs?: number;
     attempted?: string[];
+    deadlineOverrunMs?: number; // BUILT, T-012 — unchanged by T-013, listed above the line below
+    // ---- everything from here down is DESIGNED (T-013), not built, additive and optional, and
+    // present ONLY on a merge-enabled route's walk (R-174d) — the 18 non-merge capabilities see no
+    // shape change. See "Merge mechanism" below for `sources`' exact membership rule (contributors,
+    // not "answered" — corrected after review; the field docstring above ("`source` is who
+    // ANSWERED") describes single-adapter `resolve()`, where answering and contributing are the
+    // same adapter by construction, and stops being one fact once a walk can have more than one
+    // participant).
+    sources?: string[];
+    missingSources?: { adapterId: string; reason: string }[];
+    perSourceCache?: { adapterId: string; cache: 'hit' | 'miss'; ageMs?: number }[];
   }>;
   // If every adapter on the route is unavailable, throws CapabilityUnavailableError listing
   // (adapterId, reason) — never a silent empty answer (R-24). If the current adapter's
@@ -729,10 +753,19 @@ type CapabilityManifestBase = {
 // H4 (architecture review 2026-08-03): a FLAT interface discriminates nothing — a future `merge`
 // field (D5/T-013) could legally be added to a `point` manifest and the compiler would never
 // object. This union is what makes "merge only valid on `set`/`series`" a type error the moment
-// T-013 adds the field, with ZERO new fields today.
+// T-013 adds the field.
+//
+// DESIGNED (T-013, R-159/R-160) — the obligation this union's own docstring hands to T-013
+// (`capability-manifest.ts:152-163`) will be discharged once built: the `set | series` arm alone gains the
+// merge-eligibility field. `mergeable` is illustrative (name is Development's call, R-159a);
+// omitted on `entity.labels` and on every `set`/`series` capability that has no second live
+// adapter — eligibility is a fact about the CAPABILITY's identity key (Snapshot's metric/asset/ts,
+// D6 reason 1), not a promise that merging is ACTIVE (that is `CapabilityRoute.merge`, above,
+// OQ-T013-2). Declaring `mergeable` on the `point` arm is a compile error (TC-UNIT-07's sibling
+// negative type-test, R-160) — there is no field to name on `point` at all.
 export type CapabilityManifest =
   | (CapabilityManifestBase & { shape: 'point' })
-  | (CapabilityManifestBase & { shape: 'set' | 'series' });
+  | (CapabilityManifestBase & { shape: 'set' | 'series'; mergeable?: boolean });
 
 export const capabilityManifests: Readonly<Record<string, CapabilityManifest>>; // one entry per
 // routed capability — see the classification table below for what ADR-002 D3 already settles and
@@ -761,6 +794,185 @@ is cheaper than re-deriving it once a `shape: 'set'` capability tempts someone t
 result as one unit. D5's own reasoning stands unchanged: an aggregate would have no single owner to
 invalidate by provider, no TTL matching any one source, and would go stale silently if the route's
 adapter set ever changed.
+
+**Merge mechanism (D5/D6, T-013) — DESIGNED, not built, as of 2026-08-05.** Turns on for exactly
+two capabilities (`privacy.shielded_pool.history`, `platform.metrics.history`), both routed
+`['platform-explorer', 'pg-history']`. Three questions were left to Architecture (`docs/TASK.md`
+§6, `OQ-T013-2`/`3`/`4`) and are decided here.
+
+_Activation — TWO gates, not one (OQ-T013-2)._ R-159 already fixed **eligibility**: a fact on the
+manifest's `set | series` arm, compile-blocked on `point`. Left open was whether a route ALSO needs
+its own activation flag, per D5's literal text — "Маршрут собирает несколько источников, только
+если это явно объявлено **в его дескрипторе**" — where "его" (its) grammatically names the
+**route's** own descriptor, not the capability's. **Decision: yes, `CapabilityRoute.merge?: boolean`
+is a second, independent gate**, checked at construction (`R-183`, alongside the existing manifest/
+policy checks, same fixed-order discipline): a route with `merge: true` whose capability has no
+`mergeable` manifest entry throws, naming both (by analogy to `UnregisteredPolicyClassError`).
+
+Why not "eligibility alone activates" (R-183/AC-45's branch B, which the TASK explicitly permits as
+a structural argument instead of a test) — **two reasons, corrected after review** (an earlier third
+reason claimed manifest-only activation could not express "merge on this route, not that one", then
+this same section ruled that DISAGREEING routes are a construction-time defect — which makes
+per-route selectivity unrepresentable under the two-gate design too, refuting the reason it was meant
+to support; withdrawn, not repaired, because the two remaining reasons carry the decision on their
+own): (1) it is a literal deviation from D5's text that R-181 does not budget for — R-181/AC-40 fix
+the changelog at **exactly two** deviations (conflict rank, outcome distinction), and a third would
+go unrecorded; (2) UC-20 itself is phrased "активирует слияние **на маршруте**" — an activation act
+the route performs, which branch B cannot even construct. The two-gate design also reads as the
+literal enforcement of D9 rule 3 one level up: `merge` and `mergeable` are independent axes (route vs.
+capability) exactly as `trust` and adapter order are independent axes within a route — conflating
+either pair is the same mistake in two places.
+
+_Multi-route capabilities are OUT OF SCOPE, stated rather than papered over._ Activation is decided
+per CAPABILITY, at the point `resolve()` builds `plan`: if ANY matching route sets `merge: true`, the
+walk merges. Neither real T-013 capability has more than one route, so this is unexercised. **No
+construction-time cross-route consistency check is added** — a route disagreeing with a sibling route
+of the same capability on `merge` is not validated, is not an R-number, is not an AC, and has no slot
+in the numbered order below; a future task giving a capability a second, merge-eligible route needs
+to design that check, not inherit one from here.
+
+_Conflict rank (OQ-T013-3)._ OD-T013-2 (task file §1.4) already ruled out `.trust`
+(`TC-GATE-02`) and `onchain.metrics.source_priority` (R-180) — Postgres — leaving two candidates.
+**Decision: reuse the route's existing `adapterIds` order** (equivalently, the same de-duplicated,
+per-route-pairing `plan` array `resolve()` already builds for policy pairing, §above) — the earlier
+adapter in walk order wins a dedup conflict. No new table, no new construction-time validation:
+R-163(b) applies constructively, because an empty `adapterIds` is already rejected upstream.
+
+The tension the TASK names directly: D9 rule 3 forbids conflating trust rank with the free-first
+spend order — "Ранг доверия и порядок адаптеров в маршруте — независимые оси. Сливать их нельзя."
+Reusing `adapterIds` for conflict rank does not conflate THOSE two axes — OD-T013-2 already
+established the conflict rank is not trust — but it does couple a NEW axis (correctness-on-conflict)
+to the spend axis, and D9 rule 3's underlying concern (silently deriving one ranking from another,
+so a change to one silently reorders the other) applies to that coupling too, in spirit if not by
+its letter. Three reasons make the coupling acceptable HERE, narrowly, rather than as a general
+license: (1) the direction of dependence is safe — `adapterIds` order continues to decide only spend
+(R-166 is unchanged code, not a new invariant), and conflict rank merely READS that order without
+ever writing back to it, so a future re-prioritisation for cost reasons cannot silently corrupt
+spend, only conflict resolution, which is the smaller blast radius; (2) `platform-explorer` before
+`pg-history` is already the wording the TASK's own §0 uses ("приоритет 1"/"приоритет 2") for these
+two adapters, so the reuse states a fact the project already treats as true in prose, not a new one;
+(3) T-016 is where the REAL per-row trust-based conflict axis (D9's `set`-segmentation, extended to
+`series`) arrives (R-179e) — a bespoke rank table today would be replaced within one further task,
+so the placeholder is sized to its lifetime. The merge docstring must say plainly that this is a
+narrow, documented, provisional reuse — never a claim that spend order and correctness rank are one
+axis in general.
+
+🔴 **The hazard this reuse creates, sized correctly, and ENFORCED rather than left to a docstring.**
+R-166's spend order is free-before-paid, so a paid participant sits LAST — which is also LOWEST
+conflict rank under this reuse. A paid, presumably more authoritative participant would then lose
+EVERY dedup collision to a free one, silently: no test changes colour, nothing in the merge code
+objects, and the hazard is triggered by whoever next edits `providers.config.ts`, not by whoever
+reads the merge docstring. That inverts this project's own priorities, so it is not left as
+narrative: **a new construction-time assertion,
+`assertMergeParticipantsAreFree(routes, registrations)`, requires every adapter REACHABLE AS A
+PARTICIPANT OF A MERGING CAPABILITY to resolve, in the injected `AdapterRegistration[]`, to `tier:
+'free'` — throwing, naming the capability and the first non-free participant, until T-016 replaces
+the reused-order placeholder with a real per-row trust rank.** 🔴 **Scoped to the CAPABILITY's
+flattened participant set, not to the literal `merge: true` route's own `adapterIds` (MN-1).** `plan`
+is the de-duplicated UNION of every matching route's `adapterIds` for a capability (`:551-563`), so
+a paid adapter reachable only through a SIBLING, non-merge route of the same capability would enter
+the merged walk unchecked if the assertion read `route.adapterIds` literally. Unreachable today —
+neither merge capability has a sibling route — but scoping the check to "every id in the capability's
+flattened plan, for any capability with at least one `merge: true` route" closes it by construction
+rather than by the accident of today's route table. Reads `tier`, never `.trust` (`TC-GATE-02` is
+untouched). Lives BESIDE `CapabilityRegistry`, not inside its constructor — `AdapterRegistration[]`
+never reaches `CapabilityRegistry` today (data-model.md, "M-6 correction"), and this hazard is a
+cross-check between `routes` and the registration array, the same shape `assertValidAdapterRegistrations()`
+already is. Called once by `mcp-server/src/index.ts`, immediately after `assertValidAdapterRegistrations()`
+and before `CapabilityRegistry` is constructed — the same startup seam `trust`'s own declare-only
+check already uses (R-154), so a future paid participant on a merge route fails at PROCESS START,
+the same discipline as every other construction-time gate in this file, matching the precedent this
+repo just set (WI-34…WI-37 turned a DECLARED rate limit and a DECLARED deadline into ENFORCED ones).
+
+_Dedup and conflict resolution mechanics (R-161/R-162/R-167)._ Walking CONTRIBUTING participants in
+rank order (= `adapterIds` order) and inserting each point into a `Map` keyed by
+`` `${metric}\0${asset}\0${ts}` `` **only if the key is absent** implements "highest rank wins" with
+no value comparison at all — the first (highest-ranked) writer for a key is kept, the later one is
+discarded whole, satisfying R-167(b) ("choose one point WHOLESALE, never average/reconcile") by
+construction. `value_raw` is never read through this path at all, let alone through `Number(...)`
+— R-167(a)/(d)'s ban is satisfied because nothing compares two conflicting values to pick a winner;
+rank alone decides. `wallet.balances.native`-style multi-route flattening already gives `resolve()`
+one ordered, de-duplicated adapter list per capability (the `plan` array) — dedup walks that same
+list, so a capability's rank order can never disagree between the merge builder and the walk that
+produced it.
+
+_Policy evaluation point (OQ-T013-4)._ **Decision: per-participant**, not per-merged-whole. Each
+participant's normalized answer (cache hit or fresh) is checked with the SAME `satisfies(policy,
+value, adapterId)` the non-merge path already applies at `:789`/`:858` (unchanged code, called from
+a new site for the merge branch) — satisfying means its points are eligible to enter the merged
+`Map` (i.e. the participant becomes a CONTRIBUTOR, see `CapabilityResolution` shape below); not
+satisfying means the participant is recorded in `tried` exactly as today ("answered, but not with
+what was asked for"), contributes nothing, but is NOT `hadFailure` and is NOT in `missingSources`
+(R-164 counts it as "answered" — the policy question is orthogonal to R-164's three-state model).
+This is the reading R-182(d) requires as a regression (per-participant, unchanged for non-merge
+routes, `entity.labels`'s `someElementHasAny` untouched) and the one that keeps H-1's existing
+cache-hit application (`:789`) as the SAME code path a merge walk also uses, rather than a second,
+whole-array-shaped evaluation with its own semantics. Per R-182(b)/(c): both real T-013 routes carry
+no `policy` (`{kind:'any'}`, always satisfying), so the choice is unobservable in shipped scope — the
+equivalence test R-182(c) requires is exactly why the choice still had to be made and stated, not
+left as two behaviourally-coincident readings.
+
+🔴 **The one place this diverges from the non-merge contract on purpose, stated rather than left
+implicit (M-6).** On a policy-bearing merge route where every participant answers and NONE
+satisfies (hypothetical for T-013's shipped scope — both real routes carry no `policy`), the
+non-merge path falls back to the first truthful-but-unsatisfying answer (`unsatisfying`,
+`registry.ts:605`, returned at `:901`). **The merge path does NOT reuse that fallback.** Falling
+back to one participant's raw, un-merged answer would silently un-merge the very response the
+caller asked for — an arbitrary pick among equally-unsatisfying sources, dressed as a merged result.
+Branch (a) applies instead: every participant answered, `sources` is empty (nobody contributed), and
+the call returns an empty merged success — a genuine, if perhaps surprising, divergence from the
+single-source contract, recorded here so it is a decision and not a gap found in Development.
+
+_Where the merge walk executes, relative to `resolve()`'s existing structure._ Unchanged, in this
+order: GATE 2 (coverage, `:669-682`) → the one absolute `effectiveDeadlineAtMs` computed once
+(`:497-531`) → `plan` built by the existing route-pairing loop (`:551-563`). What changes is what
+happens FROM `plan` onward, gated on whether any matching route sets `merge: true`: the merge walk
+reuses, per participant and UNCHANGED, the deadline pre-check (`:716-724`), the not-registered check
+(`:726-737`), the chain-scoped skip (`:743-745` — silent in `tried[]` by existing design, but
+R-174(b) requires `missingSources` to SYNTHESIZE its own reason for this case rather than mirror an
+absent `tried[]` entry, so "silent" describes `tried[]` only, never the merge diagnostic),
+`isAvailable()` (`:747-752`), the cache-hit read INCLUDING the negative-entry check but EXCLUDING
+the early `return` (`:756-788`, `:790-793` — `:789`'s `return withDiagnostics(hit)` is exactly what
+the merge loop replaces with an accumulate-and-continue step, never performs), and the
+fetch/normalize/cache.set triad, same exclusion (`:795-857`, `:859-882` — `:858` is the fresh-result
+mirror of the same early return). **Nothing about per-adapter caching is new code** (this is also
+how R-165's 🔴 invariant holds: nothing in the merge path ever calls `cache.set()` on anything but
+one adapter's own normalized result; the merged array is assembled in memory, in `resolve()`, and is
+never itself a cache write). The one structural difference: the non-merge loop returns on the FIRST
+satisfying answer; the merge loop never returns mid-walk — for each participant it either accumulates
+into the dedup `Map`/`sources`/`perSourceCache` (satisfied) or into `missingSources` (not-asked/
+asked-did-not-answer) or into neither (answered but policy-excluded, tracked only in `tried`) — then
+applies the R-164/AC-48 outcome contract ONCE, after the walk (reliability.md §9.1 carries the full
+four-branch contract and the deadline precondition, including the THIRD deadline door — the caller's
+own already-expired `requestedDeadlineAtMs`, `:528-530` — not restated here to avoid the two copies
+drifting).
+
+_`CapabilityResolution` shape (R-174/R-175) — corrected after review: `sources` is CONTRIBUTORS,
+not "answered"._ `sources: string[]` names every participant whose points are actually present in
+`result` — NOT every participant who merely answered. The distinction is the whole point: on the
+composition TASK §1.5 names as ordinary (`platform-explorer` answers `[]`, `pg-history` returns 40
+points), an "answered" reading would publish `source: 'platform-explorer'` — the higher-ranked
+participant — over a payload containing none of its own data, while `sources` including it would
+claim it contributed. `sources` is OPTIONAL (R-174d), omitted when empty (mirrors `attempted`) —
+happens on branch (a) when every participant answered with zero points; `perSourceCache` carries one
+entry per member of `sources`, same set, so it is never populated for a non-contributor either.
+`source` (singular, required, never empty — AC-47) is the highest-ranked entry of `sources` when
+`sources` is non-empty; when it IS empty (nobody contributed, branch (a)'s zero-point case), `source`
+falls back to the highest-ranked ANSWERED participant instead, purely to keep the field non-empty as
+AC-47 requires — this two-tier rule is what makes `source` mean "who provided what is in `result`"
+whenever `result` has content, and "who is most authoritative among those asked" only in the one
+corner case where nobody provided anything at all. `cache` stays the existing two-literal
+`'hit' | 'miss'` (R-175b forbids widening an existing field's type) and is `'hit'` on a merge walk
+only when EVERY entry of `perSourceCache` is `'hit'` — a coarse, conservative aggregate for the 11
+unrelated tools that read it unmodified; `perSourceCache` carries the granular per-contributor truth
+R-174(c) requires ("a fact is not lost, not that it reaches every reader" — M-5 below names ITS
+reader). `resolveCapability()` (`mcp-server/src/tools/resolve-capability.ts`) is extended the same
+way — `ResolveSuccess` gains `sources?`/`missingSources?`/`perSourceCache?`, forwarded verbatim when
+the registry sets them — strictly additive, so its 11 existing callers recompile and behave unchanged
+(R-175b); the 14th tool (interfaces.md §5.1.6) reuses the SAME wrapper for its error translation and
+reads the new fields — including as its OWN `_meta.cache` (M-5: the reader `perSourceCache`/`sources`
+were missing) — rather than re-implementing `CapabilityUnavailableError`/`CapabilityDeadlineExceededError` handling
+from scratch.
 
 **`ttlFor()` is a READER, its own contract UNCHANGED (R-138). LANDED (T-012, task 012-5).**
 `cache/ttl.ts` still exports `ttlFor(capability): number` at the same path (`export { ttlFor } from
@@ -1194,7 +1406,21 @@ export const routes: CapabilityRoute[] = [
   // Two free adapters, one live vendor view + our own snapshotter history. This is the pair
   // ADR-002 D6 turns on merging for FIRST, because `Snapshot` has a legitimate identity key
   // (metric/asset/ts) and both sides are free.
-  { capability: 'privacy.shielded_pool.history', adapterIds: ['platform-explorer', 'pg-history'] },
+  //
+  // 🔴 DESIGNED (T-013), NOT in `providers.config.ts` as of 2026-08-05 — shown here anyway because
+  // this block's own rule above ("shape and rules, which do not change per route") is exactly what
+  // a not-yet-built field violates; flagged inline, not only in the paragraph above, so a reader who
+  // skips straight to the literal still sees it. `merge: true` will activate collection on BOTH
+  // `*.history` routes (this one and `platform.metrics.history`, not shown here) once built; it is
+  // the SECOND of two required gates, the first being `mergeable: true` on each capability's
+  // manifest row (OQ-T013-2, see "Merge mechanism" above). Order is unchanged and still the spend
+  // rule (R-166) — merge never reorders `adapterIds`, and this same order doubles as the conflict
+  // rank (OQ-T013-3).
+  {
+    capability: 'privacy.shielded_pool.history',
+    adapterIds: ['platform-explorer', 'pg-history'],
+    merge: true, // DESIGNED (T-013) — not yet in providers.config.ts, see the comment above
+  },
 
   // Same capability, two routes rather than one route with two ids: the adapters serve DISJOINT
   // chain families, so the split is what keeps `chainSupport` the only chain authority.
@@ -2409,6 +2635,74 @@ client.
   13 tools carry one and 9 do not; a spec without it would silently drop four titles from
   `tools/list`. One helper (`defineTool`) is the only place that touches `server.registerTool`, so
   a tool's name is **declared** exactly once.
+  - 🔴 **DESIGNED, corrected (T-013) — `capability` does NOT widen to a union. A new, additive
+    field carries the second capability instead.** A first draft of this entry proposed
+    `capability: string | string[] | null` and called it "the one change" and "backward-compatible".
+    Measured against the tree, it is neither: **three** type declarations name the field
+    (`mcp-server/src/tools/registry.ts:110` `ToolDefinition.capability`, `:139` `ToolSpec.capability`,
+    **and** `scripts/gen-tool-inventory.ts:41` `ToolInventoryEntry.capability` — the schema of the
+    _committed artifact_ `tool-inventory.json`, read by `smoke-dist.mjs` and the eval); and a
+    `string[]` value is not equal to any string, so every reader that compares `capability` with
+    `===` or as a `Set` member goes from "matches" to "silently never matches" — a hard, offline
+    failure (`eval/capabilities.mjs`'s `toolFor()` throws AT IMPORT), not a compile error a reviewer
+    would catch.
+  - 🔴 **Decision: `capability: string | null` is UNCHANGED — same type, same meaning ("the ONE
+    capability this tool serves, or `null` for none"). A new, optional field,
+    `servedCapabilities?: readonly string[]`, is added to all three declarations above, present
+    ONLY on a tool serving more than one capability** (today: only the 14th tool,
+    `['privacy.shielded_pool.history', 'platform.metrics.history']`); `capability` itself is `null`
+    for it, same value it already carries for `ping`/`list-chains`, but a DIFFERENT fact — disjoint
+    from "serves none", which is why the readers below cannot treat `capability === null` as one
+    case any more. Additive at the type level (every existing literal recompiles unchanged) — the
+    honesty this buys is that no reader capable of comparing a scalar is handed an array it was
+    never written to expect.
+  - **Readers enumerated by grep — corrected round 2 (MJ-1): FIVE require a behaviour change, not
+    three. The two missed both fail SILENTLY, which is the one failure mode this design cannot
+    afford to reproduce.**
+    (1) `eval/capabilities.mjs`'s `toolFor(capability)` — extend the match to
+    `tool.capability === capability || tool.servedCapabilities?.includes(capability)`; (2)
+    `docs-counts.test.ts`'s R-119 pairing gate — `documented` becomes `Map<string, string[]>` (one
+    tool name can attribute more than one anchor, M-3/BL-1 below), the equality check becomes a SET
+    comparison against `spec.servedCapabilities ?? [spec.capability]`, and the `served` Set must
+    flatten `servedCapabilities` too or the 14th tool's anchors read as orphaned; (3)
+    `tool-spec.test.ts`'s two existing assertions — the "serves no capability" sorted-list check
+    (`capability === null`) now also catches the 14th tool and must be told apart by
+    `servedCapabilities === undefined`, and the "routes every declared capability" check
+    (`routed.has(spec.capability)`) silently skips a `capability: null` entry today and must gain an
+    `OR`-clause walking `servedCapabilities` or the 14th tool's two routes are never checked to
+    exist.
+    🔴 (4) `test/eval-capability-coverage.test.ts`'s `capabilitiesServedByTools()` — this is RF-5's
+    OWN guard (`dex.volume.history` shipped with no eval case and a green run read as "the free
+    contour is verified"; this test exists so that never happens again silently). Today it does
+    `if (spec.capability !== null) byCapability.set(spec.capability, spec.name)` — a tool with
+    `capability: null` is invisible to it BY THE SAME CONSTRUCTION that makes `ping`/`list-chains`
+    invisible on purpose. **`capabilitiesServedByTools()` MUST also flatten `servedCapabilities`** —
+    for each entry, map EVERY member to the tool's name — or the 14th tool's two capabilities are
+    never required in `CAPABILITY_TOOLS`/`CAPABILITY_EXCLUSIONS` and RF-5's own gate stays green
+    over exactly the hole it was built to close. `test/inventory-channels.ts`'s channel description
+    ("fires only when the tool serves a capability") is also wrong for a tool serving two and needs
+    the same correction in prose.
+    🔴 (5) `test/eval-checks-coverage.test.ts`'s `serverLevelTools` — `toolSpecs.filter(spec =>
+spec.capability === null)` reads "answers without a provider" from the SAME bit `null` now
+    carries a second meaning under. Left unfixed, it classifies the 14th tool as server-level (like
+    `ping`), demands an `eval/checks.mjs` entry FOR THE WRONG REASON (it is capability-routed, just
+    through two capabilities), and — since it is also absent from `CAPABILITY_TOOLS` under this
+    misreading — produces a LOUD failure, just not the true one; unlike (4), the danger here is
+    noise, not silence, but the fix is the same source of truth: filter on
+    `spec.capability === null && spec.servedCapabilities === undefined`.
+    **Verified unaffected, not merely unmentioned:** `readme-tool-table.test.ts`'s
+    `CAPABILITY_OF`/`PAID_CAPABILITIES` (neither of the 14th tool's capabilities routes through
+    `nansen`, so its README pricing cell is never consulted) and `smoke-dist.mjs` (does not read
+    `capability` at all).
+  - 🔴 **MN-2 — the artifact mapper is a SIXTH site, and it is the one reader (1) reads through.**
+    `gen-tool-inventory.ts`'s `buildToolInventory()` maps `toolSpecs` to `{name, title, capability}`
+    literally; adding `servedCapabilities` to the TYPE (above) does not make this mapper emit it —
+    it compiles unchanged and silently drops the field. Readers (2)-(5) import `toolSpecs` directly
+    in TypeScript and are unaffected by this mapper; reader (1), `eval/capabilities.mjs`, is plain
+    `.mjs` and can ONLY read the generated `tool-inventory.json` — so a mapper that drops the field
+    defeats reader (1)'s fix above by itself, silently, downstream of it. The mapper needs the same
+    field added to its object literal: `capability: spec.capability, servedCapabilities:
+spec.servedCapabilities`.
   - 🔴 **Least privilege stays a RUNTIME fact, not a type-level promise.** Today `server.ts` hands
     each tool a fresh literal (`{version}`, `{registry}`, `{registry, budgetStore}`), so a free
     tool has no reference to the budget store at all. A uniform loop that passed one wide context

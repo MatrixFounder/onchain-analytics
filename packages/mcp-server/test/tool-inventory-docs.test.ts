@@ -120,6 +120,18 @@ const PLANNED_TOOL_NAMES = new Map([
   ['onchain_watch_add', 'M3 watchlists (ROADMAP §M3, ADR-001 D7)'],
   ['onchain_watch_list', 'M3 watchlists (ROADMAP §M3, ADR-001 D7)'],
   ['onchain_watch_remove', 'M3 watchlists (ROADMAP §M3, ADR-001 D7)'],
+  // T-013 (ADR-002 D5/D6): the merged-series tool. DESIGNED in `docs/architectures/interfaces.md`
+  // §5.1.6 and `docs/ARCHITECTURE.md`, not yet registered — which is exactly the state this Map
+  // exists to express, and the state R-126's diagnostic points a reader at.
+  //
+  // It leaves this Map in the SAME commit that adds the `ToolSpec`, together with §5.1.6's
+  // `// Capability:` anchors: an entry here says "documented, deliberately absent", and once the
+  // spec is registered `TOOL_NAMES` covers the name, so a stale entry would be a second mechanism
+  // claiming the same fact.
+  [
+    'onchain_dash_platform_history',
+    'T-013 series merge (ROADMAP §Now T-013, ADR-002 D5/D6; docs/TASK.md R-170)',
+  ],
 ]);
 
 /**

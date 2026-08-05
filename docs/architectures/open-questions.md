@@ -171,6 +171,56 @@ the wrong name is a guard that can never fire. See `docs/PLAN.md` task 012-4.
 
 ## Resolved
 
+### OQ-T013-2/3/4 — three merge-design specifics left to Architecture. RESOLVED 2026-08-05 (T-013 design).
+
+T-013's task file (`docs/TASK.md` §6) deliberately left three questions to Architecture rather than
+guessing — R-159/R-160's eligibility gate and R-183's route/manifest consistency check are decided
+either way, but their exact SHAPE depended on these three. Full reasoning lives in
+[system-architecture.md](system-architecture.md) "Merge mechanism"; this entry records the decision
+and the date, in the style of `OQ-T012-2`/`3` above.
+
+**`OQ-T013-2` — does `CapabilityRoute` need its own activation flag, on top of manifest
+eligibility? Decision: YES — `merge?: boolean`, a second, independent gate.** D5's literal text
+("Маршрут собирает несколько источников, только если это явно объявлено **в его дескрипторе**")
+names the ROUTE's own descriptor, and `его` (its) has no other grammatical antecedent. Rejected the
+alternative (eligibility alone activates, R-183/AC-45's branch B) for two reasons — an earlier third
+("`capabilityManifests` is keyed per capability, so manifest-only activation cannot express 'merge on
+this route, not that one'") is WITHDRAWN: this same decision leaves multi-route capabilities out of
+scope, with no construction-time check enforcing per-route selectivity, refuting the reason it was
+meant to support. The two that stand: it is an UNBUDGETED third deviation from D5's text —
+R-181/AC-40 fix the changelog at exactly two deviations, found elsewhere in T-013's own design, and a
+third would go unrecorded; and UC-20 is phrased as an act the ROUTE performs ("активирует слияние на
+маршруте"), which branch B cannot even construct. R-183/AC-45 therefore takes branch A: a real
+constructor test, not a structural argument.
+
+**`OQ-T013-3` — what realizes the compiled conflict rank? Decision: reuse the route's existing
+`adapterIds` order** (equivalently, the de-duplicated `plan` array `resolve()` already builds for
+policy pairing) — no new rank table. `TC-GATE-02` (no reader of `.trust` outside `adapters/types.ts`)
+and R-180 (no read of `onchain.metrics.source_priority`) both rule out the two candidates OD-T013-2
+had already excluded; between the two that remained, a bespoke table would duplicate a fact
+`adapterIds` already states — the exact anti-pattern this project killed once already at `OQ-C`
+(`CapabilityRoute.chains` duplicating `chainSupport()`). The reuse narrows, rather than ignores, D9
+rule 3's "order and trust rank are independent axes, do not conflate them": the coupling here is
+one-directional (conflict rank READS `adapterIds`; nothing about conflict resolution ever writes
+back to spend order, so R-166 is unaffected code) and explicitly provisional — T-016 is where the
+REAL per-row trust-based rank (D9's `set`-segmentation, extended to `series`, R-179e) replaces it, so
+a from-scratch table today would be thrown away within one further task. The merge docstring states
+this narrowly, not as a general license to derive correctness rank from spend order.
+
+**`OQ-T013-4` — where is `policy` evaluated on the merged path — per participant or per merged
+whole? Decision: per participant**, using the SAME `satisfies(policy, value, adapterId)` predicate
+the non-merge path already applies to cache hits (`registry.ts:789`) and fresh results (`:858`),
+called from a new site rather than replaced. This is what R-182(d) requires as a regression
+(`entity.labels`'s `someElementHasAny` semantics untouched) and what keeps H-1's existing cache-hit
+application as the SAME code path a merge walk reuses. A participant whose answer fails `policy` is
+"answered" for R-164's three-state model (the states are about `fetch()`/`normalize()` outcome, not
+about policy) but contributes no points to the merged result — recorded in `tried`, not in
+`hadFailure`, not in `missingSources`. Both real T-013 routes carry no `policy` (`{kind:'any'}`), so
+this choice is unobservable in shipped scope (R-182b/c) — the equivalence test R-182(c) requires
+exists precisely because the choice still had to be made and stated, not left as two
+behaviourally-coincident readings that could silently diverge the day a merge route gets a real
+policy.
+
 ### OQ-T012-6 — a walk where nobody failed returns its answer past the ceiling. RESOLVED 2026-08-05.
 
 **Status: RESOLVED by the owner, 2026-08-05 — Reading A, with two conditions.** The record is kept

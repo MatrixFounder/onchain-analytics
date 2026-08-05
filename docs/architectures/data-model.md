@@ -222,6 +222,47 @@ shareable?}` or `{shape:'set'|'series', ttlSeconds, deadlineMs, shareable?}`, bo
   chain registry already applies to coverage, §4.2.3); a `policy.kind` or `capability` unresolved
   against either artifact is a construction-time failure, never a silent default.
 
+**DESIGNED, not built (T-013, ADR-002 D5/D6, 2026-08-05) — the merge-eligibility field, and how
+`CapabilityResolution` grows to carry a merged answer.** The `set | series` arm of `CapabilityManifest`
+gains one optional field (illustrative name `mergeable?: boolean`; final name is Development's
+choice, R-159a) discharging the obligation the union's own docstring already names for T-013
+(`capability-manifest.ts:152-163`) — declaring it on the `point` arm is a compile error (R-159/R-160).
+Eligibility is a fact about the CAPABILITY's identity key (`Snapshot.metric`/`asset`/`ts`, D6 reason
+1); it is deliberately NOT sufficient to activate collection by itself — `CapabilityRoute` gains a
+second, independent field (`merge?: boolean`) checked against `mergeable` at construction
+(`OQ-T013-2`, full reasoning in [system-architecture.md](system-architecture.md) "Merge mechanism").
+Two gates, not one: (1) a route flag is a literal deviation from D5's text, which R-181 already
+budgets for at exactly two deviations elsewhere — a third would go unrecorded; (2) UC-20 phrases the
+failure as an act the ROUTE performs, which manifest-only activation cannot even construct. **A
+capability with more than one `CapabilityRoute` is explicitly OUT OF SCOPE** — no construction-time
+check enforces that sibling routes agree on `merge`, and the two-gate design does not, on its own,
+let one route of a capability merge while another does not (system-architecture.md states this
+plainly rather than implying selectivity the design cannot deliver).
+
+`CapabilityRegistry.resolve()`'s return shape gains three OPTIONAL fields, all populated ONLY on a
+merge-enabled walk (R-174d/R-175) — `sources?: string[]` (CONTRIBUTORS: participants whose points
+are actually present in `result`, not merely everyone who answered — the distinction matters because
+an "answered" reading would attribute a merged payload to a participant that returned nothing of its
+own), `missingSources?: {adapterId, reason}[]`, `perSourceCache?: {adapterId, cache, ageMs?}[]` — the
+18 non-merge capabilities and their tools see no shape change, and no existing field type changes;
+`source`'s MEANING does not change either, on a merge walk or off one — it is, and stays, the
+highest-ranked adapter among those whose data is IN `result` (`sources`, the CONTRIBUTORS above) —
+never simply the first to answer. Corrected here after round 2 (MJ-2): stating only the fallback
+below without this primary rule reads as "unchanged" = "first answerer", which on the ordinary
+composition where `platform-explorer` answers `[]` and `pg-history` returns 40 points would publish
+`source: 'platform-explorer'` over a payload containing none of its data — exactly the defect B-2
+raised. `source` falls back to the highest-ranked ANSWERED participant ONLY in the corner case
+where `sources` is empty (everyone answered with zero points, so there is no contributor to rank).
+The compiled conflict rank on a dedup collision (`(metric, asset, ts)`, R-161) reuses the
+route's own `adapterIds` order rather than adding a rank table or reading `AdapterRegistration.trust`
+or `onchain.metrics.source_priority` (`OQ-T013-3`; `TC-GATE-02` and R-180 both forbid the latter two
+readers) — a narrow, provisional reuse pending T-016's real per-row trust axis, reasoned in full in
+[system-architecture.md](system-architecture.md). **Enforced, not merely documented:** a new
+construction-time assertion requires every participant of a `merge: true` route to be `tier: 'free'`
+(reading `AdapterRegistration.tier`, never `.trust`) — a paid, presumably-authoritative participant
+would sit last in spend order and therefore lowest in this reused rank, silently losing every dedup
+collision; the assertion turns that hazard into a startup failure until T-016.
+
 ### 4.2. Logical model — the cache DB (`DATA_DIR/cache.sqlite3`)
 
 The full DDL is in §3.2, module `src/cache/*`. In brief: `providers(id PK)` ← `cache_entries(provider

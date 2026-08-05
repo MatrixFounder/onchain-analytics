@@ -2,6 +2,81 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
+- 2026-08-05, **v4.10** — T-013 `series-merge-and-history-tool`: **design phase, ahead of code.**
+  Recorded here so the index's version pointer resolves; every claim below is DECIDED, not built, and
+  no source file has moved as of this entry.
+
+  - **The merge mechanism (ADR-002 D5/D6) gets its activation model, its conflict rank, and its
+    policy-evaluation point** — the three questions `docs/TASK.md` §6 left open
+    (`OQ-T013-2`/`3`/`4`), closed in [open-questions.md](open-questions.md) and reasoned in full in
+    [system-architecture.md](system-architecture.md) "Merge mechanism": (1) activation needs TWO
+    gates, not one — manifest `mergeable` eligibility (R-159, already decided) PLUS a new,
+    independent `CapabilityRoute.merge?: boolean`, because D5's text names the route's own descriptor
+    and UC-20 names an act the route performs, which manifest-only activation cannot construct (a
+    capability with more than one route is explicitly OUT OF SCOPE, not silently solved); (2) the
+    compiled conflict rank reuses the route's existing `adapterIds` order rather than a new table or
+    `.trust`/Postgres, narrowly and provisionally, pending T-016's real per-row trust axis — and is
+    now ENFORCED, not merely documented: a new construction-time assertion requires every `merge:
+true` participant to be `tier: 'free'`, closing the hazard of a paid, more-authoritative
+    participant silently losing every conflict by sitting last in spend order; (3) `policy` is
+    evaluated per-participant, the same predicate the non-merge path already applies to cache hits,
+    preserving H-1 rather than replacing it with a whole-array reading — with one stated divergence:
+    a merge route where everyone answers and nobody satisfies never falls back to a single
+    participant's raw answer the way the non-merge path does, since that would silently un-merge the
+    response.
+  - **R-164's four-branch outcome contract layers on top of the three existing failure types, not
+    into them** (reliability.md §9.1) — a merge walk collects every participant's state (answered /
+    not-asked / asked-did-not-answer) across the WHOLE route before deciding, instead of returning on
+    the first satisfying answer; the deadline (OD-4, all THREE sites that already throw
+    `CapabilityDeadlineExceededError` — the per-participant pre-check, an in-flight `fetch()` cut off
+    by the ceiling, and the caller's own already-expired deadline at entry) stays a PRECONDITION that
+    pre-empts all four branches, unchanged from the non-merge contract, and the terminal wall-clock
+    disjunct (`registry.ts:944`) is preserved for the same reason WI-36 argued: it covers all twelve
+    adapters, not the two whose typed class unwrapping fixed.
+  - **`CapabilityResolution` gains three optional fields** (`sources`, `missingSources`,
+    `perSourceCache`) populated ONLY on a merge walk; the 18 non-merge capabilities and their 13
+    shipped tools see zero shape change (R-174/R-175) — `resolveCapability()` is extended the same
+    additive way, and the 14th tool reuses it rather than re-implementing error translation.
+    🔴 **`sources` means CONTRIBUTORS** (participants whose points are present in `result`), corrected
+    after review from an earlier "everyone who answered" reading that would have attributed a merged
+    payload to a participant that returned nothing of its own.
+  - **The 14th tool, `onchain_dash_platform_history`** (interfaces.md §5.1.6), publishes both
+    merge-eligible capabilities behind a `series` selector, grouping its answer by `metric` (owner
+    decision `OQ-T013-1`, 2026-08-05). 🔴 **`ToolSpec.capability` does NOT widen** — an earlier draft
+    said it should and called that "the one change" and "backward-compatible"; measured against the
+    tree it was neither (three type declarations, one of them the committed `tool-inventory.json`
+    artifact's schema, and a hard offline failure in `eval/capabilities.mjs`'s strict-equality
+    lookup). Corrected: `capability` stays `string | null`, unchanged; a new additive field,
+    `servedCapabilities?: readonly string[]`, carries both, and three readers
+    (`eval/capabilities.mjs`, `docs-counts.test.ts`, `tool-spec.test.ts`) need a real, named, small
+    behaviour change — enumerated in system-architecture.md, not left as "the rest is Development's
+    problem".
+  - 🔴 Dedup by `(metric, asset, ts)` never compares `value_raw` numerically: walking contributors in
+    RANK order and inserting into a map only when the key is absent picks the winner by construction
+    — no value comparison exists to route through `Number(...)` in the first place (R-167).
+  - The merged result is never cached as a unit (D5's 🔴 invariant) — nothing about the merge walk
+    is a new `cache.set()` call; every per-adapter cache read/write is the SAME code the non-merge
+    path already runs.
+  - 🔴 **Baseline corrected after review — 1538** (1206 core + 332 mcp-server), not 1473. "No source
+    file moved" is still true of T-013 itself, but 1473 is v4.9.3's figure, and WI-34…WI-37 landed
+    on top of it with **no version-history entry recording the delta** — carrying 1473 forward here
+    would let a 65-test regression pass R-178(a)'s gate unseen. The missing interval (v4.9.3 → this
+    entry) is a gap in this file, not in the suite; it is named here rather than silently patched.
+  - 🔴 **Round 2 (BLOCKING) — the interfaces.md anchor fix from round 1 made the suite RED.** Two
+    bare `// Capability:` anchors for a tool that is not yet registered inflated
+    `docs-counts.test.ts`'s pairing count (12 against 11) — `pnpm --filter @onchain-intel/mcp-server
+test docs-counts` failed. §5.1.6 now carries NO anchor; the anchors land in the same commit that
+    registers the `ToolSpec`. Verified green (7/7) after the fix.
+  - Round 2 also: named TWO more `servedCapabilities` readers that fail SILENTLY
+    (`eval-capability-coverage.test.ts`'s RF-5 guard, `eval-checks-coverage.test.ts`'s server-level
+    classifier) plus the artifact-mapper site (`gen-tool-inventory.ts`) that defeats the JSON-side
+    reader if left unchanged; corrected `data-model.md`'s `source` rule, which stated only the
+    all-zero-contributor fallback and not the primary "highest-ranked contributor" rule; extended
+    the `limit`-truncation disclosure to `series:'shielded_pool'` (`pg-history`'s 100-row cap applies
+    to BOTH capabilities, not only `platform_metrics`); and scoped
+    `assertMergeParticipantsAreFree()` to a capability's flattened participant set rather than one
+    route's literal `adapterIds`.
+
 - 2026-08-05, **v4.9.3** — **OQ-T012-6 resolved by the owner: Reading A, with two conditions.** The
   one branch T-012 shipped knowing it was contested — every source entered, every one answered, the
   last one running past the ceiling — now has a decision instead of a note.

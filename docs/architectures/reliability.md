@@ -104,6 +104,65 @@
   broken thing. R-154's missing-`trust` check is **not** part of this ordering at all: it lives in
   `assertValidAdapterRegistrations(array)`, which never touches the registry constructor.
 
+- **DESIGNED, not built (T-013, R-164) — a merge-enabled walk refines H-1's two-way split into
+  THREE participant states, layered ON TOP of the three outcome types above, introducing no new
+  exception class.** Applies only to the two routes that carry `CapabilityRoute.merge: true`
+  (`privacy.shielded_pool.history`, `platform.metrics.history` — system-architecture.md "Merge
+  mechanism"); the 18 other capabilities are unaffected.
+
+  A participant is **"answered"** (cache hit or a fresh `fetch()`/`normalize()` success — R-164's
+  reading is intentionally silent on whether its content satisfied `policy`, since that question is
+  decided per-participant, separately — OQ-T013-4), **"not asked"** (skipped before `fetch()` for a
+  reason that is not the deadline: no adapter registered, `chainSupport()` false, `isAvailable()`
+  false, or a live negative-cache entry), or **"asked, did not answer"** (`fetch()`/`normalize()`
+  threw — EXCEPT the net-layer `DeadlineExceededError`, which belongs to the deadline precondition
+  below, not to this state). The walk collects every participant's outcome across the WHOLE route
+  before deciding, rather than returning on the first satisfying answer (the non-merge behaviour,
+  unchanged):
+
+  - **(a) every participant answered** → the merged, deduped result returns successfully, even if
+    empty — a fact about the DATA (H-1's `!hadFailure` branch, extended, not replaced).
+  - **(b) at least one participant answered with ≥1 point, and at least one is not-asked or
+    asked-did-not-answer** → the merged result from those who DID answer returns successfully,
+    carrying `missingSources: {adapterId, reason}[]` naming who did not contribute and why.
+  - **(c) no answering participant contributed a point, and at least one is not-asked or
+    asked-did-not-answer** → `CapabilityUnavailableError` with the full `tried` list — never a
+    silent empty success. This is the branch that makes the merge mechanism's whole reason for
+    existing enforceable: today, on both real T-013 routes, the route carries no `policy`
+    (`{kind:'any'}`), which is satisfied by `platform-explorer`'s first answer — so this pair of
+    sources is NEVER jointly evaluated, and an unreachable `pg-history` behind an empty
+    `platform-explorer` answer today publishes as an ordinary empty success. Branch (c) is what
+    stops that: "the source holding our own ledger was never asked" and "there is no history" are
+    different statements, and only branch (c) tells them apart.
+  - **(d) literally nobody answered** — a named special case of (c), for UC-13.
+
+  **The deadline is a PRECONDITION on this whole contract, not a fifth branch (R-164e) — OD-4
+  (2026-08-03) applies to a merge walk exactly as it applies to a non-merge one, through the SAME
+  THREE sites that already throw `CapabilityDeadlineExceededError`, not merely two.** A participant
+  can be defeated by the deadline two ways DURING the walk — skipped by the per-adapter pre-check
+  (`registry.ts:716-724`) OR its in-flight `fetch()` cut off by the ceiling (the caught
+  `DeadlineExceededError`, `:829`) — and `deadlineHit` is set either way, so NONE of branches (a)-(d)
+  apply: the whole call ends in `CapabilityDeadlineExceededError`, regardless of how many
+  participants had already answered. The THIRD site is not a per-participant door at all: a caller
+  whose OWN `requestedDeadlineAtMs` has already passed at entry (`registry.ts:528-530`) throws the
+  same class immediately, with `tried: []`, before the walk — and before any merge/non-merge branch
+  — even begins; a merge-enabled route reaches this exactly like any other. A
+  saturated rate-limiter bucket (`DeadlineWouldExceedError`) is different and deliberately does NOT
+  set `deadlineHit`: that participant is "asked, did not answer" and is distributed into branch (b)
+  or (c) by the ordinary rule above, exactly like any other non-deadline failure — a limiter's
+  per-provider backlog is not a fact about the route's global clock (`registry.ts:929-943`). The
+  terminal wall-clock disjunct (`deadlineHit || Date.now() >= effectiveDeadlineAtMs`,
+  `registry.ts:944`) is preserved unmodified for the merge path: it is not redundant with the
+  per-participant pre-check — it covers every adapter's transport, not only the two that unwrap a
+  typed deadline class today (adversarial cycle 2's F-7; the disjunct's coverage argument is TWELVE
+  adapters, WI-36's unwrapping fixed two) — and a merge implementation has no license to remove it.
+
+  This is why the two "real" merge routes make OD-4's two doors OBSERVABLE for the first time on
+  this pair: today, with no `policy`, H-1 never evaluates `pg-history` at all once
+  `platform-explorer` answers, so a deadline defeating `pg-history` was never distinguishable from
+  `pg-history` simply not being asked. UC-22 is the test of this precondition — both doors, same
+  outcome, never branch (b) with a partial answer.
+
 - An input validation failure (zod, including the `superRefine` address check) stays an MCP
   tool-error, not a process crash (inherited from M0).
 - Retry / circuit-breaker on top of an individual provider call is **not introduced** — YAGNI at

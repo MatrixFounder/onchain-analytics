@@ -391,6 +391,124 @@ chain: ChainInputSchema, // §3.2 — accepts slug | alias | caip2, resolves to 
 aliases, not as a transitional mode. Response shapes do not change: tools still answer
 `chain: "ethereum"`, the canonical slug. Cache entries were not invalidated (§4.2.2).
 
+#### 5.1.6 The Dash Platform history tool (T-013) — DESIGNED, not built, as of 2026-08-05
+
+**Owner decision `OQ-T013-1` (2026-08-05): merging is ON for both eligible capabilities, and the
+tool's answer groups by `metric`, never a flat point array.** Modelled on `onchain_dex_volume`
+(§5.1.4) for the input/window idiom, but the OUTPUT shape is grouped, not flat, because the merged
+`series` can legitimately carry more than one metric under one capability name (§4.2.3-adjacent
+finding, `docs/TASK.md` §1.3): `privacy.shielded_pool.history`'s two adapters write two DIFFERENT
+metrics (`platform-explorer` → `shielded_pool_shield_amount`, an inflow; `pg-history` → the n8n
+snapshotter's `shielded_pool_balance_credits`, a balance) under the same capability name, so a flat
+array would silently read as one series when it is two. `platform.metrics.history` is the case the
+merge mechanism was built for: `identities_total` is genuinely the same series from both adapters
+(conflict resolved by the compiled rank, system-architecture.md "Merge mechanism"), and
+`documents_total`/`data_contracts_total`/`platform_total_credits` exist ONLY on `pg-history` — the
+gap-filling D6 reason 3 names directly.
+
+```jsonc
+// onchain_dash_platform_history — merged history of a Dash-Platform-only capability pair.
+// One call resolves ONE of the two capabilities below, chosen by `series` — never both (R-170a).
+// { chain: ChainInput, series: 'shielded_pool' | 'platform_metrics',
+//   limit?: number (int, 1..500, default 100 — matches pg-history's own DEFAULT_HISTORY_LIMIT) }
+// → {
+//     chain,
+//     series: 'shielded_pool' | 'platform_metrics',        // echoes the input selector
+//     groups: Array<{
+//       metric: string,                                    // the Snapshot's own metric id, never renamed
+//       points: Array<{ ts: number, asset: string, valueRaw: string, valueNum?: number, source: string }>,
+//     }>,
+//     truncated: { series: boolean, reason: string },       // M-4 — see below; modelled on
+//       // dex-volume.ts's exact shape, not decorative
+//     missingSources?: Array<{ adapterId: string, reason: string }>,  // R-171e — forwarded from
+//       // `resolution.missingSources` VERBATIM, under the same field name — the ONLY carrier of
+//       // "a participant did not contribute" this tool's output has; never folded into `window`.
+//     window?: { fromMs: number, toMs: number, days: number },  // best-effort (R-171f) — the two
+//       // participants' windows genuinely differ (pg-history's shared LIMIT 100 across four metrics
+//       // vs. platform-explorer's own endpoint window) and reconciling them into one honest
+//       // `{fromMs,toMs,days}` is explicitly NOT required for acceptance
+//     source: string, fetchedAt: number,
+//   }
+// Serves: privacy.shielded_pool.history, platform.metrics.history — not registered as `// Capability:`
+// anchors yet (§5.1.6 below), because no `ToolSpec` exists for `docs-counts.test.ts`'s `served`/
+// `stale` check to agree with.
+```
+
+- `groups[].points` is a direct projection of the merged `Snapshot[]` the registry returns — `valueRaw`
+  stays a string (DB-SCHEMA §1.7; never parsed to `Number`, R-167d), and grouping by `metric` (R-171b)
+  is what keeps `shielded_pool_shield_amount` and `shielded_pool_balance_credits` visibly two
+  different quantities instead of one misleadingly-continuous series (AC-32, AC-49).
+- `series:'shielded_pool'` always answers with exactly the metric groups actually present (one or
+  two, never a synthetic empty group for a metric neither adapter wrote this call);
+  `series:'platform_metrics'` can carry up to four groups, three of which exist only when
+  `ONCHAIN_PG_URL` is configured and `pg-history` answered (AC-43, AC-49).
+- 🔴 **`limit` bounds the TOOL's output, never the underlying fetch (M-4, corrected round 2 —
+  MJ-3).** `pg-history`'s own query is not rewritten by this task (R-180c) — it always applies its
+  OWN hardcoded `DEFAULT_HISTORY_LIMIT = 100`, `ORDER BY ts DESC` (`pg-history/index.ts:30`,
+  `:142-145`), and it is the SAME query, same cap, for **both** capabilities — not only
+  `platform_metrics` (where the 100 rows are additionally shared across four metrics). A first
+  draft scoped the always-on disclosure to `platform_metrics` alone, which left
+  `series:'shielded_pool'` with `limit: 300` returning a pg-capped 100-point group and
+  `truncated.series === false` — a source-truncated answer reported as complete, because no
+  TOOL-side slicing ever ran to trigger clause (1) below. `limit` therefore does two things, both
+  named, both selector-independent: (1) it slices each group in `groups[]` down to its `limit`
+  most-recent points (newest first, mirroring `pg-history`'s own ordering) — `truncated.series:
+true` when that slicing actually cut a group; (2) `truncated.series` is ALSO `true`,
+  unconditionally, whenever `pg-history` is among the contributors AND the requested `limit`
+  EXCEEDS its own 100-row cap — on EITHER selector, not only `platform_metrics` — a coarse, honest,
+  always-on signal for a cap the tool cannot measure precisely (matching the `_meta.cache`
+  aggregate's same "coarse but true" discipline, system-architecture.md "Merge mechanism"). The
+  ceiling stays 500, not 100: `platform-explorer` alone (no `ONCHAIN_PG_URL`, R-164(b)'s UC-12) is
+  not bound by `pg-history`'s cap, and lowering the tool's own ceiling to 100 would needlessly
+  starve that composition too. **`truncated.reason` (MN-4): when only clause (2) fires, it names
+  the source-side cap ("pg-history's own query returns at most 100 rows … request narrowed to that
+  many" — for `platform_metrics`, additionally naming that the 100 rows are shared across four
+  metrics); when clause (1) also fires (the tool's own slicing cut a group), the reason states BOTH
+  facts in one sentence rather than picking one — a caller seeing only the source-side sentence
+  when its own `limit` was smaller than 100 would wrongly conclude pg-history, not its own request,
+  is why the group is short.
+- The handler calls `resolveCapability()` (§5.2, extended additively — `sources`/`missingSources`/
+  `perSourceCache` are new optional fields on `ResolveSuccess`, R-175b) and reads `outcome.missingSources`
+  to populate the field above; it does not reimplement `CapabilityUnavailableError`/
+  `CapabilityDeadlineExceededError` translation — that stays the ONE place it already lives.
+- 🔴 **`_meta.cache` is this tool's OWN shape, not the shared `CacheMeta` (M-5 — naming the reader
+  `sources`/`perSourceCache` otherwise reach and stop at).** `{ status: 'hit' | 'miss', perSource:
+Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built directly from
+  `outcome.sources`/`outcome.perSourceCache` — the one case R-174(e) names as legal ("a new tool
+  builds its own `_meta`, not reusing `resolveCapability()`'s shape literally"). The 11 existing
+  tools' `_meta.cache` is untouched (R-175). **Diverges from `CacheMeta` in both directions, named
+  (MN-3):** `provider` is DROPPED — genuinely ambiguous for a merge (`perSource[]` already answers
+  "which adapter, which status" per contributor, and a single `provider` string would just be
+  `source` repeated under a worse name); `capability` is ALSO dropped, but for the opposite reason —
+  it is NOT ambiguous (one call resolves exactly one of the two, R-170a), so it is redundant with
+  the top-level `series`/output `Capability:` pairing rather than informative, and omitting it is a
+  choice, not an oversight this bullet leaves unstated.
+- `capability` on this tool's `ToolSpec` stays `string | null`, UNCHANGED — set to `null`, same value
+  `ping`/`list-chains` already use, but a DIFFERENT fact (system-architecture.md, "Decision:
+  `capability` is UNCHANGED"). A new, additive field, `servedCapabilities: ['privacy.shielded_pool.history',
+'platform.metrics.history']`, is what R-170(b)'s "both capabilities listed, not null" actually
+  reaches — the eval axis and the doc-pairing gate are updated to read it (system-architecture.md
+  enumerates the three readers that need an actual behaviour change).
+- 🔴 **The `// Capability:` anchor is deliberately ABSENT here, corrected after round 2 (BL-1).**
+  Round 1 tried a quoted/conjoined anchor and round 2's fix tried TWO bare ones — both wrong in
+  opposite directions: quoted defeats the gate's regex (`/^\/\/ Capability: ([a-z][a-z0-9._-]*)/`)
+  SILENTLY (documents nothing, gate stays green), while two bare anchors both attribute to
+  `onchain_dash_platform_history` and inflate `documented.size` to 12 against
+  `withCapability.length === 11` (13 tools minus 2 `capability: null`) — `docs-counts.test.ts`'s
+  R-119 pairing gate fails on a tree where the 14th tool is not even registered yet, and would fail
+  differently at its `stale` check (`:318`, not `orphanAnchors`) the moment the count was patched:
+  no tool exists for a `served` capability to compare against. **The anchors land in the SAME
+  commit that registers the `ToolSpec`** (Development, two bare lines then, one per capability,
+  each within the 25-line attribution window) — until then this block carries none, and
+  `docs-counts.test.ts` needs no rework: both its checks already tolerate an undocumented capability
+  that no tool serves yet. When that commit lands, the gate's `documented` map becomes
+  `Map<string, string[]>` so one tool name can attribute more than one anchor, and its equality
+  check compares that list, as a set, against `spec.servedCapabilities`.
+- `.strict()` on both schemas, the same discipline as the 13 shipped tools (R-171c). Both real
+  merge routes carry no `policy` (`{kind:'any'}`), so `missingSources` in practice is populated only
+  by UC-12/UC-19/UC-21's compositions (a genuinely unreachable `pg-history`), never by a policy
+  exclusion — R-171(e)'s field exists for both causes, but only one is reachable in shipped scope.
+
 ### 5.2. Internal interfaces
 
 ```ts
