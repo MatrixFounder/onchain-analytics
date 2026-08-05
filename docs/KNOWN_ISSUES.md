@@ -85,6 +85,11 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 
 - **DF-1** [Nansen `POST /api/v1/smart-money/netflow` silently returned zero rows for a real, well-known token — two request-construction defects, both fixed](issues/df-1-nansen-smart-money-netflow-empty-for-base-pair-tokens.md) — severity `SEV-3`, status `fixed`, opened 2026-07-24
 
+## tooling
+
+- **RF-6** [validate.py читает только первую таблицу RTM под якорем, поэтому многоэпиковый TASK гейтится частично и рапортует успех](issues/rf-6-validate-py-reads-only-the-first-rtm-table-under-the-anchor.md) — severity `SEV-2`, status `open`, opened 2026-08-05
+
+
 ## workflow-docs
 
 - **RF-1** [task-001-3 acceptance snippets not runnable (pnpm 11 '--' forwarding; macOS lacks timeout)](issues/rf-1-task-001-3-acceptance-snippets-not-runnable-pnpm-11-forwarding-macos-lacks-timeout.md) — severity `SEV-4`, status `fixed`, opened 2026-07-22
