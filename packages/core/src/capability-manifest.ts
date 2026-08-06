@@ -143,28 +143,56 @@ interface CapabilityManifestBase {
  * One capability's manifest — a **discriminated union on `shape`**, deliberately, and with an exact
  * statement of what that buys TODAY.
  *
- * Both branches currently differ **only** by the `shape` literal, so structurally the union is
- * interchangeable with a flat interface: a merge field added to `CapabilityManifestBase` would be
- * legal on `point` too. The union therefore does **not make the restriction effective** — it makes
- * it **expressible**. (An earlier draft claimed the union "is the whole of R-136(d)'s
- * forward-compatibility mechanism"; that overstatement is withdrawn.)
+ * **The `set | series` branch now carries `mergeable?: boolean` (T-013, task 013-1, R-159/R-160) —
+ * the obligation the paragraphs below used to describe as future is discharged.** Declaring
+ * `mergeable` on the `point` branch is a compile error (excess property on a union member), proven
+ * by `capability-manifest.test.ts`'s TC-UNIT-09 (negative, `@ts-expect-error`) alongside its
+ * positive control TC-UNIT-10 (`series` + `mergeable: true` compiles) and TC-UNIT-11 (only the two
+ * `.history` merge rows carry `mergeable: true` in the table below). The field is a FACT about a
+ * capability's key identity, not an activation switch — `CapabilityRoute.merge` (013-2) and its
+ * `providers.config.ts` setting (013-6) are what turns merging on, and neither has landed yet.
  *
- * **The obligation this shape hands to T-013.** T-013 adds the merge field to the `set | series`
- * branch ALONE, and in that same second "merging declared on a `point`" becomes a compile error —
- * with no rewrite of this type, and with the negative type-test that T-012 cannot write (there is no
- * field to name yet) becoming writable. Adding it to the BASE instead would silently give it back to
- * `point`.
+ * **Why a discriminated union bought this, when a flat interface would have been legal too.** Both
+ * branches differ **only** by the `shape` literal, so structurally the union was always
+ * interchangeable with a flat interface: a field added to `CapabilityManifestBase` would have been
+ * legal on `point` regardless of how many branches this type has. The union did not make the
+ * restriction effective on its own — adding `mergeable` to the correct branch, and only that branch,
+ * is what makes it effective; the union is what made doing so possible without widening `point` in
+ * the same edit. (An earlier draft claimed the union "is the whole of R-136(d)'s
+ * forward-compatibility mechanism"; that overstatement was withdrawn before this field existed, and
+ * stays withdrawn — the union alone still proves nothing about any field not yet added.)
  *
  * **Rejected here, and why** (task file F-5): declaring `mergeKey?: never` on the `point` branch to
- * make the restriction effective immediately. That pre-picks a NAME T-013 has not chosen — name the
- * field anything else and the guard protects a key nobody uses, with no input on which it fails. A
- * guard without such an input is barred by the same rule everywhere else in this task.
+ * make the restriction effective immediately, before T-013. That would have pre-picked a NAME T-013
+ * had not yet chosen — name the field anything else (as `mergeable` turned out to be) and the guard
+ * would have protected a key nobody uses, with no input on which it fails. A guard without such an
+ * input is barred by the same rule everywhere else in this task.
  *
- * `capability-manifest.test.ts`'s TC-UNIT-07 keeps this declaration a two-branch union until then.
+ * `capability-manifest.test.ts`'s TC-UNIT-07 keeps this declaration a two-branch union going
+ * forward, independently of `mergeable`'s existence: the DECLARATION guard and the field it enabled
+ * are two different obligations. TC-UNIT-07 reads the declaration's TEXT, never types — it cannot
+ * see which branch a field is declared on, only whether the union still HAS the two branches a
+ * per-field test needs. That is why it stays in force: it is the standing PRECONDITION that lets a
+ * future field get its own negative type-test the way `mergeable` got TC-UNIT-09. Catching that
+ * future field on the wrong branch, or on `CapabilityManifestBase`, is that field's OWN
+ * `@ts-expect-error` to write — TC-UNIT-07 does not and structurally cannot do it for them (see its
+ * own "NOT reached" table, `capability-manifest.test.ts`'s `mergeKeyOnTheBase` case).
  */
 export type CapabilityManifest =
   | (CapabilityManifestBase & { shape: 'point' })
-  | (CapabilityManifestBase & { shape: 'set' | 'series' });
+  | (CapabilityManifestBase & {
+      shape: 'set' | 'series';
+      /**
+       * Whether results from this capability's adapters are eligible to be walked/deduped/merged
+       * into one answer instead of returned from a single winning adapter (R-159/R-160). A FACT
+       * about the capability's key identity, not an activation switch: `CapabilityRoute.merge`
+       * (013-2) turns it on per route, and `providers.config.ts` (013-6) is where that lands —
+       * neither exists yet. Nothing in `packages/` reads this field yet, so `undefined`/`false`/
+       * `true` all behave IDENTICALLY today — there is no behaviour to distinguish them. The
+       * distinction arrives with `CapabilityRoute.merge` (013-2).
+       */
+      mergeable?: boolean;
+    });
 
 /**
  * All 20 routed capabilities (`providers.config.ts` — 21 routes, 20 distinct capabilities;
@@ -474,6 +502,9 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // measures became bounded. A ceiling that cuts more than before is not a regression here; it is
     // the first version of this row where both numbers describe running code.
     deadlineMs: 30_000,
+    // T-013 (013-1): eligible for merging. Not yet ACTIVE — `CapabilityRoute.merge` (013-2) and
+    // its `providers.config.ts` setting (013-6) are separate tasks that have not landed.
+    mergeable: true,
   },
   'platform.metrics.history': {
     // ADR-002 D3 names this one.
@@ -487,6 +518,9 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // 110_000. **ENFORCED TODAY** — both adapters read the deadline (WI-37), and the pg leg's tail
     // is a number rather than "unbounded" for the first time (WI-35).
     deadlineMs: 30_000,
+    // T-013 (013-1): eligible for merging. Not yet ACTIVE — `CapabilityRoute.merge` (013-2) and
+    // its `providers.config.ts` setting (013-6) are separate tasks that have not landed.
+    mergeable: true,
   },
 
   // ===========================================================================================

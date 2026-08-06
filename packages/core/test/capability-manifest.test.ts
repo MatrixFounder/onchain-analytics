@@ -249,17 +249,28 @@ describe('TC-UNIT-06 — `paidLegMs` is carried by exactly the paid-reaching cap
 /**
  * The top-level `|` branches of `export type CapabilityManifest = …`, as TEXT.
  *
- * **What this guard is for.** It keeps `CapabilityManifest` a TWO-BRANCH discriminated union until
- * T-013, so that T-013 can add its merge field to ONE branch and get "merging declared on a `point`"
- * as a compile error for free. Collapsing the union into a flat interface before then is what this
- * fails on.
+ * **What this guard is for.** It keeps `CapabilityManifest` a TWO-BRANCH discriminated union — the
+ * precondition T-013 needed to add its merge field to ONE branch and get "merging declared on a
+ * `point`" as a compile error for free. **T-013 (task 013-1) has now done exactly that:**
+ * `mergeable?: boolean` lives on the `set | series` branch alone, and `capability-manifest.ts`'s
+ * TC-UNIT-09/10/11 below prove the placement, not this guard. TC-UNIT-07 stays in force going
+ * forward as the STANDING precondition — collapsing the union into a flat interface, or adding a
+ * third branch, is what this guard still fails on.
  *
  * **What it does NOT prove, said plainly so the gate is not read as stronger than it is:**
  *
- * - It does not guard the merge RULE. There is no merge field and no rule yet; a test claiming
- *   "merging cannot be declared on `point`" would be FALSE today — the two branches differ only by
- *   the `shape` literal, so anything added to the shared base is legal on `point` as well. The union
- *   makes the restriction EXPRESSIBLE, not effective.
+ * - It does not guard the merge RULE — only the merge FIELD's branch. `mergeable` (013-1) is
+ *   declared on `set | series` alone and TC-UNIT-09 proves declaring it on `point` does not
+ *   compile, but there is still no merge RULE: activation (`CapabilityRoute.merge`, 013-2) and any
+ *   walk/dedup/rank code (013-4) have not landed, so "merging is disallowed on `point`" is true of
+ *   the FIELD's placement and not yet a statement about running behaviour. Nor does this guard
+ *   protect any FUTURE field the same way — a field added straight to `CapabilityManifestBase`
+ *   would still be legal on `point`, because this guard reads the union's branch STRUCTURE, not
+ *   which fields live on which branch — except that TC-UNIT-07's own sign-of-work assertion below
+ *   (`branches[1]` must contain `mergeable?: boolean`) incidentally pins `mergeable` TEXTUALLY to
+ *   the second branch, so moving it to the base fails THAT assertion too, for a reason unrelated to
+ *   any leak check: it is a fact about this one field's presence in a fixed string, not a general
+ *   capability of the guard.
  * - It does not read types. It reads the declaration's text.
  *
  * **Reached** (each with a positive control below):
@@ -275,23 +286,74 @@ describe('TC-UNIT-06 — `paidLegMs` is carried by exactly the paid-reaching cap
  *
  * | Escape                                                                              | Why |
  * | ------------------------------------------------------------------------------------- | --- |
- * | A merge field added to `CapabilityManifestBase` (hence legal on `point`)             | The guard reads the union declaration only. This is exactly the restriction the union does NOT make effective today — T-013's job, not this gate's. |
+ * | A merge field added to `CapabilityManifestBase` (hence legal on `point`)             | The guard reads the union declaration only. STRUCTURAL, not time-bound: 013-1 closed this for `mergeable` by branch placement, but a field added to the BASE — `mergeKey` or anything next — is still invisible here. |
  * | `capabilityManifests` re-typed to some OTHER type while this declaration stands       | The guard checks the declaration, not who uses it. |
  * | `CapabilityManifestBase` itself redeclared as something unrelated                     | Names are compared, types are not resolved. |
  */
+/**
+ * Strips `//` line comments and `/* … *&#47;` block comments. Needed before scanning for the
+ * union's terminating `;` — a JSDoc `/** … *&#47;` inside a branch never contains one in this file,
+ * but the scan must not depend on that staying true, and comment text is not code the terminator
+ * search should react to either way.
+ */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
+/**
+ * `+1` for an opening bracket, `-1` for a closing one, `0` otherwise — the ONE place both depth
+ * scans below get their bracket set from, so a future fix to one cannot land on only one loop (the
+ * two copies were byte-identical and free to diverge; review round 2, L-3).
+ *
+ * **Residual limit, named rather than silently carried:** this is bracket-counting only, and it is
+ * not literal-aware. A branch property typed as an arrow (`(x: string) => number`) contributes an
+ * unmatched `>` — the `>` of `=>` closes nothing — and desyncs the count. A BALANCED generic
+ * (`Record<string, X>`) is the case including `<`/`>` in the set handles correctly: `+1` then `-1`,
+ * net zero. **Unreachable on
+ * this file today** (no such property exists in `CapabilityManifest`'s branches), and — unlike
+ * MUT-C1 — **LOUD, not silent, if it ever fires**: depth going negative means the real `;`/`|` is
+ * skipped, so the scan either never finds a depth-0 terminator (`unionBranches` returns `[]`) or
+ * the branch count comes out wrong and `declarationDefects` reports it. Neither outcome is a test
+ * that passes while proving nothing, which is the failure mode this project actually guards against.
+ */
+function bracketDelta(char: string): -1 | 0 | 1 {
+  if ('([{<'.includes(char)) return 1;
+  if (')]}>'.includes(char)) return -1;
+  return 0;
+}
+
 function unionBranches(source: string): string[] {
-  const start = source.indexOf('export type CapabilityManifest =');
+  const clean = stripComments(source);
+  const start = clean.indexOf('export type CapabilityManifest =');
   if (start === -1) return [];
-  const end = source.indexOf(';', start);
-  const body = source.slice(start + 'export type CapabilityManifest ='.length, end);
+  const afterEquals = start + 'export type CapabilityManifest ='.length;
+
+  // The terminating `;` is the first one at DEPTH 0, not the first one in the text. MUT-C1
+  // (adversarial round 1, T-013) caught the naive `indexOf(';', start)` version: once a branch
+  // grew a multi-line object type of its own (`{ shape: 'set' | 'series'; mergeable?: boolean }`),
+  // its OWN property-separating `;` sat at depth > 0 and was mistaken for the union terminator —
+  // truncating everything after it (the field, the branch's closing `})`) while still reporting
+  // branch count 2 by luck, because the truncated tail happened to be non-empty.
+  let depth = 0;
+  let end = -1;
+  for (let i = afterEquals; i < clean.length; i += 1) {
+    const char = clean[i];
+    if (char === undefined) break;
+    depth += bracketDelta(char);
+    if (char === ';' && depth === 0) {
+      end = i;
+      break;
+    }
+  }
+  if (end === -1) return [];
+  const body = clean.slice(afterEquals, end);
 
   const branches: string[] = [];
-  let depth = 0;
+  let branchDepth = 0;
   let current = '';
   for (const char of body) {
-    if ('([{<'.includes(char)) depth += 1;
-    else if (')]}>'.includes(char)) depth -= 1;
-    if (char === '|' && depth === 0) {
+    branchDepth += bracketDelta(char);
+    if (char === '|' && branchDepth === 0) {
       if (current.trim()) branches.push(current.trim());
       current = '';
       continue;
@@ -330,11 +392,20 @@ describe('TC-UNIT-07 — `CapabilityManifest` stays a two-branch union (OQ-T012-
   it('the real declaration is a two-branch union over the shared base', () => {
     // Sign of work first: a regex that found no declaration would report "no defects" identically.
     expect(manifestSource).toContain('export type CapabilityManifest =');
-    expect(unionBranches(manifestSource)).toHaveLength(2);
+    const branches = unionBranches(manifestSource);
+    expect(branches).toHaveLength(2);
+    // Sign of work, MUT-C1 (adversarial round 1, T-013): the scan must reach the ACTUAL union
+    // terminator, not the second branch's OWN `shape: 'set' | 'series';` property separator. A
+    // parser that truncated there would still report length 2 by luck (the truncated tail is
+    // non-empty) while silently dropping everything after it — including `mergeable` itself and
+    // the branch's closing `})`. Asserting the full text is what tells "reached the terminator"
+    // apart from "stopped early and got lucky".
+    expect(branches[1]).toMatch(/mergeable\?:\s*boolean/);
+    expect(branches[1]?.trim().endsWith('})')).toBe(true);
     expect(
       declarationDefects(manifestSource),
-      'T-013 adds the merge field to the `set | series` branch alone; a flat type would silently ' +
-        'make it legal on `point` too. This guard covers the DECLARATION, never the merge rule.',
+      'T-013 (013-1) added the merge field to the `set | series` branch alone; a flat type would ' +
+        'silently make it legal on `point` too. This guard covers the DECLARATION, never the merge rule.',
     ).toStrictEqual([]);
   });
 
@@ -350,6 +421,17 @@ describe('TC-UNIT-07 — `CapabilityManifest` stays a two-branch union (OQ-T012-
 
     const merged = `export type CapabilityManifest =\n | (CapabilityManifestBase & { shape: 'point' | 'set' | 'series' })\n | (CapabilityManifestBase & { shape: 'point' });`;
     expect(declarationDefects(merged), 'discriminator merged into `point`').not.toStrictEqual([]);
+
+    // MUT-C1 regression (adversarial round 1, T-013): a third branch behind a multi-line SECOND
+    // branch that carries its own embedded `;` — the exact shape of the real `set | series` branch
+    // once `mergeable?: boolean;` landed in it. Before the parser fix this fixture was invisible:
+    // the naive `indexOf(';', start)` terminator search stopped at the embedded `;` and never saw
+    // the third branch at all.
+    const thirdBranchBehindMultilineSecond = `export type CapabilityManifest =\n | (CapabilityManifestBase & { shape: 'point' })\n | (CapabilityManifestBase & {\n      shape: 'set' | 'series';\n      mergeable?: boolean;\n    })\n | (CapabilityManifestBase & { shape: 'blob' });`;
+    expect(
+      declarationDefects(thirdBranchBehindMultilineSecond),
+      'a third branch hidden behind a multi-line second branch with its own `;`',
+    ).not.toStrictEqual([]);
   });
 
   it('the DECLARED LIMITS are real: these are NOT reached, and that is written down', () => {
@@ -358,8 +440,10 @@ describe('TC-UNIT-07 — `CapabilityManifest` stays a two-branch union (OQ-T012-
     const mergeKeyOnTheBase = `interface CapabilityManifestBase { ttlSeconds: number; deadlineMs: number; mergeKey?: string }\nexport type CapabilityManifest =\n | (CapabilityManifestBase & { shape: 'point' })\n | (CapabilityManifestBase & { shape: 'set' | 'series' });`;
     expect(
       declarationDefects(mergeKeyOnTheBase),
-      'LIMIT: a merge field on the BASE is legal on `point` and this guard cannot see it — the ' +
-        'union makes the restriction expressible, not effective (T-013 closes it)',
+      'LIMIT, and STRUCTURAL rather than time-bound: `mergeKey` here is a hypothetical field ' +
+        'DIFFERENT from the real `mergeable` — T-013 (013-1) closed the obligation for `mergeable` ' +
+        'specifically by putting it on the correct branch, but this guard still cannot see a field ' +
+        'on the BASE (legal on `point` there), for `mergeKey` or for anything else added there next.',
     ).toStrictEqual([]);
 
     const otherTypeInUse = `export type CapabilityManifest =\n | (CapabilityManifestBase & { shape: 'point' })\n | (CapabilityManifestBase & { shape: 'set' | 'series' });\nexport const capabilityManifests: Readonly<Record<string, FlatManifest>> = {};`;
@@ -373,6 +457,96 @@ describe('TC-UNIT-07 — `CapabilityManifest` stays a two-branch union (OQ-T012-
       declarationDefects(redeclaredBase),
       'LIMIT: names are compared, types are not resolved',
     ).toStrictEqual([]);
+  });
+});
+
+// =============================================================================================
+// TC-UNIT-09/10/11 — merge eligibility lives on `set | series` alone (T-013, task 013-1, R-159/
+// R-160, AC-21)
+// =============================================================================================
+
+/**
+ * `mergeable?: boolean` (013-1) declares only the KEY-IDENTITY fact that a capability is eligible
+ * for cross-adapter merging; it does not activate merging (`CapabilityRoute.merge`, 013-2) and it
+ * does not appear in `providers.config.ts` (013-6). TC-UNIT-07 above keeps `CapabilityManifest` a
+ * two-branch union; these three tests are what that union was FOR — a merge field declared on the
+ * `set | series` branch alone, so declaring it on `point` is a compile error.
+ */
+describe('TC-UNIT-09/10/11 — `mergeable` lives on `set | series` only (T-013 obligation closed)', () => {
+  it('TC-UNIT-09: `mergeable: true` on a `point` manifest does not compile', () => {
+    // `mergeable` is not a field of the `point` branch — declaring it there must be a compile
+    // error (excess property on a literal assigned to a union member). If the directive below
+    // ever reports "unused", the field has leaked onto `point` (e.g. by moving to
+    // `CapabilityManifestBase`) and the guarantee this task exists to add is gone. The directive
+    // sits directly above the offending property, not above the statement: TS reports an excess
+    // property on ITS OWN line, and `@ts-expect-error` only suppresses the line right below it.
+    const pointWithMergeable: CapabilityManifest = {
+      shape: 'point',
+      ttlSeconds: 60,
+      deadlineMs: 15_000,
+      // @ts-expect-error TC-UNIT-09: excess property on the `point` branch — see comment above.
+      mergeable: true,
+    };
+    expect(pointWithMergeable.shape).toBe('point');
+  });
+
+  it('TC-UNIT-10: `mergeable: true` on a `series` manifest compiles (positive control)', () => {
+    // No `@ts-expect-error` here on purpose: without this control, TC-UNIT-09 failing to compile
+    // could equally mean the field was declared on the WRONG branch (e.g. misspelt) rather than
+    // correctly restricted to `set | series` — this is what tells the two cases apart.
+    const seriesWithMergeable: CapabilityManifest = {
+      shape: 'series',
+      ttlSeconds: 3600,
+      deadlineMs: 30_000,
+      mergeable: true,
+    };
+    expect(seriesWithMergeable.shape).toBe('series');
+    expect(seriesWithMergeable.mergeable).toBe(true);
+  });
+
+  it('TC-UNIT-11: only the two `.history` merge capabilities carry `mergeable: true`', () => {
+    // `mergeable` only exists on the `set | series` branch, so reading it off the union needs an
+    // `in` narrow to satisfy the type checker. Said plainly, not overclaimed: the narrow buys type
+    // hygiene here, ZERO `point`-leak detection — if `mergeable` moved back to the shared base,
+    // `'mergeable' in manifest` would narrow to every branch and this test would keep passing
+    // identically. Catching that leak is TC-UNIT-09's job (the `@ts-expect-error`), not this one's.
+    // Filtered on PRESENCE, not on `=== true`: the task file (`:31`) says the other 18 rows do not
+    // carry the field AT ALL, not merely that it isn't `true` on them. `=== true` alone would pass
+    // silently on a stray `mergeable: false` anywhere else in the table — asymmetric strictness
+    // caught in review round 2 (L-2).
+    const capabilitiesCarryingTheField = Object.entries(capabilityManifests)
+      .filter(([, manifest]) => 'mergeable' in manifest)
+      .map(([capability]) => capability)
+      .sort();
+    expect(capabilitiesCarryingTheField).toStrictEqual([
+      'platform.metrics.history',
+      'privacy.shielded_pool.history',
+    ]);
+    // Presence alone would also pass a `mergeable: false` on either — assert the values separately.
+    // `in` narrows again, same reason as above: `mergeable` is not on the `point` branch.
+    const platformMetricsHistory = capabilityManifests['platform.metrics.history'];
+    const privacyShieldedPoolHistory = capabilityManifests['privacy.shielded_pool.history'];
+    expect(
+      platformMetricsHistory && 'mergeable' in platformMetricsHistory
+        ? platformMetricsHistory.mergeable
+        : undefined,
+    ).toBe(true);
+    expect(
+      privacyShieldedPoolHistory && 'mergeable' in privacyShieldedPoolHistory
+        ? privacyShieldedPoolHistory.mergeable
+        : undefined,
+    ).toBe(true);
+    // Named separately, not folded into the list above: this is the row a reader would most
+    // plausibly expect to be mergeable by mistake (it is `set`-shaped and the most expensive call
+    // in the system), and getting it right by luck is not the same guarantee as testing it.
+    const entityLabels = capabilityManifests['entity.labels'];
+    // Sign of work: if the key were renamed or typo'd, `entityLabels` would be `undefined` and the
+    // ternary below would yield `undefined` too — passing the assertion after it while proving
+    // nothing about `entity.labels` at all. Fail loudly on that case first.
+    expect(entityLabels).toBeDefined();
+    expect(
+      entityLabels && 'mergeable' in entityLabels ? entityLabels.mergeable : undefined,
+    ).toBeUndefined();
   });
 });
 
