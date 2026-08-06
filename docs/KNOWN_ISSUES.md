@@ -97,6 +97,7 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 - **RF-3** [pnpm lint and format:check were left red on main by two merged commits, blocking the next task's regression exit](issues/rf-3-pnpm-lint-and-format-check-were-left-red-on-main-by-two-merged-commits-blocking-the-next-task-s-regression-exit.md) — severity `SEV-3`, status `fixed`, opened 2026-07-27
 - **RF-4** [the smoke:dist CI gate still asserts 8 tools, so it has been red on main since TASK-006](issues/rf-4-smoke-dist-ci-gate-still-asserts-8-tools-so-it-has-been-red-on-main-since-task-006.md) — severity `SEV-2`, status `fixed`, opened 2026-07-28
 - **RF-5** [the live eval derives chains from the registry but capabilities from a hand-written list, so dex.volume.history ships untested](issues/rf-5-live-eval-capability-axis-is-hand-written-so-dex-volume-history-ships-untested.md) — severity `SEV-3`, status `fixed`, opened 2026-07-28
+- **RF-7** [мутационный протокол и read-only роаст идут по одному дереву одновременно, и ревьюер меряет состояние, которого не было](issues/rf-7-mutation-protocol-and-read-only-roast-run-concurrently-so-the-reviewer-measures-a-tree-that-never-shipped.md) — severity `SEV-3`, status `open`, opened 2026-08-06: `code-reviewer` 013-3 поймал прогон `1 failed | 336 passed` и `35 ++++` вместо `38 +` — это была мутация оркестратора, а не флейк; §2.4 обязывает спавнера настреливать `NOT RUN (no Bash)`-команды критика и тем порождает конфликт, не говоря о сериализации
 
 ## logic
 

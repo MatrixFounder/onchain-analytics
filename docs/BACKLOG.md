@@ -81,6 +81,7 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 ## Discovered issues / work-items
 
 <!-- feedback:discovered-issues -->
+- **WI-44** [`pnpm typecheck` резолвит core в собранный `dist`, поэтому межпакетная поломка типов ему не видна](backlog/wi-44-typecheck-reads-stale-core-dist-so-cross-package-type-breakage-is-invisible.md) — effort `S`, status `open`, opened 2026-08-06: замерено на 013-3 — `adapterId: string→number` в core даёт `typecheck` EXIT 0 и `build` EXIT 2; набор гейтов ловит, но не тот гейт и не тот, чей зелёный читают
 - **WI-43** [Строчные ссылки в docs/ протухают молча: ни один гейт не резолвит path:line](backlog/wi-43-line-anchored-citations-in-docs-decay-silently.md) — effort `M`, status `open`, opened 2026-08-06
 - **WI-42** [Докстринг таблицы манифеста называет 012-5 будущим: направление чтения ttlFor() описано обратно](backlog/wi-42-manifest-table-docstring-calls-012-5-future.md) — effort `S`, status `open`, opened 2026-08-06
 - **WI-19** [vdd-multi: контракт вывода отчёта не масштабируется](backlog/wi-19-vdd-multi-report-routing-does-not-scale.md) — opened 2026-07-29, effort S: inline-отчёт по умолчанию нечитаем на реальном объёме находок; **изменение поведения общего фреймворка — на рассмотрение владельцу**, не готовая правка
