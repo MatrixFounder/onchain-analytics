@@ -483,6 +483,10 @@ Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built d
   it is NOT ambiguous (one call resolves exactly one of the two, R-170a), so it is redundant with
   the top-level `series`/output `Capability:` pairing rather than informative, and omitting it is a
   choice, not an oversight this bullet leaves unstated.
+- _Narrowed by T-013 013-3 (2026-08-06)._ "which adapter, which status" per contributor, above, is
+  the pre-013-3 reading; `perSourceCache` (and this bullet's own `perSource[]`, built directly from
+  it) instead covers every participant that ANSWERED, R-174(c) — full argument in
+  `docs/architectures/open-questions.md` "T-013 task 013-3".
 - `capability` on this tool's `ToolSpec` stays `string | null`, UNCHANGED — set to `null`, same value
   `ping`/`list-chains` already use, but a DIFFERENT fact (system-architecture.md, "Decision:
   `capability` is UNCHANGED"). A new, additive field, `servedCapabilities: ['privacy.shielded_pool.history',

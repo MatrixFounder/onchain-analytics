@@ -61,6 +61,32 @@ export interface ResolveSuccess {
    * Absent whenever the registry omitted it (a pure cache hit entered nobody).
    */
   attempted?: string[];
+  /**
+   * `CapabilityResolution.sources`/`missingSources`/`perSourceCache` forwarded verbatim (T-013,
+   * task 013-3, R-174/R-175) — present only when the registry set them, which today (013-3) is
+   * NEVER: the merge walk that actually populates them ships in 013-4 (`sources`/`perSourceCache`)
+   * and 013-5 (`missingSources`). Declared now, ahead of its producer, the same sequencing
+   * `attempted` above and `timing`/`TimingMeta` both already followed on this interface.
+   *
+   * **Strictly additive (R-175b).** None of the 11 existing tools on `resolveCapability()` can ever
+   * see these fields: their capabilities (`token.price`, `wallet.balances.native`, `pairs.new`,
+   * `protocol.tvl`, `chain.tvl`, `chain.supply`, `dex.volume.history`, `token.holders`,
+   * `entity.labels`, `smart-money.flows`, `token.risk`) are disjoint from the two capabilities
+   * `capability-manifest.ts` declares `mergeable: true` (`privacy.shielded_pool.history`,
+   * `platform.metrics.history`, task 013-1) — so their routes cannot carry `merge: true` without a
+   * capability reassignment outside this task's scope. `metaFrom()` does not read any of the three:
+   * they are NOT part of `_meta.cache`, the same way `attempted` is read only by `budgetMeta()` and
+   * never becomes an `_meta` key of its own.
+   */
+  sources?: string[];
+  /** See {@link ResolveSuccess.sources} — same forwarding rule, same producer (013-5). Positive-only
+   * (R-174b): absent when the registry omitted it, never an empty array. */
+  missingSources?: { adapterId: string; reason: string }[];
+  /** See {@link ResolveSuccess.sources} — same forwarding rule, same producer (013-4). Covers every
+   * ANSWERED participant of a merge walk, not only contributors (R-174(c)) — the deviation from an
+   * earlier, narrower architecture reading is recorded in `docs/architectures/open-questions.md`
+   * ("T-013 task 013-3"). */
+  perSourceCache?: { adapterId: string; cache: 'hit' | 'miss'; ageMs?: number }[];
 }
 
 /** Failure outcome — `reason` is always `error.message` from whatever `registry.resolve()` threw
@@ -111,6 +137,18 @@ export async function resolveCapability(
       ...(resolution.attempted !== undefined ? { attempted: resolution.attempted } : {}),
       ...(resolution.deadlineOverrunMs !== undefined
         ? { timing: { overrunMs: resolution.deadlineOverrunMs } }
+        : {}),
+      // T-013, task 013-3 (R-174/R-175) — same conditional-spread idiom as `attempted`/`timing`
+      // above: `exactOptionalPropertyTypes` is NOT enabled (tsconfig.base.json), so an unconditional
+      // `sources: resolution.sources` would compile and pass a naive `toBeUndefined()` check even
+      // while publishing `{sources: undefined}` on every non-merge call. The conditional spread is
+      // what makes the key genuinely ABSENT, not merely undefined-valued.
+      ...(resolution.sources !== undefined ? { sources: resolution.sources } : {}),
+      ...(resolution.missingSources !== undefined
+        ? { missingSources: resolution.missingSources }
+        : {}),
+      ...(resolution.perSourceCache !== undefined
+        ? { perSourceCache: resolution.perSourceCache }
         : {}),
     };
   } catch (error) {

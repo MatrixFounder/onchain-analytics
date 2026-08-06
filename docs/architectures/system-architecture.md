@@ -921,7 +921,9 @@ left as two behaviourally-coincident readings.
 implicit (M-6).** On a policy-bearing merge route where every participant answers and NONE
 satisfies (hypothetical for T-013's shipped scope — both real routes carry no `policy`), the
 non-merge path falls back to the first truthful-but-unsatisfying answer (`unsatisfying`,
-`registry.ts:692`, returned at `:988`). **The merge path does NOT reuse that fallback.** Falling
+`registry.ts:744`, `let unsatisfying: CapabilityResolution | undefined;`, returned at `:1040`,
+`if (unsatisfying && !hadFailure) return withDiagnostics(unsatisfying);`). **The merge path does NOT
+reuse that fallback.** Falling
 back to one participant's raw, un-merged answer would silently un-merge the very response the
 caller asked for — an arbitrary pick among equally-unsatisfying sources, dressed as a merged result.
 Branch (a) applies instead: every participant answered, `sources` is empty (nobody contributed), and
@@ -951,6 +953,17 @@ applies the R-164/AC-48 outcome contract ONCE, after the walk (reliability.md §
 four-branch contract and the deadline precondition, including the THIRD deadline door — the caller's
 own already-expired `requestedDeadlineAtMs`, `:615-617` — not restated here to avoid the two copies
 drifting).
+
+_Narrowed by T-013 013-3 (2026-08-06) — a FOURTH sentence, found by roast round 1 (B-4), carrying
+the same narrower reading as the three already marked below._ "or into neither (answered but
+policy-excluded, tracked only in `tried`)" couples `perSourceCache` to the SAME `satisfied`
+condition as `sources`/the dedup `Map` — a policy-excluded participant DID answer, so under
+R-174(c) (the cache fact is about the answer, not the contribution, and not about whether the
+route's policy accepted it) it still gets a `perSourceCache` entry; only its absence from
+`sources`/`missingSources` is correct. `docs/tasks/task-013-4-merge-walk.md`'s own TC-INT-11 and
+"Политика за участника" section are corrected to state this explicitly, so 013-4's implementer is
+not left to infer it from this paragraph. Full argument: `docs/architectures/open-questions.md`
+"T-013 task 013-3".
 
 _Line references in this and the preceding two paragraphs corrected review round 3, LOW-4 —
 `+87` lines landed above `resolve()` in this task's own diff (the new `MergeEligibilityNotDeclaredError`
@@ -985,6 +998,16 @@ the registry sets them — strictly additive, so its 11 existing callers recompi
 reads the new fields — including as its OWN `_meta.cache` (M-5: the reader `perSourceCache`/`sources`
 were missing) — rather than re-implementing `CapabilityUnavailableError`/`CapabilityDeadlineExceededError` handling
 from scratch.
+
+_Narrowed by T-013 013-3 (2026-08-06)._ The two sentences above — "`perSourceCache` carries one
+entry per member of `sources`, same set, so it is never populated for a non-contributor either"
+(`:980-981`) and "the granular per-contributor truth" (`:990`) — read `perSourceCache` as
+CONTRIBUTORS-only. The shipped field instead covers every participant that ANSWERED, R-174(c): the
+cache fact is about the answer, not the contribution, and a participant that answered empty from
+cache without contributing must not vanish from `_meta.cache` entirely. Full argument and the
+composition on which the narrower reading loses the fact: `docs/architectures/open-questions.md`
+"T-013 task 013-3". (A fourth sentence carrying the same narrower reading, in the earlier
+procedural paragraph above, is marked separately at `:947-949` — roast round 1, B-4.)
 
 **`ttlFor()` is a READER, its own contract UNCHANGED (R-138). LANDED (T-012, task 012-5).**
 `cache/ttl.ts` still exports `ttlFor(capability): number` at the same path (`export { ttlFor } from
@@ -1202,7 +1225,8 @@ this call's binding constraint.
 "never a partial-as-fact" rule.** `DeadlineExceededError` (net layer) is never rethrown to the
 caller AS ITSELF. `CapabilityRegistry.resolve()`'s existing per-adapter `try/catch` — the SAME one
 that already special-cases `CapabilityNotCoveredOnChainError` for immediate rethrow
-(`registry.ts:384`) — instead catches it, sets a NEW `deadlineHit = true` flag alongside the
+(`registry.ts:968`, `if (error instanceof DeadlineExceededError) deadlineHit = true;`) — instead
+catches it, sets a NEW `deadlineHit = true` flag alongside the
 existing `hadFailure`, and records the same informative `tried[]` entry any other fetch failure
 gets. **`DeadlineWouldExceedError` (H-A above) is caught by this SAME per-adapter branch but does
 NOT set `deadlineHit`** — it is recorded in `tried[]` exactly like any other single-adapter failure

@@ -144,7 +144,8 @@
   `DeadlineExceededError`, `:829`) — and `deadlineHit` is set either way, so NONE of branches (a)-(d)
   apply: the whole call ends in `CapabilityDeadlineExceededError`, regardless of how many
   participants had already answered. The THIRD site is not a per-participant door at all: a caller
-  whose OWN `requestedDeadlineAtMs` has already passed at entry (`registry.ts:528-530`) throws the
+  whose OWN `requestedDeadlineAtMs` has already passed at entry (`registry.ts:580`, docstring
+  "immediate `CapabilityDeadlineExceededError` with an empty `tried`") throws the
   same class immediately, with `tried: []`, before the walk — and before any merge/non-merge branch
   — even begins; a merge-enabled route reaches this exactly like any other. A
   saturated rate-limiter bucket (`DeadlineWouldExceedError`) is different and deliberately does NOT

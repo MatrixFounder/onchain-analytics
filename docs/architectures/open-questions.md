@@ -221,6 +221,93 @@ exists precisely because the choice still had to be made and stated, not left as
 behaviourally-coincident readings that could silently diverge the day a merge route gets a real
 policy.
 
+### T-013 task 013-3 (2026-08-06, Development) — `perSourceCache` covers every ANSWERED participant, not only contributors
+
+**A deviation from four sentences of the delivered architecture text, recorded as a decision — not
+a document alignment.** `system-architecture.md:980-981` ("`perSourceCache` carries one entry per
+member of `sources`, same set, so it is never populated for a non-contributor either"), `:990`
+("the granular per-contributor truth"), `interfaces.md:474-481` (the 14th tool's own `_meta.cache`
+bullet, "which adapter, which status" per contributor) and `system-architecture.md:947-949` ("or
+into neither (answered but policy-excluded, tracked only in `tried`)", coupling `perSourceCache` to
+the same `satisfied` condition as `sources`/the dedup `Map` — found by roast round 1, B-4, not in
+the first draft of this entry) all state the same narrower rule: `perSourceCache` mirrors `sources`
+1:1, i.e. contributors only. **Search scope, stated because a count without one is indistinguishable
+from a complete one (roast round 1's own lesson, B-4):** every `perSource`/`perSourceCache`
+occurrence in `system-architecture.md`, `interfaces.md`, `data-model.md` and `version-history.md`
+(`rg -n "perSource" docs/architectures/*.md`), each read in context for a membership claim.
+`data-model.md:242-264` does **not** carry this rule — it names `perSourceCache`'s shape
+(`{adapterId, cache, ageMs?}[]`) but never its membership. `version-history.md:36-38` states only
+that the three fields are "populated ONLY on a merge walk", without saying WHO specifically
+populates `perSourceCache` — neutral. `system-architecture.md:648` (the code-block listing) defers
+to "Merge mechanism below" rather than asserting a rule itself — neutral.
+
+**The full tally, added in roast round 2 so "read and found neutral" is distinguishable from "not
+reached":** at the commit this entry was written against, the scope held **13** occurrences —
+`data-model.md` 1, `version-history.md` 1, `system-architecture.md` 7, `interfaces.md` 4. Four are
+the narrow sentences marked in place; three are the neutral ones named above; the remaining **six**
+were read and carry no membership claim either — `system-architecture.md` ×3 (the `'hit'`-aggregate
+rule, which constrains the VALUE not the membership; the `ResolveSuccess` extension sentence; the
+14th-tool reader sentence) and `interfaces.md` ×3 (the `ResolveSuccess`-fields bullet, the
+`_meta.cache` shape literal, and the "built directly from" clause). 4 + 3 + 6 = 13, none unread.
+Note the count moves as this very entry grows: measured again in round 2 against the working tree it
+is 31, the difference being this record's own 13 mentions and the five in-place marks. Same scope,
+different tree — which is why the tree, not just the scope, is named here. None of the four is edited
+beyond its own in-place mark; `data-model.md` is left unedited entirely.
+
+**Why the wider reading.** R-174(c) (translated from the Russian original, `docs/TASK.md:524-526`):
+"`resolution.cache` — a merged answer does not collapse to one `'hit'`/`'miss'`: if one participant
+is from cache and another is from network, both facts are reflected — the concrete shape is
+Architecture's call, the requirement fixes ONLY that the fact is not lost." A cache status is a
+fact about the ANSWER, not about the CONTRIBUTION — and `sources`
+already, correctly, excludes a participant that answered with zero points (R-174(a)). Under the
+narrower, contributors-only reading, that same zero-point participant also vanishes from
+`perSourceCache`, and if a second participant contributed from the network, `_meta.cache` then
+reports exactly ONE participant with ONE `'miss'` — silently erasing that the first participant was
+ever asked, or that it answered from cache. That is exactly the fact R-174(c) requires never
+disappears.
+
+**The composition, named precisely.** UC-19 (`docs/TASK.md:681-688`) supplies the core fact this
+argument turns on — `platform-explorer` answering an **empty array**, which is a legitimate
+"answered" outcome, not a failure — but literal UC-19 has `pg-history` entirely UNAVAILABLE (no
+`ONCHAIN_PG_URL`) and THROWS `CapabilityUnavailableError` (R-164(c)), so it never reaches a
+`_meta.cache`-bearing success at all. The composition that actually exercises `perSourceCache`'s
+membership rule is UC-19's own participants under a wider precondition: `ONCHAIN_PG_URL`
+**configured**, `platform-explorer` still answers `[]` (served from ITS OWN cache — a `'hit'`),
+and `pg-history` additionally answers with real points (a `'miss'`, fresh from the network) — the
+same "one empty, one non-empty" shape `system-architecture.md:976` ("composition TASK §1.5 names as
+ordinary") already uses for `sources`'s own CONTRIBUTORS rule, with a cache-status axis added. On
+that composition: `sources: ['pg-history']` (correct, unaffected by this decision) while the
+narrower `perSourceCache` reading would report only `[{adapterId: 'pg-history', cache: 'miss'}]` —
+one entry — losing that `platform-explorer` was asked and answered from cache at all. The wider
+reading ships
+`[{adapterId: 'platform-explorer', cache: 'hit', ...}, {adapterId: 'pg-history', cache: 'miss'}]`.
+
+**Marked in place, not only recorded here.** All four named sentences carry a one-line, in-place
+mark next to the literal original text: the two at `:980-981`/`:990` share ONE paragraph
+immediately after the "`CapabilityResolution` shape" block they sit in; `:947-949` (found later,
+roast round 1, B-4) gets its OWN separate paragraph immediately after the earlier procedural block
+IT sits in — a different location in the same file, not the same mark; `interfaces.md` gets a new
+bullet immediately after `:474-481` — the same technique PLAN §9.3 applies to the two D5 fragments
+(footnote beside literal text, nothing deleted or rewritten).
+
+**Precedent check against T-012 (the "counterexample to `data-model.md` §M-6's ARGUMENT" entry
+under `### T-012 (2026-08-04, Development)` — **below** this entry, not above, and note the date
+qualifier is load-bearing: there are two `### T-012` headings in this file. Line number deliberately
+not pinned here after
+this same entry's OWN citation to it went stale twice in one editing session, roast round 1, C-1;
+quote it to find it), and why it covers less than it looks like.** That earlier entry refuted an
+ARGUMENT for a design decision while stating explicitly that the DECISION and the DELIVERED shape
+both stood, and no architecture amendment was required. This case is not that: once the merge walk
+(013-4) populates `perSourceCache`, `system-architecture.md:980-981` becomes literally false about
+the shipped tree, not merely under-argued — which is why the text is marked in place rather than
+left to this registry entry alone.
+
+**Scope.** Confined to `perSourceCache`'s membership rule. `sources` — CONTRIBUTORS, not
+"answered" (`system-architecture.md:973-979`, opens "`CapabilityResolution` shape... corrected
+after review: `sources` is CONTRIBUTORS") — is unaffected; so are `source`'s two-tier fallback
+rule, `cache`'s two-literal type (R-175b forbids widening it), and the 11 existing tools'
+`_meta.cache` (R-175).
+
 ### OQ-T012-6 — a walk where nobody failed returns its answer past the ceiling. RESOLVED 2026-08-05.
 
 **Status: RESOLVED by the owner, 2026-08-05 — Reading A, with two conditions.** The record is kept

@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CacheGetResult, CacheStore } from '../src/adapters/cache-store.js';
 import { PassthroughCacheStore } from '../src/adapters/cache-store.js';
-import { CapabilityRegistry, CapabilityUnavailableError } from '../src/adapters/registry.js';
+import {
+  CapabilityRegistry,
+  CapabilityUnavailableError,
+  type CapabilityResolution,
+} from '../src/adapters/registry.js';
 import type { CapabilityRoute, ProviderAdapter } from '../src/adapters/types.js';
 import { deriveArgsHash } from '../src/net/args-hash.js';
 import type { Chain } from '../src/types/chain.js';
@@ -553,5 +557,54 @@ describe('CapabilityRegistry — negative caching (L-1)', () => {
 
     expect(second).toMatchObject({ result: { priceUsd: 7 }, cache: 'hit' });
     expect(adapter.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * TC-UNIT-04 (T-013, task 013-3, R-174d) — a compile-time proof that `sources`/`missingSources`/
+ * `perSourceCache` are OPTIONAL: an object shaped like a pre-013-3 `CapabilityResolution`, carrying
+ * none of the three, still satisfies the type. No `@ts-expect-error` here on purpose — this is the
+ * POSITIVE control (mirrors `capability-manifest.test.ts`'s TC-UNIT-10): if any of the three lost
+ * its `?`, this literal would fail `tsc --noEmit`, the gate this test exists to fail under, not a
+ * `vitest` assertion. The runtime assertions below are the same construction 013-3's mcp-server
+ * TC-UNIT-02 uses to prove genuine ABSENCE rather than an undefined-valued key.
+ */
+describe('CapabilityResolution — TC-UNIT-04 (T-013, task 013-3, type-test)', () => {
+  it('assigns without sources/missingSources/perSourceCache — the three new fields are optional', () => {
+    const resolution: CapabilityResolution = {
+      result: { priceUsd: 7 },
+      source: 'coingecko',
+      cache: 'miss',
+    };
+    expect(resolution.source).toBe('coingecko');
+    expect('sources' in resolution).toBe(false);
+    expect('missingSources' in resolution).toBe(false);
+    expect('perSourceCache' in resolution).toBe(false);
+  });
+
+  /**
+   * Roast round 1, B-3: R-175(b) forbids widening `cache`'s two-literal type, and nothing gated
+   * that until now. A runtime test comparing values against `['hit', 'miss']` cannot fail if the
+   * TYPE is widened — nothing constructs a third-literal value at runtime. Demonstrated exploit: a
+   * MATCHED widening of `perSourceCache[].cache` in both `registry.ts` (this file's own type) and
+   * `resolve-capability.ts` (mcp-server's independently-declared `ResolveSuccess`) passes
+   * `pnpm build`, `pnpm typecheck` and all 1564 tests, because `mcp-server` resolves
+   * `@onchain-intel/core` through `dist/index.d.ts` — the last BUILT declarations, not this file's
+   * source — so a single-file widening is the only shape the existing gates catch. This test and
+   * its sibling in `resolve-capability-merge.test.ts` close it independently: each targets its OWN
+   * file's OWN local type declaration, so EITHER widening alone breaks its OWN `tsc --noEmit`
+   * regardless of whether the other file (or `dist/`) was touched at all.
+   */
+  it('type-test (roast round 1, B-3): CapabilityResolution.perSourceCache[].cache rejects a third literal', () => {
+    const resolution: CapabilityResolution = {
+      result: [],
+      source: 'x',
+      cache: 'miss',
+      perSourceCache: [
+        // @ts-expect-error roast round 1, B-3: 'stale' is not a member of 'hit' | 'miss' (R-175b).
+        { adapterId: 'x', cache: 'stale' },
+      ],
+    };
+    expect(resolution.perSourceCache?.[0]?.adapterId).toBe('x');
   });
 });

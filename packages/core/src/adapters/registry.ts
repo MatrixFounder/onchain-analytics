@@ -300,6 +300,58 @@ export interface CapabilityResolution {
    * not against `manifest.deadlineMs`, which ignores a caller's own narrowing (R-144).
    */
   deadlineOverrunMs?: number;
+  /**
+   * Contributors on a MERGE-ENABLED walk (T-013, task 013-3, R-174(a)) — participant ids whose
+   * points are actually present in `result`, NOT every participant who merely answered. The
+   * distinction is the field's whole reason to exist: on the ordinary composition where
+   * `platform-explorer` answers `[]` and `pg-history` returns 40 points, an "answered" reading
+   * would include a participant that contributed none of `result`'s own data.
+   *
+   * **Declared here (013-3); populated by the merge walk (013-4) — this task never sets it.** The
+   * 18 non-merge capabilities never carry this field, on a cache hit or a fresh answer alike, and
+   * their `resolve()` return shape is byte-identical to before this task (R-174d).
+   *
+   * Omitted when empty, the same idiom `attempted`/`deadlineOverrunMs` above already follow: this
+   * happens when every participant of a merge walk answered with zero points, so `result` is an
+   * empty array and nobody contributed to it.
+   */
+  sources?: string[];
+  /**
+   * Participants NOT reflected in `result` on a merge-enabled walk (R-174(b)), each with why —
+   * "not asked" (skipped before `fetch()`: chain-scoped skip, no adapter registered,
+   * `isAvailable()` false) or "asked, did not answer" (`fetch`/`normalize` threw). Positive-only,
+   * by the SAME idiom `deadlineOverrunMs` above already uses: absent when empty, never an empty
+   * array — a caller must not have to distinguish "nobody was missing" from "the field forgot to
+   * mention who".
+   *
+   * **Declared here (013-3); populated by the merge walk (013-5) — this task never sets it.**
+   * Present only on a merge-enabled walk; the 18 non-merge capabilities never carry it.
+   *
+   * **Independent of `sources`/`perSourceCache`, not coupled to either (roast round 1, B-2).** An
+   * earlier draft of this docstring said "present only alongside `sources`/`perSourceCache`", which
+   * over-claimed a coupling `resolveCapability()`'s passthrough never enforces — each of the three
+   * fields is forwarded on its OWN `!== undefined` check. R-164 branch (a) (every participant
+   * answered, none contributed) is the concrete case where the over-claim would have been read as a
+   * guarantee: `sources` is correctly omitted, while `missingSources` and `perSourceCache` may each,
+   * independently, be present or absent depending on what the walk actually observed.
+   */
+  missingSources?: { adapterId: string; reason: string }[];
+  /**
+   * One entry per participant that ANSWERED on a merge-enabled walk — deliberately NOT filtered to
+   * `sources` (contributors only). A participant that answers with an empty array, from cache or
+   * fresh, contributes no point and is therefore correctly absent from `sources` — but its cache
+   * status is a fact about the ANSWER, not about the contribution (R-174(c)): a narrower,
+   * contributors-only reading would drop that participant from `perSourceCache` too, and a walk
+   * where one participant served from cache and another from the network would report only the
+   * second, losing the very fact R-174(c) exists to keep. Full argument, and the composition on
+   * which the narrower reading loses the fact, recorded in `docs/architectures/open-questions.md`
+   * ("T-013 task 013-3") — this is a deliberate departure from an earlier, narrower architecture
+   * reading, not an oversight.
+   *
+   * **Declared here (013-3); populated by the merge walk (013-4) — this task never sets it.**
+   * Present only on a merge-enabled walk; the 18 non-merge capabilities never carry it.
+   */
+  perSourceCache?: { adapterId: string; cache: 'hit' | 'miss'; ageMs?: number }[];
 }
 
 /**
