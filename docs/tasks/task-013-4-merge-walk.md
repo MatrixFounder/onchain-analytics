@@ -29,16 +29,38 @@
 
 После построения `plan` проверяется, несёт ли хотя бы один совпавший маршрут `merge: true`. Да —
 исполняется цикл слияния; нет — существующий цикл, байт в байт. Предшествующий порядок не меняется:
-GATE 2 (`:669-682`) → единый `effectiveDeadlineAtMs` (`:497-531`) → `plan` (`:551-563`).
+единый `effectiveDeadlineAtMs` → `plan` → GATE 2.
+
+> **Координаты переизмерены 2026-08-06 (после коммитов `deb6502` и `ba3f959`).** Все двенадцать
+> ссылок этого раздела в первой редакции указывали на дерево ДО `013-2` (+87) и `013-3` (+52) и
+> после сдвига попадали внутрь докстрингов, а не в названный код. Ниже — номер И якорь-цитата;
+> **ищи по цитате, номер вторичен** (WI-43).
+
+| Что                        | Строка | Якорь                                                                                         |
+| -------------------------- | ------ | --------------------------------------------------------------------------------------------- |
+| единый дедлайн             | `:670` | `const effectiveDeadlineAtMs = Math.min(nowMs + manifest.deadlineMs, requested ?? Infinity);` |
+| построение `plan`          | `:690` | `const plan: { adapterId: string; policy?: PolicyPredicate }[] = [];`                         |
+| GATE 2 (покрытие)          | `:798` | `// GATE 2 — coverage (TASK-006 R-51d).`                                                      |
+| **начало цикла по `plan`** | `:825` | `for (const { adapterId, policy } of plan) {`                                                 |
 
 ### Что цикл слияния переиспользует БЕЗ правок
 
-Пре-чек дедлайна (`:716-724`), проверка регистрации адаптера (`:726-737`), пропуск по `chainSupport`
-(`:743-745`), `isAvailable()` (`:747-752`), чтение кеша вместе с отрицательной записью (`:756-788`,
-`:790-793`), триада `fetch`/`normalize`/`cache.set` (`:795-857`, `:859-882`).
+| Шаг                        | Строка | Якорь                                                                                      |
+| -------------------------- | ------ | ------------------------------------------------------------------------------------------ |
+| пре-чек дедлайна           | `:855` | `if (Date.now() >= effectiveDeadlineAtMs) {`                                               |
+| адаптер не зарегистрирован | `:875` | `tried.push({ adapterId, reason: 'no adapter registered for this id' });`                  |
+| пропуск по `chainSupport`  | `:882` | `if (chainInfo && adapter.chainSupport && !adapter.chainSupport(chainInfo, capability)) {` |
+| `isAvailable()`            | `:889` | `tried.push({ adapterId, reason: availability.reason });`                                  |
+| чтение кеша                | `:897` | `cached = await this.cache.get(adapter.id, capability, argsHash);`                         |
+| запись в `attempted`       | `:936` | `attempted.push(adapterId);`                                                               |
+| `fetch`                    | `:944` | `raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs);`                      |
+| `normalize`                | `:979` | `const result = adapter.normalize(capability, raw);`                                       |
+| `cache.set`                | `:985` | `await this.cache.set(adapter.id, capability, argsHash, result);`                          |
 
-Отличие ровно одно: ранние `return withDiagnostics(...)` на `:789` и `:858` заменяются шагом
-«накопить и продолжить». Цикл слияния не возвращает результат в середине обхода.
+Отличие ровно одно: два ранних `return withDiagnostics(...)` — `:928`
+(`if (satisfies(policy, cached.value, adapterId)) return withDiagnostics(hit);`, путь кеша) и `:997`
+(`if (satisfies(policy, result, adapterId)) return withDiagnostics(answer);`, свежий путь) —
+заменяются шагом «накопить и продолжить». Цикл слияния не возвращает результат в середине обхода.
 
 ### Дедуп и разрешение конфликта
 
@@ -65,7 +87,7 @@ GATE 2 (`:669-682`) → единый `effectiveDeadlineAtMs` (`:497-531`) → `p
 участника. Удовлетворивший становится вкладчиком; неудовлетворивший записывается в `tried`, не
 входит в `sources`, не считается отказом и не попадает в `missingSources` — **но входит в
 `perSourceCache`.** Найдено роастом раунда 1 (B-4) как четвёртое предложение с узким чтением:
-`system-architecture.md:947-949` описывает обход процедурно и связывает `perSourceCache` с ТЕМ ЖЕ
+`system-architecture.md:949-951` описывает обход процедурно и связывает `perSourceCache` с ТЕМ ЖЕ
 условием `satisfied`, что и `sources`/`Map` — «или ни в одно из двух (ответил, но
 policy-excluded)». Это узкое чтение, отмеченное на месте по той же схеме, что и остальные три
 предложения `013-3` (см. `open-questions.md` "T-013 task 013-3" — свод всех четырёх). Правило
@@ -127,7 +149,7 @@ policy-excluded)». Это узкое чтение, отмеченное на м
   `perSourceCache` несёт обе записи, `sources` — только вторую, агрегат `cache` — `'miss'`.
 - **TC-INT-11** — политика маршрута не удовлетворена одним участником: он в `tried`, не в `sources`,
   не в `missingSources`, но **несёт запись в `perSourceCache`** со статусом кеша своего собственного
-  обращения (013-3, R-174(c); роаст раунда 1, B-4 — `system-architecture.md:947-949`). Fails when
+  обращения (013-3, R-174(c); роаст раунда 1, B-4 — `system-architecture.md:949-951`). Fails when
   запись в `perSourceCache` строится из `sources`/`Map` (тот же policy-excluded участник, что и
   `tried`, пропущен); результат — слитый успех из второго.
 - **TC-INT-12** — политика не удовлетворена никем: пустой слитый успех, запасной ответ

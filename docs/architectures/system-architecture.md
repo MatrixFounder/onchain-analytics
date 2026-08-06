@@ -1001,13 +1001,13 @@ from scratch.
 
 _Narrowed by T-013 013-3 (2026-08-06)._ The two sentences above — "`perSourceCache` carries one
 entry per member of `sources`, same set, so it is never populated for a non-contributor either"
-(`:980-981`) and "the granular per-contributor truth" (`:990`) — read `perSourceCache` as
+(`:982-983`) and "the granular per-contributor truth" (`:992`) — read `perSourceCache` as
 CONTRIBUTORS-only. The shipped field instead covers every participant that ANSWERED, R-174(c): the
 cache fact is about the answer, not the contribution, and a participant that answered empty from
 cache without contributing must not vanish from `_meta.cache` entirely. Full argument and the
 composition on which the narrower reading loses the fact: `docs/architectures/open-questions.md`
 "T-013 task 013-3". (A fourth sentence carrying the same narrower reading, in the earlier
-procedural paragraph above, is marked separately at `:947-949` — roast round 1, B-4.)
+procedural paragraph above, is marked separately at `:949-951` — roast round 1, B-4.)
 
 **`ttlFor()` is a READER, its own contract UNCHANGED (R-138). LANDED (T-012, task 012-5).**
 `cache/ttl.ts` still exports `ttlFor(capability): number` at the same path (`export { ttlFor } from

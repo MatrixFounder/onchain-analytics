@@ -224,10 +224,10 @@ policy.
 ### T-013 task 013-3 (2026-08-06, Development) — `perSourceCache` covers every ANSWERED participant, not only contributors
 
 **A deviation from four sentences of the delivered architecture text, recorded as a decision — not
-a document alignment.** `system-architecture.md:980-981` ("`perSourceCache` carries one entry per
-member of `sources`, same set, so it is never populated for a non-contributor either"), `:990`
+a document alignment.** `system-architecture.md:982-983` ("`perSourceCache` carries one entry per
+member of `sources`, same set, so it is never populated for a non-contributor either"), `:992`
 ("the granular per-contributor truth"), `interfaces.md:474-481` (the 14th tool's own `_meta.cache`
-bullet, "which adapter, which status" per contributor) and `system-architecture.md:947-949` ("or
+bullet, "which adapter, which status" per contributor) and `system-architecture.md:949-951` ("or
 into neither (answered but policy-excluded, tracked only in `tried`)", coupling `perSourceCache` to
 the same `satisfied` condition as `sources`/the dedup `Map` — found by roast round 1, B-4, not in
 the first draft of this entry) all state the same narrower rule: `perSourceCache` mirrors `sources`
@@ -283,8 +283,8 @@ reading ships
 `[{adapterId: 'platform-explorer', cache: 'hit', ...}, {adapterId: 'pg-history', cache: 'miss'}]`.
 
 **Marked in place, not only recorded here.** All four named sentences carry a one-line, in-place
-mark next to the literal original text: the two at `:980-981`/`:990` share ONE paragraph
-immediately after the "`CapabilityResolution` shape" block they sit in; `:947-949` (found later,
+mark next to the literal original text: the two at `:982-983`/`:992` share ONE paragraph
+immediately after the "`CapabilityResolution` shape" block they sit in; `:949-951` (found later,
 roast round 1, B-4) gets its OWN separate paragraph immediately after the earlier procedural block
 IT sits in — a different location in the same file, not the same mark; `interfaces.md` gets a new
 bullet immediately after `:474-481` — the same technique PLAN §9.3 applies to the two D5 fragments
@@ -298,7 +298,7 @@ this same entry's OWN citation to it went stale twice in one editing session, ro
 quote it to find it), and why it covers less than it looks like.** That earlier entry refuted an
 ARGUMENT for a design decision while stating explicitly that the DECISION and the DELIVERED shape
 both stood, and no architecture amendment was required. This case is not that: once the merge walk
-(013-4) populates `perSourceCache`, `system-architecture.md:980-981` becomes literally false about
+(013-4) populates `perSourceCache`, `system-architecture.md:982-983` becomes literally false about
 the shipped tree, not merely under-argued — which is why the text is marked in place rather than
 left to this registry entry alone.
 

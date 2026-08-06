@@ -33,10 +33,10 @@
   записи на каждого **ответившего** участника, а не только на вкладчика.
 
 **Отклонение от архитектурных строк, записанное как решение.** Узкое чтение несут ЧЕТЫРЕ
-предложения: `system-architecture.md:980-981` («one entry per member of `sources`, same set, so it
-is never populated for a non-contributor either»), `:990` («the granular per-contributor truth»),
+предложения: `system-architecture.md:982-983` («one entry per member of `sources`, same set, so it
+is never populated for a non-contributor either»), `:992` («the granular per-contributor truth»),
 `interfaces.md:474-481` (собственный `_meta.cache` тула — буллет «which adapter, which status» per
-contributor) и `system-architecture.md:947-949` («or into neither (answered but policy-excluded,
+contributor) и `system-architecture.md:949-951` («or into neither (answered but policy-excluded,
 tracked only in `tried`)», связывающее `perSourceCache` с тем же условием `satisfied`, что и
 `sources`/дедуп-`Map`; найдено роастом раунда 1, B-4, а не в первой редакции). **Свод — не
 предположение**: `rg -n "perSource" docs/architectures/*.md`, каждое вхождение прочитано на предмет
@@ -58,14 +58,16 @@ tracked only in `tried`)», связывающее `perSourceCache` с тем ж
 — координата этой самой ссылки в этом самом файле уже дважды устарела за один раунд правок, роаст
 раунда 1, C-1: `:385-395`→`:441-451`→ и снова мимо; искать по цитате) опроверг ДОВОД и прямо сказал,
 что поправка к архитектуре не требуется. Здесь меняется поставляемая форма, и после `013-4`
-`system-architecture.md:980-981` (координата сдвигалась дважды: `:957-958`→`:969-970` при коррекции
-013-2, затем `:969-970`→`:980-981` вставкой записи `open-questions.md` этой же задачи; роаст раунда
-1, C-2) становится ложным о дереве. Поэтому задача делает три вещи:
+`system-architecture.md:982-983` (координата сдвигалась ТРИЖДЫ за одни сутки: `:957-958`→`:969-970`
+при коррекции 013-2, затем `:969-970`→`:980-981` вставкой записи `open-questions.md` этой же задачи
+(роаст раунда 1, C-2), затем `:980-981`→`:982-983` правкой цитаты на `:924` того же файла при
+закрытии цикла 2 — **ищи по цитате, номер вторичен**) становится ложным о дереве. Поэтому задача
+делает три вещи:
 
-1. Четыре названных предложения (`system-architecture.md:980-981`, `:990`, `:947-949`,
+1. Четыре названных предложения (`system-architecture.md:982-983`, `:992`, `:949-951`,
    `interfaces.md:474-481`) получают однострочную пометку на месте: множество — ответившие, причина
    — R-174(c), задача T-013 `013-3`. Буквальный текст остаётся видимым рядом с пометкой — тот же
-   приём, что пункт 9.3 применяет к двум фрагментам D5. Четвёртое (`:947-949`) найдено роастом
+   приём, что пункт 9.3 применяет к двум фрагментам D5. Четвёртое (`:949-951`) найдено роастом
    раунда 1 (B-4), не в первой редакции — см. `open-questions.md` "T-013 task 013-3" для полного
    свода, откуда взят счёт «четыре».
 2. Запись в `docs/architectures/open-questions.md` называет отклонение, дату и композицию UC-19,
@@ -162,8 +164,8 @@ literal`** — отрицательный сосед TC-UNIT-04 в том же �
 - [ ] `source` остаётся required, `cache` остаётся двухлитеральным
 - [ ] `resolveCapability()` пробрасывает три поля дословно, когда реестр их выставил
 - [ ] `perSourceCache` покрывает ответивших участников
-- [ ] Четыре названных предложения (`system-architecture.md:980-981` «one entry per member of
-      `sources`», `:990` «the granular per-contributor truth», `:947-949` «or into neither
+- [ ] Четыре названных предложения (`system-architecture.md:982-983` «one entry per member of
+      `sources`», `:992` «the granular per-contributor truth», `:949-951` «or into neither
       (answered but policy-excluded...)» — найдено роастом раунда 1, B-4, `interfaces.md:474-481`
       буллет `_meta.cache`) несут пометку на месте; запись в `open-questions.md` сделана;
       `data-model.md` не правится — правила он не содержит
