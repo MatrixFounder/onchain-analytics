@@ -174,6 +174,49 @@ export class UnregisteredPolicyClassError extends Error {
 }
 
 /**
+ * Thrown by the `CapabilityRegistry` CONSTRUCTOR (validation step 3, task 013-2, R-183, UC-20) when
+ * a route activates merging (`route.merge === true`) for a capability whose manifest row — the SAME
+ * row validation step 1 already found — does not declare `mergeable: true`.
+ *
+ * **Two independent axes, one gate.** `CapabilityRoute.merge` (013-2, this task) TURNS ON merging
+ * per route; `capabilityManifests[capability].mergeable` (013-1) declares a capability's results
+ * ELIGIBLE to be merged in the first place. Neither implies the other in the type system — a route
+ * can activate merging for a capability nobody ever declared eligible, and this class is what
+ * refuses to build when that happens, exactly the failure UC-20 names: "activation молча включает
+ * слияние для способности, для которой оно никогда не было объявлено допустимым" (activation
+ * silently turns merging on for a capability it was never declared valid for).
+ *
+ * **Names BOTH the capability and the missing eligibility**, the same "one lookup" diagnostic
+ * discipline as `UnregisteredPolicyClassError` right above: a message naming only the capability
+ * sends the reader to `capability-manifest.ts` to guess which field is missing.
+ *
+ * **Construction, not `resolve()`**, for the same reason as every sibling validation error in this
+ * file: an inconsistency between a route's activation and its capability's eligibility is a
+ * configuration defect, and a lazy check would surface it on the first merged request — in
+ * production, possibly months after the deploy that introduced it.
+ *
+ * **A route broken by BOTH `policy.kind` (step 2) and `merge` (step 3) is reported by step 2's
+ * `UnregisteredPolicyClassError` first.** This is a deterministic tie-break, not a claim that one
+ * defect matters more: the constructor runs three SEPARATE sequential loops over `this.routes` (see
+ * the constructor's own overview comment), and step 2's loop throws on the offending route before
+ * step 3's loop ever starts — the identical mechanism that already orders step 1 ahead of step 2.
+ */
+export class MergeEligibilityNotDeclaredError extends Error {
+  readonly capability: string;
+
+  constructor(capability: string) {
+    super(
+      `route '${capability}' activates merge (route.merge === true), but its capability manifest ` +
+        `does not declare 'mergeable: true' on the matching set|series row — merge activation ` +
+        `requires manifest eligibility to be declared first, in src/capability-manifest.ts ` +
+        `(T-013, tasks 013-1/013-2, R-183)`,
+    );
+    this.name = 'MergeEligibilityNotDeclaredError';
+    this.capability = capability;
+  }
+}
+
+/**
  * Marker for a NEGATIVE cache entry (issue L-1): a record that this exact `(provider, capability,
  * argsHash)` produced a deterministic `normalize()` failure, so the next identical call can fail
  * the same way **without paying for the vendor response again**.
@@ -312,16 +355,22 @@ export class CapabilityRegistry {
     //   step 1 — every route's capability has a manifest row, and that row's `deadlineMs` is a
     //            usable number                                    (task 012-4; the number, cycle 2 F-8)
     //   step 2 — every route's policy names a known policy class  (task 012-6)
+    //   step 3 — every route with `merge: true` names a capability whose manifest row (the SAME row
+    //            step 1 already found) declares `mergeable: true`  (task 013-2, R-183, UC-20)
     //
     // A test for step 2 written against a route whose capability ALSO lacks a manifest would fail
     // at step 1 and prove nothing about policies; stating the order is what makes that avoidable
-    // rather than a coincidence of how the loops happen to be written.
+    // rather than a coincidence of how the loops happen to be written. The same reasoning fixes step
+    // 3 AFTER step 2: a route broken by both `policy.kind` and `merge` reports step 2's
+    // `UnregisteredPolicyClassError`, and that is a deterministic tie-break stated here rather than
+    // an accident of which `if` happens to be written first.
     //
-    // The two steps are two SEPARATE loops, not two conditions in one: with a single loop the order
-    // would hold per ROUTE (route #1's policy checked before route #2's manifest), and the ordering
-    // test above would pass or fail depending on which row the broken route occupies. Step 1's own
-    // two parts (presence, then the number) DO share a loop, and must: there is no row to validate
-    // until it is known to exist, so per-route ordering is the only ordering they can have.
+    // The three steps are three SEPARATE loops, not one loop with three conditions: with a single
+    // loop the order would hold per ROUTE (route #1's policy checked before route #2's manifest, or
+    // route #1's merge eligibility before route #2's policy), and the ordering tests above and below
+    // would pass or fail depending on which row the broken route occupies. Step 1's own two parts
+    // (presence, then the number) DO share a loop, and must: there is no row to validate until it is
+    // known to exist, so per-route ordering is the only ordering they can have.
     //
     // **`Object.hasOwn`, never `=== undefined` on the index (adversarial cycle 2, F-8).** Both
     // dictionaries are plain object literals, so `manifests['constructor']`, `['toString']`,
@@ -331,7 +380,8 @@ export class CapabilityRegistry {
     // false at the per-adapter pre-check AND at the terminal branch, so the deadline for that
     // capability is simply switched off; on the policy side `policyClasses['constructor']` resolves
     // to `Object`, `UnregisteredPolicyClassError` never fires, and the route's answer policy
-    // fail-opens to "everything satisfies" — H-1 disabled by a name.
+    // fail-opens to "everything satisfies" — H-1 disabled by a name. Step 3 (below) applies the same
+    // `Object.hasOwn` discipline to its own manifest re-lookup, for the identical reason.
     // ------------------------------------------------------------------------------------------
     for (const route of this.routes) {
       const manifest = Object.hasOwn(this.manifests, route.capability)
@@ -368,6 +418,43 @@ export class CapabilityRegistry {
       // descriptor per answer would buy nothing. It also means a class whose construction throws
       // takes down the build rather than a request.
       this.policies.set(route, build(route.policy));
+    }
+
+    // step 3 (task 013-2, R-183, UC-20) — merge ACTIVATION vs merge ELIGIBILITY. `route.merge` is
+    // the per-ROUTE switch 013-2 adds (`CapabilityRoute.merge`'s own docstring); `manifest.mergeable`
+    // is the per-CAPABILITY fact 013-1 already declared. The two are independent axes on purpose —
+    // this step refuses the one combination where a route turns merging ON for a capability nobody
+    // ever declared eligible for it.
+    //
+    // Its OWN loop, run AFTER step 2's completes — see the constructor's overview comment above for
+    // why: three SEQUENTIAL loops over `this.routes` are what make the step-2-reports-first
+    // tie-break deterministic rather than accidental.
+    //
+    for (const route of this.routes) {
+      if (route.merge !== true) continue; // absence/false: step 3 is inert on an unactivated route
+      // `Object.hasOwn` — see the F-8 note above: step 1 already guarantees this lookup finds a
+      // row for every route in `this.routes` (this loop cannot run until step 1's has completed
+      // without throwing), but the lookup is repeated rather than trusted with a `!` assertion.
+      const manifest = Object.hasOwn(this.manifests, route.capability)
+        ? this.manifests[route.capability]
+        : undefined;
+      // `manifest.shape !== 'point'` is checked EXPLICITLY, not left to the type-level `'mergeable'
+      // in manifest` narrowing alone. `mergeable` is not a field of the `point` branch at the TYPE
+      // level (`capability-manifest.ts`) — true for a literal built inside this file — but
+      // `manifests` is CONSTRUCTOR-INJECTED (the same F-8 threat model as the `Object.hasOwn`
+      // lookup two lines up: a cast, a JSON-shaped config, a hand-edited table), and `in` is a pure
+      // RUNTIME property check that cannot see what `shape` claims. Without this line, a malformed
+      // row carrying both `shape: 'point'` and a stray `mergeable: true` would read eligible. With
+      // it, TC-INT-01's claim — a `point` row can never read `true` here — holds unconditionally,
+      // not merely for a manifest the compiler happened to see as a literal.
+      const eligible =
+        manifest !== undefined &&
+        manifest.shape !== 'point' &&
+        'mergeable' in manifest &&
+        manifest.mergeable === true;
+      if (!eligible) {
+        throw new MergeEligibilityNotDeclaredError(route.capability);
+      }
     }
   }
 

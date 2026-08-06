@@ -92,6 +92,11 @@ export type {
 // and start happens in the other package. `AdapterRegistration` joins the surface for the same
 // reason (it is this function's parameter type).
 export { assertValidAdapterRegistrations } from './adapters/types.js';
+// task 013-2 (T-013, R-162/R-163) — same reasoning as its sibling directly above: the caller is
+// `mcp-server`'s process entry point, called immediately after `assertValidAdapterRegistrations`
+// and before any store or registry is constructed. `CapabilityRoute`/`AdapterRegistration` (this
+// function's parameters) are already on this surface.
+export { assertMergeParticipantsAreFree } from './adapters/types.js';
 
 export { routes, adapterRegistrations } from './providers.config.js';
 

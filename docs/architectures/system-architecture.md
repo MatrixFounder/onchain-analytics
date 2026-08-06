@@ -343,7 +343,7 @@ loss of cache efficiency, **not** of correctness (the answers are identical).
 **SHIPPED (T-012, commit `6af4b19`, 2026-08-05).** Everything from here through "Architectural
 obligation" at the end of this subsection describes the design **as it is in code**, not a target.
 `packages/core/src/adapters/types.ts` carries the post-T-012 shapes: a serialisable
-`policy?: PolicyDescriptor` in place of a literal `isSatisfying` (`types.ts:214-262`, class
+`policy?: PolicyDescriptor` in place of a literal `isSatisfying` (`types.ts:333-416`, class
 dictionary in `adapters/policy.ts`), mandatory `tier`/`trust` on every registration
 (`types.ts:93,106,137,148`), and the optional `deadlineAtMs` parameter on `fetch()` (`types.ts:52`).
 Two owner decisions dated 2026-08-03 (OD-3, OD-4) are folded in below, replacing an earlier draft
@@ -836,7 +836,12 @@ _Conflict rank (OQ-T013-3)._ OD-T013-2 (task file §1.4) already ruled out `.tru
 **Decision: reuse the route's existing `adapterIds` order** (equivalently, the same de-duplicated,
 per-route-pairing `plan` array `resolve()` already builds for policy pairing, §above) — the earlier
 adapter in walk order wins a dedup conflict. No new table, no new construction-time validation:
-R-163(b) applies constructively, because an empty `adapterIds` is already rejected upstream.
+R-163(b) applies constructively WITHOUT needing that rejection, and this tree has no such rejection
+(measured, task 013-2 review — `rg` over `packages/` for an empty-`adapterIds` check returns
+nothing). The argument does not need one: every PARTICIPANT is an element of `adapterIds`, so it
+has an index, so it has a rank, by construction. Zero participants is the case where that universal
+claim is vacuously true, not a case requiring a guard — `merge-activation.test.ts` pins this actual
+(permissive) behaviour rather than assuming a rejection that isn't there.
 
 The tension the TASK names directly: D9 rule 3 forbids conflating trust rank with the free-first
 spend order — "Ранг доверия и порядок адаптеров в маршруте — независимые оси. Сливать их нельзя."
@@ -869,7 +874,7 @@ PARTICIPANT OF A MERGING CAPABILITY to resolve, in the injected `AdapterRegistra
 'free'` — throwing, naming the capability and the first non-free participant, until T-016 replaces
 the reused-order placeholder with a real per-row trust rank.** 🔴 **Scoped to the CAPABILITY's
 flattened participant set, not to the literal `merge: true` route's own `adapterIds` (MN-1).** `plan`
-is the de-duplicated UNION of every matching route's `adapterIds` for a capability (`:551-563`), so
+is the de-duplicated UNION of every matching route's `adapterIds` for a capability (`:638-650`), so
 a paid adapter reachable only through a SIBLING, non-merge route of the same capability would enter
 the merged walk unchecked if the assertion read `route.adapterIds` literally. Unreachable today —
 neither merge capability has a sibling route — but scoping the check to "every id in the capability's
@@ -898,7 +903,7 @@ produced it.
 
 _Policy evaluation point (OQ-T013-4)._ **Decision: per-participant**, not per-merged-whole. Each
 participant's normalized answer (cache hit or fresh) is checked with the SAME `satisfies(policy,
-value, adapterId)` the non-merge path already applies at `:789`/`:858` (unchanged code, called from
+value, adapterId)` the non-merge path already applies at `:876`/`:945` (unchanged code, called from
 a new site for the merge branch) — satisfying means its points are eligible to enter the merged
 `Map` (i.e. the participant becomes a CONTRIBUTOR, see `CapabilityResolution` shape below); not
 satisfying means the participant is recorded in `tried` exactly as today ("answered, but not with
@@ -906,7 +911,7 @@ what was asked for"), contributes nothing, but is NOT `hadFailure` and is NOT in
 (R-164 counts it as "answered" — the policy question is orthogonal to R-164's three-state model).
 This is the reading R-182(d) requires as a regression (per-participant, unchanged for non-merge
 routes, `entity.labels`'s `someElementHasAny` untouched) and the one that keeps H-1's existing
-cache-hit application (`:789`) as the SAME code path a merge walk also uses, rather than a second,
+cache-hit application (`:876`) as the SAME code path a merge walk also uses, rather than a second,
 whole-array-shaped evaluation with its own semantics. Per R-182(b)/(c): both real T-013 routes carry
 no `policy` (`{kind:'any'}`, always satisfying), so the choice is unobservable in shipped scope — the
 equivalence test R-182(c) requires is exactly why the choice still had to be made and stated, not
@@ -916,7 +921,7 @@ left as two behaviourally-coincident readings.
 implicit (M-6).** On a policy-bearing merge route where every participant answers and NONE
 satisfies (hypothetical for T-013's shipped scope — both real routes carry no `policy`), the
 non-merge path falls back to the first truthful-but-unsatisfying answer (`unsatisfying`,
-`registry.ts:605`, returned at `:901`). **The merge path does NOT reuse that fallback.** Falling
+`registry.ts:692`, returned at `:988`). **The merge path does NOT reuse that fallback.** Falling
 back to one participant's raw, un-merged answer would silently un-merge the very response the
 caller asked for — an arbitrary pick among equally-unsatisfying sources, dressed as a merged result.
 Branch (a) applies instead: every participant answered, `sources` is empty (nobody contributed), and
@@ -924,17 +929,17 @@ the call returns an empty merged success — a genuine, if perhaps surprising, d
 single-source contract, recorded here so it is a decision and not a gap found in Development.
 
 _Where the merge walk executes, relative to `resolve()`'s existing structure._ Unchanged, in this
-order: GATE 2 (coverage, `:669-682`) → the one absolute `effectiveDeadlineAtMs` computed once
-(`:497-531`) → `plan` built by the existing route-pairing loop (`:551-563`). What changes is what
+order: GATE 2 (coverage, `:756-769`) → the one absolute `effectiveDeadlineAtMs` computed once
+(`:584-618`) → `plan` built by the existing route-pairing loop (`:638-650`). What changes is what
 happens FROM `plan` onward, gated on whether any matching route sets `merge: true`: the merge walk
-reuses, per participant and UNCHANGED, the deadline pre-check (`:716-724`), the not-registered check
-(`:726-737`), the chain-scoped skip (`:743-745` — silent in `tried[]` by existing design, but
+reuses, per participant and UNCHANGED, the deadline pre-check (`:803-811`), the not-registered check
+(`:813-824`), the chain-scoped skip (`:830-832` — silent in `tried[]` by existing design, but
 R-174(b) requires `missingSources` to SYNTHESIZE its own reason for this case rather than mirror an
 absent `tried[]` entry, so "silent" describes `tried[]` only, never the merge diagnostic),
-`isAvailable()` (`:747-752`), the cache-hit read INCLUDING the negative-entry check but EXCLUDING
-the early `return` (`:756-788`, `:790-793` — `:789`'s `return withDiagnostics(hit)` is exactly what
+`isAvailable()` (`:834-839`), the cache-hit read INCLUDING the negative-entry check but EXCLUDING
+the early `return` (`:843-875`, `:877-880` — `:876`'s `return withDiagnostics(hit)` is exactly what
 the merge loop replaces with an accumulate-and-continue step, never performs), and the
-fetch/normalize/cache.set triad, same exclusion (`:795-857`, `:859-882` — `:858` is the fresh-result
+fetch/normalize/cache.set triad, same exclusion (`:882-944`, `:946-969` — `:945` is the fresh-result
 mirror of the same early return). **Nothing about per-adapter caching is new code** (this is also
 how R-165's 🔴 invariant holds: nothing in the merge path ever calls `cache.set()` on anything but
 one adapter's own normalized result; the merged array is assembled in memory, in `resolve()`, and is
@@ -944,8 +949,15 @@ into the dedup `Map`/`sources`/`perSourceCache` (satisfied) or into `missingSour
 asked-did-not-answer) or into neither (answered but policy-excluded, tracked only in `tried`) — then
 applies the R-164/AC-48 outcome contract ONCE, after the walk (reliability.md §9.1 carries the full
 four-branch contract and the deadline precondition, including the THIRD deadline door — the caller's
-own already-expired `requestedDeadlineAtMs`, `:528-530` — not restated here to avoid the two copies
+own already-expired `requestedDeadlineAtMs`, `:615-617` — not restated here to avoid the two copies
 drifting).
+
+_Line references in this and the preceding two paragraphs corrected review round 3, LOW-4 —
+`+87` lines landed above `resolve()` in this task's own diff (the new `MergeEligibilityNotDeclaredError`
+class plus the constructor's step 3), shifting every citation at or after old line 375 by that
+constant. All twenty numeric anchors from `877` through `952` were re-measured against the current
+file and corrected together; none of them pointed at unrelated, already-stale content, unlike six
+sibling citations found nearby (see the task's own review record for the full count)._
 
 _`CapabilityResolution` shape (R-174/R-175) — corrected after review: `sources` is CONTRIBUTORS,
 not "answered"._ `sources: string[]` names every participant whose points are actually present in

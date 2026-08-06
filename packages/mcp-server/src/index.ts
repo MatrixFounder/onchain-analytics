@@ -20,6 +20,7 @@ import {
   routes,
   adapterRegistrations,
   assertValidAdapterRegistrations,
+  assertMergeParticipantsAreFree,
   type BudgetStore,
   type ProviderAdapter,
 } from '@onchain-intel/core';
@@ -36,6 +37,16 @@ import { createServer } from './server.js';
 // The compiler already rejects a literal missing either field; this is the same guarantee for
 // values that arrive through a cast or a runtime-assembled array (see the function's own docstring).
 assertValidAdapterRegistrations(adapterRegistrations);
+
+// Task 013-2 (T-013, R-162/R-163) — every capability that ACTIVATES merging must have every
+// reachable participant registered `tier: 'free'`, or the paid one silently loses every dedup
+// conflict (the conflict rank is `adapterIds`' own compiled order, and last position is lowest
+// rank — see `assertMergeParticipantsAreFree`'s own docstring). Same module-scope placement and
+// same reasoning as `assertValidAdapterRegistrations` immediately above: this must fail PROCESS
+// START, before any store or registry is constructed, never the first merged request. Covered by
+// `test/merge-participants-startup.integration.test.ts`'s TC-INT-05 — deleting this line must make
+// that test fail, or the check is declared but unenforced (the exact WI-34…WI-37 distinction).
+assertMergeParticipantsAreFree(routes, adapterRegistrations);
 
 /**
  * Minimal shape of `package.json` needed here — just enough to read `version` once, so it is

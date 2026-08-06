@@ -201,6 +201,146 @@ export function assertValidAdapterRegistrations(registrations: AdapterRegistrati
 }
 
 /**
+ * Startup-time gate: every capability that ACTIVATES merging (at least one of its routes carries
+ * `CapabilityRoute.merge === true`) must have EVERY adapter reachable through that capability's
+ * routes registered as `tier: 'free'` (T-013, task 013-2, R-162/R-163).
+ *
+ * **Why this has to be a gate at all.** The conflict rank a merge walk uses (`013-4`) is
+ * `adapterIds`' own compiled order — see `CapabilityRoute.merge`'s docstring below — a mechanism
+ * this task REUSES rather than replaces (`OQ-T013-3`). That order encodes SPEND priority
+ * (free/cheap first, R-11), and the walk visits it in the SAME order to decide which participant
+ * wins a same-key conflict. A paid adapter sorted last for spend reasons would therefore also be
+ * lowest-ranked for the merge — it would lose every conflict silently, for free, until a real
+ * per-row priority rank exists (T-016). This gate turns that silent loss into a refusal to start.
+ *
+ * **The union of ALL of the capability's routes, never one route's own `adapterIds`.**
+ * `CapabilityRegistry.resolve()` already builds its walk `plan` this way (`registry.ts`'s own
+ * docstring on `plan`): every route matching a capability contributes its adapters, de-duplicated
+ * by id, first occurrence wins. An adapter reachable ONLY through a sibling route that does not
+ * itself carry `merge: true` still enters the SAME merged walk the moment any one of the
+ * capability's routes does — so checking one route's `adapterIds` in isolation would let it
+ * through unverified. No shipped route is in that shape today; this check closes the possibility
+ * by construction rather than by audit.
+ *
+ * **Reads `tier`, never `.trust`.** `tier` (ADR-002 D8) is the one classification of paidness
+ * (`AdapterRegistration`'s own docstring above); `trust` (D9) classifies data provenance and has no
+ * reader outside `assertValidAdapterRegistrations`'s own declare-only check
+ * (`tier-single-source.test.ts`'s `TC-GATE-02`) — this function must not become a second one.
+ *
+ * **Lives here, beside `assertValidAdapterRegistrations`, and NOT on `CapabilityRegistry`.** Both
+ * parameter types (`CapabilityRoute[]`, `AdapterRegistration[]`) are declared in this same file, so
+ * no new import is needed either way — but the constructor is the wrong home regardless of that
+ * convenience: `013-4`'s own merge-walk test needs to build a `CapabilityRegistry` around a route
+ * that pairs a free and a paid adapter, to observe the walk's polling ORDER directly, and a
+ * constructor-embedded version of this check would make that fixture unconstructible (PLAN §0.7).
+ * Kept as an independent function, it is called exactly once, from `mcp-server/src/index.ts`,
+ * immediately after `assertValidAdapterRegistrations` and before any store or registry is
+ * constructed — so an inconsistent configuration fails PROCESS START, never the first merged
+ * request (the same discipline `assertValidAdapterRegistrations` applies to undeclared ranks).
+ *
+ * **The array parameters are PARAMETERS, never a module import of `providers.config.ts`** — same
+ * reasoning as `assertValidAdapterRegistrations`'s own docstring: a validator that reads its own
+ * subject can only ever be exercised against the one real, complete input.
+ *
+ * @throws Error naming the offending capability AND the first non-free participant found while
+ * walking the union in route-then-adapterIds encounter order — the same "both halves in the
+ * message" discipline as `UnregisteredPolicyClassError`.
+ */
+export function assertMergeParticipantsAreFree(
+  routes: CapabilityRoute[],
+  registrations: AdapterRegistration[],
+): void {
+  // One id -> tier lookup, built FAIL-CLOSED on a duplicate id, STICKY-NON-FREE: once a
+  // registration for an id resolves to anything OTHER than `'free'`, that id stays non-free for the
+  // rest of this pass, regardless of array order. Deliberately `known !== 'free'`, not `known ===
+  // 'paid'` (an earlier version of this line, review round 2 M-2/LOW-1): `AdapterTier` is `'free' |
+  // 'paid'` at the TYPE level, but this function takes a runtime-assembled array — the same
+  // cast/JSON-config threat model `assertValidAdapterRegistrations`'s own docstring names — so a
+  // stray THIRD value (`tier: 'trial' as AdapterTier`) can arrive. Checking for literal `'paid'`
+  // let such a value be silently overwritten back to `'free'` by whichever order put a
+  // genuinely-`'free'` copy later; checking for "not confirmed free" does not care WHAT the sticky
+  // value is, only that it isn't `'free'`.
+  //
+  // **The ABSENT tier is the same hole one level down, and is why the value is normalised before it
+  // is stored** (roast round 3). A registration whose `tier` key is missing entirely — the canonical
+  // shape of the JSON/cast threat model this comment already invokes — yields `undefined`, and an
+  // earlier `known !== undefined && known !== 'free'` guard read that as "nothing known yet", so a
+  // later genuinely-`'free'` copy un-stuck it: `[no-tier, free]` PASSED while `[free, no-tier]`
+  // threw. Order decided again, which is exactly the property the sticky rule exists to remove.
+  // Storing `registration.tier ?? UNDECLARED_TIER` makes the absent case a first-class non-free
+  // value, so the single `!== 'free'` test covers all three arrivals — declared-paid, stray-third,
+  // and absent — without a second condition to keep in sync.
+  //
+  // `assertValidAdapterRegistrations` rejects every one of these shapes one call earlier at the
+  // production entry point (`mcp-server/src/index.ts`), so none of it is reachable there. It is
+  // reachable through this function's own export, which is what the standalone tests exercise.
+  //
+  // **Why this matters, and why "first wins" / "last wins" were both rejected first.** On
+  // `[{id:'x',tier:'paid'}, {id:'x',tier:'free'}]`, first-wins THROWS and last-wins PASSES a paid
+  // participant through the one gate whose entire purpose is refusing it — neither is fail-closed,
+  // and an earlier draft here picked last-wins for a reason (`adapter-registrations.test.ts` "owns"
+  // duplicate ids) that does not hold: that file has no id-uniqueness test at all (its own
+  // TC-UNIT-05 builds its expectation via `Object.fromEntries(...)`, which itself silently
+  // collapses a duplicate id last-wins).
+  //
+  // **Still safe against `tier-single-source.test.ts`'s paidness-classification gate (task 012-3,
+  // R-151(e)), confirmed by running it** (see `.AGENTS.md`): `known`'s last segment is not an
+  // `ID_WORDS` token, so neither comparison against it matches that scanner's LITERAL_EQUALITY
+  // detector, and `.get`/`.set` are not in its MEMBERSHIP alternation at all — NOT because the
+  // id-bearing read and the paidness-bearing read sit in separate statements (they do not: the
+  // `.set()` call below names both `registration.id` and `registration.tier`), but because neither
+  // method this uses is one the scanner watches.
+  // Widened past `AdapterTier` on purpose: the map has to be able to HOLD the absent case in order
+  // to make it sticky, and `'undeclared'` is deliberately distinguishable from `undefined` when the
+  // refusal below renders it — `undefined` means "no registration carries this id at all",
+  // `'undeclared'` means "a registration does, and it declared no tier".
+  const UNDECLARED_TIER = 'undeclared' as const;
+  const tierById = new Map<string, AdapterTier | typeof UNDECLARED_TIER>();
+  for (const registration of registrations) {
+    const known = tierById.get(registration.id);
+    // Normalise the ABSENT case at the point of STORAGE, so `!== 'free'` stays the single test that
+    // has to be right (see the docstring above). A guard written instead as
+    // `known !== undefined && known !== 'free'` reads the absent case as "nothing known yet" and
+    // lets a later free copy un-stick it — the round-3 hole.
+    const arriving = registration.tier ?? UNDECLARED_TIER;
+    tierById.set(registration.id, known !== undefined && known !== 'free' ? known : arriving);
+  }
+
+  // Every capability with at least one merge-activated route, in first-encounter order (`Set`
+  // preserves insertion order).
+  const mergingCapabilities = new Set<string>();
+  for (const route of routes) {
+    if (route.merge === true) mergingCapabilities.add(route.capability);
+  }
+
+  for (const capability of mergingCapabilities) {
+    // The UNION, de-duplicated, in the same encounter order `resolve()`'s own `plan` uses: every
+    // matching route in array order, every id within it in `adapterIds` order, first occurrence
+    // wins. This is what makes an adapter reachable only through a sibling non-merge route of the
+    // SAME capability get checked too — never just the merge-flagged route's own `adapterIds`.
+    const participants = new Set<string>();
+    for (const route of routes) {
+      if (route.capability !== capability) continue;
+      for (const adapterId of route.adapterIds) participants.add(adapterId);
+    }
+
+    for (const adapterId of participants) {
+      const tier = tierById.get(adapterId);
+      if (tier !== 'free') {
+        throw new Error(
+          `capability '${capability}' activates merge, but participant '${adapterId}' is not ` +
+            `tier: 'free' (${
+              tier === undefined ? 'no adapter registration found for this id' : `tier: '${tier}'`
+            }) — every adapter reachable through a merged capability's routes must be free, or ` +
+            `the paid one silently loses every dedup conflict (adapterIds order is the conflict ` +
+            `rank, and the last position is the lowest rank; T-013, task 013-2, R-162/R-163)`,
+        );
+      }
+    }
+  }
+}
+
+/**
  * A routing entry: which adapters (in priority/fallback order, R-11) serve `capability`.
  *
  * Chain coverage is NOT a property of the route — it is a property of the pair (adapter,
@@ -214,6 +354,41 @@ export function assertValidAdapterRegistrations(registrations: AdapterRegistrati
 export interface CapabilityRoute {
   capability: string;
   adapterIds: string[]; // order = priority + fallback chain (R-11)
+  /**
+   * Activates merge-walk semantics for THIS route (T-013, task 013-2, R-159/R-160/R-183) —
+   * deliberately a fact about the ROUTE, independent of `capabilityManifests[capability].mergeable`
+   * (013-1), which is a fact about the CAPABILITY's key identity. Two axes, two owners:
+   *
+   * - `mergeable` (manifest, `set | series` branch only) says a capability's results are ELIGIBLE
+   *   to be combined instead of returned from one winning adapter — a fact that does not change
+   *   per deployment.
+   * - `merge` (here) TURNS IT ON for one route. `providers.config.ts` (013-6) is the only place
+   *   production ever sets it to `true`, and it may do so only where the manifest already says
+   *   `mergeable: true` — `CapabilityRegistry`'s constructor (validation step 3, `registry.ts`)
+   *   refuses to build otherwise, naming the capability and the missing eligibility
+   *   (`MergeEligibilityNotDeclaredError`, UC-20).
+   *
+   * Absence/`false` behaves exactly as before this task: `resolve()` does not read this field yet
+   * (the walk itself is `013-4`) — a route declaring `merge: true` today changes nothing observable
+   * beyond being subject to the two checks above.
+   *
+   * **The conflict rank is `adapterIds`' own order, and NOTHING ELSE.** `resolve()` already builds
+   * `plan` — the de-duplicated union of every matching route's `adapterIds`, in encounter order
+   * (`registry.ts`'s own docstring on `plan`) — for the pre-existing single-winner walk; `013-4`'s
+   * merge walk reuses that SAME order as the rank that decides which value wins a same-key conflict
+   * (highest-priority answering participant wins, R-162). No separate rank table exists anywhere in
+   * this tree, and `assertMergeParticipantsAreFree` above is what makes reusing an order meant for
+   * fallback-priority safe as a paidness-blind conflict rank: the participant sorted last (lowest
+   * rank) can never silently be a `tier: 'paid'` adapter that loses every conflict for free.
+   *
+   * **This reuse is PROVISIONAL, stated so on purpose.** `adapterIds`' order was designed for
+   * fallback priority (R-11), not for conflict resolution, and the two questions happen to accept
+   * the same answer only for today's two participants. `OQ-T013-3`'s owner decision (2026-08-05)
+   * chose the reuse over a new explicit rank table for exactly this task; a dedicated structure —
+   * if a future capability's fallback order and conflict rank ever need to differ — is addressed to
+   * **T-016**, not solved here by generalizing this field.
+   */
+  merge?: boolean;
   /**
    * "Does this normalized result answer the request, or should the route keep walking?" — declared
    * as DATA: a `{ kind, ...params }` descriptor resolved against the class dictionary in

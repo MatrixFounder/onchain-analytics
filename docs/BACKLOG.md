@@ -81,6 +81,7 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 ## Discovered issues / work-items
 
 <!-- feedback:discovered-issues -->
+- **WI-43** [Строчные ссылки в docs/ протухают молча: ни один гейт не резолвит path:line](backlog/wi-43-line-anchored-citations-in-docs-decay-silently.md) — effort `M`, status `open`, opened 2026-08-06
 - **WI-42** [Докстринг таблицы манифеста называет 012-5 будущим: направление чтения ttlFor() описано обратно](backlog/wi-42-manifest-table-docstring-calls-012-5-future.md) — effort `S`, status `open`, opened 2026-08-06
 - **WI-19** [vdd-multi: контракт вывода отчёта не масштабируется](backlog/wi-19-vdd-multi-report-routing-does-not-scale.md) — opened 2026-07-29, effort S: inline-отчёт по умолчанию нечитаем на реальном объёме находок; **изменение поведения общего фреймворка — на рассмотрение владельцу**, не готовая правка
 - **WI-18** [Мутационное тестирование живёт вне репозитория](backlog/wi-18-mutation-testing-lives-outside-the-repo.md) — opened 2026-07-29, effort M: единственная механическая проверка качества тестов существует только как одноразовый скрипт вне репозитория — и однажды соврала в свою пользу, посчитав непримененную мутацию пойманной
