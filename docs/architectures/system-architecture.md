@@ -419,12 +419,12 @@ The "Becomes" column is what the tree does today — `types.ts:93,137`, `cache/b
 `tier` replaced four places that used to classify "is this provider paid" independently, none of
 which could detect the others disagreeing:
 
-| Old classification                                           | Where                                   | Becomes                                                                               |
-| ------------------------------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------- |
-| `PAID_PROVIDER_IDS = new Set(['dune','nansen'])`             | `packages/core/src/cache/sqlite-store.ts:48`, `* the connection opens (PRAGMA/DDL exec, providers bootstrap,`              | reads `registration.tier`                                                             |
-| bootstrap writes `kind: 'unknown'` to every provider row     | `packages/core/src/cache/budget-store.ts:263-272`, `if (!existing.has(column.name)) this.db.exec(column.ddl);`         | writes `registration.tier`                                                            |
+| Old classification                                           | Where                                                                                                              | Becomes                                                                               |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `PAID_PROVIDER_IDS = new Set(['dune','nansen'])`             | `packages/core/src/cache/sqlite-store.ts:48`, `* the connection opens (PRAGMA/DDL exec, providers bootstrap,`      | reads `registration.tier`                                                             |
+| bootstrap writes `kind: 'unknown'` to every provider row     | `packages/core/src/cache/budget-store.ts:263-272`, `if (!existing.has(column.name)) this.db.exec(column.ddl);`     | writes `registration.tier`                                                            |
 | `BudgetMeta.provider: 'nansen'` — a hand-picked literal type | `packages/mcp-server/src/tools/budget-meta.ts:9`, `* is the complete set of sources that can have spent anything.` | widens to plain `string`, checked at runtime (M6 below) — the WIRE SHAPE is unchanged |
-| `costOf() === 0 \| Infinity` read as a de-facto tier signal  | every adapter's `costOf()`              | stays the PRICE mechanism only; nothing reads it as a tier any more                   |
+| `costOf() === 0 \| Infinity` read as a de-facto tier signal  | every adapter's `costOf()`                                                                                         | stays the PRICE mechanism only; nothing reads it as a tier any more                   |
 
 Assignment (`providers.config.ts`'s 12 registrations, measured): **`paid`** — `dune`, `nansen`.
 **`free`** — the other ten (`coingecko`, `dexscreener`, `defillama`, `blockscout`, `rpc-evm`,
@@ -710,9 +710,9 @@ own docstring already forbids growing one (weights, partial merges, multi-source
 the router's job), and ADR-002 §Что отклонено п.7 rejects the nearest miss (configurable
 field-mapping) on the identical ground. Exactly two entries are needed today:
 
-| `kind`              | Predicate                                                       | Replaces                                                                                                                                                                                                                 |
-| ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `any`               | always `true` (today's implicit default)                        | 20 of 21 routes, which carry no policy today                                                                                                                                                                             |
+| `kind`              | Predicate                                                       | Replaces                                                                                                                                                                                                                                                                                                   |
+| ------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `any`               | always `true` (today's implicit default)                        | 20 of 21 routes, which carry no policy today                                                                                                                                                                                                                                                               |
 | `someElementHasAny` | array, and ≥ 1 element has a non-empty value at one of `fields` | `entity.labels`'s literal predicate (`packages/core/src/providers.config.ts:94-104`, `that nansen exists; the policy belongs here, as data, beside`), bit-for-bit — 🔴 NEVER named or aliased `nonEmpty` anywhere (H-1: a non-empty array of contentless Blockscout rows must still count as unsatisfying) |
 
 **Resolved at `CapabilityRegistry` CONSTRUCTION, never lazily inside `resolve()` (R-135).** See the

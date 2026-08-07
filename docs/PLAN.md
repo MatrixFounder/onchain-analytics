@@ -120,19 +120,19 @@
 назвала девять; десятый и одиннадцатый найдены двумя раундами ревью плана 2026-08-06. Десятый
 требует решения о форме объявления, а не механической правки — оно записано в §0.11.
 
-| #   | Сайт                                                         | Что делает                                                                 | Задача |
-| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------- | ------ |
-| 1   | `packages/mcp-server/src/tools/registry.ts:110`, `readonly capability: string \| null;` (`ToolDefinition`)               | объявление типа                                                            | 013-7  |
-| 2   | `packages/mcp-server/src/tools/registry.ts:139`, `readonly capability: string \| null;` (`ToolSpec`)                     | объявление типа                                                            | 013-7  |
-| 3   | `packages/mcp-server/scripts/gen-tool-inventory.ts:41`, `readonly capability: string \| null;` (`ToolInventoryEntry`)    | схема артефакта                                                            | 013-7  |
+| #   | Сайт                                                                                                                                      | Что делает                                                                 | Задача |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------ |
+| 1   | `packages/mcp-server/src/tools/registry.ts:110`, `readonly capability: string \| null;` (`ToolDefinition`)                                | объявление типа                                                            | 013-7  |
+| 2   | `packages/mcp-server/src/tools/registry.ts:139`, `readonly capability: string \| null;` (`ToolSpec`)                                      | объявление типа                                                            | 013-7  |
+| 3   | `packages/mcp-server/scripts/gen-tool-inventory.ts:41`, `readonly capability: string \| null;` (`ToolInventoryEntry`)                     | схема артефакта                                                            | 013-7  |
 | 4   | `packages/mcp-server/scripts/gen-tool-inventory.ts:55-64`, `export function buildToolInventory(): ToolInventory {` (`buildToolInventory`) | маппер; без правки поле теряется молча                                     | 013-7  |
-| 5   | `eval/capabilities.mjs:43` (`toolFor`)                       | сопоставление способность → тул                                            | 013-8  |
-| 6   | `packages/mcp-server/test/docs-counts.test.ts:294-319`, `const withCapability = toolSpecs.filter((spec) =>`                           | парность якорей `// Capability:` и тулов                                   | 013-8  |
-| 7   | `packages/mcp-server/test/tool-spec.test.ts:302-305`, `:314-317`                 | «служит нулю способностей» и «всё маршрутизировано»                        | 013-8  |
-| 8   | `packages/mcp-server/test/eval-capability-coverage.test.ts:30-36`, `function capabilitiesServedByTools(): Map<string, string> {`                | **молчаливый** — тул с `capability: null` ему невидим                      | 013-8  |
-| 9   | `packages/mcp-server/test/eval-checks-coverage.test.ts:51`, `const serverLevelTools = toolSpecs.filter((spec) =>`                       | **молчаливый по источнику** — тот же бит `null` читает как «серверный тул» | 013-8  |
-| 10  | `packages/mcp-server/test/tool-spec.test.ts:420`, `it('names its capability once — the spec field and the resolve`, тело `:441-456`                | «называет свою способность один раз»; см. §0.11                            | 013-8  |
-| 11  | `packages/mcp-server/test/readme-tool-table.test.ts:130-147`, `const CAPABILITY_OF = new Map(`                     | `CAPABILITY_OF`, число строк README, ожидаемое значение TTL                | 013-8  |
+| 5   | `eval/capabilities.mjs:43` (`toolFor`)                                                                                                    | сопоставление способность → тул                                            | 013-8  |
+| 6   | `packages/mcp-server/test/docs-counts.test.ts:294-319`, `const withCapability = toolSpecs.filter((spec) =>`                               | парность якорей `// Capability:` и тулов                                   | 013-8  |
+| 7   | `packages/mcp-server/test/tool-spec.test.ts:302-305`, `:314-317`                                                                          | «служит нулю способностей» и «всё маршрутизировано»                        | 013-8  |
+| 8   | `packages/mcp-server/test/eval-capability-coverage.test.ts:30-36`, `function capabilitiesServedByTools(): Map<string, string> {`          | **молчаливый** — тул с `capability: null` ему невидим                      | 013-8  |
+| 9   | `packages/mcp-server/test/eval-checks-coverage.test.ts:51`, `const serverLevelTools = toolSpecs.filter((spec) =>`                         | **молчаливый по источнику** — тот же бит `null` читает как «серверный тул» | 013-8  |
+| 10  | `packages/mcp-server/test/tool-spec.test.ts:420`, `it('names its capability once — the spec field and the resolve`, тело `:441-456`       | «называет свою способность один раз»; см. §0.11                            | 013-8  |
+| 11  | `packages/mcp-server/test/readme-tool-table.test.ts:130-147`, `const CAPABILITY_OF = new Map(`                                            | `CAPABILITY_OF`, число строк README, ожидаемое значение TTL                | 013-8  |
 
 Сайт 8 — собственный сторож RF-5. Тул с `capability: null` и двумя способностями в
 `servedCapabilities` останется ему невидим, если `capabilitiesServedByTools()` не развернёт новое
@@ -191,11 +191,11 @@
 **§0.10 Три правки оркестратора, не проходившие ревью** (`vdd-enhanced` §4.4). У каждой назван
 владелец, который её проверяет.
 
-| Правка                                                                                                                       | Владелец  | Как проверяется                                    |
-| ---------------------------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------- |
+| Правка                                                                                                                                                  | Владелец  | Как проверяется                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------- |
 | R-164(e): терминальный дизъюнкт по часам (`packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit \|\| Date.now() >= effectiveDeadlineAtMs) {`) | **013-5** | мутационный прогон плюс тест на две ветки          |
-| AC-49: группировка держится на ОБОИХ селекторах                                                                              | **013-7** | контрактный тест тула на двух селекторах           |
-| `PLANNED_TOOL_NAMES`-запись `onchain_dash_platform_history`                                                                  | **013-8** | удаление в коммите регистрации; гейт орфанов зелён |
+| AC-49: группировка держится на ОБОИХ селекторах                                                                                                         | **013-7** | контрактный тест тула на двух селекторах           |
+| `PLANNED_TOOL_NAMES`-запись `onchain_dash_platform_history`                                                                                             | **013-8** | удаление в коммите регистрации; гейт орфанов зелён |
 
 Детализация трёх строк таблицы.
 
