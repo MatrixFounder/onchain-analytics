@@ -253,7 +253,8 @@ composition where `platform-explorer` answers `[]` and `pg-history` returns 40 p
 `source: 'platform-explorer'` over a payload containing none of its data — exactly the defect B-2
 raised. `source` falls back to the highest-ranked ANSWERED participant ONLY in the corner case
 where `sources` is empty (everyone answered with zero points, so there is no contributor to rank).
-The compiled conflict rank on a dedup collision (`(metric, asset, ts)`, R-161) reuses the
+The compiled conflict rank on a dedup collision (`(metric, asset, HOUR of ts)` — bucketed
+2026-08-07 by owner decision, R-161(e); the stored point keeps its own `ts`) reuses the
 route's own `adapterIds` order rather than adding a rank table or reading `AdapterRegistration.trust`
 or `onchain.metrics.source_priority` (`OQ-T013-3`; `TC-GATE-02` and R-180 both forbid the latter two
 readers) — a narrow, provisional reuse pending T-016's real per-row trust axis, reasoned in full in

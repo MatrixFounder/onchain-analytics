@@ -249,6 +249,70 @@ function isNegativeEntry(value: unknown): value is NegativeCacheEntry {
   );
 }
 
+/**
+ * The minimal structural shape the MERGE walk (T-013, task 013-4, R-161/R-167) reads from one
+ * element of a `set`/`series` capability's result — the same three field names the canonical
+ * `Snapshot` schema (`types/snapshot.ts`) carries for them, read STRUCTURALLY rather than by
+ * importing that domain type: `resolve()` stays provider-agnostic (every `normalize()` result is
+ * `unknown` here, same as everywhere else in this file), and the dedup key touches only these
+ * three fields — `valueRaw`/`source`/`height`/`valueNum` ride along inside the stored point,
+ * untouched and unread (TC-INT-03). `ts` is the point's own epoch-ms field, never derived from
+ * `valueRaw` — the two are unrelated fields on the same point.
+ *
+ * **`ts` here is the point's OWN field, read but never rewritten — the dedup KEY buckets it
+ * (`MERGE_DEDUP_BUCKET_MS`, `mergeInto` below); the stored point does not.** See the owner decision
+ * this corrects (F-0, `docs/architectures/open-questions.md` "T-013 task 013-4"): exact-`ts`
+ * equality was the original R-161 reading, and it cannot fire between the two real participants —
+ * `pg-history` reads back the n8n snapshotter's wall-clock write time
+ * (`adapters/pg-history/index.ts`'s `toFiniteNumber(row.ts)`, sourced from
+ * `n8n-workflows/exported/onchain-snapshotter.json`'s `Normalize` node, `const fetchTs =
+ * Date.now();`), while `platform-explorer` reports the VENDOR's own history label
+ * (`adapters/platform-explorer/index.ts`'s `Date.parse(timestamp)`) — two different clocks for the
+ * "same" hour.
+ */
+interface MergePoint {
+  metric: string;
+  asset: string;
+  ts: number;
+}
+
+/**
+ * The width of the merge dedup KEY's time bucket (F-0, owner decision 2026-08-07) — one hour,
+ * mirroring the persistence layer's OWN convention for the identical reason: the n8n snapshotter's
+ * `ts_bucket = floor(ts/3600000)*3600000` (`CLAUDE.n8n.md`) and the Postgres `snapshots` table's own
+ * dedup key, `UNIQUE ... ON CONFLICT (source, asset, metric, ts_bucket)` — never raw `ts`. The DB
+ * buckets for exactly the reason this key now does: two sources can legitimately disagree, by
+ * seconds to minutes, on the exact millisecond that names "this hour's" observation, and `UC-11`'s
+ * one-point-per-hour promise has to survive that disagreement. A named constant, not a bare literal,
+ * so a reader (or a mutation) sees ONE number rather than a `3_600_000` that could be a typo of
+ * `dayBucketMs`'s `86_400_000` (`cache/day-bucket.ts`) — deliberately NOT that shared helper: this
+ * bucket is a MERGE-DEDUP concept (one call site today), `dayBucketMs` is a BUDGET-LEDGER concept,
+ * and the two happen to want the same arithmetic shape for unrelated reasons.
+ */
+const MERGE_DEDUP_BUCKET_MS = 3_600_000;
+
+/**
+ * Structurally validates and narrows one array element from a participant's `normalize()` result
+ * into a `MergePoint` — or refuses it (M-3, fix pass 2026-08-07, `docs/architectures/open-
+ * questions.md` "T-013 task 013-4"). Before this guard existed, `mergeInto` built its key by
+ * template-string interpolation with no validation at all: a point missing `metric`/`asset`/a
+ * finite `ts` coerced into the literal key `"undefined\0undefined\0undefined"`, so every malformed
+ * point from every participant collided on that ONE key and exactly one of them "survived" the
+ * merge — a probe fed three `{address, label}`-shaped objects (a different capability's own point
+ * shape entirely) through this path and only one came back. **Refuses rather than guesses**,
+ * CLAUDE.md's own rule for the derived-metric path: a point that fails this check is dropped, never
+ * merged, and never silently coerced into looking valid. `ts: "1700…"` (a string) and `ts: 1700…`
+ * (a number) are deliberately NOT treated as equivalent — the same reason `Number.isFinite`, not a
+ * looser `!Number.isNaN(Number(...))`, decides it.
+ */
+function asMergePoint(value: unknown): MergePoint | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { metric, asset, ts } = value as Record<string, unknown>;
+  if (typeof metric !== 'string' || typeof asset !== 'string') return undefined;
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) return undefined;
+  return { metric, asset, ts };
+}
+
 /** `CapabilityRegistry.resolve()`'s return shape (ARCHITECTURE.md §2.1/§5.2/§9.1). */
 export interface CapabilityResolution {
   result: unknown;
@@ -702,6 +766,20 @@ export class CapabilityRegistry {
     }
 
     /**
+     * Whether THIS call runs the MERGE walk instead of the single-winner one below (T-013, task
+     * 013-4, R-161/R-165/R-166/R-167/R-182) — true when at least one of `matching`'s routes carries
+     * `merge: true`. A capability served by more than one route agreeing/disagreeing on `merge` is
+     * explicitly out of scope (PLAN §0.5 item 5; no route-agreement check exists anywhere in this
+     * tree), so `.some(...)` — not "the first matching route" or "every matching route" — is the
+     * whole rule.
+     *
+     * Computed here, right after `plan`, but the branch itself sits BELOW GATE 2/`argsHash`: the
+     * preceding order (`effectiveDeadlineAtMs` → `plan` → GATE 2) does not change for either path,
+     * because the merge walk needs both exactly as much as the walk below does.
+     */
+    const mergeMode = matching.some((route) => route.merge === true);
+
+    /**
      * Applies a route's answer policy, FAILING OPEN.
      *
      * iteration 2 (M-1): the predicate used to be called inside the same `try` that treats a throw
@@ -821,6 +899,399 @@ export class CapabilityRegistry {
     }
 
     const argsHash = deriveArgsHash(capability, args);
+
+    if (mergeMode) {
+      // ---------------------------------------------------------------------------------------
+      // THE MERGE WALK (T-013, task 013-4, R-161/R-165/R-166/R-167/R-182). Walks `plan` in the
+      // SAME rank order as the loop below (rank = spend order = `adapterIds` order — D5: «Порядок
+      // адаптеров был и остаётся правилом траты, а не предпочтением, и слияние не имеет права его
+      // нарушить, вызвав платного участника раньше, чем исчерпан бесплатный» (ADR-002-configurable-
+      // routing.md, D5), R-166(c), `CapabilityRoute.merge`'s own docstring), and reuses every
+      // per-adapter step of that loop UNCHANGED: the deadline pre-check, the adapter lookup, the
+      // chain-scoped skip, `isAvailable()`, the cache read (including its negative-entry branch),
+      // and the `fetch`/`normalize`/`cache.set` triad. Each step's own comment on the loop below
+      // states its rationale; it is not repeated here.
+      //
+      // **Where the route's answer-sufficiency policy is evaluated: PER PARTICIPANT, on that
+      // participant's own answer, never once on the assembled merged array (R-182(a), AC-44,
+      // `OQ-T013-4`).** Both call sites below are `satisfies(policy, <that participant's value>,
+      // adapterId)` — the same signature and the same predicate instance the single-winner walk
+      // uses, applied to a cached answer and a fresh one alike. Naming the choice here because it
+      // is genuinely a choice: evaluating the merged whole would be a different, defensible design,
+      // and on today's two real merge routes the two are INDISTINGUISHABLE — both carry the
+      // `{kind: 'any'}` default, so every non-empty answer satisfies either way (R-182(c),
+      // TC-INT-13 pins that equivalence). The choice becomes observable the first time a merge
+      // route carries a selective policy, which is exactly when a reader needs to already know
+      // which one was made.
+      //
+      // A participant whose answer does NOT satisfy is recorded in `tried` and, deliberately, in
+      // `perSourceCache` — it ANSWERED, and its cache status is a fact about that answer, not about
+      // whether the answer passed the policy (R-174(c), 013-3's recorded deviation; TC-INT-11).
+      // It is absent from `sources` and from `missingSources`, so — for THIS participant, the
+      // policy-excluded one — that `perSourceCache` entry is the only surviving evidence it was
+      // asked at all.
+      //
+      // **That "only surviving evidence" claim does NOT extend to a FAILED participant (corrected,
+      // M-4, fix pass 2026-08-07).** A participant that never reaches an answer — unregistered,
+      // chain-skipped, `isAvailable()` false, a live negative-cache entry, or a `fetch`/`normalize`
+      // throw — gets NO `perSourceCache` entry at all (that array is populated only on the two
+      // ANSWERED branches below). Its only trace on THIS walk is `tried`, written 8 times in this
+      // block and, deliberately, READ BY NOTHING on the merge path today — a window left open ON
+      // PURPOSE for 013-5, whose four-branch outcome contract is what reads `tried` (and the
+      // structural `skipped` record declared below, F-7) to build `missingSources`. Until then a
+      // failed participant leaves no trace on the RETURNED resolution at all, only in `tried`'s
+      // memory during this one call.
+      //
+      // **Exactly one difference, in two places: the single-winner walk's early `return`s become
+      // "record the answer, accumulate it if it satisfies the policy, and keep walking".** The
+      // merge walk never ends mid-traversal — every participant in `plan` is visited — and the
+      // answer is assembled AFTER the loop from whatever was accumulated. `unsatisfying` (the
+      // single-winner walk's truthful-but-unsatisfying fallback) is deliberately never touched
+      // here: the merge path does not inherit it (task file "Запасной ответ `unsatisfying` на
+      // слитом пути не применяется" — returning one participant's raw answer would un-merge exactly
+      // the answer that was requested merged; TC-INT-12).
+      //
+      // 013-4's OWN scope ends at "always return a merged success, including empty" (PLAN's own
+      // words: "013-4 владеет телом цикла, 013-5 — кодом после него") — WITH ONE NAMED EXCEPTION
+      // carved out here rather than left for AC-47 to keep failing until 013-5 lands (B-1, fix pass
+      // 2026-08-07): when NOBODY answered at all (`perSourceCache.length === 0`), `source` has
+      // nothing non-empty to fall back to, and AC-47 forbids `''` unconditionally — so this one
+      // outcome throws `CapabilityUnavailableError` instead of returning a hollow success. 013-5
+      // KEEPS this branch as its own "nobody answered" outcome (a named special case of its branch
+      // (c)/(d)), so the exception is forward-compatible, not throwaway. Every OTHER four-branch
+      // outcome — `missingSources`, the two remaining failure branches, the deadline precondition —
+      // is still 013-5's, which replaces the single unconditional `return` at the end of this block.
+      //
+      // **`hadFailure`/`deadlineHit` (the shared flags the walk below sets and reads) are
+      // DELIBERATELY NOT written here.** This loop never reads them — it always returns success (or
+      // the one B-1 exception above, which reads only `perSourceCache`, neither flag) — so writing
+      // them now would be a dead store (`no-useless-assignment` catches exactly this, correctly:
+      // nothing in 013-4's own code observes them). 013-5's outcome contract is what consumes them,
+      // and it reintroduces the same one-line assignments at the same points below when it lands,
+      // alongside the branch logic that reads them — a small, targeted addition to this loop's
+      // body, not a rewrite of it.
+      // ---------------------------------------------------------------------------------------
+      const merged = new Map<string, unknown>();
+      /** Participants whose points actually WON at least one key — R-174(a)'s `sources`. Updated by
+       * `mergeInto` at the moment a point is inserted, never derived from "satisfied the policy"
+       * afterward: a participant whose every point loses its key to an earlier duplicate satisfies
+       * the policy and still contributes nothing to `result`. */
+      const contributors = new Set<string>();
+      /** One entry per participant that ANSWERED (cache hit OR fresh fetch+normalize), regardless
+       * of policy or contribution (R-174(c); `perSourceCache`'s own docstring; TC-INT-11; the
+       * roast-round-1/B-4 argument in `open-questions.md` "T-013 task 013-3"). Appended at the
+       * point of ANSWERING, never filtered from `contributors`/`sources` afterward — that filtering
+       * is exactly the narrow reading this project rejected. */
+      const perSourceCache: { adapterId: string; cache: 'hit' | 'miss'; ageMs?: number }[] = [];
+      /** The highest-rank participant that answered at all — set once, on the first answer seen,
+       * and never overwritten, so "first" already means "highest-ranked" (the walk is rank order).
+       * Exists so `source` never becomes '' while ANYONE answered, even with zero points (AC-47,
+       * TC-INT-10), independently of whether that answer went on to satisfy the route's policy. */
+      let firstAnswered: string | undefined;
+      /**
+       * Structural record of every participant SKIPPED or EXCLUDED during this walk — added for
+       * 013-5 (F-7, fix pass 2026-08-07, `docs/architectures/open-questions.md` "T-013 task
+       * 013-4"). 013-5's four-branch outcome contract needs to classify every non-contributing
+       * participant by WHY, and doing that by string-matching `tried[].reason` (e.g. the literal
+       * `'answered, but not with what was asked for'`) would be fragile and would force 013-5 to
+       * edit THIS loop body to add its own classification — contradicting this file's own claim,
+       * two paragraphs up, that 013-5's change is purely additive. `kind` mirrors R-164's
+       * three-state model (`'unregistered'`/`'unavailable'`/`'chain'` → never asked;
+       * `'failed'` → asked, did not answer) plus `'policy-excluded'`, which R-174(c)/`OQ-T013-4`
+       * place outside the three states on purpose (the participant DID answer). Deliberately
+       * scoped to the shipped `kind`s only — a malformed-points answer (`mergeInto`'s own refusal,
+       * M-3) does not cleanly fit any of the five and is left to `tried` alone rather than guessed
+       * at here, since classifying it is 013-5's call, not this fix pass's to make.
+       *
+       * **Raw material only — NOT yet read by anything.** `CapabilityResolution.missingSources` is
+       * still 013-5's field to populate (013-3's own docstring on it); this array exists so 013-5
+       * has structured data to populate it FROM, without touching this loop.
+       */
+      const skipped: {
+        adapterId: string;
+        kind: 'chain' | 'unregistered' | 'unavailable' | 'failed' | 'policy-excluded';
+      }[] = [];
+
+      /**
+       * Inserts one participant's points into `merged`, INSERT-IF-ABSENT (R-161): a key already
+       * present survives untouched, so the FIRST participant to claim a key — the highest-ranked
+       * one, since `plan` (and this loop) is walked in rank order — keeps it, and its WHOLE point
+       * (never a value read out of it, R-167) is what ends up in `result`. `value_raw` is not read
+       * anywhere in this function or the loop around it.
+       *
+       * **The key buckets `ts` to the hour (`MERGE_DEDUP_BUCKET_MS`); the STORED point keeps its
+       * own real `ts` untouched (F-0, owner decision 2026-08-07)** — see `MergePoint`'s own
+       * docstring for the measurement that forced this and `MERGE_DEDUP_BUCKET_MS`'s for the
+       * persistence-layer parallel.
+       *
+       * **Refuses a structurally malformed point rather than merging it (M-3, fix pass
+       * 2026-08-07)** — `asMergePoint` validates each element; one that fails is dropped, and the
+       * adapter's `tried` entry says how many. **A wholly non-array answer is recorded, never
+       * silently discarded (F-5, same fix pass)** — the caller already recorded this participant's
+       * cache status in `perSourceCache` before calling this function, so a silent `return` here
+       * left it indistinguishable from an honest empty answer; `tried` now says otherwise.
+       */
+      const mergeInto = (adapterId: string, points: unknown): void => {
+        if (!Array.isArray(points)) {
+          tried.push({
+            adapterId,
+            reason: 'answered, but the result was not an array of points — dropped, never merged',
+          });
+          return;
+        }
+        let malformed = 0;
+        for (const raw of points) {
+          const point = asMergePoint(raw);
+          if (!point) {
+            malformed += 1;
+            continue;
+          }
+          const bucket = Math.floor(point.ts / MERGE_DEDUP_BUCKET_MS);
+          const key = `${point.metric}\0${point.asset}\0${bucket}`;
+          if (merged.has(key)) continue;
+          // The WHOLE original element (`raw`), never the narrowed 3-field `point` above, which
+          // exists only to build the key (R-167(b)) — `valueRaw`/`source`/`height`/`valueNum` ride
+          // along untouched, exactly as before this fix.
+          merged.set(key, raw);
+          contributors.add(adapterId);
+        }
+        if (malformed > 0) {
+          tried.push({
+            adapterId,
+            reason: `answered with ${malformed} malformed point(s) (missing/invalid metric, asset, or ts) — dropped, never merged`,
+          });
+        }
+      };
+
+      for (const { adapterId, policy } of plan) {
+        if (Date.now() >= effectiveDeadlineAtMs) {
+          tried.push({
+            adapterId,
+            reason: 'deadline exceeded before this source could be attempted',
+          });
+          continue;
+        }
+
+        const adapter = this.adapters.get(adapterId);
+        if (!adapter) {
+          tried.push({ adapterId, reason: 'no adapter registered for this id' });
+          skipped.push({ adapterId, kind: 'unregistered' });
+          continue;
+        }
+
+        if (chainInfo && adapter.chainSupport && !adapter.chainSupport(chainInfo, capability)) {
+          // `tried[]` stays silent here, matching the single-winner loop below — a chain-scoped
+          // skip is a coverage fact, not an attempt that failed. `skipped` (F-7) records it anyway:
+          // it is the ONE state this walk observes that `tried` structurally cannot carry, and
+          // leaving it unrecorded here is exactly what forced the stale claim, corrected in M-1
+          // below, that 013-5's own change would be purely additive.
+          skipped.push({ adapterId, kind: 'chain' });
+          continue;
+        }
+
+        const availability = adapter.isAvailable?.() ?? { ok: true };
+        if (!availability.ok) {
+          tried.push({ adapterId, reason: availability.reason });
+          skipped.push({ adapterId, kind: 'unavailable' });
+          continue;
+        }
+
+        let cached: CacheGetResult | undefined;
+        try {
+          cached = await this.cache.get(adapter.id, capability, argsHash);
+        } catch (error) {
+          process.stderr.write(
+            `cache.get failed provider=${adapter.id} capability=${capability}: ${
+              error instanceof Error ? error.message : String(error)
+            } — treating as a miss\n`,
+          );
+          cached = undefined;
+        }
+        if (cached && isNegativeEntry(cached.value)) {
+          if (Date.now() < cached.value.expiresAtMs) {
+            tried.push({ adapterId, reason: `${cached.value.reason} [cached negative]` });
+            skipped.push({ adapterId, kind: 'failed' });
+            continue;
+          }
+          // Expired negative: fall through and pay again, same as the single-winner walk below.
+        } else if (cached) {
+          // DIFFERENCE (cache-hit side): the single-winner walk's
+          // `if (satisfies(policy, cached.value, adapterId)) return withDiagnostics(hit);` (below —
+          // grep that line, not a number: coordinates in this file have shifted repeatedly in one
+          // day, WI-43) becomes "record the answer, accumulate it if it satisfies, keep walking" —
+          // the participant ANSWERED regardless of what follows, so `perSourceCache`/`firstAnswered`
+          // record that unconditionally.
+          firstAnswered ??= adapter.id;
+          perSourceCache.push({ adapterId: adapter.id, cache: 'hit', ageMs: cached.ageMs });
+          if (satisfies(policy, cached.value, adapterId)) {
+            // M-2 (fix pass 2026-08-07): its OWN try/catch — this call site sat OUTSIDE every
+            // try/catch before this fix, so a bug in OUR merge code (never the provider's) aborted
+            // the whole `resolve()` call with an untyped `TypeError` instead of being handled like
+            // every other per-participant fault in this loop. M-7: `adapter.id`, not the route's
+            // requested `adapterId` — matching `perSourceCache`/`firstAnswered` two lines up, so
+            // `contributors`/`sources` cannot disagree with them about a participant's identity.
+            try {
+              mergeInto(adapter.id, cached.value);
+            } catch (error) {
+              process.stderr.write(
+                `merge failed on ${adapter.id}'s own cached answer for ${capability}: ${
+                  error instanceof Error ? error.message : String(error)
+                } — this participant's points are dropped, NOT negative-cached [cached] (M-2: this ` +
+                  `is our bug, not the provider's)\n`,
+              );
+              tried.push({
+                adapterId,
+                reason: `merge failed on this participant's own cached answer: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              });
+            }
+          } else {
+            tried.push({
+              adapterId,
+              reason: 'answered, but not with what was asked for [cached]',
+            });
+            skipped.push({ adapterId, kind: 'policy-excluded' });
+          }
+          continue;
+        }
+
+        let raw: unknown;
+        try {
+          attempted.push(adapterId);
+          raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs);
+        } catch (error) {
+          if (error instanceof CapabilityNotCoveredOnChainError) throw error;
+          tried.push({ adapterId, reason: error instanceof Error ? error.message : String(error) });
+          skipped.push({ adapterId, kind: 'failed' });
+          continue;
+        }
+
+        try {
+          const result = adapter.normalize(capability, raw);
+          try {
+            await this.cache.set(adapter.id, capability, argsHash, result);
+          } catch (error) {
+            process.stderr.write(
+              `cache.set failed provider=${adapter.id} capability=${capability}: ${
+                error instanceof Error ? error.message : String(error)
+              } — result still returned (best-effort cache write)\n`,
+            );
+          }
+          // DIFFERENCE (fresh-answer side): the single-winner walk's
+          // `if (satisfies(policy, result, adapterId)) return withDiagnostics(answer);` (below —
+          // grep the line, not a number, for the reason given on the cache-hit side) becomes the
+          // same "record, accumulate, keep walking" as the cache-hit side above.
+          firstAnswered ??= adapter.id;
+          perSourceCache.push({ adapterId: adapter.id, cache: 'miss' });
+          if (satisfies(policy, result, adapterId)) {
+            // M-2/M-7 (fix pass 2026-08-07) — same reasoning as the cache-hit site above: its OWN
+            // try/catch, never sharing the OUTER catch below (which exists for `normalize()`
+            // failures and negative-caches under the PROVIDER's key); `adapter.id`, matching
+            // `perSourceCache`/`firstAnswered`.
+            try {
+              mergeInto(adapter.id, result);
+            } catch (error) {
+              process.stderr.write(
+                `merge failed on ${adapter.id}'s own answer for ${capability}: ${
+                  error instanceof Error ? error.message : String(error)
+                } — this participant's points are dropped, NOT negative-cached (M-2: this is our ` +
+                  `bug, not the provider's)\n`,
+              );
+              tried.push({
+                adapterId,
+                reason: `merge failed on this participant's own answer: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              });
+            }
+          } else {
+            tried.push({ adapterId, reason: 'answered, but not with what was asked for' });
+            skipped.push({ adapterId, kind: 'policy-excluded' });
+          }
+          continue;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          try {
+            const expiresAtMs = Date.now() + NEGATIVE_TTL_SECONDS * 1000;
+            const entry: NegativeCacheEntry = { __onchainNegative: true, reason, expiresAtMs };
+            await this.cache.set(adapter.id, capability, argsHash, entry, NEGATIVE_TTL_SECONDS);
+          } catch (cacheError) {
+            process.stderr.write(
+              `cache.set (negative) failed provider=${adapter.id} capability=${capability}: ${
+                cacheError instanceof Error ? cacheError.message : String(cacheError)
+              } — the next identical call will pay again\n`,
+            );
+          }
+          tried.push({ adapterId, reason });
+          skipped.push({ adapterId, kind: 'failed' });
+        }
+      }
+
+      // B-1 (fix pass 2026-08-07, AC-47) — the ONE outcome this loop does not turn into a merged
+      // success. `perSourceCache.length === 0` means NOBODY in `plan` ever reached an answered
+      // branch (cache hit or fresh fetch+normalize) — every participant was unregistered,
+      // chain-skipped, unavailable, negative-cached, deadline-cut, or failed. `firstAnswered` is
+      // therefore `undefined`, `contributors` is empty, and the fallback chain below would publish
+      // `source: ''` — the exact defect AC-47 forbids unconditionally ("никогда не пустая строка",
+      // `docs/TASK.md`). This is a narrow, NAMED exception to "013-4 always returns a merged
+      // success" (see the block overview comment above): 013-5 KEEPS this branch as its own
+      // "nobody answered" outcome, so it is forward-compatible, not throwaway.
+      if (perSourceCache.length === 0) {
+        throw new CapabilityUnavailableError({ capability, chain, tried });
+      }
+
+      // `sources`/`source` (task file "sources и source", R-174(a), AC-47). `sources` lists
+      // contributors in RANK order and is omitted when empty, the same idiom every optional field
+      // on `CapabilityResolution` already follows; `source` is the highest-rank contributor,
+      // falling back to the highest-rank participant that merely ANSWERED so the required field is
+      // never '' while anyone answered at all (TC-INT-10; the doubly-empty case above now THROWS
+      // rather than falling back to '', B-1).
+      //
+      // **M-7 (fix pass 2026-08-07) — derived directly from `contributors`, not re-cross-referenced
+      // against `plan`.** `contributors` is populated by `mergeInto`, which is now called with
+      // `adapter.id` at both call sites (the RESOLVED adapter's own reported id), matching
+      // `perSourceCache`/`firstAnswered` two sections up. The former derivation —
+      // `plan.map((p) => p.adapterId).filter((id) => contributors.has(id))` — cross-referenced
+      // `contributors` against `plan`'s ROUTE-declared `adapterId`, which is identical to
+      // `adapter.id` only as long as `this.adapters`'s map key agrees with the constructed
+      // adapter's own `.id` — nothing enforces that agreement structurally, and a mismatch would
+      // have made `perSourceCache`/`sources` name two different identities for the same
+      // participant in one resolution object. `[...contributors]` needs no cross-reference: a `Set`
+      // iterates in INSERTION order (the same guarantee `assertMergeParticipantsAreFree` already
+      // relies on, `adapters/types.ts`), and insertion happens inside this loop's own rank-order
+      // walk, so `[...contributors]` is already rank-ordered.
+      const sources = contributors.size > 0 ? [...contributors] : undefined;
+      const source = sources?.[0] ?? firstAnswered ?? '';
+
+      const resolution: CapabilityResolution = {
+        result: [...merged.values()],
+        source,
+        // R-174(c)/013-3 §3.5: the aggregate is 'hit' only when EVERY `perSourceCache` entry is
+        // 'hit'. `.every()` on an empty array is vacuously `true`, but that case now throws above
+        // (B-1) before this line is ever reached, so the `.length > 0` guard here is retained only
+        // as a second, independent safeguard against the vacuous-truth trap, not because it is
+        // still reachable in the all-empty shape.
+        cache:
+          perSourceCache.length > 0 && perSourceCache.every((entry) => entry.cache === 'hit')
+            ? 'hit'
+            : 'miss',
+        ...(sources !== undefined ? { sources } : {}),
+        ...(perSourceCache.length > 0 ? { perSourceCache } : {}),
+        // M-5 (fix pass 2026-08-07): every OTHER path on `CapabilityResolution` follows "hit ⇒
+        // `ageMs` present" (the single-winner walk's own `cached.ageMs`, `withDiagnostics`'s
+        // `deadlineOverrunMs`, `attempted`'s own presence rule) — an all-hit merge used to be the
+        // one shape that said `cache: 'hit'` with no top-level `ageMs` at all. Every entry
+        // contributing to an all-hit aggregate carries its OWN `ageMs` (`CacheGetResult.ageMs` is
+        // required, never optional — `cache-store.ts`), so the oldest of them, not an arbitrary
+        // pick, is what the aggregate reports; `?? 0` only satisfies the optional-field type and is
+        // never actually reached in this branch.
+        ...(perSourceCache.length > 0 && perSourceCache.every((entry) => entry.cache === 'hit')
+          ? { ageMs: Math.max(...perSourceCache.map((entry) => entry.ageMs ?? 0)) }
+          : {}),
+      };
+      return withDiagnostics(resolution);
+    }
 
     for (const { adapterId, policy } of plan) {
       // THE PRE-CHECK (task 012-8). First statement of the loop body, and ABOVE the cache read

@@ -51,7 +51,8 @@ true` participant to be `tier: 'free'`, closing the hazard of a paid, more-autho
     (`eval/capabilities.mjs`, `docs-counts.test.ts`, `tool-spec.test.ts`) need a real, named, small
     behaviour change — enumerated in system-architecture.md, not left as "the rest is Development's
     problem".
-  - 🔴 Dedup by `(metric, asset, ts)` never compares `value_raw` numerically: walking contributors in
+  - 🔴 Dedup by `(metric, asset, HOUR of ts)` (bucketed 2026-08-07, R-161(e) — raw `ts` could never
+    collide between the two real participants) never compares `value_raw` numerically: walking contributors in
     RANK order and inserting into a map only when the key is absent picks the winner by construction
     — no value comparison exists to route through `Number(...)` in the first place (R-167).
   - The merged result is never cached as a unit (D5's 🔴 invariant) — nothing about the merge walk

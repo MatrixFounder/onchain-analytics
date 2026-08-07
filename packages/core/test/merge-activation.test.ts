@@ -371,23 +371,46 @@ describe('TC-UNIT-03 — rank: plan for a merging capability equals the routes a
     // the walk ORDER `resolve()` already builds into `plan` from `route.adapterIds` (unmodified by
     // this task; the merge WALK itself is 013-4). This is the un-modified pre-existing mechanism
     // `CapabilityRoute.merge`'s docstring says the merge conflict rank reuses.
+    //
+    // **Observed via `isAvailable()` CALL ORDER, independently of what the walk finally does with
+    // the result (013-4 correction, then again in its roast fix pass).** Before 013-4, `resolve()`
+    // did not read `route.merge` at all, so this all-unavailable fixture fell through the
+    // single-winner walk and threw `CapabilityUnavailableError`, whose `tried[]` doubled as an
+    // order probe. 013-4 first made a `merge: true` route return an empty merged SUCCESS here — and
+    // the roast (B1/F-1) showed that success carried `source: ''`, violating AC-47 ("никогда не
+    // пустая строка"), which `docs/PLAN.md` assigns to 013-4 and not to 013-5. The merge walk now
+    // throws when NOBODY answered, so this fixture throws again — for a different reason than it
+    // originally did, and from a different branch.
+    //
+    // Recording call order directly (the way `registry.merge.test.ts`'s TC-INT-08 does) is what
+    // makes this test survive all three of those outcomes: the claim it exists to pin — plan order
+    // equals `adapterIds` order — never depended on which of them was current. Reading order off a
+    // thrown error's `tried[]` would have broken twice by now.
+    const callOrder: string[] = [];
     const adapters = new Map<string, ProviderAdapter>(
       ids.map((id) => [
         id,
-        makeAdapter({ id, isAvailable: () => ({ ok: false, reason: 'stub: no live transport' }) }),
+        makeAdapter({
+          id,
+          isAvailable: () => {
+            callOrder.push(id);
+            return { ok: false, reason: 'stub: no live transport' };
+          },
+        }),
       ]),
     );
     const registry = new CapabilityRegistry(routes, adapters, undefined, null, manifests);
 
-    let thrown: unknown;
-    try {
-      await registry.resolve('x', CHAIN, {});
-    } catch (error) {
-      thrown = error;
-    }
+    // Nobody answers, so the merge walk refuses rather than publishing `source: ''` (B1/AC-47).
+    // Asserted as a THROW, not swallowed: a test that tolerated either outcome would go green
+    // again the day the refusal is accidentally removed.
+    await expect(registry.resolve('x', CHAIN, {})).rejects.toBeInstanceOf(
+      CapabilityUnavailableError,
+    );
 
-    expect(thrown).toBeInstanceOf(CapabilityUnavailableError);
-    expect((thrown as CapabilityUnavailableError).tried.map((t) => t.adapterId)).toEqual(ids);
+    // The actual claim of this test, and the reason it is written against `callOrder` rather than
+    // against the error: rank order is `adapterIds` order, whatever the walk decides afterwards.
+    expect(callOrder).toEqual(ids);
   });
 });
 

@@ -242,6 +242,19 @@ export function assertValidAdapterRegistrations(registrations: AdapterRegistrati
  * reasoning as `assertValidAdapterRegistrations`'s own docstring: a validator that reads its own
  * subject can only ever be exercised against the one real, complete input.
  *
+ * **Two scope notes, recorded rather than fixed (fix pass 2026-08-07 — see the task's own "Noted,
+ * do NOT fix here" list, `docs/architectures/open-questions.md` "T-013 task 013-4").** (1) This
+ * gate is enforced at exactly ONE call site (`mcp-server/src/index.ts`, at module scope, before
+ * any store or registry is constructed) — `CapabilityRegistry` itself is a PUBLIC class, and
+ * `new CapabilityRegistry(routes, adapters, ...)` built directly (as every test in this package
+ * does, and as any future call site could) bypasses this check entirely; nothing in the class
+ * itself re-verifies it. (2) `tier: 'free'` (ADR-002 D8) means "no cost at the VENDOR", never
+ * "unmetered" — `blockscout` is `tier: 'free'` and still carries a real, unenforced-by-this-
+ * function ceiling of roughly **625 calls/day** before its own upstream credits run out
+ * (`providers.config.ts`'s own `blockscout` registration comment) — this gate refuses a PAID
+ * participant from silently losing a merge conflict, not a free one from silently running out of
+ * quota.
+ *
  * @throws Error naming the offending capability AND the first non-free participant found while
  * walking the union in route-then-adapterIds encounter order — the same "both halves in the
  * message" discipline as `UnregisteredPolicyClassError`.
@@ -368,9 +381,14 @@ export interface CapabilityRoute {
    *   refuses to build otherwise, naming the capability and the missing eligibility
    *   (`MergeEligibilityNotDeclaredError`, UC-20).
    *
-   * Absence/`false` behaves exactly as before this task: `resolve()` does not read this field yet
-   * (the walk itself is `013-4`) — a route declaring `merge: true` today changes nothing observable
-   * beyond being subject to the two checks above.
+   * **Absence/`false` behaves exactly as before this task: `resolve()` runs the pre-existing
+   * single-winner walk, byte-identical.** Corrected here (M-1, fix pass 2026-08-07) — this
+   * docstring used to say "`resolve()` does not read this field yet (the walk itself is `013-4`)",
+   * true only until 013-4 landed; the correction was written into a `merge-activation.test.ts`
+   * comment at the time and never propagated back to its own source. `merge: true` on at least one
+   * matching route now makes `resolve()` run the MERGE walk instead (T-013, task 013-4,
+   * `CapabilityRegistry.resolve()`'s own docstring) — the two checks above (eligibility,
+   * all-participants-free) still gate whether a route may set it at all.
    *
    * **The conflict rank is `adapterIds`' own order, and NOTHING ELSE.** `resolve()` already builds
    * `plan` — the de-duplicated union of every matching route's `adapterIds`, in encounter order

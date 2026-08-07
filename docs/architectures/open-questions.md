@@ -221,6 +221,54 @@ exists precisely because the choice still had to be made and stated, not left as
 behaviourally-coincident readings that could silently diverge the day a merge route gets a real
 policy.
 
+### T-013 task 013-4 (2026-08-07, Development) — the merge dedup key buckets `ts` to the HOUR; raw `ts` was unimplementable
+
+**An OVERRIDE of an approved requirement, taken by the owner, not a documentation alignment.**
+R-161 as approved read: «Ключ дедупликации ряда — тройка `(metric, asset, ts)`». That key cannot
+fire between the two real participants, so the capability could not deliver its own use case.
+
+**The measurement that refuted it — three code sites, read, not inferred.**
+
+| Where `ts` comes from                                     | Site                                                                                                                                                 |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the VENDOR's own history timestamp                        | `adapters/platform-explorer/index.ts`, `const ts = typeof timestamp === 'string' ? Date.parse(timestamp) : NaN;`                                     |
+| the `snapshots.ts` COLUMN                                 | `adapters/pg-history/index.ts`, `const ts = toFiniteNumber(row.ts);`                                                                                 |
+| what writes that column: the snapshotter's own wall clock | `n8n-workflows/exported/onchain-snapshotter.json`, node `Normalize` — `const fetchTs = Date.now();`, and `identities_total` is pushed with `fetchTs` |
+
+So one participant reports the hour the vendor labelled the observation, and the other reports the
+moment the snapshotter got round to reading it. Equality to the MILLISECOND is a coincidence, not a
+property. Under the approved key, dedup would never have fired on live data: `identities_total`
+would arrive in the merged series TWICE per hour — which is precisely the outcome `UC-11` names as
+the failure to exclude («дубликат точки от обоих источников»), and the whole reason the merge walk
+pays N round-trips instead of stopping at the first answer.
+
+**Why no test saw it, and why the mutation protocol structurally could not.** Every merge fixture
+handed both participants the _same literal_ `ts`, so the collision was manufactured by the fixture
+rather than produced by the mechanism. `AC-23` asked for dedup proven «на реально пересекающейся
+паре `identities_total`» — the metric was real, the `ts` agreement was not. Mutating the key only
+ever confirms that the implemented key equals the specified key; it cannot question the
+specification. This is the sharper form of PLAN §0.9's own warning, and §0.9 did not go far enough:
+it warned about non-overlapping fixtures, not about fixtures that overlap only because the test
+author wrote the same number twice.
+
+**Decision (owner, 2026-08-07).** The key becomes `(metric, asset, Math.floor(ts / 3_600_000))`.
+**The stored point keeps its original `ts` untouched — only the KEY buckets.** This is not an
+invention of this task: the project's own persistence layer already dedups on the hour
+(`ON CONFLICT (source, asset, metric, ts_bucket)`, `ts_bucket = floor(ts/3600000)*3600000`,
+`CLAUDE.n8n.md` / DB-SCHEMA §1) for exactly this reason. The engine had simply been specified
+against a stricter key than the database it reads from.
+
+**Recorded as an override rather than folded into an "align the docs" diff, deliberately** — the
+same discipline the `assertMergeParticipantsAreFree` override above states: an alignment and an
+override must not look the same in a diff, or an approved requirement is rewritten with no record
+and the next gate accepts the rewrite as agreement. R-161 keeps its original text visible in the
+amendment; the new clause is R-161(e).
+
+**Scope.** Confined to the merge dedup key. `Snapshot.ts` itself is unchanged everywhere; the
+persistence layer is untouched (the engine never writes to it); the single-winner walk has no dedup
+key at all; and the conflict-resolution rule (rank, never a value comparison — R-162/R-167) is
+unaffected, since bucketing changes WHICH points collide, never HOW a collision is settled.
+
 ### T-013 task 013-3 (2026-08-06, Development) — `perSourceCache` covers every ANSWERED participant, not only contributors
 
 **A deviation from four sentences of the delivered architecture text, recorded as a decision — not
