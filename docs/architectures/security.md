@@ -14,7 +14,7 @@ The optional read-only PG client adds no auth perimeter: authorization happens o
   the same rule: never logged, never part of a cache key.
 - `NANSEN_API_KEY` (M2, TASK-005, R-45) is the sixth optional key and follows the same contract. The
   `apiKey: <NANSEN_API_KEY>` header is already covered by the existing
-  `SENSITIVE_HEADER_RE = /authorization|api-?key/i` in `net/safe-fetch.ts:83` — **no regex change is
+  `SENSITIVE_HEADER_RE = /authorization|api-?key/i` in `packages/core/src/net/safe-fetch.ts:251`, `const SENSITIVE_HEADER_RE = /authorization|api-?key/i;` — **no regex change is
   needed**: the `Headers` API strips case from the header name before the comparison (`"apiKey"` →
   `"apikey"`), and `api-?key` matches `"apikey"` literally because the hyphen is optional. A
   cross-host redirect therefore drops this header exactly as it drops `Authorization` and

@@ -49,7 +49,7 @@
 
   The one thing that error can NEVER mean: a paid request already
   paid for was cut off before it finished. Credits are reserved **inside** `fetch()`, at
-  `gate.ensureBudget()` → `checkAndReserve()` (`adapters/nansen/index.ts:657`) — which happens
+  `gate.ensureBudget()` → `checkAndReserve()` (`packages/core/src/adapters/nansen/index.ts:657`, `// exactly the money-leak OQ-2's "structurally non-bypassable"`) — which happens
   **once, before** the 2–3 sub-calls that one reservation covers, not at each HTTP dispatch. The
   deadline stops being honoured at that **commit point**, so neither a sub-call nor a throttle wait
   _between_ sub-calls ever receives it: cancelling between sub-call 1 and sub-call 2 would pay for
@@ -84,11 +84,11 @@
   and `kind`, never a surprise on the first matching `tools/call`.
 
   🔴 **The manifest table is INJECTED, not imported** — a defaulted constructor parameter, exactly as
-  the chain registry already is (`adapters/registry.ts:109-111`). This is not symmetry for its own
+  the chain registry already is (`packages/core/src/adapters/registry.ts:109-111`, `this.name = 'MissingCapabilityManifestError';`). This is not symmetry for its own
   sake: `CapabilityRegistry` is a factory, not a singleton, and the parameter defaults to the real
   table, so any test that constructs a registry over a capability with no manifest row would go red.
   The blast radius was **measured, not assumed** — it is **two `new CapabilityRegistry(...)` calls,
-  both in one file**: `packages/core/test/coverage.test.ts:86` (inside the `registryWith` helper)
+  both in one file**: `packages/core/test/coverage.test.ts:86`, `now validates at CONSTRUCTION that` (inside the `registryWith` helper)
   and `:171` (a direct call). Both are built over the same `ROUTES` literal containing the synthetic
   `legacy.thing` (`:79-84`), and each needs its own one-line edit to pass a synthetic manifest map
   as the 5th argument — the helper does not cover `:171`.
@@ -140,20 +140,21 @@
   (2026-08-03) applies to a merge walk exactly as it applies to a non-merge one, through the SAME
   THREE sites that already throw `CapabilityDeadlineExceededError`, not merely two.** A participant
   can be defeated by the deadline two ways DURING the walk — skipped by the per-adapter pre-check
-  (`registry.ts:716-724`) OR its in-flight `fetch()` cut off by the ceiling (the caught
+  (`packages/core/src/adapters/registry.ts:1326-1334`, `deadlineHit = true;`) OR its in-flight
+  `fetch()` cut off by the ceiling (the caught
   `DeadlineExceededError`, `:829`) — and `deadlineHit` is set either way, so NONE of branches (a)-(d)
   apply: the whole call ends in `CapabilityDeadlineExceededError`, regardless of how many
   participants had already answered. The THIRD site is not a per-participant door at all: a caller
-  whose OWN `requestedDeadlineAtMs` has already passed at entry (`registry.ts:580`, docstring
+  whose OWN `requestedDeadlineAtMs` has already passed at entry (`packages/core/src/adapters/registry.ts:644`, `CapabilityDeadlineExceededError`, docstring
   "immediate `CapabilityDeadlineExceededError` with an empty `tried`") throws the
   same class immediately, with `tried: []`, before the walk — and before any merge/non-merge branch
   — even begins; a merge-enabled route reaches this exactly like any other. A
   saturated rate-limiter bucket (`DeadlineWouldExceedError`) is different and deliberately does NOT
   set `deadlineHit`: that participant is "asked, did not answer" and is distributed into branch (b)
   or (c) by the ordinary rule above, exactly like any other non-deadline failure — a limiter's
-  per-provider backlog is not a fact about the route's global clock (`registry.ts:929-943`). The
+  per-provider backlog is not a fact about the route's global clock (`packages/core/src/adapters/registry.ts:1539-1553`, `— but it CAN still reach this branch`). The
   terminal wall-clock disjunct (`deadlineHit || Date.now() >= effectiveDeadlineAtMs`,
-  `registry.ts:944`) is preserved unmodified for the merge path: it is not redundant with the
+  `packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`) is preserved unmodified for the merge path: it is not redundant with the
   per-participant pre-check — it covers every adapter's transport, not only the two that unwrap a
   typed deadline class today (adversarial cycle 2's F-7; the disjunct's coverage argument is TWELVE
   adapters, WI-36's unwrapping fixed two) — and a merge implementation has no license to remove it.

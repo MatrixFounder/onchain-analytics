@@ -343,9 +343,9 @@ loss of cache efficiency, **not** of correctness (the answers are identical).
 **SHIPPED (T-012, commit `6af4b19`, 2026-08-05).** Everything from here through "Architectural
 obligation" at the end of this subsection describes the design **as it is in code**, not a target.
 `packages/core/src/adapters/types.ts` carries the post-T-012 shapes: a serialisable
-`policy?: PolicyDescriptor` in place of a literal `isSatisfying` (`types.ts:333-416`, class
+`policy?: PolicyDescriptor` in place of a literal `isSatisfying` (`packages/core/src/adapters/types.ts:333-416`, `tier === undefined ? 'no adapter registration found for this`, class
 dictionary in `adapters/policy.ts`), mandatory `tier`/`trust` on every registration
-(`types.ts:93,106,137,148`), and the optional `deadlineAtMs` parameter on `fetch()` (`types.ts:52`).
+(`types.ts:93,106,137,148`), and the optional `deadlineAtMs` parameter on `fetch()` (`packages/core/src/adapters/types.ts:52`, `fetch(cap: string, args: Record<string, unknown>,`).
 Two owner decisions dated 2026-08-03 (OD-3, OD-4) are folded in below, replacing an earlier draft
 of this section that an architecture review (same date) found to misdescribe both.
 
@@ -421,9 +421,9 @@ which could detect the others disagreeing:
 
 | Old classification                                           | Where                                   | Becomes                                                                               |
 | ------------------------------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------- |
-| `PAID_PROVIDER_IDS = new Set(['dune','nansen'])`             | `cache/sqlite-store.ts:48`              | reads `registration.tier`                                                             |
-| bootstrap writes `kind: 'unknown'` to every provider row     | `cache/budget-store.ts:263-272`         | writes `registration.tier`                                                            |
-| `BudgetMeta.provider: 'nansen'` — a hand-picked literal type | `mcp-server/src/tools/budget-meta.ts:9` | widens to plain `string`, checked at runtime (M6 below) — the WIRE SHAPE is unchanged |
+| `PAID_PROVIDER_IDS = new Set(['dune','nansen'])`             | `packages/core/src/cache/sqlite-store.ts:48`, `* the connection opens (PRAGMA/DDL exec, providers bootstrap,`              | reads `registration.tier`                                                             |
+| bootstrap writes `kind: 'unknown'` to every provider row     | `packages/core/src/cache/budget-store.ts:263-272`, `if (!existing.has(column.name)) this.db.exec(column.ddl);`         | writes `registration.tier`                                                            |
+| `BudgetMeta.provider: 'nansen'` — a hand-picked literal type | `packages/mcp-server/src/tools/budget-meta.ts:9`, `* is the complete set of sources that can have spent anything.` | widens to plain `string`, checked at runtime (M6 below) — the WIRE SHAPE is unchanged |
 | `costOf() === 0 \| Infinity` read as a de-facto tier signal  | every adapter's `costOf()`              | stays the PRICE mechanism only; nothing reads it as a tier any more                   |
 
 Assignment (`providers.config.ts`'s 12 registrations, measured): **`paid`** — `dune`, `nansen`.
@@ -464,7 +464,7 @@ identically to today's `{provider: 'nansen', ...}` for the one value either type
 
 **Source trust — declare-only (D9 slice, R-153/R-154/R-155). LANDED (T-012, task 012-2).** The
 field is declared on all twelve registrations and validated at construction
-(`assertValidAdapterRegistrations`, `types.ts:179-201`); "declare-only" still describes its
+(`assertValidAdapterRegistrations`, `packages/core/src/adapters/types.ts:179-201`, `export function assertValidAdapterRegistrations(registrations:`); "declare-only" still describes its
 CONSUMPTION, which is T-016. Assignment, from
 ADR-002 D9's own table plus a reasoned analogy (objective vendor/consensus data vs.
 third-party-edited content):
@@ -662,7 +662,7 @@ export class CapabilityRegistry {
 ```
 
 **`CapabilityRoute.chains` is GONE (OQ-C, ADR-002 D2).** The field was declared, read by the router
-(`registry.ts:191-195`, narrowing `matching` routes), and set by ZERO of the 21 entries in
+(`packages/core/src/adapters/registry.ts:234-238`, `, which for a negative entry is the wrong`, narrowing `matching` routes), and set by ZERO of the 21 entries in
 `providers.config.ts` — re-measured 2026-08-03, the same result already recorded at TASK-006 and in
 ADR-002 itself. T-012 deletes the field together with the filter that read it, per the escape hatch
 ADR-002 D2 specifies: if a construction-time audit of all 21 routes ever finds one that genuinely
@@ -680,11 +680,11 @@ The type-level field is one thing; `CapabilityDescriptor.chains`
 (a DIFFERENT field, on the adapter's OWN capability descriptor — §"Module: src/adapters/*" above) is
 untouched and must not be confused with it. What DOES need editing: route-level `chains` is set by
 **13 literals across 9 test files** — `packages/core/test/registry.test.ts:76,91,92,122,287`;
-`packages/mcp-server/test/env-degradation.integration.test.ts:35`; and one literal each in
+`packages/mcp-server/test/env-degradation.integration.test.ts:35`, `adapterIds: ['pg-history'],`; and one literal each in
 `packages/mcp-server/test/tools/{new-pairs.test.ts:12, entity-label.test.ts:17,
 protocol-tvl.test.ts:12, get-token.test.ts:18, token-risk.test.ts:15, wallet-balances.test.ts:19,
 smart-money-flows.test.ts:22}`. Compiling past the type deletion is not the same as proving the
-mechanism it replaces is equivalent: `packages/core/test/registry.test.ts:87-111`, titled "selects
+mechanism it replaces is equivalent: `packages/core/test/registry.test.ts:87-111`, `expect(resolution.result).not.toBe(raw);`, titled "selects
 the route whose chains list matches the requested chain…", builds its fakes (`makeAdapter`,
 `:16-36`) with **no `chainSupport`** declared at all. Removing the `chains` filter with those fakes
 left as-is means BOTH routes contribute adapters unfiltered, `rpc-evm` answers first for every
@@ -713,12 +713,12 @@ field-mapping) on the identical ground. Exactly two entries are needed today:
 | `kind`              | Predicate                                                       | Replaces                                                                                                                                                                                                                 |
 | ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `any`               | always `true` (today's implicit default)                        | 20 of 21 routes, which carry no policy today                                                                                                                                                                             |
-| `someElementHasAny` | array, and ≥ 1 element has a non-empty value at one of `fields` | `entity.labels`'s literal predicate (`providers.config.ts:94-104`), bit-for-bit — 🔴 NEVER named or aliased `nonEmpty` anywhere (H-1: a non-empty array of contentless Blockscout rows must still count as unsatisfying) |
+| `someElementHasAny` | array, and ≥ 1 element has a non-empty value at one of `fields` | `entity.labels`'s literal predicate (`packages/core/src/providers.config.ts:94-104`, `that nansen exists; the policy belongs here, as data, beside`), bit-for-bit — 🔴 NEVER named or aliased `nonEmpty` anywhere (H-1: a non-empty array of contentless Blockscout rows must still count as unsatisfying) |
 
 **Resolved at `CapabilityRegistry` CONSTRUCTION, never lazily inside `resolve()` (R-135).** See the
 exact validation order specified on the constructor above (manifest presence, then policy `kind`).
 The resolved predicate is cached per route; `resolve()`'s existing `satisfies()` wrapper (fail-open
-on a throwing policy, `registry.ts:238-254`, UNCHANGED) calls the cached predicate instead of a
+on a throwing policy, `packages/core/src/adapters/registry.ts:345-361`, `attempted?: string[];`, UNCHANGED) calls the cached predicate instead of a
 route's own literal function — zero behaviour change on the 21 real routes (R-135d).
 
 **Capability manifest (D3, R-136/R-137/R-138) — home: `src/capability-manifest.ts`. LANDED
@@ -756,7 +756,8 @@ type CapabilityManifestBase = {
 // T-013 adds the field.
 //
 // DESIGNED (T-013, R-159/R-160) — the obligation this union's own docstring hands to T-013
-// (`capability-manifest.ts:152-163`) will be discharged once built: the `set | series` arm alone gains the
+// (`packages/core/src/capability-manifest.ts:146-153`, `the obligation the paragraphs below used to describe as future is discharged.`)
+// will be discharged once built: the `set | series` arm alone gains the
 // merge-eligibility field. `mergeable` is illustrative (name is Development's call, R-159a);
 // omitted on `entity.labels` and on every `set`/`series` capability that has no second live
 // adapter — eligibility is a fact about the CAPABILITY's identity key (Snapshot's metric/asset/ts,
@@ -921,7 +922,7 @@ left as two behaviourally-coincident readings.
 implicit (M-6).** On a policy-bearing merge route where every participant answers and NONE
 satisfies (hypothetical for T-013's shipped scope — both real routes carry no `policy`), the
 non-merge path falls back to the first truthful-but-unsatisfying answer (`unsatisfying`,
-`registry.ts:744`, `let unsatisfying: CapabilityResolution | undefined;`, returned at `:1040`,
+`packages/core/src/adapters/registry.ts:822`, `let unsatisfying: CapabilityResolution | undefined;`, returned at `:1040`,
 `if (unsatisfying && !hadFailure) return withDiagnostics(unsatisfying);`). **The merge path does NOT
 reuse that fallback.** Falling
 back to one participant's raw, un-merged answer would silently un-merge the very response the
@@ -1225,7 +1226,7 @@ this call's binding constraint.
 "never a partial-as-fact" rule.** `DeadlineExceededError` (net layer) is never rethrown to the
 caller AS ITSELF. `CapabilityRegistry.resolve()`'s existing per-adapter `try/catch` — the SAME one
 that already special-cases `CapabilityNotCoveredOnChainError` for immediate rethrow
-(`registry.ts:968`, `if (error instanceof DeadlineExceededError) deadlineHit = true;`) — instead
+(`packages/core/src/adapters/registry.ts:1439`, `if (error instanceof DeadlineExceededError) deadlineHit = true;`) — instead
 catches it, sets a NEW `deadlineHit = true` flag alongside the
 existing `hadFailure`, and records the same informative `tried[]` entry any other fetch failure
 gets. **`DeadlineWouldExceedError` (H-A above) is caught by this SAME per-adapter branch but does
@@ -1264,7 +1265,7 @@ answered and nobody had it".** This supersedes an earlier draft of this section,
 "частичный результат" wording as licence to return the truthful-but-unsatisfying answer even when a
 deadline (not every adapter) was why the walk ended. It does not — `hadFailure` and `deadlineHit`
 are set TOGETHER, so the existing `if (unsatisfying && !hadFailure) return unsatisfying;`
-(`registry.ts:453`, H-1) does NOT fire, preserving H-1's doctrine unchanged. The terminal throw
+(`packages/core/src/adapters/registry.ts:656`, `args: Record<string, unknown>,`, H-1) does NOT fire, preserving H-1's doctrine unchanged. The terminal throw
 becomes:
 
 ```
@@ -1306,7 +1307,7 @@ reservation was made for the SUM of their prices (§3.2, "Post-call reconciliati
 sub-call 2 after paying for both would be exactly the "paid and got nothing" outcome D4 п.2
 forbids, merely delayed by one step. 🔴 **M-3 correction (architecture review round 2, 2026-08-03) —
 per-tier sub-call counts, restated:** `entity.labels`'s DEFAULT tier issues **2 OR 3** paid
-sub-calls under one reservation, depending on `args` (`nansen/reconcile.ts:8`) — 3 is the case
+sub-calls under one reservation, depending on `args` (`packages/core/src/adapters/nansen/reconcile.ts:8`, `smart-money.flows`) — 3 is the case
 `paidLegMs ≈ 270_000` (the OD-3 worked example above) is derived from, and `paidLegMs` is documented
 as the WORST CASE over arguments, never a fixed count: a lighter invocation that resolves to fewer
 sub-calls has a shorter ACTUAL uncancellable tail, but the manifest publishes the worst-case bound
@@ -1332,7 +1333,7 @@ covered automatically — `tier` is introduced by this very task, so nothing pre
 written this test.
 
 **Singleflight does not see the deadline (M5).** `nansen`'s singleflight key is
-`deriveArgsHash(cap, args)` (`nansen/index.ts:596`) — `deadlineAtMs` never enters it, deliberately:
+`deriveArgsHash(cap, args)` (`packages/core/src/adapters/nansen/index.ts:596`, `'s own docstring for why an OMITTED`) — `deadlineAtMs` never enters it, deliberately:
 two calls for the identical `(capability, args)` with DIFFERENT deadlines are still logically one
 request in flight. A follower whose OWN deadline expires while the leader's shared promise is still
 pending abandons ITS wait and raises `CapabilityDeadlineExceededError` to its own caller — it does
@@ -2675,8 +2676,10 @@ client.
     field carries the second capability instead.** A first draft of this entry proposed
     `capability: string | string[] | null` and called it "the one change" and "backward-compatible".
     Measured against the tree, it is neither: **three** type declarations name the field
-    (`mcp-server/src/tools/registry.ts:110` `ToolDefinition.capability`, `:139` `ToolSpec.capability`,
-    **and** `scripts/gen-tool-inventory.ts:41` `ToolInventoryEntry.capability` — the schema of the
+    (`packages/mcp-server/src/tools/registry.ts:110`, `readonly capability: string | null;` — in
+    `ToolDefinition`; the same line at `:139` in `ToolSpec`; **and**
+    `packages/mcp-server/scripts/gen-tool-inventory.ts:41`, `readonly capability: string | null;`
+    in `ToolInventoryEntry` — the schema of the
     _committed artifact_ `tool-inventory.json`, read by `smoke-dist.mjs` and the eval); and a
     `string[]` value is not equal to any string, so every reader that compares `capability` with
     `===` or as a `Set` member goes from "matches" to "silently never matches" — a hard, offline
@@ -2849,7 +2852,7 @@ these documents state, and the tool/adapter names they must contain, compared ag
 - **`packages/mcp-server/test/e2e.stdio.test.ts`** (spawn; the mechanism is unchanged from M0) —
   spawns `src/index.ts` as a child process through `tsx`. It asserts that `tools/list` contains
   exactly the **thirteen** tools **derived from `toolSpecs`** — `toHaveLength(expected.length)` at
-  `e2e.stdio.test.ts:162`, not a hand-written literal, since TASK-011 made the inventory data — and keeps running
+  `packages/mcp-server/test/e2e.stdio.test.ts:162`, `expect(tools, ADD_A_TOOL).toHaveLength(expected.length);`, not a hand-written literal, since TASK-011 made the inventory data — and keeps running
   `onchain_ping` end to end. It deliberately does **not** call the other tools over this transport:
   the `registry` injection is in-process, and using the real registry inside a spawned process
   would mean live network calls under CI — a violation of R-21.

@@ -122,17 +122,17 @@
 
 | #   | Сайт                                                         | Что делает                                                                 | Задача |
 | --- | ------------------------------------------------------------ | -------------------------------------------------------------------------- | ------ |
-| 1   | `src/tools/registry.ts:110` (`ToolDefinition`)               | объявление типа                                                            | 013-7  |
-| 2   | `src/tools/registry.ts:139` (`ToolSpec`)                     | объявление типа                                                            | 013-7  |
-| 3   | `scripts/gen-tool-inventory.ts:41` (`ToolInventoryEntry`)    | схема артефакта                                                            | 013-7  |
-| 4   | `scripts/gen-tool-inventory.ts:55-64` (`buildToolInventory`) | маппер; без правки поле теряется молча                                     | 013-7  |
+| 1   | `packages/mcp-server/src/tools/registry.ts:110`, `readonly capability: string \| null;` (`ToolDefinition`)               | объявление типа                                                            | 013-7  |
+| 2   | `packages/mcp-server/src/tools/registry.ts:139`, `readonly capability: string \| null;` (`ToolSpec`)                     | объявление типа                                                            | 013-7  |
+| 3   | `packages/mcp-server/scripts/gen-tool-inventory.ts:41`, `readonly capability: string \| null;` (`ToolInventoryEntry`)    | схема артефакта                                                            | 013-7  |
+| 4   | `packages/mcp-server/scripts/gen-tool-inventory.ts:55-64`, `export function buildToolInventory(): ToolInventory {` (`buildToolInventory`) | маппер; без правки поле теряется молча                                     | 013-7  |
 | 5   | `eval/capabilities.mjs:43` (`toolFor`)                       | сопоставление способность → тул                                            | 013-8  |
-| 6   | `test/docs-counts.test.ts:294-319`                           | парность якорей `// Capability:` и тулов                                   | 013-8  |
-| 7   | `test/tool-spec.test.ts:302-305`, `:314-317`                 | «служит нулю способностей» и «всё маршрутизировано»                        | 013-8  |
-| 8   | `test/eval-capability-coverage.test.ts:30-36`                | **молчаливый** — тул с `capability: null` ему невидим                      | 013-8  |
-| 9   | `test/eval-checks-coverage.test.ts:51`                       | **молчаливый по источнику** — тот же бит `null` читает как «серверный тул» | 013-8  |
-| 10  | `test/tool-spec.test.ts:420`, тело `:441-456`                | «называет свою способность один раз»; см. §0.11                            | 013-8  |
-| 11  | `test/readme-tool-table.test.ts:130-147`                     | `CAPABILITY_OF`, число строк README, ожидаемое значение TTL                | 013-8  |
+| 6   | `packages/mcp-server/test/docs-counts.test.ts:294-319`, `const withCapability = toolSpecs.filter((spec) =>`                           | парность якорей `// Capability:` и тулов                                   | 013-8  |
+| 7   | `packages/mcp-server/test/tool-spec.test.ts:302-305`, `:314-317`                 | «служит нулю способностей» и «всё маршрутизировано»                        | 013-8  |
+| 8   | `packages/mcp-server/test/eval-capability-coverage.test.ts:30-36`, `function capabilitiesServedByTools(): Map<string, string> {`                | **молчаливый** — тул с `capability: null` ему невидим                      | 013-8  |
+| 9   | `packages/mcp-server/test/eval-checks-coverage.test.ts:51`, `const serverLevelTools = toolSpecs.filter((spec) =>`                       | **молчаливый по источнику** — тот же бит `null` читает как «серверный тул» | 013-8  |
+| 10  | `packages/mcp-server/test/tool-spec.test.ts:420`, `it('names its capability once — the spec field and the resolve`, тело `:441-456`                | «называет свою способность один раз»; см. §0.11                            | 013-8  |
+| 11  | `packages/mcp-server/test/readme-tool-table.test.ts:130-147`, `const CAPABILITY_OF = new Map(`                     | `CAPABILITY_OF`, число строк README, ожидаемое значение TTL                | 013-8  |
 
 Сайт 8 — собственный сторож RF-5. Тул с `capability: null` и двумя способностями в
 `servedCapabilities` останется ему невидим, если `capabilitiesServedByTools()` не развернёт новое
@@ -160,8 +160,8 @@
 
 **§0.8 Проводной контракт 13 тулов не двигается до `013-8`.** Сторожей **шесть**, не четыре:
 `test/fixtures/tools-list.snapshot.json`, `e2e.stdio.test.ts`, `scripts/smoke-dist.mjs`,
-`docs-counts.test.ts`, **`tool-spec.test.ts:410-418`** (число модулей с `= defineTool({` равно
-`toolSpecs.length`) и **`tool-response-shape.test.ts:104`** (литерал 13 над живым снимком
+`docs-counts.test.ts`, **`packages/mcp-server/test/tool-spec.test.ts:410-418`, `const MODULES = readdirSync(toolsDirectory)`** (число модулей с `= defineTool({` равно
+`toolSpecs.length`) и **`packages/mcp-server/test/tool-response-shape.test.ts:104`, `expect(tools).toHaveLength(13);`** (литерал 13 над живым снимком
 `tools/list`). Все шесть обязаны быть зелёными без диффа после каждой из задач `013-1` … `013-7`.
 На `013-8` снимок растёт ровно на одну запись.
 
@@ -172,7 +172,7 @@
 `dashPlatformHistoryToolSpec` вместе с вызовом `defineTool` и записью в `toolSpecs` приезжает в
 `013-8` одним коммитом.
 
-**Why.** Сторож `contract-violation.test.ts:26` читает все `.ts` каталога независимо от
+**Why.** Сторож `packages/mcp-server/test/contract-violation.test.ts:26`, `readdirSync(toolsDir)` читает все `.ts` каталога независимо от
 `defineTool`, поэтому утверждение «модуль проходит гейты ещё до регистрации» остаётся верным и под
 этим разделением.
 
@@ -193,7 +193,7 @@
 
 | Правка                                                                                                                       | Владелец  | Как проверяется                                    |
 | ---------------------------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------- |
-| R-164(e): терминальный дизъюнкт по часам (`registry.ts:1083`, `if (deadlineHit \|\| Date.now() >= effectiveDeadlineAtMs) {`) | **013-5** | мутационный прогон плюс тест на две ветки          |
+| R-164(e): терминальный дизъюнкт по часам (`packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit \|\| Date.now() >= effectiveDeadlineAtMs) {`) | **013-5** | мутационный прогон плюс тест на две ветки          |
 | AC-49: группировка держится на ОБОИХ селекторах                                                                              | **013-7** | контрактный тест тула на двух селекторах           |
 | `PLANNED_TOOL_NAMES`-запись `onchain_dash_platform_history`                                                                  | **013-8** | удаление в коммите регистрации; гейт орфанов зелён |
 
@@ -207,7 +207,7 @@
    утверждают один факт.
 
 **§0.11 Правило «способность названа один раз» для модуля на две способности.** Гейт
-`tool-spec.test.ts:420` сегодня знает ровно две формы: `capability: CAPABILITY` при одной строковой
+`packages/mcp-server/test/tool-spec.test.ts:420`, `it('names its capability once — the spec field and the resolve` сегодня знает ровно две формы: `capability: CAPABILITY` при одной строковой
 константе `const CAPABILITY = '…'` и `capability: null` при полном отсутствии `resolveCapability(`.
 Четырнадцатый тул не попадает ни в одну, и это состояние постоянное.
 
@@ -266,7 +266,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 - **Пункт плана 1.3 (Фаза 2) — данные.** `mergeable: true` ставится ровно двум строкам:
   `privacy.shielded_pool.history` и `platform.metrics.history`. `entity.labels` (ветка `set`) поля
   не получает. Право не активирует слияние — активация приезжает в `013-6`.
-- **Пункт плана 1.4 (Фаза 2) — докстринг типа.** Текст `capability-manifest.ts:142-164` называет
+- **Пункт плана 1.4 (Фаза 2) — докстринг типа.** Текст `packages/core/src/capability-manifest.ts:142-164`, `* One capability's manifest — a **discriminated union on` называет
   обязательство T-013 как будущее. Он переписывается в том же коммите: обязательство закрыто,
   сторож объявления `TC-UNIT-07` остаётся.
 - **Пункт плана 1.5 — протокол мутации (AC-22).** Поле переносится на `CapabilityManifestBase`,
@@ -288,7 +288,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 
 **Файл задачи:** [docs/tasks/task-013-2-route-activation-and-rank.md](tasks/task-013-2-route-activation-and-rank.md)
 
-- **Пункт плана 2.1 (Фаза 1) — тип маршрута.** `CapabilityRoute` (`adapters/types.ts:333`) получает
+- **Пункт плана 2.1 (Фаза 1) — тип маршрута.** `CapabilityRoute` (`packages/core/src/adapters/types.ts:346`, `tier === undefined ? 'no adapter registration found for this`) получает
   `merge?: boolean`. Продовая конфигурация в этой задаче не трогается.
 - **Пункт плана 2.2 (Фаза 1) — шаг 3 валидации конструктора.** Порядок фиксирован: шаг 1 (манифест
   существует), шаг 2 (`policy.kind` зарегистрирован), шаг 3 (`route.merge === true` требует
@@ -336,7 +336,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 
 **Файл задачи:** [docs/tasks/task-013-3-resolution-shape.md](tasks/task-013-3-resolution-shape.md)
 
-- **Пункт плана 3.1 (Фаза 1) — `CapabilityResolution`.** `registry.ts:253`
+- **Пункт плана 3.1 (Фаза 1) — `CapabilityResolution`.** `packages/core/src/adapters/registry.ts:317`, `export interface CapabilityResolution {`
   (`export interface CapabilityResolution {`) получает три
   опциональных поля: `sources?: string[]`, `missingSources?: { adapterId: string; reason: string }[]`,
   `perSourceCache?: { adapterId: string; cache: 'hit' | 'miss'; ageMs?: number }[]`. Существующие
@@ -348,10 +348,10 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   реализацию `resolve()`; подставной реестр возвращает три поля, тест утверждает, что
   `resolveCapability()` отдаёт их без потери формы. Реальный обход для этого не нужен.
 - **Пункт плана 3.4 — `perSourceCache` покрывает ОТВЕТИВШИХ, а не вкладчиков.** Узкое чтение несут
-  четыре предложения: `system-architecture.md:982-983` («one entry per member of `sources`, same
+  четыре предложения: `docs/architectures/system-architecture.md:982-983`, `happens on branch (a) when every participant answered with zero` («one entry per member of `sources`, same
   set»), `:992` («the granular per-contributor truth»), `:949-951` («or into neither (answered but
   policy-excluded, tracked only in `tried`)» — найдено роастом раунда 1, B-4, связывает
-  `perSourceCache` с тем же условием `satisfied`, что и `sources`) и `interfaces.md:474-481`
+  `perSourceCache` с тем же условием `satisfied`, что и `sources`) и `docs/architectures/interfaces.md:474-481`, `is this tool's OWN shape, not the shared`
   (буллет `_meta.cache`). Свод: `rg -n "perSource" docs/architectures/*.md`, каждое вхождение
   прочитано на предмет утверждения о членстве — полный список чистых (не узких) вхождений в
   `docs/tasks/task-013-3-resolution-shape.md`. `data-model.md` этого правила не содержит и не
@@ -360,7 +360,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   `_meta.cache` целиком — тогда как R-174(c) требует, чтобы факт «один из кеша, другой с сети» не
   терялся.
 - **Пункт плана 3.4a — форма записи: пометка на месте, а не только реестр вопросов.** После `013-4`
-  предложение `system-architecture.md:982-983` (координата сдвигалась ТРИЖДЫ: `:957-958`→`:969-970`
+  предложение `docs/architectures/system-architecture.md:982-983`, `happens on branch (a) when every participant answered with zero` (координата сдвигалась ТРИЖДЫ: `:957-958`→`:969-970`
   при коррекции 013-2, затем `:969-970`→`:980-981` вставкой самой записи `open-questions.md` этой
   задачи (роаст раунда 1, C-2), затем `:980-981`→`:982-983` правкой цитаты на `:924` в том же файле
   при закрытии цикла 2 — **поэтому ищи по цитате, а не по номеру**) становится ложным о дереве, поэтому
@@ -394,7 +394,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 - **Пункт плана 4.1 (Фаза 1) — ветвление обхода.** `resolve()` после построения `plan` проверяет,
   несёт ли хоть один совпавший маршрут `merge: true`. Если да — исполняется цикл слияния; если нет —
   существующий цикл, байт в байт. Порядок предшествующих шагов не меняется: один
-  `effectiveDeadlineAtMs` (`registry.ts:670`) → `plan` (`:690`) → GATE 2 (`:798`). **Исправлено
+  `effectiveDeadlineAtMs` (`packages/core/src/adapters/registry.ts:670`, `found none setting it, and the two mechanisms agreeing was`) → `plan` (`:690`) → GATE 2 (`:798`). **Исправлено
   роастом 013-4 (M-8): здесь стояло «GATE 2 → дедлайн → `plan`» — обратный порядок.** Файл задачи
   был прав, план — нет; сверено по коду, а не по памяти.
 - **Пункт плана 4.2 (Фаза 1) — что цикл слияния переиспользует без правок.** Пре-чек дедлайна,
@@ -459,7 +459,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   `CapabilityDeadlineExceededError` независимо от числа уже ответивших. Третья точка того же класса —
   истёкший на входе `requestedDeadlineAtMs` с `tried: []`.
 - **Пункт плана 5.5 (Фаза 2) — терминальный дизъюнкт сохраняется.** `deadlineHit || Date.now() >= effectiveDeadlineAtMs`
-  (`registry.ts:1083`, строка `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {` — искать
+  (`packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`, строка `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {` — искать
   по тексту, не по номеру: координата сдвигалась трижды, `:944`→`:1031`→`:1083`) остаётся
   неизменным и на слитом пути. Мутационный прогон: дизъюнкт удаляется,
   названный тест обязан упасть, мутация отменяется.
@@ -487,7 +487,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 
 **Файл задачи:** [docs/tasks/task-013-6-enable-two-routes.md](tasks/task-013-6-enable-two-routes.md)
 
-- **Пункт плана 6.1 — активация.** Двум маршрутам `providers.config.ts:68-71` и `:72-75` ставится
+- **Пункт плана 6.1 — активация.** Двум маршрутам `packages/core/src/providers.config.ts:68-71`, `capability: 'privacy.shielded_pool.history',` и `:72-75` ставится
   `merge: true`. Строки адресуются по имени способности; соседние маршруты выглядят одинаково.
   Порядок `['platform-explorer', 'pg-history']` не меняется — он же ранг конфликта.
 - **Пункт плана 6.2 — комментарий на КАЖДЫЙ маршрут отдельно.** Для `platform.metrics.history`
@@ -549,8 +549,8 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   форма `{status, perSource[]}`, а не общий `CacheMeta`; `provider` и `capability` в ней намеренно
   отсутствуют.
 - **Пункт плана 7.6 — `servedCapabilities` в четырёх сайтах.** `ToolDefinition` и `ToolSpec`
-  (`src/tools/registry.ts:110`, `:139`), `ToolInventoryEntry` и маппер `buildToolInventory()`
-  (`scripts/gen-tool-inventory.ts:41`, `:55-64`). `capability` остаётся `string | null` и не
+  (`packages/mcp-server/src/tools/registry.ts:110`, `:139`), `ToolInventoryEntry` и маппер `buildToolInventory()`
+  (`packages/mcp-server/scripts/gen-tool-inventory.ts:41`, `:55-64`). `capability` остаётся `string | null` и не
   расширяется до массива.
 - **Пункт плана 7.7 — гейт, который срабатывает на нерегистрированном файле, и его точный список.**
   `test/contract-violation.test.ts` читает каталог `src/tools` через `readdirSync` (`:26`) и
@@ -591,7 +591,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   способность один раз», `:420`, правило §0.11); `eval-capability-coverage.test.ts`
   (`capabilitiesServedByTools()` разворачивает `servedCapabilities`); `eval-checks-coverage.test.ts`
   (фильтр становится `capability === null && servedCapabilities === undefined`).
-- **Пункт плана 8.3a — четвёртый ключ записи артефакта.** `tool-inventory-in-sync.test.ts:88`
+- **Пункт плана 8.3a — четвёртый ключ записи артефакта.** `packages/mcp-server/test/tool-inventory-in-sync.test.ts:88`, `expect(Object.keys(tool).sort()).toStrictEqual(['capability',`
   требует от каждой записи ровно `['capability','name','title']`. У четырнадцатой записи ключей
   четыре, и утверждение расширяется: три ключа обязательны у каждой записи, `servedCapabilities`
   допустим и присутствует только у тула на несколько способностей.
@@ -600,13 +600,13 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   обязано быть в нём; проверка «только идентичность» этим не нарушается — `servedCapabilities`
   такая же идентичность, как `capability`.
 
-- **Пункт плана 8.3b — литерал 13 в `tool-response-shape.test.ts:104`.** Это рукописный
+- **Пункт плана 8.3b — литерал 13 в `packages/mcp-server/test/tool-response-shape.test.ts:104`, `expect(tools).toHaveLength(13);`.** Это рукописный
   `toHaveLength(13)` над живым снимком `tools/list`, а не производная величина. Переводится на 14
   здесь, потому что красным его делает именно регистрация.
 - **Пункт плана 8.4 — якоря и `PLANNED_TOOL_NAMES` в ОДНОМ коммите.** `interfaces.md` §5.1.6
   получает две голые строки `// Capability:` — по одной на способность, каждая в пределах окна
   атрибуции в 25 строк. Запись `onchain_dash_platform_history` из `PLANNED_TOOL_NAMES`
-  (`tool-inventory-docs.test.ts:131-134`) удаляется тем же коммитом: после регистрации `TOOL_NAMES`
+  (`packages/mcp-server/test/tool-inventory-docs.test.ts:131-134`, `'onchain_dash_platform_history',`) удаляется тем же коммитом: после регистрации `TOOL_NAMES`
   покрывает имя, и оставленная запись была бы вторым механизмом, утверждающим тот же факт.
 - **Пункт плана 8.5 — семь документов и счётчики.** Оба README, `ARCHITECTURE.md`, `interfaces.md`,
   `functional-architecture.md`, `ROADMAP.md` и `packages/mcp-server/.AGENTS.md` называют новый тул;
@@ -624,18 +624,18 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   `e2e.inprocess.test.ts` называет 8 тулов, `m2-degradation.integration.test.ts` — 8,
   `eval/checks.mjs` — 10. Первые два переходят из прохода в отказ. Решение принимается на задаче, и
   в отчёт идёт МЕХАНИЗМ («порог движется на каждом новом туле»), а не только этот случай.
-- **Пункт плана 8.7 — где число 14 РУКОПИСНОЕ, а где производное.** `e2e.stdio.test.ts:143`,
+- **Пункт плана 8.7 — где число 14 РУКОПИСНОЕ, а где производное.** `packages/mcp-server/test/e2e.stdio.test.ts:143`, `tools/list matches the registry exactly, by name`,
   `:161-164` считает из `toolSpecs`, `smoke-dist.mjs:212` — из `tool-inventory.json`; литерала нет
   ни там, ни там, и правки они не требуют. Рукописных мест два:
-  `tool-response-shape.test.ts:104` (пункт 8.3b) и словарь `thirteen: 13` в `docs-counts.test.ts:40`
+  `packages/mcp-server/test/tool-response-shape.test.ts:104`, `expect(tools).toHaveLength(13);` (пункт 8.3b) и словарь `thirteen: 13` в `packages/mcp-server/test/docs-counts.test.ts:40`, `thirteen: 13,`
   (пункт 8.5, он же покрывает две прозаические строки README, сверяемые через `claimsWithSource`).
   Производный сайт, который правки ТРЕБУЕТ, ровно один — порог из пункта 8.6b.
 - **Пункт плана 8.8 — устаревшие тексты каналов 6 и 7, каждый в своём поле.** У канала 6
-  (`inventory-channels.ts:64-68`) устарел текст `action`; поля `firesOnlyWhen` у него нет вовсе. У
+  (`packages/mcp-server/test/inventory-channels.ts:64-68`, `gate: 'packages/mcp-server/test/tool-spec.test.ts',`) устарел текст `action`; поля `firesOnlyWhen` у него нет вовсе. У
   канала 7 устарел текст `firesOnlyWhen`. Оба правятся одним коммитом с регистрацией. Этот же файл
   фиксирует прецедент: описание, разошедшееся с деревом, было удалено в цикле 4 T-011.
 - **Пункт плана 8.9 — правило для `capability:` ниже вызова `defineTool`.** `specBody`
-  (`tool-spec.test.ts:439-441`) режет исходник до конца файла, поэтому вторая строка вида
+  (`packages/mcp-server/test/tool-spec.test.ts:439-441`, `const specStart = source.indexOf('= defineTool({');`) режет исходник до конца файла, поэтому вторая строка вида
   `  capability: …` ниже вызова ломает проверку по причине, не связанной с содержанием. Правило
   действует для всех будущих модулей, не только для четырнадцатого.
 

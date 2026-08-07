@@ -226,7 +226,8 @@ shareable?}` or `{shape:'set'|'series', ttlSeconds, deadlineMs, shareable?}`, bo
 `CapabilityResolution` grows to carry a merged answer.** The `set | series` arm of `CapabilityManifest`
 gains one optional field (illustrative name `mergeable?: boolean`; final name is Development's
 choice, R-159a) discharging the obligation the union's own docstring already names for T-013
-(`capability-manifest.ts:152-163`) — declaring it on the `point` arm is a compile error (R-159/R-160).
+(`packages/core/src/capability-manifest.ts:146-153`, `the obligation the paragraphs below used to describe as future is discharged.`)
+— declaring it on the `point` arm is a compile error (R-159/R-160).
 Eligibility is a fact about the CAPABILITY's identity key (`Snapshot.metric`/`asset`/`ts`, D6 reason
 1); it is deliberately NOT sufficient to activate collection by itself — `CapabilityRoute` gains a
 second, independent field (`merge?: boolean`) checked against `mergeable` at construction

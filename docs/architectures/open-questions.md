@@ -96,7 +96,7 @@ disagreeing** — there are **five**, and they resolve like this:
   written against "returns a value" _or_ "throws". Decision: a deadline **always throws**
   `CapabilityDeadlineExceededError`, naming both which sources answered and which were never asked;
   it never returns the surviving partial. Rationale is the H-1 doctrine
-  (`adapters/registry.ts:443-455`): a deadline is a fact about OUR availability, and publishing it
+  (`packages/core/src/adapters/registry.ts:646-658`, `* Once the moment passes, the walk refuses every source it has`): a deadline is a fact about OUR availability, and publishing it
   as a fact about the DATA reports "no entity labels" for a sanctioned address whenever the paid
   source merely failed to fit the budget. This is a deliberate deviation from the literal text of
   ADR-002 D4 п.5, and R-156 obliges T-012 to amend the ADR rather than silently contradict it.
@@ -107,7 +107,7 @@ phases — both are cases where the code's own comments will otherwise outlive t
 - `packages/core/src/providers.config.ts:125` says "**10 entries**" for what is already **12**, and
   T-012 edits every one of those 12 to add `tier`/`trust` — so the stale count is touched by this
   task regardless. Fix it in the same commit.
-- `packages/core/src/adapters/blockscout/index.ts:125-146` documents the missing deadline and ends
+- `packages/core/src/adapters/blockscout/index.ts:125-146`, `* H-5: an explicit per-request timeout instead of` documents the missing deadline and ends
   "this docstring must be rewritten in the SAME commit, not after it" (ADR-002 D4). The historical
   `≈410s` derivation stays as history — it is the justification for the mechanism — but the
   "decided but not built" framing must go, replaced by the two-phase arithmetic
@@ -122,7 +122,7 @@ them rather than discover them at the test.
 - **The H3 paid-adapter contract test is not writable through today's seams.** The design says a
   test parameterised over `tier === 'paid'` asserts that no call issued after a successful
   `checkAndReserve()` carried a `deadlineAtMs`. But `safeFetch` is a **static module import**
-  (`packages/core/src/adapters/nansen/endpoints.ts:4`, called at `:136`) — there is no `safeFetch:`
+  (`packages/core/src/adapters/nansen/endpoints.ts:4`, `import { safeFetch } from '../../net/safe-fetch.js';`, called at `:136`) — there is no `safeFetch:`
   deps key anywhere in `packages/core/src`. The injectable deps are `fetchImpl` and `throttle` only,
   and `fetchImpl` receives a `RequestInit`, which carries no `deadlineAtMs` to assert on. So only
   the `throttle` half is observable today.
@@ -139,7 +139,7 @@ them rather than discover them at the test.
   `docs/PLAN.md` task 012-9.
 
 - **The proposed `BudgetMeta.provider` runtime assertion would be tautological.**
-  `packages/mcp-server/src/tools/budget-meta.ts:34-37` — `budgetMeta(budgetStore, now)` takes **no
+  `packages/mcp-server/src/tools/budget-meta.ts:34-37`, `(R-41), so several would have to be collapsed anyway, and the` — `budgetMeta(budgetStore, now)` takes **no
   provider argument** and hardcodes `getUsage('nansen')` / `provider: 'nansen'`. Asserting that a
   compile-time constant belongs to a set containing it can never fail. Either thread the answering
   provider id in from the three M2 handlers, or exempt this site by name from AC-14's grep gate and
@@ -147,7 +147,7 @@ them rather than discover them at the test.
 - **The singleflight follower cannot raise the registry-layer error.** The design has a follower
   with a tighter deadline abandon its wait and raise `CapabilityDeadlineExceededError` — but that
   class is constructed with `capability`/`chain`/`tried`, none of which exist inside
-  `singleflight()` (`adapters/nansen/index.ts:596`). The follower must raise the **net-layer**
+  `singleflight()` (`packages/core/src/adapters/nansen/index.ts:596`, `'s own docstring for why an OMITTED`). The follower must raise the **net-layer**
   `DeadlineExceededError` and let the registry's existing catch translate it, exactly as the C-1
   bridge already does for every other net-layer deadline. Filed independently by two review lenses.
 
@@ -209,7 +209,7 @@ this narrowly, not as a general license to derive correctness rank from spend or
 
 **`OQ-T013-4` — where is `policy` evaluated on the merged path — per participant or per merged
 whole? Decision: per participant**, using the SAME `satisfies(policy, value, adapterId)` predicate
-the non-merge path already applies to cache hits (`registry.ts:789`) and fresh results (`:858`),
+the non-merge path already applies to cache hits (`packages/core/src/adapters/registry.ts:1399`, `if (satisfies(policy, cached.value, adapterId)) return`) and fresh results (`:858`),
 called from a new site rather than replaced. This is what R-182(d) requires as a regression
 (`entity.labels`'s `someElementHasAny` semantics untouched) and what keeps H-1's existing cache-hit
 application as the SAME code path a merge walk reuses. A participant whose answer fails `policy` is
@@ -272,10 +272,10 @@ unaffected, since bucketing changes WHICH points collide, never HOW a collision 
 ### T-013 task 013-3 (2026-08-06, Development) — `perSourceCache` covers every ANSWERED participant, not only contributors
 
 **A deviation from four sentences of the delivered architecture text, recorded as a decision — not
-a document alignment.** `system-architecture.md:982-983` ("`perSourceCache` carries one entry per
+a document alignment.** `docs/architectures/system-architecture.md:982-983`, `happens on branch (a) when every participant answered with zero` ("`perSourceCache` carries one entry per
 member of `sources`, same set, so it is never populated for a non-contributor either"), `:992`
-("the granular per-contributor truth"), `interfaces.md:474-481` (the 14th tool's own `_meta.cache`
-bullet, "which adapter, which status" per contributor) and `system-architecture.md:949-951` ("or
+("the granular per-contributor truth"), `docs/architectures/interfaces.md:474-481`, `is this tool's OWN shape, not the shared` (the 14th tool's own `_meta.cache`
+bullet, "which adapter, which status" per contributor) and `docs/architectures/system-architecture.md:949-951`, `satisfying answer; the merge loop never returns mid-walk — for` ("or
 into neither (answered but policy-excluded, tracked only in `tried`)", coupling `perSourceCache` to
 the same `satisfied` condition as `sources`/the dedup `Map` — found by roast round 1, B-4, not in
 the first draft of this entry) all state the same narrower rule: `perSourceCache` mirrors `sources`
@@ -283,10 +283,10 @@ the first draft of this entry) all state the same narrower rule: `perSourceCache
 from a complete one (roast round 1's own lesson, B-4):** every `perSource`/`perSourceCache`
 occurrence in `system-architecture.md`, `interfaces.md`, `data-model.md` and `version-history.md`
 (`rg -n "perSource" docs/architectures/*.md`), each read in context for a membership claim.
-`data-model.md:242-264` does **not** carry this rule — it names `perSourceCache`'s shape
-(`{adapterId, cache, ageMs?}[]`) but never its membership. `version-history.md:36-38` states only
+`docs/architectures/data-model.md:242-264`, `'s return shape gains three OPTIONAL fields, all populated ONLY` does **not** carry this rule — it names `perSourceCache`'s shape
+(`{adapterId, cache, ageMs?}[]`) but never its membership. `docs/architectures/version-history.md:36-38`, `gains three optional fields** (` states only
 that the three fields are "populated ONLY on a merge walk", without saying WHO specifically
-populates `perSourceCache` — neutral. `system-architecture.md:648` (the code-block listing) defers
+populates `perSourceCache` — neutral. `docs/architectures/system-architecture.md:648`, `perSourceCache?: { adapterId: string; cache: 'hit' | 'miss';` (the code-block listing) defers
 to "Merge mechanism below" rather than asserting a rule itself — neutral.
 
 **The full tally, added in roast round 2 so "read and found neutral" is distinguishable from "not
@@ -302,7 +302,7 @@ is 31, the difference being this record's own 13 mentions and the five in-place 
 different tree — which is why the tree, not just the scope, is named here. None of the four is edited
 beyond its own in-place mark; `data-model.md` is left unedited entirely.
 
-**Why the wider reading.** R-174(c) (translated from the Russian original, `docs/TASK.md:524-526`):
+**Why the wider reading.** R-174(c) (translated from the Russian original, `docs/TASK.md:545-547`, `случая СИНТЕЗИРУЕТ свою причину, а не читает`):
 "`resolution.cache` — a merged answer does not collapse to one `'hit'`/`'miss'`: if one participant
 is from cache and another is from network, both facts are reflected — the concrete shape is
 Architecture's call, the requirement fixes ONLY that the fact is not lost." A cache status is a
@@ -314,7 +314,7 @@ reports exactly ONE participant with ONE `'miss'` — silently erasing that the 
 ever asked, or that it answered from cache. That is exactly the fact R-174(c) requires never
 disappears.
 
-**The composition, named precisely.** UC-19 (`docs/TASK.md:681-688`) supplies the core fact this
+**The composition, named precisely.** UC-19 (`docs/TASK.md:703-710`, `Обе точки присутствуют раздельно, каждая со своей истинной`) supplies the core fact this
 argument turns on — `platform-explorer` answering an **empty array**, which is a legitimate
 "answered" outcome, not a failure — but literal UC-19 has `pg-history` entirely UNAVAILABLE (no
 `ONCHAIN_PG_URL`) and THROWS `CapabilityUnavailableError` (R-164(c)), so it never reaches a
@@ -322,7 +322,7 @@ argument turns on — `platform-explorer` answering an **empty array**, which is
 membership rule is UC-19's own participants under a wider precondition: `ONCHAIN_PG_URL`
 **configured**, `platform-explorer` still answers `[]` (served from ITS OWN cache — a `'hit'`),
 and `pg-history` additionally answers with real points (a `'miss'`, fresh from the network) — the
-same "one empty, one non-empty" shape `system-architecture.md:976` ("composition TASK §1.5 names as
+same "one empty, one non-empty" shape `docs/architectures/system-architecture.md:977`, `names every participant whose points are actually present in` ("composition TASK §1.5 names as
 ordinary") already uses for `sources`'s own CONTRIBUTORS rule, with a cache-status axis added. On
 that composition: `sources: ['pg-history']` (correct, unaffected by this decision) while the
 narrower `perSourceCache` reading would report only `[{adapterId: 'pg-history', cache: 'miss'}]` —
@@ -346,12 +346,12 @@ this same entry's OWN citation to it went stale twice in one editing session, ro
 quote it to find it), and why it covers less than it looks like.** That earlier entry refuted an
 ARGUMENT for a design decision while stating explicitly that the DECISION and the DELIVERED shape
 both stood, and no architecture amendment was required. This case is not that: once the merge walk
-(013-4) populates `perSourceCache`, `system-architecture.md:982-983` becomes literally false about
+(013-4) populates `perSourceCache`, `docs/architectures/system-architecture.md:982-983`, `happens on branch (a) when every participant answered with zero` becomes literally false about
 the shipped tree, not merely under-argued — which is why the text is marked in place rather than
 left to this registry entry alone.
 
 **Scope.** Confined to `perSourceCache`'s membership rule. `sources` — CONTRIBUTORS, not
-"answered" (`system-architecture.md:973-979`, opens "`CapabilityResolution` shape... corrected
+"answered" (`docs/architectures/system-architecture.md:973-979`, `sibling citations found nearby (see the task's own review`, opens "`CapabilityResolution` shape... corrected
 after review: `sources` is CONTRIBUTORS") — is unaffected; so are `source`'s two-tier fallback
 rule, `cache`'s two-literal type (R-175b forbids widening it), and the 11 existing tools'
 `_meta.cache` (R-175).
@@ -370,7 +370,7 @@ a developer's call.
 second one spending 120 ms: `resolve()` **returned** at elapsed 139 ms. Neither the pre-check nor the
 translating catch fires, because every adapter was **entered** before the clock ran out — only the
 last one overran. `hadFailure` therefore stays false, and `if (unsatisfying && !hadFailure) return
-unsatisfying;` (`adapters/registry.ts:901`) is reached **before** the terminal deadline branch
+unsatisfying;` (`packages/core/src/adapters/registry.ts:1511`, `if (unsatisfying && !hadFailure) return`) is reached **before** the terminal deadline branch
 (`:938`). Both anchors were re-measured on 2026-08-05: adversarial cycle 2 grew the file, and the
 `:740`/`:764` recorded here originally now point at unrelated lines. A record whose purpose is the
 owner's own re-check is worth nothing if its coordinates rot — re-measure them, or quote the
@@ -382,7 +382,7 @@ This is not an exotic path. It is what a slow final source does.
 and every one of them answered. That is a fact about the DATA, and reporting it as an error would
 tell the caller to retry something that cannot change. Under this reading the deadline caused
 nothing: the answer is complete, not partial, and the ceiling is irrelevant to its content. Source:
-the H-1 doctrine, `adapters/registry.ts:886-901`, bought with an iteration of adversarial review at
+the H-1 doctrine, `packages/core/src/adapters/registry.ts:1496-1511`, `// answer, and iteration 2 found the first version conflating`, bought with an iteration of adversarial review at
 TASK-008.
 
 **Reading B — the pre-check's own rationale governs, and the return is a violation.** Task 012-8 put
@@ -458,10 +458,10 @@ row in `packages/core/src/capability-manifest.ts` as an `AUDIT:` comment. Result
 **Where the plan's hypotheses met the fact.** All ten hypotheses the plan stated were CONFIRMED, and
 two of them only because the audit read code instead of names — which is the part worth keeping:
 
-- `pool.info` → `set`, and the NAME says otherwise. `dexscreener/index.ts:125` ignores its `_cap`
+- `pool.info` → `set`, and the NAME says otherwise. `packages/core/src/adapters/dexscreener/index.ts:132`, `normalize: (_cap: string, rawResult: unknown): Pool[] => {` ignores its `_cap`
   argument entirely, so both of that adapter's capabilities run the same `normalize(): Pool[]`: the
   singular-sounding capability returns a collection.
-- `dex.volume.history` → `series` **by substance, not by container**. `defillama/index.ts:338`
+- `dex.volume.history` → `series` **by substance, not by container**. `packages/core/src/adapters/defillama/index.ts:338`, `function normalizeDexVolume(`
   returns ONE `DexVolumeResult` object, so a mechanical "is the return an array?" rule would have
   said `point`; its content is a `ts`-sorted, day-bucketed, de-duplicated run. This is why the
   classification rule recorded in the manifest is about ordering by `ts`, not about arrays.
@@ -471,7 +471,7 @@ two of them only because the audit read code instead of names — which is the p
 
 **OQ-T012-2 / OQ-T012-3 — verified, not reopened.** Both were closed at Planning by owner decision
 OD-5 (2026-08-03). Checked against the tree: `platform-explorer` → `trust: 'authoritative'`
-(`providers.config.ts:314`) and `pg-history` → `trust: 'community'` (`:332`), each carrying the
+(`packages/core/src/providers.config.ts:314`, `trust: 'authoritative',`) and `pg-history` → `trust: 'community'` (`:332`), each carrying the
 decision's own reasoning in place, and the `pg-history` comment opens with "**PLACEHOLDER with an
 assigned replacement — do NOT 'correct' this to `authoritative`**", which is the wording OD-5
 required. The document and the code agree.
@@ -487,8 +487,8 @@ type-test is **T-013's obligation**, recorded in that docstring.
 **The three seam problems (§0.3 of the plan) — how each was actually closed.**
 
 1. **`safeFetchImpl` — BUILT, in full, per owner decision OD-6.** The seam exists on all three deps
-   types the paid path passes through: `NansenAdapterDeps` (`nansen/index.ts:105`),
-   `NansenEndpointDeps` (`endpoints.ts:98`) and `NansenBudgetGateDeps` (`budget-gate.ts:257`), each
+   types the paid path passes through: `NansenAdapterDeps` (`packages/core/src/adapters/nansen/index.ts:105`, `safeFetchImpl?: typeof safeFetch;`),
+   `NansenEndpointDeps` (`packages/core/src/adapters/nansen/endpoints.ts:98`, `safeFetchImpl?: typeof safeFetch;`) and `NansenBudgetGateDeps` (`packages/core/src/adapters/nansen/budget-gate.ts:257`, `safeFetchImpl?: typeof safeFetch;`), each
    defaulting to the real `safeFetch`. The reduced variant ("declare the guarantee bounded by the
    limiter path only") was **withdrawn at Planning and does not appear in the delivered work as a
    chosen option** — it is recorded here only as a rejected alternative. The H3 contract test
@@ -592,7 +592,7 @@ that day, unused today on purpose.
 ### T-012 (2026-08-03) — OQ-C, and a self-contradiction found in ADR-002's own D9 staging
 
 **OQ-C — the fate of `CapabilityRoute.chains` (ADR-002 D2). Resolved: deleted.** The field was read
-by the router (`adapters/registry.ts:191-195`, narrowing `matching` routes) but set by ZERO of the
+by the router (`packages/core/src/adapters/registry.ts:234-238`, `, which for a negative entry is the wrong`, narrowing `matching` routes) but set by ZERO of the
 21 entries in `providers.config.ts` — re-measured 2026-08-03, the identical result TASK-006 and
 ADR-002 itself already recorded. T-012 removes the field from `CapabilityRoute` together with the
 `registry.ts` filter that read it, per the escape hatch ADR-002 D2 itself specifies: **if
@@ -623,7 +623,7 @@ even before that ADR edit landed.
 wins, and the `D9` row of "Влияние на этапы" carries footnote `[^t012-d9]` — the only edit made to
 that table, its "T-016" cell left as written. The entry also records a second, smaller divergence
 found while discharging this one: OQ-B's closure says "поле в манифесте", while what T-012 actually
-built is a field on `AdapterRegistration` (`adapters/types.ts:139`), because `trust` is a property of
+built is a field on `AdapterRegistration` (`packages/core/src/adapters/types.ts:145`, `* adapter) are **T-016**. The field is declared now because a`), because `trust` is a property of
 the SOURCE and the capability manifest describes the CAPABILITY — a distinction D9 itself makes.
 
 ### T-010 (2026-07-31) — OQ-M3-1 and OQ-4
@@ -656,7 +656,7 @@ judged option 2 "least invasive for M3" while assuming the only consumer was our
 2026-07-31 decision to **sell access** to the MCP for client credits makes that assumption false: a
 paying client cannot invoke a one-shot CLI on our machine. The choice stopped being a trade-off about
 invasiveness. stdio is **not** removed — local development under Claude Code must not require a
-running server, and `createServer` is already transport-agnostic (`mcp-server/src/server.ts:52-55`),
+running server, and `createServer` is already transport-agnostic (`packages/mcp-server/src/server.ts:37-40`, `factory (D3): builds the server and registers every tool, but`),
 so the seam costs nothing to keep.
 
 **OQ-4 — where cross-provider routing policy lives: a serialisable descriptor plus a registry of

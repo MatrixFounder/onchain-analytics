@@ -31,7 +31,7 @@ true` participant to be `tier: 'free'`, closing the hazard of a paid, more-autho
     `CapabilityDeadlineExceededError` — the per-participant pre-check, an in-flight `fetch()` cut off
     by the ceiling, and the caller's own already-expired deadline at entry) stays a PRECONDITION that
     pre-empts all four branches, unchanged from the non-merge contract, and the terminal wall-clock
-    disjunct (`registry.ts:944`) is preserved for the same reason WI-36 argued: it covers all twelve
+    disjunct (`packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`) is preserved for the same reason WI-36 argued: it covers all twelve
     adapters, not the two whose typed class unwrapping fixed.
   - **`CapabilityResolution` gains three optional fields** (`sources`, `missingSources`,
     `perSourceCache`) populated ONLY on a merge walk; the 18 non-merge capabilities and their 13
@@ -195,13 +195,13 @@ floor` is arithmetic done BEFORE the sleep, and a timer is only guaranteed not t
   - **The deadline is a two-phase budget, and the architecture review is why.** The first draft
     claimed the deadline turns the measured ~410s envelope into ~60s. It cannot: `nansen` makes ONE
     `gate.ensureBudget()` and runs all 2–3 sub-calls under that single reservation
-    (`nansen/index.ts:656-657`), so ~270s sits **after** the credit commitment, where D4 п.2 forbids
+    (`packages/core/src/adapters/nansen/index.ts:656-657`, `// genuinely paid Nansen call with ZERO budget accounting —`), so ~270s sits **after** the credit commitment, where D4 п.2 forbids
     cancellation. `deadlineMs` therefore bounds only the cancellable head; each paid capability
     separately records a derived `paidLegMs`, and the stated worst case is their sum (~330s for
     `entity.labels`). Owner decision 2026-08-03; retuning nansen's own timeouts was rejected.
   - **A deadline never publishes a partial as fact.** ADR-002 D4 п.5 reads "ответил хотя бы один →
     частичный результат", but a deadline is a fact about OUR availability, and the H-1 doctrine
-    (`adapters/registry.ts:443-455`) forbids dressing that as a fact about the data — returning the
+    (`packages/core/src/adapters/registry.ts:646-658`, `* Once the moment passes, the walk refuses every source it has`) forbids dressing that as a fact about the data — returning the
     partial would report "no entity labels" for a sanctioned address merely because the paid source
     did not fit the budget. Expiry throws `CapabilityDeadlineExceededError` naming both which
     sources answered and which were never asked. Owner decision 2026-08-03; ADR-002 is amended
