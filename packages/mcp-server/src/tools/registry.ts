@@ -106,8 +106,25 @@ export interface ToolDefinition<
    * The capability this tool resolves, or `null` when it serves none (`onchain_ping` computes its
    * answer; `onchain_list_chains` reads the chain registry). `null` is written explicitly so that
    * "serves no capability" is a statement rather than an omission.
+   *
+   * **Stays `string | null` and is NOT widened to an array** (T-013 task 013-7). Six declarations
+   * and two silent readers compare it with `===`; an array value equals no string, so widening
+   * would make every one of those comparisons quietly false rather than loudly wrong. A tool
+   * serving more than one capability says so in `servedCapabilities` below and leaves this `null`.
    */
   readonly capability: string | null;
+  /**
+   * Every capability this tool can resolve, when there is more than one and `capability` is
+   * therefore `null` (T-013 task 013-7, PLAN §0.11). Absent on the 13 single-capability tools.
+   *
+   * The pair `{capability: null, servedCapabilities: [...]}` is what distinguishes a MULTI-capability
+   * tool from a SERVER-level one (`onchain_ping`, `onchain_list_chains`), which carries `null` and
+   * no `servedCapabilities` at all. Two readers depend on exactly that distinction —
+   * `eval-capability-coverage.test.ts` (a tool invisible to it is a capability nobody serves) and
+   * `eval-checks-coverage.test.ts` (which reads the bare `null` as "server-level") — and both are
+   * taught the difference in 013-8.
+   */
+  readonly servedCapabilities?: readonly string[];
   /** The context keys this tool uses. Data, so the dependency is inspectable rather than inferred. */
   readonly needs: readonly K[];
   /**
@@ -137,6 +154,9 @@ export interface ToolSpec {
   readonly title: string;
   readonly description: string;
   readonly capability: string | null;
+  /** See {@link ToolDefinition.servedCapabilities} — forwarded verbatim by `defineTool`, and only
+   * when the definition declared it, so the key is absent rather than `undefined` on the 13. */
+  readonly servedCapabilities?: readonly string[];
   readonly needs: readonly (keyof ToolContext)[];
   readonly register: (server: McpServer, ctx: ToolContext) => void;
 }
@@ -239,6 +259,14 @@ export function defineTool<
     title: definition.title,
     description: definition.description,
     capability: definition.capability,
+    // Conditional spread, not `servedCapabilities: definition.servedCapabilities`:
+    // `exactOptionalPropertyTypes` is off (tsconfig.base.json), so the unconditional form compiles
+    // and publishes `{servedCapabilities: undefined}` on all 13 single-capability tools — which
+    // `Object.keys()` sees as a fourth key and the artifact gate reads as a shape change. Same
+    // idiom, same reason, as `resolve-capability.ts`'s forwarding of `sources`/`missingSources`.
+    ...(definition.servedCapabilities !== undefined
+      ? { servedCapabilities: Object.freeze([...definition.servedCapabilities]) }
+      : {}),
     needs,
     register(server, ctx) {
       server.registerTool(

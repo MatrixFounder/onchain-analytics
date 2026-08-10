@@ -37,8 +37,17 @@ export const GENERATE_COMMAND = 'pnpm --filter @onchain-intel/mcp-server gen:too
 export interface ToolInventoryEntry {
   readonly name: string;
   readonly title: string;
-  /** `null` for the tools that serve no capability — written, not omitted. */
+  /** `null` for the tools that serve no capability — written, not omitted. Also `null` for a tool
+   * serving SEVERAL, which names them in `servedCapabilities` (T-013 task 013-7). */
   readonly capability: string | null;
+  /**
+   * Present only on a tool serving more than one capability (T-013 task 013-7).
+   *
+   * **It has to reach the ARTIFACT, not just the spec**, because `eval/capabilities.mjs` is `.mjs`
+   * and reads nothing else — it cannot import `tool-specs.ts`. A `servedCapabilities` that stopped
+   * at `ToolSpec` would leave that reader mapping the new tool to no capability at all, silently.
+   */
+  readonly servedCapabilities?: readonly string[];
 }
 
 export interface ToolInventory {
@@ -59,6 +68,11 @@ export function buildToolInventory(): ToolInventory {
       name: spec.name,
       title: spec.title,
       capability: spec.capability,
+      // Conditional, so the 13 single-capability entries keep exactly three keys and the artifact
+      // bytes do not move until a multi-capability tool is actually registered (013-8).
+      ...(spec.servedCapabilities !== undefined
+        ? { servedCapabilities: [...spec.servedCapabilities] }
+        : {}),
     })),
   };
 }

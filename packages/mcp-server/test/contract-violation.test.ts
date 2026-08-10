@@ -117,6 +117,10 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
     ).toStrictEqual([
       'chain-supply.ts',
       'chain-tvl.ts',
+      // T-013 task 013-7. In the list BEFORE it is registered: this gate reads `src/tools` with
+      // `readdirSync`, so it sees a module the registry does not, which is exactly why the module
+      // can ship one task ahead of its `defineTool` call and still be held to the contract.
+      'dash-platform-history.ts',
       'dex-volume.ts',
       'entity-label.ts',
       'get-token.ts',
