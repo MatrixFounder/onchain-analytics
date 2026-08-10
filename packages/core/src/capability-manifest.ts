@@ -47,7 +47,10 @@
  *   (2026-08-05), and the previous version is worth keeping visible** because it is what a reader
  *   would otherwise re-derive from an old comment. Until then this adapter's `fetch()` never awaited
  *   `throttle()` at all — so `MAX_WAIT_MS` did not enter its envelope even though the registration
- *   declared `{capacity: 2, refillPerSec: 0.2}` (**WI-34**,
+ *   declared `{capacity: 2, refillPerSec: 0.2}` — the pair shipped THEN; task 013-6 re-derived it to
+ *   `{capacity: 10, refillPerSec: 5}` when merge activation made this adapter a hot path, which does
+ *   NOT move the envelope above: that addend is `MAX_WAIT_MS`, a constant of the limiter, not a
+ *   function of the bucket — (**WI-34**,
  *   `docs/backlog/wi-34-pg-history-ratelimit-declared-not-enforced.md`) — and no bound of any kind
  *   applied to the query, making it the only I/O path in the package that could wait forever
  *   (**WI-35**, `docs/backlog/wi-35-pg-read-path-has-no-query-timeout.md`). PLAN §0.2a had assumed

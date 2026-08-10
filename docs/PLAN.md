@@ -98,6 +98,19 @@
 терминальный контракт исходов после цикла: ветки (b)/(c)/(d) и дедлайн-предусловие. Границы правок
 не пересекаются: `013-4` владеет телом цикла, `013-5` — кодом после него.
 
+**§0.4a Одна ретроспективная правка чужой задачи — названа, а не растворена.** Таблица §0.4 отдаёт
+тело слитого цикла в `registry.ts` задаче **013-4**, и 013-4 закрыта коммитом `e95b909`. Задача
+**013-6** тем не менее правит это тело: механизм дедупа переведён на «только между участниками»
+(R-161(f), решение владельца 2026-08-09). Причина, по которой правка не могла подождать: 013-6 —
+момент ВКЛЮЧЕНИЯ слияния на боевых маршрутах, то есть первый момент, когда дефект становится
+наблюдаемым; отложить его значило бы включить слияние, зная, что оно теряет данные, и передать
+находку в `013-7` уже в виде опубликованного тулом ряда.
+
+Граница правки: изменены `mergeInto` и структура накопителя (`Map` → массив плюс множество занятых
+слотов). НЕ изменены: порядок обхода, поадаптерный кеш, место оценки политики, контракт исходов
+013-5. Полный прогон после правки — 1282 core / 341 mcp-server, столько же, сколько до неё: ни один
+существующий тест не опирался на схлопывание внутри участника.
+
 **§0.5 Архитектурные решения, применяемые как данность.** План не переоткрывает их и не предлагает
 альтернатив.
 
@@ -132,7 +145,7 @@
 | 8   | `packages/mcp-server/test/eval-capability-coverage.test.ts:30-36`, `function capabilitiesServedByTools(): Map<string, string> {`          | **молчаливый** — тул с `capability: null` ему невидим                      | 013-8  |
 | 9   | `packages/mcp-server/test/eval-checks-coverage.test.ts:51`, `const serverLevelTools = toolSpecs.filter((spec) =>`                         | **молчаливый по источнику** — тот же бит `null` читает как «серверный тул» | 013-8  |
 | 10  | `packages/mcp-server/test/tool-spec.test.ts:420`, `it('names its capability once — the spec field and the resolve`, тело `:441-456`       | «называет свою способность один раз»; см. §0.11                            | 013-8  |
-| 11  | `packages/mcp-server/test/readme-tool-table.test.ts:130-147`, `const CAPABILITY_OF = new Map(`                                            | `CAPABILITY_OF`, число строк README, ожидаемое значение TTL                | 013-8  |
+| 11  | `packages/mcp-server/test/readme-tool-table.test.ts:131-148`, `const CAPABILITY_OF = new Map(`                                            | `CAPABILITY_OF`, число строк README, ожидаемое значение TTL                | 013-8  |
 
 Сайт 8 — собственный сторож RF-5. Тул с `capability: null` и двумя способностями в
 `servedCapabilities` останется ему невидим, если `capabilitiesServedByTools()` не развернёт новое
@@ -193,7 +206,7 @@
 
 | Правка                                                                                                                                                  | Владелец  | Как проверяется                                    |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------- |
-| R-164(e): терминальный дизъюнкт по часам (`packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit \|\| Date.now() >= effectiveDeadlineAtMs) {`) | **013-5** | мутационный прогон плюс тест на две ветки          |
+| R-164(e): терминальный дизъюнкт по часам (`packages/core/src/adapters/registry.ts:1719`, `if (deadlineHit \|\| Date.now() >= effectiveDeadlineAtMs) {`) | **013-5** | мутационный прогон плюс тест на две ветки          |
 | AC-49: группировка держится на ОБОИХ селекторах                                                                                                         | **013-7** | контрактный тест тула на двух селекторах           |
 | `PLANNED_TOOL_NAMES`-запись `onchain_dash_platform_history`                                                                                             | **013-8** | удаление в коммите регистрации; гейт орфанов зелён |
 
@@ -266,7 +279,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 - **Пункт плана 1.3 (Фаза 2) — данные.** `mergeable: true` ставится ровно двум строкам:
   `privacy.shielded_pool.history` и `platform.metrics.history`. `entity.labels` (ветка `set`) поля
   не получает. Право не активирует слияние — активация приезжает в `013-6`.
-- **Пункт плана 1.4 (Фаза 2) — докстринг типа.** Текст `packages/core/src/capability-manifest.ts:142-164`, `* One capability's manifest — a **discriminated union on` называет
+- **Пункт плана 1.4 (Фаза 2) — докстринг типа.** Текст `packages/core/src/capability-manifest.ts:146-168`, `* One capability's manifest — a **discriminated union on` называет
   обязательство T-013 как будущее. Он переписывается в том же коммите: обязательство закрыто,
   сторож объявления `TC-UNIT-07` остаётся.
 - **Пункт плана 1.5 — протокол мутации (AC-22).** Поле переносится на `CapabilityManifestBase`,
@@ -336,7 +349,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 
 **Файл задачи:** [docs/tasks/task-013-3-resolution-shape.md](tasks/task-013-3-resolution-shape.md)
 
-- **Пункт плана 3.1 (Фаза 1) — `CapabilityResolution`.** `packages/core/src/adapters/registry.ts:317`, `export interface CapabilityResolution {`
+- **Пункт плана 3.1 (Фаза 1) — `CapabilityResolution`.** `packages/core/src/adapters/registry.ts:330`, `export interface CapabilityResolution {`
   (`export interface CapabilityResolution {`) получает три
   опциональных поля: `sources?: string[]`, `missingSources?: { adapterId: string; reason: string }[]`,
   `perSourceCache?: { adapterId: string; cache: 'hit' | 'miss'; ageMs?: number }[]`. Существующие
@@ -394,7 +407,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 - **Пункт плана 4.1 (Фаза 1) — ветвление обхода.** `resolve()` после построения `plan` проверяет,
   несёт ли хоть один совпавший маршрут `merge: true`. Если да — исполняется цикл слияния; если нет —
   существующий цикл, байт в байт. Порядок предшествующих шагов не меняется: один
-  `effectiveDeadlineAtMs` (`packages/core/src/adapters/registry.ts:670`, `found none setting it, and the two mechanisms agreeing was`) → `plan` (`:690`) → GATE 2 (`:798`). **Исправлено
+  `effectiveDeadlineAtMs` (`packages/core/src/adapters/registry.ts:683`, `found none setting it, and the two mechanisms agreeing was`) → `plan` (`:690`) → GATE 2 (`:798`). **Исправлено
   роастом 013-4 (M-8): здесь стояло «GATE 2 → дедлайн → `plan`» — обратный порядок.** Файл задачи
   был прав, план — нет; сверено по коду, а не по памяти.
 - **Пункт плана 4.2 (Фаза 1) — что цикл слияния переиспользует без правок.** Пре-чек дедлайна,
@@ -422,9 +435,12 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 
 **Чек-лист RTM:**
 
-- [ ] [R-161] Ключ дедупликации — тройка `(metric, asset, час от ts)` без `source`/`height`/`valueNum`;
+- [ ] [R-161] Слот дедупликации — тройка `(metric, asset, час от ts)` без `source`/`height`/`valueNum`;
       час, а не сырой `ts` — R-161(e), решение владельца 2026-08-07; дедуп сработал на реально
-      пересекающейся паре `identities_total` при РАЗНЫХ `ts` внутри часа, а не просто не упал
+      пересекающейся паре `identities_total` при РАЗНЫХ `ts` внутри часа, а не просто не упал.
+      **Дедуп применяется ТОЛЬКО между участниками** — R-161(f), решение владельца 2026-08-09;
+      правка тела цикла внесена задачей `013-6` ретроспективно (см. §0.4a), счёт точек проверяется
+      числом
 - [ ] [R-165] `cache.set()` — по разу на каждого сетевого участника, ноль раз на попадание; три
       состава проверены, агрегатного ключа нет ни в одном
 - [ ] [R-166] Слияние не переставляет порядок опроса: платный адаптер опрашивается не раньше
@@ -459,7 +475,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   `CapabilityDeadlineExceededError` независимо от числа уже ответивших. Третья точка того же класса —
   истёкший на входе `requestedDeadlineAtMs` с `tried: []`.
 - **Пункт плана 5.5 (Фаза 2) — терминальный дизъюнкт сохраняется.** `deadlineHit || Date.now() >= effectiveDeadlineAtMs`
-  (`packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`, строка `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {` — искать
+  (`packages/core/src/adapters/registry.ts:1719`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`, строка `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {` — искать
   по тексту, не по номеру: координата сдвигалась трижды, `:944`→`:1031`→`:1083`) остаётся
   неизменным и на слитом пути. Мутационный прогон: дизъюнкт удаляется,
   названный тест обязан упасть, мутация отменяется.
@@ -487,7 +503,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 
 **Файл задачи:** [docs/tasks/task-013-6-enable-two-routes.md](tasks/task-013-6-enable-two-routes.md)
 
-- **Пункт плана 6.1 — активация.** Двум маршрутам `packages/core/src/providers.config.ts:68-71`, `capability: 'privacy.shielded_pool.history',` и `:72-75` ставится
+- **Пункт плана 6.1 — активация.** Двум маршрутам `packages/core/src/providers.config.ts:97-100`, `capability: 'privacy.shielded_pool.history',` и `:72-75` ставится
   `merge: true`. Строки адресуются по имени способности; соседние маршруты выглядят одинаково.
   Порядок `['platform-explorer', 'pg-history']` не меняется — он же ранг конфликта.
 - **Пункт плана 6.2 — комментарий на КАЖДЫЙ маршрут отдельно.** Для `platform.metrics.history`
@@ -606,7 +622,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 - **Пункт плана 8.4 — якоря и `PLANNED_TOOL_NAMES` в ОДНОМ коммите.** `interfaces.md` §5.1.6
   получает две голые строки `// Capability:` — по одной на способность, каждая в пределах окна
   атрибуции в 25 строк. Запись `onchain_dash_platform_history` из `PLANNED_TOOL_NAMES`
-  (`packages/mcp-server/test/tool-inventory-docs.test.ts:131-134`, `'onchain_dash_platform_history',`) удаляется тем же коммитом: после регистрации `TOOL_NAMES`
+  (`packages/mcp-server/test/tool-inventory-docs.test.ts:132-135`, `'onchain_dash_platform_history',`) удаляется тем же коммитом: после регистрации `TOOL_NAMES`
   покрывает имя, и оставленная запись была бы вторым механизмом, утверждающим тот же факт.
 - **Пункт плана 8.5 — семь документов и счётчики.** Оба README, `ARCHITECTURE.md`, `interfaces.md`,
   `functional-architecture.md`, `ROADMAP.md` и `packages/mcp-server/.AGENTS.md` называют новый тул;
@@ -631,7 +647,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   (пункт 8.5, он же покрывает две прозаические строки README, сверяемые через `claimsWithSource`).
   Производный сайт, который правки ТРЕБУЕТ, ровно один — порог из пункта 8.6b.
 - **Пункт плана 8.8 — устаревшие тексты каналов 6 и 7, каждый в своём поле.** У канала 6
-  (`packages/mcp-server/test/inventory-channels.ts:64-68`, `gate: 'packages/mcp-server/test/tool-spec.test.ts',`) устарел текст `action`; поля `firesOnlyWhen` у него нет вовсе. У
+  (`packages/mcp-server/test/inventory-channels.ts:65-69`, `gate: 'packages/mcp-server/test/tool-spec.test.ts',`) устарел текст `action`; поля `firesOnlyWhen` у него нет вовсе. У
   канала 7 устарел текст `firesOnlyWhen`. Оба правятся одним коммитом с регистрацией. Этот же файл
   фиксирует прецедент: описание, разошедшееся с деревом, было удалено в цикле 4 T-011.
 - **Пункт плана 8.9 — правило для `capability:` ниже вызова `defineTool`.** `specBody`
@@ -662,8 +678,14 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
 - **Пункт плана 9.2 — отклонение 2 (различение исходов).** Отдельная запись той же даты, цитирующая
   «распространяется на слияние дословно» и объясняющая, почему ветки (b)/(c) — новое решение задачи.
   Запись называет и границу: дедлайн-предусловие сохраняет OD-4 буквально для обеих дверей.
-- **Пункт плана 9.3 — сноски.** Оба фрагмента D5 получают сноску на соответствующее отклонение;
-  буквальный текст остаётся видимым рядом. Таблица «Влияние на этапы» не переписывается.
+- **Пункт плана 9.2a — отклонение 3 (дедуп только между участниками).** Отдельная запись
+  §Changelog от 2026-08-09 (R-181(c)): часовой слот не различает «одно наблюдение у двух
+  участников» и «два наблюдения у одного»; замер 12 → 2 точки на обеих способностях; довод о слое
+  хранения сужен — ключ БД ведёт с `source`. Запись называет цену (ряд неравномерной плотности) и
+  незакрытый случай (две строки за час от разных `source` внутри `pg-history` — предмет T-016).
+- **Пункт плана 9.3 — сноски.** ВСЕ ТРИ фрагмента D5 получают сноску на соответствующее отклонение
+  (третий — фраза о ключе идентичности точки); буквальный текст остаётся видимым рядом. Таблица
+  «Влияние на этапы» не переписывается.
 - **Пункт плана 9.4 — границы T-016.** Grep-гейт и регрессия подтверждают: сегментации `set`-слияния
   по рангу доверия нет, скрипта `source → trust` нет, community-маркировки нет, `entity.labels`
   слияния не получил. `.trust` не получил нового читателя.

@@ -444,7 +444,7 @@ gap-filling D6 reason 3 names directly.
   `ONCHAIN_PG_URL` is configured and `pg-history` answered (AC-43, AC-49).
 - 🔴 **`limit` bounds the TOOL's output, never the underlying fetch (M-4, corrected round 2 —
   MJ-3).** `pg-history`'s own query is not rewritten by this task (R-180c) — it always applies its
-  OWN hardcoded `DEFAULT_HISTORY_LIMIT = 100`, `ORDER BY ts DESC` (`packages/core/src/adapters/pg-history/index.ts:30`, `const DEFAULT_HISTORY_LIMIT = 100;`,
+  OWN hardcoded `DEFAULT_HISTORY_LIMIT = 100`, `ORDER BY ts DESC` (`packages/core/src/adapters/pg-history/index.ts:37`, `const DEFAULT_HISTORY_LIMIT = 100;`,
   `:142-145`), and it is the SAME query, same cap, for **both** capabilities — not only
   `platform_metrics` (where the 100 rows are additionally shared across four metrics). A first
   draft scoped the always-on disclosure to `platform_metrics` alone, which left

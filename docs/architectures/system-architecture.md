@@ -710,10 +710,10 @@ own docstring already forbids growing one (weights, partial merges, multi-source
 the router's job), and ADR-002 §Что отклонено п.7 rejects the nearest miss (configurable
 field-mapping) on the identical ground. Exactly two entries are needed today:
 
-| `kind`              | Predicate                                                       | Replaces                                                                                                                                                                                                                                                                                                   |
-| ------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `any`               | always `true` (today's implicit default)                        | 20 of 21 routes, which carry no policy today                                                                                                                                                                                                                                                               |
-| `someElementHasAny` | array, and ≥ 1 element has a non-empty value at one of `fields` | `entity.labels`'s literal predicate (`packages/core/src/providers.config.ts:94-104`, `that nansen exists; the policy belongs here, as data, beside`), bit-for-bit — 🔴 NEVER named or aliased `nonEmpty` anywhere (H-1: a non-empty array of contentless Blockscout rows must still count as unsatisfying) |
+| `kind`              | Predicate                                                       | Replaces                                                                                                                                                                                                                                                                                                    |
+| ------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `any`               | always `true` (today's implicit default)                        | 20 of 21 routes, which carry no policy today                                                                                                                                                                                                                                                                |
+| `someElementHasAny` | array, and ≥ 1 element has a non-empty value at one of `fields` | `entity.labels`'s literal predicate (`packages/core/src/providers.config.ts:132-142`, `that nansen exists; the policy belongs here, as data, beside`), bit-for-bit — 🔴 NEVER named or aliased `nonEmpty` anywhere (H-1: a non-empty array of contentless Blockscout rows must still count as unsatisfying) |
 
 **Resolved at `CapabilityRegistry` CONSTRUCTION, never lazily inside `resolve()` (R-135).** See the
 exact validation order specified on the constructor above (manifest presence, then policy `kind`).
@@ -922,7 +922,7 @@ left as two behaviourally-coincident readings.
 implicit (M-6).** On a policy-bearing merge route where every participant answers and NONE
 satisfies (hypothetical for T-013's shipped scope — both real routes carry no `policy`), the
 non-merge path falls back to the first truthful-but-unsatisfying answer (`unsatisfying`,
-`packages/core/src/adapters/registry.ts:822`, `let unsatisfying: CapabilityResolution | undefined;`, returned at `:1040`,
+`packages/core/src/adapters/registry.ts:835`, `let unsatisfying: CapabilityResolution | undefined;`, returned at `:1040`,
 `if (unsatisfying && !hadFailure) return withDiagnostics(unsatisfying);`). **The merge path does NOT
 reuse that fallback.** Falling
 back to one participant's raw, un-merged answer would silently un-merge the very response the
@@ -1226,7 +1226,7 @@ this call's binding constraint.
 "never a partial-as-fact" rule.** `DeadlineExceededError` (net layer) is never rethrown to the
 caller AS ITSELF. `CapabilityRegistry.resolve()`'s existing per-adapter `try/catch` — the SAME one
 that already special-cases `CapabilityNotCoveredOnChainError` for immediate rethrow
-(`packages/core/src/adapters/registry.ts:1439`, `if (error instanceof DeadlineExceededError) deadlineHit = true;`) — instead
+(`packages/core/src/adapters/registry.ts:1549`, `if (error instanceof DeadlineExceededError) deadlineHit = true;` — the SINGLE-WINNER walk's catch; the merge walk grew its own twin at `:1176` in task 013-5) — instead
 catches it, sets a NEW `deadlineHit = true` flag alongside the
 existing `hadFailure`, and records the same informative `tried[]` entry any other fetch failure
 gets. **`DeadlineWouldExceedError` (H-A above) is caught by this SAME per-adapter branch but does
@@ -1265,7 +1265,7 @@ answered and nobody had it".** This supersedes an earlier draft of this section,
 "частичный результат" wording as licence to return the truthful-but-unsatisfying answer even when a
 deadline (not every adapter) was why the walk ended. It does not — `hadFailure` and `deadlineHit`
 are set TOGETHER, so the existing `if (unsatisfying && !hadFailure) return unsatisfying;`
-(`packages/core/src/adapters/registry.ts:656`, `args: Record<string, unknown>,`, H-1) does NOT fire, preserving H-1's doctrine unchanged. The terminal throw
+(`packages/core/src/adapters/registry.ts:669`, `args: Record<string, unknown>,`, H-1) does NOT fire, preserving H-1's doctrine unchanged. The terminal throw
 becomes:
 
 ```
@@ -1543,10 +1543,15 @@ export const adapterRegistrations: AdapterRegistration[] = [
   // `throttle('pg-history', RATE_LIMIT, 1, deadlineAtMs)`, and that wait contributes 30_000 to the
   // E-PG envelope the two `*.history` deadlines are derived from. The pool's `max: 3` bounds
   // CONCURRENCY, which is a different quantity and never was this limit.
+  // **T-013 task 013-6 re-derived the bucket** from `{capacity: 2, refillPerSec: 0.2}` when merge
+  // was activated on the two `*.history` routes. The old pair was sized for a spare leg that the
+  // merge walk stopped being: every merged cache-miss now takes a token, and one token per five
+  // seconds capped both merged capabilities together at ~12 calls/minute. `pg-history` is our own
+  // Postgres — no vendor quota to respect — so the limiter is a runaway guard, not a contract.
   {
     id: 'pg-history',
     hosts: [],
-    rateLimit: { capacity: 2, refillPerSec: 0.2 },
+    rateLimit: { capacity: 10, refillPerSec: 5 },
     requiresEnv: ['ONCHAIN_PG_URL'],
   },
   // R-73 (TASK-008). ONE host. The two-host design this comment used to describe was reverted in

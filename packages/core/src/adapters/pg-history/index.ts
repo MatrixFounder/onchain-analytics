@@ -12,14 +12,21 @@ if (!REGISTRATION) {
   throw new Error('pg-history: no matching entry in adapterRegistrations (providers.config.ts)');
 }
 /**
- * `{capacity: 2, refillPerSec: 0.2}` — declared in `providers.config.ts` since the registration was
- * written, and applied by nothing until WI-34.
+ * `{capacity: 10, refillPerSec: 5}` — declared in `providers.config.ts`, applied by nothing until
+ * WI-34, and RE-DERIVED from the original `{capacity: 2, refillPerSec: 0.2}` by T-013 task 013-6.
  *
  * **Why a Postgres adapter paces at all.** Its `max: 3` pool bounds CONCURRENCY, which is a different
  * quantity from RATE: three connections can be re-borrowed as fast as queries complete, so the pool
- * puts no ceiling on queries per second. The declared bucket does — one query per five seconds, burst
- * of two — which is the traffic shape the shipped routes actually produce, since both `*.history`
- * capabilities are cached for 3 600 s.
+ * puts no ceiling on queries per second. The declared bucket does.
+ *
+ * **Why the numbers changed.** The original pair was sized for a SPARE LEG: before merge, this
+ * adapter was reached only when `platform-explorer` threw, which the route's default `{kind: 'any'}`
+ * policy made almost never. Task 013-6 activated merge on both `*.history` routes, so every merged
+ * cache-miss now takes a token from this one per-provider bucket — and one token per five seconds
+ * worked out to roughly 12 merged calls per minute across both capabilities together, a ceiling the
+ * 3 600 s TTL hides right up until an agent varies its arguments. The registration's own comment in
+ * `providers.config.ts` carries the arithmetic and the reason this was re-derived rather than
+ * documented as an intentional limit.
  *
  * **The point of the fix is not the pacing, it is the agreement.** A `rateLimit` in the registration
  * read as a control that existed; PLAN §0.2a derived the E-PG envelope through it, and it was the one

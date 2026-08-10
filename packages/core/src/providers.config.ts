@@ -65,13 +65,51 @@ export const routes: CapabilityRoute[] = [
   // R-10 (platform-explorer's own history, always live/keyless) + R-12 (opt. PG-backed history) —
   // fix F-2, review cycle 1: platform-explorer first (needs no DSN, always available), pg-history
   // second (an additional/alternative history view, only when ONCHAIN_PG_URL is configured):
+  //
+  // **T-013 task 013-6 (ADR-002 D6): merge ACTIVATED here, and on these two routes alone.**
+  // `merge: true` is the ACTIVATION half; the eligibility half is `mergeable: true` on the
+  // capability's manifest row (013-1), and `CapabilityRegistry`'s constructor refuses a route that
+  // has one without the other (validation step 3, 013-2, R-183). `adapterIds` order is UNCHANGED
+  // and must stay so: it is simultaneously the spend rule (free-first, D5) and the conflict rank —
+  // when both participants hold a point for the same `(metric, asset, hour)`, `platform-explorer`
+  // wins because it is first here, not because of anything the merge code decides.
+  //
+  // The two routes are commented SEPARATELY, because D6's three reasons do NOT apply equally to
+  // them, and one comment covering both would state something false about one of them.
   {
+    // D6 reason 1 (a shared identity key): mechanically yes, factually never exercised — the key
+    // works, and it never collides, because the two participants write DIFFERENT metrics.
+    // D6 reason 2 (both participants free): YES, same as above.
+    // 🔴 D6 reason 3 (gap filling): **NOT APPLICABLE, and saying so is the point of this comment.**
+    // `platform-explorer` writes `shielded_pool_shield_amount` (inflow INTO the pool, per
+    // transaction, from `/transactions/shield/history`); `pg-history` reads back
+    // `shielded_pool_balance_credits` (the BALANCE, written hourly by the n8n snapshotter). Those
+    // are two different quantities under one capability name, deliberately kept under distinct
+    // metric ids (`packages/core/.AGENTS.md`, "under a DISTINCT metric id … to avoid implying it's
+    // the same quantity"). Merging them does not produce a fuller history of one series — it
+    // produces both series, side by side, each under its own true label.
+    //
+    // That is not a defect and it is not a fix waiting to happen: the owner closed `OQ-T013-1` on
+    // 2026-08-05 by choosing to merge anyway and GROUP THE TOOL'S ANSWER BY `metric` (013-7,
+    // R-171(b)), rather than by rewriting either adapter's metric vocabulary. The n8n snapshotter
+    // has never written `shielded_pool_shield_amount`, so there is nothing for `pg-history` to read
+    // even if the schema were changed — which is why the schema change was rejected, not deferred.
     capability: 'privacy.shielded_pool.history',
     adapterIds: ['platform-explorer', 'pg-history'],
+    merge: true,
   },
   {
+    // D6 reason 1 (a shared identity key): YES — `identities_total` is genuinely the same series
+    // over time from both participants, so the dedup key does real work.
+    // D6 reason 2 (both participants free): YES — `platform-explorer` is keyless, `pg-history` is
+    // our own Postgres. No merged call can spend a credit.
+    // D6 reason 3 (gap filling): YES, and this is the route where it is the point —
+    // `documents_total`, `data_contracts_total` and `platform_total_credits` exist ONLY in
+    // `pg-history`; `platform-explorer`'s history endpoint writes `identities_total` and nothing
+    // else. Before merge, those three were unreachable through this capability.
     capability: 'platform.metrics.history',
     adapterIds: ['platform-explorer', 'pg-history'],
+    merge: true,
   },
   // R-74 (TASK-008) — retargeted off `dune`. The old route pointed at an interface/config stub
   // whose `chainSupport` covered ZERO chains, so `token.holders` was advertised by
@@ -323,10 +361,37 @@ export const adapterRegistrations: AdapterRegistration[] = [
   // `throttle('pg-history', RATE_LIMIT, 1, deadlineAtMs)`, and that wait is 30_000 of the E-PG
   // envelope the two `*.history` deadlines come from. The pool's `max: 3` bounds CONCURRENCY, a
   // different quantity, and never was this limit.
+  //
+  // **T-013 task 013-6: RE-DERIVED from `{capacity: 2, refillPerSec: 0.2}` at the moment merge was
+  // activated, because activation is what invalidated the old number's premise.**
+  //
+  // One token per five seconds was sized for a SPARE LEG. Before merge, this adapter was asked only
+  // when `platform-explorer` threw — the route's default `{kind: 'any'}` policy is satisfied by the
+  // first answer, so in practice `pg-history` was almost never reached. The merge walk removes that
+  // early return: from now on EVERY merged cache-miss takes a token, and the bucket is per PROVIDER,
+  // so both merged capabilities draw from the same one.
+  //
+  // The arithmetic on the old number (`createThrottle`, found by 013-4's performance critic as
+  // HIGH-1 and deliberately left for this task): on a cold bucket, eight consecutive cache-miss
+  // calls wait 0, 0, 5 000, 10 000, 15 000, 20 000, 25 000 ms, and the eighth exceeds the 30 000 ms
+  // ceiling with `DeadlineWouldExceedError`. That is ~12 merged calls per minute for BOTH
+  // capabilities together — a ceiling the 3 600 s TTL hides until an agent varies its arguments,
+  // which is precisely what the 013-7 tool invites it to do.
+  //
+  // **Why re-derive rather than document the old number as intentional** (the task file offered
+  // both): a limiter exists to protect a VENDOR from us and us from a vendor's ban. `pg-history` is
+  // not a vendor — it is our own Postgres, reached over our own network, with no quota and no terms
+  // of service. Writing "12 calls/minute is deliberate" would be dressing a known bottleneck as a
+  // decision, and the task file predicts exactly where it would surface as a defect instead.
+  //
+  // `{capacity: 10, refillPerSec: 5}` — the same pair `defillama` carries, the most generous free
+  // entry in this table. Still a real runaway guard (a loop cannot exceed 5 queries/s sustained),
+  // but no longer a ceiling on ordinary use. The pool's `max: 3` continues to bound CONCURRENCY,
+  // which this number never governed.
   {
     id: 'pg-history',
     hosts: [],
-    rateLimit: { capacity: 2, refillPerSec: 0.2 },
+    rateLimit: { capacity: 10, refillPerSec: 5 },
     requiresEnv: ['ONCHAIN_PG_URL'],
     tier: 'free',
     // **PLACEHOLDER with an assigned replacement — do NOT "correct" this to `authoritative`.**

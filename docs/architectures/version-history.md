@@ -31,7 +31,7 @@ true` participant to be `tier: 'free'`, closing the hazard of a paid, more-autho
     `CapabilityDeadlineExceededError` — the per-participant pre-check, an in-flight `fetch()` cut off
     by the ceiling, and the caller's own already-expired deadline at entry) stays a PRECONDITION that
     pre-empts all four branches, unchanged from the non-merge contract, and the terminal wall-clock
-    disjunct (`packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`) is preserved for the same reason WI-36 argued: it covers all twelve
+    disjunct (`packages/core/src/adapters/registry.ts:1719`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`) is preserved for the same reason WI-36 argued: it covers all twelve
     adapters, not the two whose typed class unwrapping fixed.
   - **`CapabilityResolution` gains three optional fields** (`sources`, `missingSources`,
     `perSourceCache`) populated ONLY on a merge walk; the 18 non-merge capabilities and their 13
@@ -201,7 +201,7 @@ floor` is arithmetic done BEFORE the sleep, and a timer is only guaranteed not t
     `entity.labels`). Owner decision 2026-08-03; retuning nansen's own timeouts was rejected.
   - **A deadline never publishes a partial as fact.** ADR-002 D4 п.5 reads "ответил хотя бы один →
     частичный результат", but a deadline is a fact about OUR availability, and the H-1 doctrine
-    (`packages/core/src/adapters/registry.ts:646-658`, `* Once the moment passes, the walk refuses every source it has`) forbids dressing that as a fact about the data — returning the
+    (`packages/core/src/adapters/registry.ts:659-671`, `* Once the moment passes, the walk refuses every source it has`) forbids dressing that as a fact about the data — returning the
     partial would report "no entity labels" for a sanctioned address merely because the paid source
     did not fit the budget. Expiry throws `CapabilityDeadlineExceededError` naming both which
     sources answered and which were never asked. Owner decision 2026-08-03; ADR-002 is amended

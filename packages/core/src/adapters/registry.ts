@@ -254,12 +254,16 @@ function isNegativeEntry(value: unknown): value is NegativeCacheEntry {
  * element of a `set`/`series` capability's result — the same three field names the canonical
  * `Snapshot` schema (`types/snapshot.ts`) carries for them, read STRUCTURALLY rather than by
  * importing that domain type: `resolve()` stays provider-agnostic (every `normalize()` result is
- * `unknown` here, same as everywhere else in this file), and the dedup key touches only these
+ * `unknown` here, same as everywhere else in this file), and the dedup slot touches only these
  * three fields — `valueRaw`/`source`/`height`/`valueNum` ride along inside the stored point,
  * untouched and unread (TC-INT-03). `ts` is the point's own epoch-ms field, never derived from
  * `valueRaw` — the two are unrelated fields on the same point.
  *
- * **`ts` here is the point's OWN field, read but never rewritten — the dedup KEY buckets it
+ * **These three fields identify an hour SLOT for cross-participant comparison — they are not the
+ * identity of a point (013-6).** Two points from ONE participant may share all three and remain two
+ * distinct observations; `mergeInto` compares slots only across participants for that reason.
+ *
+ * **`ts` here is the point's OWN field, read but never rewritten — the SLOT buckets it
  * (`MERGE_DEDUP_BUCKET_MS`, `mergeInto` below); the stored point does not.** See the owner decision
  * this corrects (F-0, `docs/architectures/open-questions.md` "T-013 task 013-4"): exact-`ts`
  * equality was the original R-161 reading, and it cannot fire between the two real participants —
@@ -277,13 +281,22 @@ interface MergePoint {
 }
 
 /**
- * The width of the merge dedup KEY's time bucket (F-0, owner decision 2026-08-07) — one hour,
- * mirroring the persistence layer's OWN convention for the identical reason: the n8n snapshotter's
- * `ts_bucket = floor(ts/3600000)*3600000` (`CLAUDE.n8n.md`) and the Postgres `snapshots` table's own
- * dedup key, `UNIQUE ... ON CONFLICT (source, asset, metric, ts_bucket)` — never raw `ts`. The DB
- * buckets for exactly the reason this key now does: two sources can legitimately disagree, by
- * seconds to minutes, on the exact millisecond that names "this hour's" observation, and `UC-11`'s
- * one-point-per-hour promise has to survive that disagreement. A named constant, not a bare literal,
+ * The width of the CROSS-PARTICIPANT dedup slot's time bucket (F-0, owner decision 2026-08-07) —
+ * one hour, mirroring the persistence layer's OWN convention for the identical reason: the n8n
+ * snapshotter's `ts_bucket = floor(ts/3600000)*3600000` (`CLAUDE.n8n.md`) and the Postgres
+ * `snapshots` table's own dedup key, `UNIQUE ... ON CONFLICT (source, asset, metric, ts_bucket)` —
+ * never raw `ts`. The DB buckets for exactly the reason this slot does: two sources can legitimately
+ * disagree, by seconds to minutes, on the exact millisecond that names "this hour's" observation,
+ * and `UC-11`'s one-point-per-hour promise has to survive that disagreement.
+ *
+ * **The DB parallel reaches exactly this far, and 013-6 had to correct a reading that took it
+ * further.** That `ON CONFLICT` tuple leads with **`source`** — the DB keeps one row per SOURCE per
+ * hour, not one row per hour. It is therefore authority for collapsing an hour ACROSS sources and
+ * no authority at all for collapsing one source's own hour. Reading it as the latter is what
+ * turned `platform-explorer`'s 5-minute series into one point per hour (measured 12 → 2 on both
+ * shipped merge routes); `mergeInto` now applies the bucket only at the seam between participants.
+ *
+ * A named constant, not a bare literal,
  * so a reader (or a mutation) sees ONE number rather than a `3_600_000` that could be a typo of
  * `dayBucketMs`'s `86_400_000` (`cache/day-bucket.ts`) — deliberately NOT that shared helper: this
  * bucket is a MERGE-DEDUP concept (one call site today), `dayBucketMs` is a BUDGET-LEDGER concept,
@@ -388,7 +401,7 @@ export interface CapabilityResolution {
    * array — a caller must not have to distinguish "nobody was missing" from "the field forgot to
    * mention who".
    *
-   * **Declared here (013-3); populated by the merge walk (013-5) — this task never sets it.**
+   * **Declared here (013-3); populated by the merge walk (013-5).**
    * Present only on a merge-enabled walk; the 18 non-merge capabilities never carry it.
    *
    * **Independent of `sources`/`perSourceCache`, not coupled to either (roast round 1, B-2).** An
@@ -962,16 +975,40 @@ export class CapabilityRegistry {
       // outcome — `missingSources`, the two remaining failure branches, the deadline precondition —
       // is still 013-5's, which replaces the single unconditional `return` at the end of this block.
       //
-      // **`hadFailure`/`deadlineHit` (the shared flags the walk below sets and reads) are
-      // DELIBERATELY NOT written here.** This loop never reads them — it always returns success (or
-      // the one B-1 exception above, which reads only `perSourceCache`, neither flag) — so writing
-      // them now would be a dead store (`no-useless-assignment` catches exactly this, correctly:
-      // nothing in 013-4's own code observes them). 013-5's outcome contract is what consumes them,
-      // and it reintroduces the same one-line assignments at the same points below when it lands,
-      // alongside the branch logic that reads them — a small, targeted addition to this loop's
-      // body, not a rewrite of it.
+      // **`hadFailure` stays unwritten here; `deadlineHit` no longer does (013-5).** `hadFailure` is
+      // read only by the single-winner walk's own `if (unsatisfying && !hadFailure) return
+      // withDiagnostics(unsatisfying);` below — the merge walk's branch logic classifies a missing
+      // participant structurally, from `skipped[]`'s own `kind`, and never consults that flag, so
+      // writing it here would still be the dead store 013-4 refused to add (`no-useless-assignment`
+      // would catch it). `deadlineHit` is different: 013-5's outcome contract, right after this
+      // loop, reads it once, before any of the four branches are even considered — see the
+      // deadline-precondition throw below the loop. The two writes inside this loop's own body (the
+      // pre-check just below, and the caught `DeadlineExceededError` on the fetch call further
+      // down) are the same one-line assignments the single-winner walk already makes at its own
+      // matching two points, landing on the merge path for the first time.
       // ---------------------------------------------------------------------------------------
-      const merged = new Map<string, unknown>();
+      /**
+       * The merged series, in the order points were accepted — rank order across participants,
+       * each participant's own order within its own block.
+       *
+       * **An ARRAY, not a keyed `Map`, since task 013-6.** The `Map<slotKey, point>` this replaces
+       * made the hour slot the identity of a POINT, which silently made two distinct observations
+       * from ONE participant inside one hour indistinguishable from the same observation seen by
+       * two participants. `platform-explorer` samples every ~5 minutes, so that collapsed its own
+       * 12-point hour into 1 — measured 12 → 2 on both shipped merge routes before the fix. The
+       * hour is still the unit of CROSS-participant identity (`claimedSlots` below); it is no
+       * longer the unit of point identity.
+       */
+      const mergedPoints: unknown[] = [];
+      /**
+       * Hour slots (`metric \0 asset \0 hour`) already filled by a participant of HIGHER rank.
+       *
+       * Read to decide whether a lower-ranked participant's point is a duplicate of something the
+       * merged series already carries; written only after a participant's whole answer is merged,
+       * never during — a participant must not suppress its OWN later points, which is exactly the
+       * defect the previous single-`Map` form had.
+       */
+      const claimedSlots = new Set<string>();
       /** Participants whose points actually WON at least one key — R-174(a)'s `sources`. Updated by
        * `mergeInto` at the moment a point is inserted, never derived from "satisfied the policy"
        * afterward: a participant whose every point loses its key to an earlier duplicate satisfies
@@ -1003,9 +1040,9 @@ export class CapabilityRegistry {
        * M-3) does not cleanly fit any of the five and is left to `tried` alone rather than guessed
        * at here, since classifying it is 013-5's call, not this fix pass's to make.
        *
-       * **Raw material only — NOT yet read by anything.** `CapabilityResolution.missingSources` is
-       * still 013-5's field to populate (013-3's own docstring on it); this array exists so 013-5
-       * has structured data to populate it FROM, without touching this loop.
+       * **Read by 013-5's outcome contract, right after this loop** — to decide which of the four
+       * branches applies, and to build `CapabilityResolution.missingSources`'s `reason` text
+       * (`'chain'` has no `tried[]` entry to relay, so its reason is synthesized there instead).
        */
       const skipped: {
         adapterId: string;
@@ -1013,16 +1050,29 @@ export class CapabilityRegistry {
       }[] = [];
 
       /**
-       * Inserts one participant's points into `merged`, INSERT-IF-ABSENT (R-161): a key already
-       * present survives untouched, so the FIRST participant to claim a key — the highest-ranked
-       * one, since `plan` (and this loop) is walked in rank order — keeps it, and its WHOLE point
-       * (never a value read out of it, R-167) is what ends up in `result`. `value_raw` is not read
-       * anywhere in this function or the loop around it.
+       * Inserts one participant's points into `mergedPoints`.
        *
-       * **The key buckets `ts` to the hour (`MERGE_DEDUP_BUCKET_MS`); the STORED point keeps its
+       * **Dedup is CROSS-PARTICIPANT ONLY — never within one participant (R-161(a), owner decision
+       * 2026-08-09, task 013-6).** Two points sharing `(metric, asset, hour)` are one observation
+       * when they come from DIFFERENT participants, and two distinct observations when they come
+       * from the SAME one. No key can tell those apart, because the difference is not in the
+       * point's own fields — it is in who reported it. So the hour is applied where the ambiguity
+       * actually lives, at the seam between participants, and nowhere else:
+       *
+       * - the highest-ranked participant contributes EVERY point it answered with, at its own
+       *   sampling resolution;
+       * - a lower-ranked participant contributes a point only when its slot is not already filled
+       *   by someone above it — `claimedSlots`, committed after each participant, not during.
+       *
+       * The point that wins a contested slot is the higher-ranked participant's, and its WHOLE
+       * point (never a value read out of it, R-167) is what ends up in `result`. `value_raw` is not
+       * read anywhere in this function or the loop around it.
+       *
+       * **The SLOT buckets `ts` to the hour (`MERGE_DEDUP_BUCKET_MS`); the STORED point keeps its
        * own real `ts` untouched (F-0, owner decision 2026-08-07)** — see `MergePoint`'s own
-       * docstring for the measurement that forced this and `MERGE_DEDUP_BUCKET_MS`'s for the
-       * persistence-layer parallel.
+       * docstring for the measurement that forced the hour and `MERGE_DEDUP_BUCKET_MS`'s for the
+       * persistence-layer parallel, which keys on `source` as well and is therefore NOT authority
+       * for collapsing one participant's own hour (013-6's correction to that reading).
        *
        * **Refuses a structurally malformed point rather than merging it (M-3, fix pass
        * 2026-08-07)** — `asMergePoint` validates each element; one that fails is dropped, and the
@@ -1040,6 +1090,10 @@ export class CapabilityRegistry {
           return;
         }
         let malformed = 0;
+        /** Slots this participant filled on THIS call. Held aside and merged into `claimedSlots`
+         * only after the whole answer is processed, so a participant's own second point in an hour
+         * is not suppressed by its own first one. */
+        const slotsFilledHere = new Set<string>();
         for (const raw of points) {
           const point = asMergePoint(raw);
           if (!point) {
@@ -1047,14 +1101,18 @@ export class CapabilityRegistry {
             continue;
           }
           const bucket = Math.floor(point.ts / MERGE_DEDUP_BUCKET_MS);
-          const key = `${point.metric}\0${point.asset}\0${bucket}`;
-          if (merged.has(key)) continue;
+          const slot = `${point.metric}\0${point.asset}\0${bucket}`;
+          // Only a HIGHER-ranked participant's claim suppresses this point. `slotsFilledHere` is
+          // deliberately NOT consulted — that is the whole cross-participant-only rule.
+          if (claimedSlots.has(slot)) continue;
           // The WHOLE original element (`raw`), never the narrowed 3-field `point` above, which
-          // exists only to build the key (R-167(b)) — `valueRaw`/`source`/`height`/`valueNum` ride
+          // exists only to build the slot (R-167(b)) — `valueRaw`/`source`/`height`/`valueNum` ride
           // along untouched, exactly as before this fix.
-          merged.set(key, raw);
+          mergedPoints.push(raw);
+          slotsFilledHere.add(slot);
           contributors.add(adapterId);
         }
+        for (const slot of slotsFilledHere) claimedSlots.add(slot);
         if (malformed > 0) {
           tried.push({
             adapterId,
@@ -1064,7 +1122,11 @@ export class CapabilityRegistry {
       };
 
       for (const { adapterId, policy } of plan) {
+        // Door 1 of 013-5's deadline precondition — see the throw right after this loop for the
+        // full contract. Same test, same position, same "free, no fetch()" property as the
+        // single-winner walk's own pre-check below.
         if (Date.now() >= effectiveDeadlineAtMs) {
+          deadlineHit = true;
           tried.push({
             adapterId,
             reason: 'deadline exceeded before this source could be attempted',
@@ -1162,6 +1224,11 @@ export class CapabilityRegistry {
           raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs);
         } catch (error) {
           if (error instanceof CapabilityNotCoveredOnChainError) throw error;
+          // Door 2 of 013-5's deadline precondition — the net-layer class caught here exactly as
+          // the single-winner walk's own catch translates it below: same class, same non-rethrow
+          // (the remaining `plan` entries still need their own `tried[]` record, which the
+          // pre-check above produces for free on the next iterations).
+          if (error instanceof DeadlineExceededError) deadlineHit = true;
           tried.push({ adapterId, reason: error instanceof Error ? error.message : String(error) });
           skipped.push({ adapterId, kind: 'failed' });
           continue;
@@ -1228,6 +1295,25 @@ export class CapabilityRegistry {
         }
       }
 
+      // 013-5's deadline PRECONDITION (R-164e, reliability.md §9.1 "the deadline is a PRECONDITION
+      // on this whole contract, not a fifth branch") — checked before any of the four branches
+      // below, and it cancels every one of them: `deadlineHit` is set by door 1 (the per-adapter
+      // pre-check above) or door 2 (the caught `DeadlineExceededError` on the fetch call above),
+      // and either one means the walk ends as `CapabilityDeadlineExceededError`, independent of how
+      // many participants had already answered by then — OD-4 forbids a partial merged success as
+      // much as it forbids a partial single-winner one. `tried` at this point already names BOTH
+      // groups (who answered, and with what, before the moment passed; who was never asked at all),
+      // exactly like the single-winner walk's own terminal throw.
+      //
+      // Deliberately ABOVE the B-1 "nobody answered" check right below: a walk defeated by the
+      // deadline before a single participant could be reached has `perSourceCache.length === 0`
+      // too, and the two throws disagree about whose fault it was — `CapabilityUnavailableError`
+      // tells the caller "retry later", `CapabilityDeadlineExceededError` tells it "retry with more
+      // time". Checking the deadline first is what keeps that advice correct.
+      if (deadlineHit) {
+        throw new CapabilityDeadlineExceededError({ capability, chain, tried });
+      }
+
       // B-1 (fix pass 2026-08-07, AC-47) — the ONE outcome this loop does not turn into a merged
       // success. `perSourceCache.length === 0` means NOBODY in `plan` ever reached an answered
       // branch (cache hit or fresh fetch+normalize) — every participant was unregistered,
@@ -1237,9 +1323,87 @@ export class CapabilityRegistry {
       // `docs/TASK.md`). This is a narrow, NAMED exception to "013-4 always returns a merged
       // success" (see the block overview comment above): 013-5 KEEPS this branch as its own
       // "nobody answered" outcome, so it is forward-compatible, not throwaway.
+      //
+      // **013-5, measured: this branch is now UNREACHABLE, and it stays anyway.** Every participant
+      // that fails to answer either pushes to `skipped` (so branch (c) below fires, since
+      // `contributors` is necessarily empty too) or is the deadline pre-check (so the precondition
+      // above fires). The one shape that would evade both — a route with zero participants — never
+      // reaches this walk: GATE 2 refuses an empty `adapterIds` route with
+      // `CapabilityNotCoveredOnChainError` first, since a route with no adapters covers no chain.
+      // That was RUN, not argued (`registry.merge-outcomes.test.ts`, the TC-INT-05b entry records
+      // the attempt and its actual failure class), and the deleting mutation was run too: it left
+      // the whole file green, which is what unreachable means.
+      //
+      // Kept because AC-47's prohibition on `source: ''` is unconditional and this is three lines
+      // of defence over the `?? ''` fallback below, not because a composition reaches it. Stated
+      // explicitly so the next reader does not mistake it for load-bearing and build on it.
       if (perSourceCache.length === 0) {
         throw new CapabilityUnavailableError({ capability, chain, tried });
       }
+
+      // 013-5's branch (c) — at least one answering participant existed (B-1 above already refused
+      // the all-empty "nobody answered" shape (d)), but NONE of them contributed a single point,
+      // and at least one participant is genuinely MISSING. A silent empty success here is exactly
+      // the defect branch (c) exists to close (UC-19): "the source that would know was never asked"
+      // and "there is no history" are different statements, and only a full `tried` — never a
+      // hollow `result: []` — tells them apart.
+      //
+      // "Genuinely missing" excludes `'policy-excluded'` on purpose (PLAN §0.5 item 3): that
+      // participant DID answer, and whether its answer satisfied the route's policy is an
+      // orthogonal question (`skipped`'s own docstring places it outside R-164's three states for
+      // the same reason). Filtering it out here is what keeps TC-INT-12's own composition (nobody
+      // satisfies the policy, everybody otherwise answered) inside branch (a), not (c).
+      const missing = skipped.filter((entry) => entry.kind !== 'policy-excluded');
+      if (missing.length > 0 && contributors.size === 0) {
+        // `tried` must name BOTH groups here — the task file's own words for UC-19, and the
+        // substance of the branch: the caller is being told "we cannot answer", and the two halves
+        // of WHY are "the source that would know was never asked" and "the source we did ask had
+        // nothing". The loop writes the first half as it happens. The second half is written HERE,
+        // and only here, because on branches (a)/(b) an empty answer is an ordinary fact that no
+        // diagnostic should be cluttered with — it becomes worth reporting exactly when it is the
+        // reason the call is failing.
+        //
+        // Derived from `perSourceCache` (the record of who ANSWERED) rather than synthesized from
+        // `plan`: a participant that never answered already has its own `tried` entry from the loop
+        // and must not be given a second, contradicting one. `contributors` is empty in this branch
+        // by the condition above, so every answerer contributed nothing — no per-entry check for
+        // that is needed, and adding one would suggest a case that cannot occur.
+        for (const answered of perSourceCache) {
+          if (tried.some((entry) => entry.adapterId === answered.adapterId)) continue;
+          tried.push({
+            adapterId: answered.adapterId,
+            reason: 'answered, but with zero points for this window',
+          });
+        }
+        throw new CapabilityUnavailableError({ capability, chain, tried });
+      }
+
+      // 013-5's `missingSources` (b) — one entry per genuinely missing participant, in walk order
+      // (`skipped` is appended during the same rank-order loop, so filtering it preserves that
+      // order without a separate sort). The `reason` text is RELAYED from the matching `tried[]`
+      // entry the loop already wrote, never re-derived or string-matched (F-7): `skipped[].kind` is
+      // what DECIDES a participant is missing; `tried[].reason` only supplies the message once that
+      // decision is already made. `'chain'` is the one kind with nothing to relay — the chain-scoped
+      // skip deliberately writes no `tried[]` entry (see that `continue`'s own comment) — so its
+      // reason is synthesized here, in the same words the single-winner walk's matching skip
+      // already uses.
+      //
+      // Positive-only, the same idiom every optional field on `CapabilityResolution` already
+      // follows: absent when `missing` is empty, never an empty array.
+      const missingSources =
+        missing.length > 0
+          ? missing.map(({ adapterId, kind }) => ({
+              adapterId,
+              reason:
+                kind === 'chain'
+                  ? 'this adapter does not serve this chain'
+                  : // Unreachable in practice — every OTHER `skipped` kind is pushed in the same
+                    // breath as its matching `tried[]` entry (stated rather than asserted away with
+                    // a `!`, the same discipline this file uses for its other structural lookups).
+                    (tried.find((entry) => entry.adapterId === adapterId)?.reason ??
+                    'no reason recorded'),
+            }))
+          : undefined;
 
       // `sources`/`source` (task file "sources и source", R-174(a), AC-47). `sources` lists
       // contributors in RANK order and is omitted when empty, the same idiom every optional field
@@ -1265,7 +1429,7 @@ export class CapabilityRegistry {
       const source = sources?.[0] ?? firstAnswered ?? '';
 
       const resolution: CapabilityResolution = {
-        result: [...merged.values()],
+        result: mergedPoints,
         source,
         // R-174(c)/013-3 §3.5: the aggregate is 'hit' only when EVERY `perSourceCache` entry is
         // 'hit'. `.every()` on an empty array is vacuously `true`, but that case now throws above
@@ -1277,6 +1441,7 @@ export class CapabilityRegistry {
             ? 'hit'
             : 'miss',
         ...(sources !== undefined ? { sources } : {}),
+        ...(missingSources !== undefined ? { missingSources } : {}),
         ...(perSourceCache.length > 0 ? { perSourceCache } : {}),
         // M-5 (fix pass 2026-08-07): every OTHER path on `CapabilityResolution` follows "hit ⇒
         // `ageMs` present" (the single-winner walk's own `cached.ageMs`, `withDiagnostics`'s

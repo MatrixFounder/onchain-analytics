@@ -96,7 +96,7 @@ disagreeing** — there are **five**, and they resolve like this:
   written against "returns a value" _or_ "throws". Decision: a deadline **always throws**
   `CapabilityDeadlineExceededError`, naming both which sources answered and which were never asked;
   it never returns the surviving partial. Rationale is the H-1 doctrine
-  (`packages/core/src/adapters/registry.ts:646-658`, `* Once the moment passes, the walk refuses every source it has`): a deadline is a fact about OUR availability, and publishing it
+  (`packages/core/src/adapters/registry.ts:659-671`, `* Once the moment passes, the walk refuses every source it has`): a deadline is a fact about OUR availability, and publishing it
   as a fact about the DATA reports "no entity labels" for a sanctioned address whenever the paid
   source merely failed to fit the budget. This is a deliberate deviation from the literal text of
   ADR-002 D4 п.5, and R-156 obliges T-012 to amend the ADR rather than silently contradict it.
@@ -209,7 +209,7 @@ this narrowly, not as a general license to derive correctness rank from spend or
 
 **`OQ-T013-4` — where is `policy` evaluated on the merged path — per participant or per merged
 whole? Decision: per participant**, using the SAME `satisfies(policy, value, adapterId)` predicate
-the non-merge path already applies to cache hits (`packages/core/src/adapters/registry.ts:1399`, `if (satisfies(policy, cached.value, adapterId)) return`) and fresh results (`:858`),
+the non-merge path already applies to cache hits (`packages/core/src/adapters/registry.ts:1509`, `if (satisfies(policy, cached.value, adapterId)) return withDiagnostics(hit);`) and fresh results (`:858`),
 called from a new site rather than replaced. This is what R-182(d) requires as a regression
 (`entity.labels`'s `someElementHasAny` semantics untouched) and what keeps H-1's existing cache-hit
 application as the SAME code path a merge walk reuses. A participant whose answer fails `policy` is
@@ -220,6 +220,53 @@ this choice is unobservable in shipped scope (R-182b/c) — the equivalence test
 exists precisely because the choice still had to be made and stated, not left as two
 behaviourally-coincident readings that could silently diverge the day a merge route gets a real
 policy.
+
+### T-013 task 013-6 (2026-08-09, Development) — the hour is the identity of a CROSS-PARTICIPANT slot, never of a point
+
+**A NARROWING of the decision recorded directly below, taken by the owner on a measurement.** The
+013-4 record (hour instead of raw `ts`) stands and is not reversed; what changes is its SCOPE.
+
+Bucketing was applied to every point, so the hour became the identity of a POINT. That cannot
+distinguish two things that are genuinely different, because the difference is not in the point's
+own fields — it is in who reported it:
+
+- one observation seen by **two** participants → a duplicate, and the hour is what makes it
+  detectable across two clocks (013-4's whole argument, unchanged);
+- two observations from **one** participant inside an hour → not a duplicate at all.
+
+**Measured on the shipped route table, before and after activation** (the "after" column re-run with
+`merge` stripped off to get a true baseline):
+
+| Capability                      | single-winner | merged (hour as point identity) | merged (hour as slot) |
+| ------------------------------- | ------------- | ------------------------------- | --------------------- |
+| `platform.metrics.history`      | 12            | **2**                           | 15                    |
+| `privacy.shielded_pool.history` | 12            | **2**                           | 13                    |
+
+`platform-explorer` samples every ~5 minutes, so 11 of its 12 points shared an hour with a sibling
+and were discarded. On `privacy.shielded_pool.history` the collapse was purely destructive: the two
+participants write DIFFERENT metrics (`docs/TASK.md` §1.3), so no slot was ever contested there and
+every discarded point was one participant's own.
+
+**The persistence-layer argument is narrowed, not withdrawn.** 013-4 cited
+`ON CONFLICT (source, asset, metric, ts_bucket)` as precedent for the hour. That tuple leads with
+**`source`**: the DB keeps one row per SOURCE per hour, not one row per hour. It is therefore
+authority for collapsing an hour ACROSS sources, and no authority at all for collapsing one source's
+own hour — which is the reading the first implementation took.
+
+**Price of the decision, stated rather than discovered later.** The merged series has uneven
+density: hours inside `platform-explorer`'s window carry its 5-minute resolution, hours deeper than
+that window carry one point each from `pg-history`. This is a fact about the sources and not an
+artefact, but a consumer plotting the series sees the change in density at the boundary.
+
+**Left open, and it belongs to T-016.** The DB key admits two rows for one metric in one hour under
+different `source` values. Both arrive from `pg-history` and both now pass, since dedup no longer
+applies within a participant. Whether such pairs exist for `identities_total` in the live ledger was
+NOT measured. Ranking rows by `source` is `metrics.source_priority` — T-016's mechanism (OD-T013-2
+(b)), not this task's.
+
+**How it escaped a green suite.** `merge-routes.test.ts` asserted on the SET of metric labels, which
+a collapse does not change, and made no assertion about point COUNT. AC-23 now requires the count,
+stated as a number.
 
 ### T-013 task 013-4 (2026-08-07, Development) — the merge dedup key buckets `ts` to the HOUR; raw `ts` was unimplementable
 
@@ -302,7 +349,7 @@ is 31, the difference being this record's own 13 mentions and the five in-place 
 different tree — which is why the tree, not just the scope, is named here. None of the four is edited
 beyond its own in-place mark; `data-model.md` is left unedited entirely.
 
-**Why the wider reading.** R-174(c) (translated from the Russian original, `docs/TASK.md:545-547`, `случая СИНТЕЗИРУЕТ свою причину, а не читает`):
+**Why the wider reading.** R-174(c) (translated from the Russian original, `docs/TASK.md:565-567`, `случая СИНТЕЗИРУЕТ свою причину, а не читает`):
 "`resolution.cache` — a merged answer does not collapse to one `'hit'`/`'miss'`: if one participant
 is from cache and another is from network, both facts are reflected — the concrete shape is
 Architecture's call, the requirement fixes ONLY that the fact is not lost." A cache status is a
@@ -314,7 +361,7 @@ reports exactly ONE participant with ONE `'miss'` — silently erasing that the 
 ever asked, or that it answered from cache. That is exactly the fact R-174(c) requires never
 disappears.
 
-**The composition, named precisely.** UC-19 (`docs/TASK.md:703-710`, `Обе точки присутствуют раздельно, каждая со своей истинной`) supplies the core fact this
+**The composition, named precisely.** UC-19 (`docs/TASK.md:737-744`, `Обе точки присутствуют раздельно, каждая со своей истинной`) supplies the core fact this
 argument turns on — `platform-explorer` answering an **empty array**, which is a legitimate
 "answered" outcome, not a failure — but literal UC-19 has `pg-history` entirely UNAVAILABLE (no
 `ONCHAIN_PG_URL`) and THROWS `CapabilityUnavailableError` (R-164(c)), so it never reaches a
@@ -370,7 +417,7 @@ a developer's call.
 second one spending 120 ms: `resolve()` **returned** at elapsed 139 ms. Neither the pre-check nor the
 translating catch fires, because every adapter was **entered** before the clock ran out — only the
 last one overran. `hadFailure` therefore stays false, and `if (unsatisfying && !hadFailure) return
-unsatisfying;` (`packages/core/src/adapters/registry.ts:1511`, `if (unsatisfying && !hadFailure) return`) is reached **before** the terminal deadline branch
+unsatisfying;` (`packages/core/src/adapters/registry.ts:1676`, `if (unsatisfying && !hadFailure) return withDiagnostics(unsatisfying);`) is reached **before** the terminal deadline branch
 (`:938`). Both anchors were re-measured on 2026-08-05: adversarial cycle 2 grew the file, and the
 `:740`/`:764` recorded here originally now point at unrelated lines. A record whose purpose is the
 owner's own re-check is worth nothing if its coordinates rot — re-measure them, or quote the
@@ -382,7 +429,7 @@ This is not an exotic path. It is what a slow final source does.
 and every one of them answered. That is a fact about the DATA, and reporting it as an error would
 tell the caller to retry something that cannot change. Under this reading the deadline caused
 nothing: the answer is complete, not partial, and the ceiling is irrelevant to its content. Source:
-the H-1 doctrine, `packages/core/src/adapters/registry.ts:1496-1511`, `// answer, and iteration 2 found the first version conflating`, bought with an iteration of adversarial review at
+the H-1 doctrine, `packages/core/src/adapters/registry.ts:1661-1676`, `// answer, and iteration 2 found the first version conflating`, bought with an iteration of adversarial review at
 TASK-008.
 
 **Reading B — the pre-check's own rationale governs, and the return is a violation.** Task 012-8 put

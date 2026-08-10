@@ -18,10 +18,10 @@
 **Источник, детально.** D5 — семантика агрегации (что значит «слить» для каждого `shape`,
 механизм выключен по умолчанию). D6 — первым включается слияние **рядов** (`series`), не меток
 (`set`): `privacy.shielded_pool.history` + `platform.metrics.history`, участники —
-`platform-explorer` (приоритет 1) и `pg-history` (приоритет 2, `packages/core/src/providers.config.ts:69-74`, `capability: 'privacy.shielded_pool.history',`).
+`platform-explorer` (приоритет 1) и `pg-history` (приоритет 2, `packages/core/src/providers.config.ts:97-102`, `capability: 'privacy.shielded_pool.history',`).
 
 **Унаследованное обязательство T-012.**
-`packages/core/src/capability-manifest.ts:146-153`, `the obligation the paragraphs below used to describe as future is discharged.`
+`packages/core/src/capability-manifest.ts:150-157`, `the obligation the paragraphs below used to describe as future is discharged.`
 называет это обязательство прямо: T-012 построил `CapabilityManifest` как дискриминированный
 union по `shape` ровно затем, чтобы T-013 добавил поле слияния на ветку `set | series` **одну**, и
 в тот же момент «слияние объявлено на `point`» стало ошибкой компиляции. Тот же файл называет
@@ -44,13 +44,13 @@ T-013**. [open-questions.md](../architectures/open-questions.md) (`OQ-T012-5`) �
 
 ### 1.1 Что измерено 2026-08-05 на рабочем дереве
 
-- **Механизм слияния не существует.** `CapabilityManifest` (`packages/core/src/capability-manifest.ts:181-183`, `export type CapabilityManifest =`) —
+- **Механизм слияния не существует.** `CapabilityManifest` (`packages/core/src/capability-manifest.ts:184-186`, `export type CapabilityManifest =`) —
   двухветочный union `{shape:'point'} | {shape:'set'|'series'}`, ни одна ветка не несёт права на
-  слияние. `packages/core/src/providers.config.ts:69-74`, `capability: 'privacy.shielded_pool.history',` уже перечисляет оба маршрута рядом (`platform-explorer` →
+  слияние. `packages/core/src/providers.config.ts:97-102`, `capability: 'privacy.shielded_pool.history',` уже перечисляет оба маршрута рядом (`platform-explorer` →
   `pg-history`), но `resolve()` (`packages/core/src/adapters/registry.ts:450-949`, `async resolve(`) сегодня возвращает первый удовлетворяющий
   ответ и никогда не опрашивает второй адаптер маршрута, если первый ответил.
 - **Оба манифестных ряда уже несут `shape: 'series'`, `ttlSeconds: 3600`, `deadlineMs: 30_000`,
-  помечены `ENFORCED TODAY`** (`packages/core/src/capability-manifest.ts:454-490`, `'privacy.shielded_pool.history': {`) — дедлайн и TTL этой задачей не
+  помечены `ENFORCED TODAY`** (`packages/core/src/capability-manifest.ts:485-521`, `'privacy.shielded_pool.history': {`) — дедлайн и TTL этой задачей не
   трогаются.
 - **`.trust` сегодня не имеет ни одного читателя вне `adapters/types.ts`.**
   `packages/core/test/tier-single-source.test.ts` (`TC-GATE-02`, R-155(d) задачи T-012) сканирует
@@ -83,7 +83,7 @@ T-013**. [open-questions.md](../architectures/open-questions.md) (`OQ-T012-5`) �
 `privacy.shielded_pool.history` у двух участников — не один и тот же ряд по содержанию.
 `packages/core/src/adapters/platform-explorer/index.ts:264-271`, `case 'privacy.shielded_pool.history': {` формирует эту способность из `/transactions/shield/history`
 под меткой `DASH_METRIC.shieldedPoolShieldAmount` (`'shielded_pool_shield_amount'`) — это ряд
-ПРИТОКА в приватный пул за транзакцию. `packages/core/src/adapters/pg-history/index.ts:36-37`, `const METRICS_BY_CAPABILITY: Record<string, readonly string[]>` читает для той же способности
+ПРИТОКА в приватный пул за транзакцию. `packages/core/src/adapters/pg-history/index.ts:43-44`, `const METRICS_BY_CAPABILITY: Record<string, readonly string[]>` читает для той же способности
 СТРОГО `metric = 'shielded_pool_balance_credits'` — это ряд ОСТАТКА (баланса), который пишет n8n
 (`n8n-workflows/exported/onchain-snapshotter.json`). `packages/core/.AGENTS.md:1205-1210`, `**Documented implementation choice** (developer-guidelines`
 документирует это как СОЗНАТЕЛЬНОЕ решение: «under a DISTINCT metric id … to avoid implying it's
@@ -97,7 +97,7 @@ the same quantity as the current-state balance». Ряд n8n никогда не
 
 Для `platform.metrics.history` картина другая: `packages/core/src/adapters/platform-explorer/index.ts:272-278`, `case 'platform.metrics.history': {` пишет ТОЛЬКО
 `identities_total` (из `/identities/history`), а `pg-history`'s `METRICS_BY_CAPABILITY`
-(`packages/core/src/adapters/pg-history/index.ts:38-43`, `'platform.metrics.history': [`) читает четыре метрики (`identities_total`, `documents_total`,
+(`packages/core/src/adapters/pg-history/index.ts:45-50`, `'platform.metrics.history': [`) читает четыре метрики (`identities_total`, `documents_total`,
 `data_contracts_total`, `platform_total_credits`). `identities_total` у обоих совпадает по смыслу
 (`packages/core/.AGENTS.md:1210-1211`, `avoid implying it's the same quantity as the current-state`: «genuinely the same series over time»), три остальных существуют только у
 `pg-history`. Продуктовая трактовка разницы у `privacy.shielded_pool.history` была Открытым
@@ -141,11 +141,11 @@ changelog, а не молчаливое расхождение (тот же пр
 
 ### 1.5 Найдено при разборе — второе отклонение от D5, скрытое в различении исходов
 
-D5 говорит: существующее различение «данные vs. недоступность» (`packages/core/src/adapters/registry.ts:646-656`, `* Once the moment passes, the walk refuses every source it has`)
+D5 говорит: существующее различение «данные vs. недоступность» (`packages/core/src/adapters/registry.ts:659-669`, `* Once the moment passes, the walk refuses every source it has`)
 «распространяется на слияние **дословно**» (`ADR-002:311-316`). Буквальное применение здесь
 незаметно ломается: на ДВУХ реальных маршрутах T-013 сегодня НЕТ `policy`
-(`packages/core/src/providers.config.ts:69-74`, `capability: 'privacy.shielded_pool.history',`), значит действует умолчание `{kind:'any'}` — и `platform-explorer`'s
-пустой `[]` уже удовлетворяет его, возвращаясь на `packages/core/src/adapters/registry.ts:1468`, `if (satisfies(policy, result, adapterId)) return` ДО того, как `pg-history`
+(`packages/core/src/providers.config.ts:97-102`, `capability: 'privacy.shielded_pool.history',`), значит действует умолчание `{kind:'any'}` — и `platform-explorer`'s
+пустой `[]` уже удовлетворяет его, возвращаясь на `packages/core/src/adapters/registry.ts:1578`, `if (satisfies(policy, result, adapterId)) return withDiagnostics(answer);` ДО того, как `pg-history`
 вообще опрошен. То есть различение H-1 сегодня НИКОГДА не оценивает эту пару источников совместно
 — слияние впервые делает недостижимость второго участника наблюдаемой для этого маршрута.
 
@@ -221,21 +221,36 @@ T-013 сохраняет OD-4 буквально для обеих дверей:
 
 - (a) тест ломается, если поле eligibility (гипотетической правкой) переносится на общую
   `CapabilityManifestBase` вместо ветки `set | series` — воспроизводит ровно тот побег, который
-  `packages/core/src/capability-manifest.ts:158`, `regardless of how many branches this type has`
+  `packages/core/src/capability-manifest.ts:161`, `regardless of how many branches this type has`
   называет «легально на `point`»
 - (b) протокол исполнения — мутация внесена, тест не проходит, зафиксирован, мутация отменена (по
   образцу task-009/011/012 AC-7/AC-9/AC-12 — исполнено, а не пересказано)
 - (c) тест живёт рядом с существующим `TC-UNIT-07` (`packages/core/test/capability-manifest.test.ts:391`, `stays a two-branch union (OQ-T012-5)', () => {`, двухветочный
   union) — тот же файл, новый `describe`, не отдельный модуль
-- (d) докстринг типа (`packages/core/src/capability-manifest.ts:142-164`, `* One capability's manifest — a **discriminated union on`) обновляется в ТОМ ЖЕ коммите — фиксирует
+- (d) докстринг типа (`packages/core/src/capability-manifest.ts:146-168`, `* One capability's manifest — a **discriminated union on`) обновляется в ТОМ ЖЕ коммите — фиксирует
   факт «обязательство T-012 закрыто», а не оставляет текст, ссылающийся на будущее
 
 **R-161**
 
-- (a) две точки с одинаковыми `metric`, `asset` и **часом** от `ts` — один наблюдательный слот;
-  точки с любым различием в тройке — разные слоты, не конфликт. Час считается как
-  `Math.floor(ts / 3_600_000)`; **сама точка хранит свой исходный `ts` без изменений** — бакетится
-  только КЛЮЧ
+- (a) две точки с одинаковыми `metric`, `asset` и **часом** от `ts`, пришедшие от **РАЗНЫХ
+  участников**, — один наблюдательный слот; точки с любым различием в тройке — разные слоты, не
+  конфликт. Час считается как `Math.floor(ts / 3_600_000)`; **сама точка хранит свой исходный `ts`
+  без изменений** — бакетится только СЛОТ. **Внутри ОДНОГО участника дедуп не применяется вовсе**
+  (решение владельца 2026-08-09, см. (f)): участник старшего ранга вносит ВСЕ свои точки со своим
+  разрешением, участник младшего ранга — только те, чей слот ещё не занят
+- (f) **ТОЛЬКО МЕЖДУ УЧАСТНИКАМИ. Решение владельца 2026-08-09; вторая редакция (a) схлопывала и
+  внутри участника, и это было замерено как потеря данных.** Первая редакция (a) не различала два
+  разных случая, потому что различие не в полях точки, а в том, КТО её сообщил: одно наблюдение,
+  увиденное двумя участниками, — дубль; два наблюдения одного участника внутри часа — не дубль.
+  `platform-explorer` опрашивается раз в ~5 минут, поэтому 11 из его 12 точек за час делят слот с
+  соседом. **Замер на рабочем дереве (013-6, до и после включения слияния на реальной таблице
+  маршрутов): 12 → 2 точки на ОБЕИХ способностях.** На `privacy.shielded_pool.history` схлопывание
+  было чисто разрушительным: участники пишут разные метрики (§1.3), спорных слотов там нет вовсе, и
+  каждая потерянная точка принадлежала одному участнику. **Довод «так делает наш слой хранения»
+  (см. (e)) при этом не отменяется, а сужается:** ключ БД — `ON CONFLICT (source, asset, metric,
+ts_bucket)`, он ведёт с `source`, то есть хранит одну строку НА ИСТОЧНИК на час. Он авторитет для
+  схлопывания часа МЕЖДУ источниками и не авторитет для схлопывания собственного часа одного
+  источника. Отклонение записывается R-181(c)
 - (b) ключ строится БЕЗ дополнительных полей (`source`, `height`, `valueNum` не участвуют в
   идентичности) — прямое следствие `Snapshot.strict()` (`packages/core/src/types/snapshot.ts:16-26`, `export const SnapshotSchema = z`)
 - (c) тест на двух фикстурах способности `platform.metrics.history` с реально совпадающей меткой
@@ -254,7 +269,10 @@ T-013 сохраняет OD-4 буквально для обеих дверей:
   который UC-11 называет недопустимым. Час — не изобретение этой задачи: на нём дедуплицирует
   собственный слой хранения (`ON CONFLICT (source, asset, metric, ts_bucket)`,
   `ts_bucket = floor(ts/3600000)*3600000`), по той же причине. Полная запись решения —
-  `docs/architectures/open-questions.md`, «T-013 task 013-4»
+  `docs/architectures/open-questions.md`, «T-013 task 013-4». **Граница этого довода уточнена (f):**
+  ключ БД ведёт с `source`, поэтому он поддерживает час МЕЖДУ источниками и НЕ поддерживает
+  схлопывание собственного часа одного источника — прочтение, на котором построена первая редакция
+  (a)
 
 **R-162**
 
@@ -305,7 +323,7 @@ T-013 сохраняет OD-4 буквально для обеих дверей:
 - (e) **Дедлайн — предусловие, не пятая ветка.** Если хотя бы один участник ПОБЕЖДЁН дедлайном —
   пропущен пре-чеком (`packages/core/src/adapters/registry.ts:1326-1334`,
   `deadlineHit = true;`) ИЛИ его `fetch()` оборван потолком (пойманный
-  `DeadlineExceededError`, `:829`) — выставлен `deadlineHit` (`packages/core/src/adapters/registry.ts:835-845`, `* Whether the walk ran out of OUR OWN time, as opposed to`). Тогда ни
+  `DeadlineExceededError`, `:829`) — выставлен `deadlineHit` (`packages/core/src/adapters/registry.ts:849-859`, `* Whether the walk ran out of OUR OWN time, as opposed to`). Тогда ни
   одна из веток (a)-(d) не применяется: весь вызов завершается `CapabilityDeadlineExceededError`
   (OD-4, `ADR-002:271-282`), независимо от того, сколько участников уже ответили. Тот же исход
   даёт немедленный отказ ДО обхода, если дедлайн вызывающего истёк на входе
@@ -318,13 +336,13 @@ T-013 сохраняет OD-4 буквально для обеих дверей:
   спрошен» для целей (b)/(c) — дедлайн решает исход раньше их вычисления. Ветка (a), доставленная
   ПОСЛЕ `effectiveDeadlineAtMs` без единого побеждённого участника, несёт `deadlineOverrunMs`
   (`packages/core/src/adapters/registry.ts:1307-1314`, `:901`, `OQ-T012-6`) — поздний, но полный ответ, отличный от этого
-  предусловия. **Терминальный дизъюнкт по часам сохраняется как есть** (`packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`:
+  предусловия. **Терминальный дизъюнкт по часам сохраняется как есть** (`packages/core/src/adapters/registry.ts:1719`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`:
   `deadlineHit || Date.now() >= effectiveDeadlineAtMs`): слитый вызов, дошедший до терминала
   (ветки (c)/(d)) ПОСЛЕ потолка без единого побеждённого участника, завершается
   `CapabilityDeadlineExceededError`, а не `CapabilityUnavailableError`. Этот дизъюнкт — не
   избыточность: он покрывает все двенадцать адаптеров, тогда как распутывание типов (WI-36)
   починило два, и его переоценка уже была сужена один раз (состязательный цикл 2, F-7,
-  `packages/core/src/adapters/registry.ts:1539-1553`, `— but it CAN still reach this branch` и зеркало в `packages/core/src/net/rate-limit.ts:333-340`, `// "Non-terminal" is the honest word, and an earlier version of`). Реализация (e) не имеет права
+  `packages/core/src/adapters/registry.ts:1704-1718`, `— but it CAN still reach this branch` и зеркало в `packages/core/src/net/rate-limit.ts:333-340`, `// "Non-terminal" is the honest word, and an earlier version of`). Реализация (e) не имеет права
   его удалить
 - (f) участник, отданный из кеша (попадание), — «ответил»; он НЕ входит ни в `attempted`
   (фиксируется только на входе в `fetch()` — `packages/core/src/adapters/registry.ts:1407`,
@@ -396,7 +414,7 @@ T-013 сохраняет OD-4 буквально для обеих дверей:
   (после объединения); КАКОЕ из двух — решает Архитектура, см. `OQ-T013-4`; выбор фиксируется в
   докстринге механизма слияния, не оставляется неопределённым в коде
 - (b) для двух реальных маршрутов T-013 `policy` не задан (умолчание `{kind:'any'}`,
-  `packages/core/src/providers.config.ts:69-74`, `capability: 'privacy.shielded_pool.history',`) — выбор сегодня не имеет наблюдаемого различия в поведении;
+  `packages/core/src/providers.config.ts:97-102`, `capability: 'privacy.shielded_pool.history',`) — выбор сегодня не имеет наблюдаемого различия в поведении;
   требование существует, чтобы код нёс ОДНО определённое место, а не два случайно совпадающих
 - (c) выбранное место обязано давать ОДИНАКОВЫЙ внешний результат для двух реальных маршрутов
   (пустой массив расценивается одинаково независимо от выбора) — тест подтверждает эквивалентность
@@ -422,10 +440,10 @@ T-013 сохраняет OD-4 буквально для обеих дверей:
 **R-168**
 
 - (a) Ни один из ШЕСТИ прочих маршрутов с более чем одним адаптером не получает eligibility для
-  слияния: `entity.labels` (`['blockscout','nansen']`, `packages/core/src/providers.config.ts:102-105`, `capability: 'entity.labels',`) и пять
+  слияния: `entity.labels` (`['blockscout','nansen']`, `packages/core/src/providers.config.ts:141-144`, `capability: 'entity.labels',`) и пять
   `point`-способностей — `privacy.shielded_pool`/`platform.identities`/`platform.contracts`/
   `platform.documents`/`platform.credits` (все `['dash-platform','platform-explorer']`,
-  `packages/core/src/providers.config.ts:45-64`, `capability: 'privacy.shielded_pool',`). Пять `point`-маршрутов защищены КОМПИЛЯЦИЕЙ на оси eligibility
+  `packages/core/src/providers.config.ts:46-65`, `capability: 'privacy.shielded_pool',`). Пять `point`-маршрутов защищены КОМПИЛЯЦИЕЙ на оси eligibility
   (R-159 — манифест `point` никогда не несёт eligibility, из чего следует, что активация R-183 на
   них тоже невозможна: eligibility отсутствует по типу, не по недосмотру). `entity.labels` (ветка
   `set`, где eligibility типово ВОЗМОЖНА) защищён ОТСУТСТВИЕМ намеренного объявления И
@@ -478,7 +496,7 @@ T-013 сохраняет OD-4 буквально для обеих дверей:
 
 - (a) вход: `chain` (`ChainInputSchema`, по образцу `packages/mcp-server/src/tools/dex-volume.ts:28`, `chain: ChainInputSchema,`, не хардкод `'dash'`),
   `series: 'shielded_pool' | 'platform_metrics'` (обязательный селектор), опционально `limit`/окно
-  (по образцу `DEFAULT_HISTORY_LIMIT = 100` уже существующего в `packages/core/src/adapters/pg-history/index.ts:30`, `const DEFAULT_HISTORY_LIMIT = 100;`)
+  (по образцу `DEFAULT_HISTORY_LIMIT = 100` уже существующего в `packages/core/src/adapters/pg-history/index.ts:37`, `const DEFAULT_HISTORY_LIMIT = 100;`)
 - (b) выход: массив ГРУПП по `metric` — каждая группа `{metric: string, points: {ts, asset,
 valueRaw, valueNum?, source}[]}` (`points` — прямая проекция `Snapshot`, DB-SCHEMA §1.7 —
   `valueRaw` строкой, без парсинга в `Number`); группировка — решение владельца `OQ-T013-1`
@@ -492,7 +510,7 @@ valueRaw, valueNum?, source}[]}` (`points` — прямая проекция `Sn
   ЕДИНСТВЕННЫЙ носитель сигнала «участник не внёс вклад» — не встраивается в `window`
 - (f) поле `window`/охват (по образцу `packages/mcp-server/src/tools/dex-volume.ts:51-59`, `is what was asked for when the chain has that much`) — НЕ несёт диагностику недостающих
   участников; правдивое единое `{fromMs,toMs,days}` для ДВУХ источников с разными эффективными
-  окнами (`pg-history`'s общий `LIMIT 100` на четыре метрики, `packages/core/src/adapters/pg-history/index.ts:142-147`, `return readClient.query<SnapshotRow>(`, против
+  окнами (`pg-history`'s общий `LIMIT 100` на четыре метрики, `packages/core/src/adapters/pg-history/index.ts:149-154`, `return readClient.query<SnapshotRow>(`, против
   собственного окна `platform-explorer`'s эндпоинта) — отдельная проблема, не обязательная для
   приёмки этой задачи; Разработка вправе публиковать `window` best-effort или не публиковать вовсе
 
@@ -534,7 +552,7 @@ valueRaw, valueNum?, source}[]}` (`points` — прямая проекция `Sn
 **R-174**
 
 - (a) `resolution.source` для НЕ-слитого вызова остаётся одиночной строкой (регрессия). Для слитого
-  ответа поле ОСТАЁТСЯ ЗАПОЛНЕННЫМ (тип `CapabilityResolution.source` required, `packages/core/src/adapters/registry.ts:319`, `source: string;`)
+  ответа поле ОСТАЁТСЯ ЗАПОЛНЕННЫМ (тип `CapabilityResolution.source` required, `packages/core/src/adapters/registry.ts:332`, `source: string;`)
   и несёт id участника с НАИВЫСШИМ рангом (R-162) среди реально ответивших — та же логика, что уже
   разрешает конфликт значений; добавляется НОВОЕ поле `sources: string[]` со всеми реально
   ответившими, не перегружается существующая семантика `source`
@@ -543,7 +561,7 @@ valueRaw, valueNum?, source}[]}` (`points` — прямая проекция `Sn
   спрошен» ИЛИ «спрошен, не ответил» (R-164) на слитом вызове ветки (b). Для большинства причин
   (`:727`, `:748`, `:773`, `:835`, `:881`) `reason` берётся из готовой записи `tried[]` — той же
   формы. Пропуск по `chainSupport` (`:743`) — ИСКЛЮЧЕНИЕ: `tried[]` намеренно не несёт для него
-  запись («не выглядеть как отказ», `packages/core/src/adapters/registry.ts:1350-1352`, `// Chain-scoped skip (TASK-006): this is what the route-level`), поэтому `missingSources` для этого
+  запись («не выглядеть как отказ», `packages/core/src/adapters/registry.ts:1515-1517`, `// Chain-scoped skip (TASK-006): this is what the route-level`), поэтому `missingSources` для этого
   случая СИНТЕЗИРУЕТ свою причину, а не читает `tried[]`. Недостижимо на ОБОИХ реальных маршрутах
   T-013 — оба `chainSupport` ограничены Dash, и GATE 2 (`packages/core/src/adapters/registry.ts:886-899`, `if (chainInfo && !this.getCoverage().isCovered(capability,`) отказывает не-Dash
   цепь раньше входа в обход — но форма поля обязана его учитывать
@@ -632,7 +650,7 @@ valueRaw, valueNum?, source}[]}` (`points` — прямая проекция `Sn
   `source_priority` в `packages/core/src`/`packages/mcp-server/src`
 - (b) ранг конфликта (R-162) — скомпилированная структура, не SQL-запрос и не чтение
   `ReadClient`-подобного объекта в новом коде слияния
-- (c) `pg-history`'s СУЩЕСТВУЮЩИЙ SELECT (`packages/core/src/adapters/pg-history/index.ts:143-145`, `'SELECT ts, asset, metric, value_raw, value_num, source, height`) не меняется этой задачей —
+- (c) `pg-history`'s СУЩЕСТВУЮЩИЙ SELECT (`packages/core/src/adapters/pg-history/index.ts:150-152`, `'SELECT ts, asset, metric, value_raw, value_num, source, height`) не меняется этой задачей —
   слияние работает НАД его результатом, не переписывает запрос
 
 **R-181**
@@ -647,10 +665,17 @@ valueRaw, valueNum?, source}[]}` (`points` — прямая проекция `Sn
   §1.5), а не сохранённый инвариант; запись также называет ГРАНИЦУ, которую задача не пересекает —
   дедлайн-предусловие R-164(e), сохраняющее OD-4 буквально для ОБЕИХ дверей (пре-чек И оборванный
   потолком `fetch()`, не только первая)
-- (c) оба фрагмента D5 (таблица `shape`/«что нельзя» и абзац «Поведение при частичном отказе»)
+- (c) **Отклонение 3 (дедуп только между участниками, R-161(f)).** Отдельная запись §Changelog,
+  дата 2026-08-09, называющая замер (12 → 2 на обеих способностях), причину (часовой слот не
+  различает «одно наблюдение у двух участников» и «два наблюдения у одного») и сужение довода о
+  слое хранения: ключ БД ведёт с `source`. Запись называет и цену решения — ряд неравномерной
+  плотности (часы в окне `platform-explorer` несут его разрешение, часы глубже — по точке из
+  `pg-history`), и незакрытый случай: две строки за час от РАЗНЫХ `source` внутри `pg-history`
+  проходят обе, и их ранжирование — предмет T-016 (`metrics.source_priority`), не этой задачи
+- (d) оба фрагмента D5 (таблица `shape`/«что нельзя» и абзац «Поведение при частичном отказе»)
   получают сноску, указывающую на соответствующее отклонение — буквальный текст остаётся видимым
   рядом со сноской (тот же приём, что R-156(d) задачи T-012 применил к D4 п.5)
-- (d) таблица «Влияние на этапы» НЕ переписывается тихо
+- (e) таблица «Влияние на этапы» НЕ переписывается тихо
 
 <!-- contract:use-cases -->
 
@@ -658,11 +683,18 @@ valueRaw, valueNum?, source}[]}` (`points` — прямая проекция `Sn
 
 ### UC-11. Агент вызывает `onchain_dash_platform_history` для `platform_metrics`, оба источника отвечают с пересечением по `identities_total`
 
-Слитый ряд содержит `identities_total` за каждый час без дублей (конфликт разрешён компилируемым
-рангом), плюс `documents_total`/`data_contracts_total`/`platform_total_credits` — только от
-`pg-history`, поскольку `platform-explorer` их для истории не пишет. **Провал, который надо
-исключить:** дубликат точки `identities_total` за один час от обоих источников, или потеря трёх
-метрик, которые есть только у `pg-history`.
+Слитый ряд содержит `identities_total` **без МЕЖИСТОЧНИКОВЫХ дублей за час** (конфликт разрешён
+компилируемым рангом), плюс `documents_total`/`data_contracts_total`/`platform_total_credits` —
+только от `pg-history`, поскольку `platform-explorer` их для истории не пишет. **Провал, который
+надо исключить:** дубликат точки `identities_total` за один час **от обоих источников**, или потеря
+трёх метрик, которые есть только у `pg-history`.
+
+**Уточнение формулировки 2026-08-09 (R-161(f)).** Первая редакция читалась как «ровно одна точка
+`identities_total` на час», и под это прочтение реализация схлопывала СОБСТВЕННЫЙ ряд
+`platform-explorer` (12 → 2, замер 013-6). «Без дублей» относится к дублям МЕЖДУ источниками —
+именно их называет строка «Провал» ниже. Участник старшего ранга отдаёт свой ряд со своим
+разрешением (у `platform-explorer` это точка раз в ~5 минут), и несколько его точек за один час —
+не дубли, а разные наблюдения.
 
 ### UC-12. `ONCHAIN_PG_URL` не задан, `platform-explorer` отвечает НЕПУСТЫМ рядом за окно
 
@@ -732,7 +764,7 @@ OD-T013-2(a); либо сигнал о недостающем участнике
 
 ### UC-22. Участник маршрута побеждён дедлайном — обе двери дают одинаковый отказ
 
-`platform-explorer` (первый в маршруте, `packages/core/src/providers.config.ts:68-71`, `capability: 'privacy.shielded_pool.history',`) отвечает; к моменту опроса
+`platform-explorer` (первый в маршруте, `packages/core/src/providers.config.ts:97-100`, `capability: 'privacy.shielded_pool.history',`) отвечает; к моменту опроса
 `pg-history` `effectiveDeadlineAtMs` уже позади — ДВЕРЬ 1, пре-чек. Либо `pg-history`'s `fetch()`
 уже начат и обрывается пойманным `DeadlineExceededError` — ДВЕРЬ 2. В обоих случаях весь вызов
 завершается `CapabilityDeadlineExceededError` — не веткой R-164(b) с частичным ответом (OD-4,
@@ -744,37 +776,37 @@ OD-T013-2(a); либо сигнал о недостающем участнике
 
 ## 4. Критерии приёмки (Acceptance Criteria)
 
-| ID        | Критерий                                                                                                                                             | Проверка                                                                 |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **AC-21** | Право на слияние — только на ветке `set \| series`; объявление на `point` — ошибка компиляции                                                        | тест типа (R-159)                                                        |
-| **AC-22** | Отрицательный тип-тест исполнен (детализация ниже)                                                                                                   | протокол мутации, запротоколирован (R-160)                               |
-| **AC-23** | Дедуп по `(metric, asset, час от ts)` подтверждён на реально пересекающейся паре (`identities_total`), включая случай РАЗНЫХ `ts` внутри одного часа | контрактный тест на фикстурах (R-161, R-161(e))                          |
-| **AC-24** | `TC-GATE-02` (`.trust`, ни одного читателя вне `adapters/types.ts`) зелёный без изменений после задачи                                               | `pnpm test` (R-162)                                                      |
-| **AC-25** | Ни одна новая строка кода не читает `onchain.metrics.source_priority`                                                                                | grep-гейт (R-162, R-180)                                                 |
-| **AC-26** | Участник без ранга — отказ сборки, названы способность и адаптер (детализация ниже)                                                                  | тест конструктора (R-163)                                                |
-| **AC-27** | Четыре ветки расширенного H-1 исполнены (детализация ниже)                                                                                           | четыре исполненных теста; дедлайн-предусловие — отдельно AC-48 (R-164)   |
-| **AC-28** | `cache.set()` — поадаптерно, без агрегатного ключа (детализация ниже)                                                                                | тест на мок-`CacheStore` (R-165)                                         |
-| **AC-29** | Слияние не опрашивает более дорогой по тарифу адаптер раньше более дешёвого (даже в тестовой конфигурации)                                           | структурный тест (R-166)                                                 |
-| **AC-30** | Разрешение конфликта не проходит через `Number` на значении > 2^53                                                                                   | тест на большом `value_raw` (R-167)                                      |
-| **AC-31** | Шесть прочих многоадаптерных маршрутов не получают eligibility (детализация ниже)                                                                    | регрессионный тест (R-168)                                               |
-| **AC-32** | Слитый `privacy.shielded_pool.history` содержит обе метки раздельно, не склеенными                                                                   | контрактный тест на двух фикстурах (R-169)                               |
-| **AC-33** | 14-й тул `onchain_dash_platform_history` публикует обе способности через селектор `series`                                                           | `pnpm test` + ручная схема (R-170, R-171)                                |
-| **AC-34** | Все восемь каналов `test/inventory-channels.ts` пройдены; `ADD_A_TOOL`-протокол исполнен и записан                                                   | прогон + отчёт (R-172)                                                   |
-| **AC-35** | Реальный вызов из Claude Code выполнен и запротоколирован с конкретными значениями ответа                                                            | ручной прогон, запись в отчёте задачи (R-173)                            |
-| **AC-36** | `_meta.cache`/`CapabilityResolution` всех 13 существующих тулов не меняют форму (детализация ниже)                                                   | `pnpm test`, `tool-response-shape.test.ts` (R-174, R-175)                |
-| **AC-37** | `attempted[]` слитого вызова называет обоих реально опрошенных участников, в порядке опроса                                                          | тест (R-176)                                                             |
-| **AC-38** | 13 существующих тулов и снимок `tools-list.snapshot.json` не изменились сверх добавленной строки                                                     | `pnpm test` (R-177)                                                      |
-| **AC-39** | Полный регрессионный прогон зелёный; `usage` не растёт (детализация ниже)                                                                            | все команды (R-178)                                                      |
-| **AC-40** | ADR-002 changelog называет оба отклонения от D5 (детализация ниже)                                                                                   | ревью диффа ADR (R-181)                                                  |
-| **AC-41** | Ветка (c) — недостижимый участник, опрошенные все пустые (детализация — AC-27)                                                                       | исполненный тест, UC-19 (R-164(c))                                       |
-| **AC-42** | Предметы T-016 отсутствуют в диффе задачи (детализация ниже)                                                                                         | grep-гейт + регрессия (R-179)                                            |
-| **AC-43** | Слитый `platform.metrics.history` содержит три `pg-history`-only метрики рядом с разрешённым по рангу `identities_total`                             | контрактный тест на фикстурах (R-169(b))                                 |
-| **AC-44** | Место оценки политики на слитом пути задокументировано (детализация ниже)                                                                            | тест + ревью докстринга (R-182)                                          |
-| **AC-45** | Активация слияния без eligibility невозможна (детализация ниже)                                                                                      | тест конструктора ИЛИ структурный аргумент, UC-20 (R-183)                |
-| **AC-46** | Тул публикует `missingSources`, полученный от `resolution.missingSources`, без потери на границе тула                                                | контрактный тест тула, UC-12 (R-171(e))                                  |
-| **AC-47** | `resolution.source` на слитом пути — id участника с наивысшим рангом среди реально ответивших, никогда не пустая строка                              | тест (R-174(a))                                                          |
-| **AC-48** | Участник, побеждённый дедлайном (любая из двух дверей), → `CapabilityDeadlineExceededError`, никогда ветка (b)                                       | исполненный тест на виртуальных часах, UC-22 (R-164(e))                  |
-| **AC-49** | Группировка по `metric` держится на ОБОИХ селекторах (детализация ниже)                                                                              | контрактный тест на фикстурах обоих рядов (R-171(b), R-169(b), R-169(c)) |
+| ID        | Критерий                                                                                                                                                                                                                                       | Проверка                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **AC-21** | Право на слияние — только на ветке `set \| series`; объявление на `point` — ошибка компиляции                                                                                                                                                  | тест типа (R-159)                                                        |
+| **AC-22** | Отрицательный тип-тест исполнен (детализация ниже)                                                                                                                                                                                             | протокол мутации, запротоколирован (R-160)                               |
+| **AC-23** | Дедуп по `(metric, asset, час от ts)` подтверждён на реально пересекающейся паре (`identities_total`), включая случай РАЗНЫХ `ts` внутри одного часа; и НЕ срабатывает внутри одного участника — счёт точек проверен числом (детализация ниже) | контрактный тест на фикстурах (R-161, R-161(e), R-161(f))                |
+| **AC-24** | `TC-GATE-02` (`.trust`, ни одного читателя вне `adapters/types.ts`) зелёный без изменений после задачи                                                                                                                                         | `pnpm test` (R-162)                                                      |
+| **AC-25** | Ни одна новая строка кода не читает `onchain.metrics.source_priority`                                                                                                                                                                          | grep-гейт (R-162, R-180)                                                 |
+| **AC-26** | Участник без ранга — отказ сборки, названы способность и адаптер (детализация ниже)                                                                                                                                                            | тест конструктора (R-163)                                                |
+| **AC-27** | Четыре ветки расширенного H-1 исполнены (детализация ниже)                                                                                                                                                                                     | четыре исполненных теста; дедлайн-предусловие — отдельно AC-48 (R-164)   |
+| **AC-28** | `cache.set()` — поадаптерно, без агрегатного ключа (детализация ниже)                                                                                                                                                                          | тест на мок-`CacheStore` (R-165)                                         |
+| **AC-29** | Слияние не опрашивает более дорогой по тарифу адаптер раньше более дешёвого (даже в тестовой конфигурации)                                                                                                                                     | структурный тест (R-166)                                                 |
+| **AC-30** | Разрешение конфликта не проходит через `Number` на значении > 2^53                                                                                                                                                                             | тест на большом `value_raw` (R-167)                                      |
+| **AC-31** | Шесть прочих многоадаптерных маршрутов не получают eligibility (детализация ниже)                                                                                                                                                              | регрессионный тест (R-168)                                               |
+| **AC-32** | Слитый `privacy.shielded_pool.history` содержит обе метки раздельно, не склеенными                                                                                                                                                             | контрактный тест на двух фикстурах (R-169)                               |
+| **AC-33** | 14-й тул `onchain_dash_platform_history` публикует обе способности через селектор `series`                                                                                                                                                     | `pnpm test` + ручная схема (R-170, R-171)                                |
+| **AC-34** | Все восемь каналов `test/inventory-channels.ts` пройдены; `ADD_A_TOOL`-протокол исполнен и записан                                                                                                                                             | прогон + отчёт (R-172)                                                   |
+| **AC-35** | Реальный вызов из Claude Code выполнен и запротоколирован с конкретными значениями ответа                                                                                                                                                      | ручной прогон, запись в отчёте задачи (R-173)                            |
+| **AC-36** | `_meta.cache`/`CapabilityResolution` всех 13 существующих тулов не меняют форму (детализация ниже)                                                                                                                                             | `pnpm test`, `tool-response-shape.test.ts` (R-174, R-175)                |
+| **AC-37** | `attempted[]` слитого вызова называет обоих реально опрошенных участников, в порядке опроса                                                                                                                                                    | тест (R-176)                                                             |
+| **AC-38** | 13 существующих тулов и снимок `tools-list.snapshot.json` не изменились сверх добавленной строки                                                                                                                                               | `pnpm test` (R-177)                                                      |
+| **AC-39** | Полный регрессионный прогон зелёный; `usage` не растёт (детализация ниже)                                                                                                                                                                      | все команды (R-178)                                                      |
+| **AC-40** | ADR-002 changelog называет ТРИ отклонения от D5 (детализация ниже)                                                                                                                                                                             | ревью диффа ADR (R-181)                                                  |
+| **AC-41** | Ветка (c) — недостижимый участник, опрошенные все пустые (детализация — AC-27)                                                                                                                                                                 | исполненный тест, UC-19 (R-164(c))                                       |
+| **AC-42** | Предметы T-016 отсутствуют в диффе задачи (детализация ниже)                                                                                                                                                                                   | grep-гейт + регрессия (R-179)                                            |
+| **AC-43** | Слитый `platform.metrics.history` содержит три `pg-history`-only метрики рядом с разрешённым по рангу `identities_total`                                                                                                                       | контрактный тест на фикстурах (R-169(b))                                 |
+| **AC-44** | Место оценки политики на слитом пути задокументировано (детализация ниже)                                                                                                                                                                      | тест + ревью докстринга (R-182)                                          |
+| **AC-45** | Активация слияния без eligibility невозможна (детализация ниже)                                                                                                                                                                                | тест конструктора ИЛИ структурный аргумент, UC-20 (R-183)                |
+| **AC-46** | Тул публикует `missingSources`, полученный от `resolution.missingSources`, без потери на границе тула                                                                                                                                          | контрактный тест тула, UC-12 (R-171(e))                                  |
+| **AC-47** | `resolution.source` на слитом пути — id участника с наивысшим рангом среди реально ответивших, никогда не пустая строка                                                                                                                        | тест (R-174(a))                                                          |
+| **AC-48** | Участник, побеждённый дедлайном (любая из двух дверей), → `CapabilityDeadlineExceededError`, никогда ветка (b)                                                                                                                                 | исполненный тест на виртуальных часах, UC-22 (R-164(e))                  |
+| **AC-49** | Группировка по `metric` держится на ОБОИХ селекторах (детализация ниже)                                                                                                                                                                        | контрактный тест на фикстурах обоих рядов (R-171(b), R-169(b), R-169(c)) |
 
 <!-- ac-detail -->
 
@@ -811,8 +843,17 @@ SLA). Дедлайн-предусловие (e) — отдельный тест,
 `pnpm --filter @onchain-intel/mcp-server smoke:dist` — все зелёные; таблица `usage` не растёт за
 автоматический прогон сьюта (R-178).
 
-**AC-40, детализация.** ADR-002 changelog называет ОБА отклонения от буквального текста D5
-(конфликтный ранг, R-181(a); различение исходов слияния, R-181(b)), каждое с датой и обоснованием.
+**AC-23, детализация (2026-08-09).** Критерий проверяется ЧИСЛОМ точек, а не только присутствием
+меток. Тест обязан утверждать: (1) участник старшего ранга вносит СТОЛЬКО точек, сколько вернул его
+`normalize()` — для `platform-explorer` это вся фикстура, а не по одной на час; (2) точка младшего
+участника в занятом слоте отсутствует — проверяется по её `valueRaw`, потому что именно его меняет
+неверный победитель; (3) длина всего ряда названа одним числом. Требование введено после того, как
+регрессия 12 → 2 прошла зелёный прогон: `merge-routes.test.ts` проверял только МНОЖЕСТВО меток, а
+множество меток при схлопывании не меняется.
+
+**AC-40, детализация.** ADR-002 changelog называет ТРИ отклонения от буквального текста D5
+(конфликтный ранг, R-181(a); различение исходов слияния, R-181(b); дедуп только между участниками,
+R-181(c)), каждое с датой и обоснованием.
 
 **AC-42, детализация.** Предметы T-016 (сегментация `set`-слияния по рангу, автозаполнение словаря
 `source → trust`, включение `entity.labels`-слияния) отсутствуют в диффе задачи — grep-гейт и
@@ -852,8 +893,8 @@ SLA). Дедлайн-предусловие (e) — отдельный тест,
 - **Весь ADR-003** — HTTP-транспорт, принципал, периметр, `BillingStore` — T-014/T-015, эта задача
   их не касается.
 - **Числа `deadlineMs`/`ttlSeconds`/`shape` двух способностей** — уже назначены и `ENFORCED TODAY`
-  задачей T-012 (`packages/core/src/capability-manifest.ts:454-490`, `'privacy.shielded_pool.history': {`); T-013 их не пересматривает.
-- **Собственный запрос `pg-history` к Postgres** (`packages/core/src/adapters/pg-history/index.ts:143-145`, `'SELECT ts, asset, metric, value_raw, value_num, source, height`) — не переписывается;
+  задачей T-012 (`packages/core/src/capability-manifest.ts:485-521`, `'privacy.shielded_pool.history': {`); T-013 их не пересматривает.
+- **Собственный запрос `pg-history` к Postgres** (`packages/core/src/adapters/pg-history/index.ts:150-152`, `'SELECT ts, asset, metric, value_raw, value_num, source, height`) — не переписывается;
   слияние работает НАД его существующим результатом.
 - **Исправление метрической схемы `privacy.shielded_pool.history`** (например, добавление второй
   строки в `METRICS_BY_CAPABILITY` или переопределение того, какую метрику пишет
@@ -896,7 +937,7 @@ R-162): переиспользованием уже существующего �
 
 **OQ-T013-4** — где оценивается `policy` маршрута на слитом пути: за участника (перед объединением)
 или за целое (после объединения)? За-участника — чтение, которое сохраняет применение H-1 к
-попаданиям кеша уже сегодня (`packages/core/src/adapters/registry.ts:1399`, `if (satisfies(policy, cached.value, adapterId)) return`) и совпадает с регрессией R-182(d), но выбор
+попаданиям кеша уже сегодня (`packages/core/src/adapters/registry.ts:1509`, `if (satisfies(policy, cached.value, adapterId)) return withDiagnostics(hit);`) и совпадает с регрессией R-182(d), но выбор
 остаётся за Архитектором, а не предрешается здесь. Участник, чей ответ НЕ удовлетворяет политике
 маршрута (кешированный `:790` или свежий `:859`), вернул нормализованный результат — R-164
 называет его «ответил» — но не внёс вклада в слитый ответ; оба реальных маршрута сегодня не несут

@@ -140,9 +140,11 @@
   (2026-08-03) applies to a merge walk exactly as it applies to a non-merge one, through the SAME
   THREE sites that already throw `CapabilityDeadlineExceededError`, not merely two.** A participant
   can be defeated by the deadline two ways DURING the walk — skipped by the per-adapter pre-check
-  (`packages/core/src/adapters/registry.ts:1326-1334`, `deadlineHit = true;`) OR its in-flight
+  (`packages/core/src/adapters/registry.ts:1074`, `deadlineHit = true;` — the MERGE walk's own door 1,
+  which task 013-5 added; the single-winner twin is `:1437`) OR its in-flight
   `fetch()` cut off by the ceiling (the caught
-  `DeadlineExceededError`, `:829`) — and `deadlineHit` is set either way, so NONE of branches (a)-(d)
+  `DeadlineExceededError`, `packages/core/src/adapters/registry.ts:1176`, `if (error instanceof DeadlineExceededError) deadlineHit = true;` — door 2, also added by 013-5;
+  it did not exist on the merge path when this paragraph was written) — and `deadlineHit` is set either way, so NONE of branches (a)-(d)
   apply: the whole call ends in `CapabilityDeadlineExceededError`, regardless of how many
   participants had already answered. The THIRD site is not a per-participant door at all: a caller
   whose OWN `requestedDeadlineAtMs` has already passed at entry (`packages/core/src/adapters/registry.ts:644`, `CapabilityDeadlineExceededError`, docstring
@@ -152,9 +154,9 @@
   saturated rate-limiter bucket (`DeadlineWouldExceedError`) is different and deliberately does NOT
   set `deadlineHit`: that participant is "asked, did not answer" and is distributed into branch (b)
   or (c) by the ordinary rule above, exactly like any other non-deadline failure — a limiter's
-  per-provider backlog is not a fact about the route's global clock (`packages/core/src/adapters/registry.ts:1539-1553`, `— but it CAN still reach this branch`). The
+  per-provider backlog is not a fact about the route's global clock (`packages/core/src/adapters/registry.ts:1704-1718`, `— but it CAN still reach this branch`). The
   terminal wall-clock disjunct (`deadlineHit || Date.now() >= effectiveDeadlineAtMs`,
-  `packages/core/src/adapters/registry.ts:1554`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`) is preserved unmodified for the merge path: it is not redundant with the
+  `packages/core/src/adapters/registry.ts:1719`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`) is preserved unmodified for the merge path: it is not redundant with the
   per-participant pre-check — it covers every adapter's transport, not only the two that unwrap a
   typed deadline class today (adversarial cycle 2's F-7; the disjunct's coverage argument is TWELVE
   adapters, WI-36's unwrapping fixed two) — and a merge implementation has no license to remove it.

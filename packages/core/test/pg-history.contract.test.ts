@@ -13,9 +13,11 @@ import { adapterRegistrations } from '../src/providers.config.js';
 // AND read-client.ts's own lazy pool / SELECT-only guard, without a separate test file.
 //
 // Every adapter here is constructed with `isolatedThrottle()` — mandatory since WI-34 made this
-// adapter apply its declared `{capacity: 2, refillPerSec: 0.2}` bucket. On the production singleton
-// the third call in this file would sleep FIVE REAL SECONDS, which is how WI-26 was found; the two
-// tests that make a second call went red on vitest's 5 000 ms timeout the moment the limiter landed.
+// adapter apply its declared bucket. On the production singleton a call past `capacity` sleeps in
+// REAL time, which is how WI-26 was found; the two tests that make a second call went red on
+// vitest's 5 000 ms timeout the moment the limiter landed. (Under 013-6's re-derived
+// `{capacity: 10, refillPerSec: 5}` that sleep is 200 ms rather than five seconds — shorter, and
+// still a shared bucket across every file in the process, which is what the seam is for.)
 
 const SECRET_DSN = 'postgres://app_user:sup3r-secret-pw@db.internal:5432/postgres';
 
@@ -358,10 +360,17 @@ describe('pg-history adapter (contract, R-12 — mocked pg client, no live PG)',
   /**
    * WI-34 — the declared `rateLimit` is applied, and WI-37 — the ceiling reaches the limiter.
    *
-   * The registration has carried `{capacity: 2, refillPerSec: 0.2}` since it was written and no line
-   * of code read it: this was the one AVAILABLE adapter in the tree whose declared limit nothing
-   * applied (the other two non-throttling adapters are stubs whose `isAvailable()` is unconditionally
-   * false, so their `rateLimit` describes traffic that never happens).
+   * The registration carried `{capacity: 2, refillPerSec: 0.2}` from the day it was written until
+   * WI-34, and no line of code read it: this was the one AVAILABLE adapter in the tree whose declared
+   * limit nothing applied (the other two non-throttling adapters are stubs whose `isAvailable()` is
+   * unconditionally false, so their `rateLimit` describes traffic that never happens).
+   *
+   * **T-013 task 013-6 re-derived the numbers to `{capacity: 10, refillPerSec: 5}`** when merge was
+   * activated on the two `*.history` routes and this adapter stopped being a spare leg — see the
+   * registration's own comment for the arithmetic. The two saturation cases below now prime the
+   * bucket from `PG_RATE_LIMIT.capacity` instead of a hard-coded 2: with a transcribed 2 the first
+   * would have gone red and the second would have gone SILENTLY GREEN while testing nothing, which
+   * is the worse of the two failures.
    */
   describe('the declared rate limit is applied, and takes the deadline (WI-34 + WI-37)', () => {
     const PG_RATE_LIMIT = adapterRegistrations.find((r) => r.id === 'pg-history')!.rateLimit;
@@ -369,18 +378,24 @@ describe('pg-history adapter (contract, R-12 — mocked pg client, no live PG)',
     it('the bucket the adapter paces on is the one the registration declares', () => {
       // Read from the registration rather than transcribed: the point of the fix is that these two
       // agree, so a test carrying its own copy of the numbers could not detect them diverging.
-      expect(PG_RATE_LIMIT).toEqual({ capacity: 2, refillPerSec: 0.2 });
+      expect(PG_RATE_LIMIT).toEqual({ capacity: 10, refillPerSec: 5 });
     });
 
     it('TC-INT-08a form: a spent deadline is refused BY THE LIMITER, with no query at all', async () => {
       // The saturation is the case, exactly as in `registry.deadline.test.ts`: on a fresh bucket
       // `throttle()` returns synchronously and the deadline branches (which live on the deficit
       // path) are never reached — so the test would pass even if the adapter never passed the
-      // deadline to the limiter. Two calls take `{capacity: 2}` to 0, the adapter's own to -1.
+      // deadline to the limiter. `capacity` calls take the bucket to 0, the adapter's own to -1.
+      //
+      // Derived from `PG_RATE_LIMIT.capacity`, never transcribed (013-6): the number of priming
+      // calls IS the saturation condition, so a literal here would silently stop saturating the
+      // first time the registration's capacity changed — and this case would keep passing while
+      // exercising the synchronous path it exists to avoid.
       resetFakePool();
       const throttle = createThrottle({ now: Date.now, wait: () => Promise.resolve() });
-      await throttle('pg-history', PG_RATE_LIMIT);
-      await throttle('pg-history', PG_RATE_LIMIT);
+      for (let i = 0; i < PG_RATE_LIMIT.capacity; i += 1) {
+        await throttle('pg-history', PG_RATE_LIMIT);
+      }
 
       const adapter = createPgHistoryAdapter({
         env: { ONCHAIN_PG_URL: SECRET_DSN },
@@ -413,13 +428,17 @@ describe('pg-history adapter (contract, R-12 — mocked pg client, no live PG)',
         throttle,
       });
 
-      await adapter.fetch('platform.metrics.history', { chain: 'dash' });
-      await adapter.fetch('platform.metrics.history', { chain: 'dash' });
-      // Third call: the bucket is in deficit, so this one waits 5 000 ms of VIRTUAL time.
+      // Same derivation as the case above, and for the sharper reason: a transcribed 2 would leave
+      // this test GREEN against a capacity of 10 while the "waits rather than refusing" branch it
+      // names was never entered at all.
+      for (let i = 0; i < PG_RATE_LIMIT.capacity; i += 1) {
+        await adapter.fetch('platform.metrics.history', { chain: 'dash' });
+      }
+      // One past capacity: the bucket is in deficit, so this one WAITS in virtual time.
       await expect(
         adapter.fetch('platform.metrics.history', { chain: 'dash' }),
       ).resolves.toHaveLength(2);
-      expect(FakePool.lastCreated?.queryCalls).toHaveLength(3);
+      expect(FakePool.lastCreated?.queryCalls).toHaveLength(PG_RATE_LIMIT.capacity + 1);
     });
   });
 
