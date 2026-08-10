@@ -1,30 +1,32 @@
 // The CAPABILITY axis of the live eval, and the rule that keeps it honest (RF-5).
 //
 // The CHAIN axis is derived from the live registry, so a chain added later is exercised
-// automatically. The capability axis cannot be derived: a capability needs a tool name and an
-// argument shape that only a human knows. What CAN be automatic — and what did not exist — is
-// noticing that the two axes disagree. `dex.volume.history` shipped, this list did not grow, and
-// the newest provider surface had no live coverage while the report showed nothing at all: not a
-// failure, not a `no-probe` row, no trace. A green run read as "the free contour is verified".
+// automatically. The capability axis used to be a literal array in THIS file, and that shape has a
+// recorded failure: `dex.volume.history` shipped, the array did not grow, and the newest provider
+// surface had no live coverage while the report showed nothing at all — not a failure, not a
+// `no-probe` row, no trace. A green run read as "the free contour is verified".
 //
-// So every capability the registry declares must appear in exactly one of three places here:
-// exercised (`CAPABILITY_TOOLS`), excluded on the record (`CAPABILITY_EXCLUSIONS`), or named as a
-// known hole (`CAPABILITY_KNOWN_GAPS`). Anything else is reported by `unwiredCapabilities()` at run
-// time and fails `eval-capability-coverage.test.ts` offline — the offline half matters more,
-// because this eval is deliberately not part of CI and a capability can ship between two runs of it.
+// The axis is now DERIVED from `cases/`, one file per case (see `cases/index.mjs`). Adding coverage
+// is adding a file; there is no list here to forget to edit. What this module still owns is the
+// part that is genuinely knowledge and not data: which capabilities are deliberately NOT exercised
+// (`CAPABILITY_EXCLUSIONS`), which are known holes (`CAPABILITY_KNOWN_GAPS`), and the comparison of
+// the two axes at run time (`unwiredCapabilities`) plus offline in
+// `eval-capability-coverage.test.ts` — the offline half matters more, because this eval is
+// deliberately not part of CI and a capability can ship between two runs of it.
 //
 // This module is data + pure functions on purpose: importing it must never start a server, so the
 // test suite can read it without touching the network.
 
 import { readFileSync } from 'node:fs';
+import { CAPABILITY_CASES } from './cases/index.mjs';
 
 /**
- * Tool names come from the generated inventory, never from this file (TASK-011, R-117).
+ * Tool names come from the generated inventory, never from a case file (TASK-011, R-117).
  *
  * The artifact is read rather than imported because this module is plain ESM by design and must
  * not acquire a build step — and because reading a file cannot start a server, which is this
  * file's other standing contract. `capability -> tool` is the whole mapping the eval needs; the
- * `args` builders below stay hand-written, since how to construct a probe call is knowledge that
+ * `args` builders live in the case files, since how to construct a probe call is knowledge that
  * lives nowhere in the registry and should not.
  */
 const INVENTORY = JSON.parse(
@@ -35,11 +37,11 @@ const INVENTORY = JSON.parse(
  * The tool serving a capability, or a loud failure.
  *
  * Throwing at import time is deliberate: `test/eval-capability-coverage.test.ts` imports this
- * module offline, so a capability listed here that no tool serves — an orphan left behind by a
- * removed or renamed tool — fails `pnpm test` rather than surfacing during a live run that nobody
- * is watching (R-126).
+ * module offline, so a capability named by a case file that no tool serves — an orphan left behind
+ * by a removed or renamed tool — fails `pnpm test` rather than surfacing during a live run that
+ * nobody is watching (R-126).
  */
-function toolFor(capability) {
+export function toolFor(capability) {
   // Both identity fields (T-013 task 013-8): a tool serving SEVERAL capabilities carries
   // `capability: null` and names them in `servedCapabilities`. Reading only the first field would
   // throw the "no MCP tool serves this" error below for a capability a tool demonstrably serves.
@@ -49,76 +51,26 @@ function toolFor(capability) {
   );
   if (!entry) {
     throw new Error(
-      `eval/capabilities.mjs: no MCP tool serves '${capability}'. Either the capability is wired ` +
-        'here by mistake, or the tool was renamed/removed and this entry is an orphan. ' +
+      `eval/capabilities.mjs: no MCP tool serves '${capability}'. Either a case file names it by ` +
+        'mistake, or the tool was renamed/removed and the case is an orphan. ' +
         'The inventory is generated from src/tools/tool-specs.ts.',
     );
   }
   return entry.name;
 }
 
-/** capability → the tool that serves it, and how to build its arguments from a probe row.
- * `args` returning null means "no probe input curated for this chain" → reported as `no-probe`. */
-export const CAPABILITY_TOOLS = [
-  { capability: 'chain.tvl', tool: toolFor('chain.tvl'), args: (c) => ({ chain: c }) },
-  {
-    capability: 'protocol.tvl',
-    tool: toolFor('protocol.tvl'),
-    args: (c, p) => (p.protocolSlug ? { chain: c, protocolSlug: p.protocolSlug } : null),
-  },
-  { capability: 'pairs.new', tool: toolFor('pairs.new'), args: (c) => ({ chain: c, limit: 5 }) },
-  {
-    capability: 'token.price',
-    tool: toolFor('token.price'),
-    args: (c, p) => (p.token ? { chain: c, address: p.token } : null),
-  },
-  {
-    capability: 'wallet.balances.native',
-    tool: toolFor('wallet.balances.native'),
-    args: (c, p) => (p.wallet ? { chain: c, address: p.wallet } : null),
-  },
-  {
-    // Needs no curated probe data at all — the tool takes a chain and nothing else — so every chain
-    // that declares it is exercised for free. 7 days keeps the payload small; the window is what
-    // makes `gapDays` meaningful, so this is where a vendor that stops publishing shows up.
-    capability: 'dex.volume.history',
-    tool: toolFor('dex.volume.history'),
-    args: (c) => ({ chain: c, days: 7 }),
-  },
-  {
-    // TASK-008 — free (`['blockscout']`, `costOf: 0`), so unlike `entity.labels` one directory
-    // down, an eval run of it bills nobody. Needs a curated `token` per chain: a holder list is
-    // meaningless without a contract to ask about, and the probe row already carries one for
-    // `token.price`. Chains with no curated token report `no-probe` rather than silently vanishing
-    // — which is the whole point of this file.
-    capability: 'token.holders',
-    tool: toolFor('token.holders'),
-    args: (c, p) => (p.token ? { chain: c, tokenAddress: p.token } : null),
-  },
-  {
-    // TASK-009 — free and keyless. Needs no curated probe data: the tool takes a chain and nothing
-    // else, so every chain declaring the capability is exercised automatically. Today that is
-    // `bitcoin` alone, which is also the point of the coverage assertions around it.
-    capability: 'chain.supply',
-    tool: toolFor('chain.supply'),
-    args: (c) => ({ chain: c }),
-  },
-  // T-013 — the merged Dash Platform history, one entry per capability because the tool resolves
-  // ONE of them per call and picks it by the `series` selector. Free on both participants
-  // (`platform-explorer`, `pg-history`), so exercising them live spends nothing; that is why they
-  // are wired rather than excluded. Probed only where the registry declares them, which today is
-  // `dash` alone — on any other chain `declaredFor(chain)` never offers them.
-  {
-    capability: 'privacy.shielded_pool.history',
-    tool: toolFor('privacy.shielded_pool.history'),
-    args: (c) => ({ chain: c, series: 'shielded_pool', limit: 20 }),
-  },
-  {
-    capability: 'platform.metrics.history',
-    tool: toolFor('platform.metrics.history'),
-    args: (c) => ({ chain: c, series: 'platform_metrics', limit: 20 }),
-  },
-];
+/**
+ * capability → the tool that serves it, and how to build its arguments from a probe row.
+ * `args` returning null means "no probe input curated for this chain" → reported as `no-probe`.
+ *
+ * Derived from `cases/`, never written here. The shape is unchanged from when it was a literal, so
+ * `run.mjs` consumes it exactly as before.
+ */
+export const CAPABILITY_TOOLS = CAPABILITY_CASES.map((c) => ({
+  capability: c.capability,
+  tool: toolFor(c.capability),
+  args: c.args,
+}));
 
 /** Capabilities deliberately NOT exercised, each with the reason it is out of scope. */
 export const CAPABILITY_EXCLUSIONS = new Map([
@@ -150,10 +102,10 @@ export function accountedCapabilities() {
 }
 
 /**
- * The two axes, compared: every capability the SELECTED chains declare, minus the ones
- * `CAPABILITY_TOOLS` exercises, minus the ones excluded on the record. What is left is a capability
- * nothing asked a provider about — reported once per capability (not once per chain, which would
- * bury it under a dozen identical rows) together with the chains that declare it.
+ * The two axes, compared: every capability the SELECTED chains declare, minus the ones the case
+ * files exercise, minus the ones excluded on the record. What is left is a capability nothing asked
+ * a provider about — reported once per capability (not once per chain, which would bury it under a
+ * dozen identical rows) together with the chains that declare it.
  *
  * `no-probe`, not `error`: a missing eval case is our gap, not a provider defect, and the verdict
  * that means "untested" already exists. It stays out of the failure count for the same reason the
@@ -188,8 +140,8 @@ export function unwiredCapabilities(selected, declaredFor) {
             known
               ? `no eval case wired — ${known} (declared by ${chains.length}: ${chains.join(', ')})`
               : `NO EVAL CASE WIRED and no recorded reason — declared by ${chains.length} chain(s) ` +
-                `(${chains.join(', ')}) and never called. Add it to CAPABILITY_TOOLS, or to ` +
-                `CAPABILITY_EXCLUSIONS with the reason.`,
+                `(${chains.join(', ')}) and never called. Add a file to eval/cases/, or an entry ` +
+                `to CAPABILITY_EXCLUSIONS with the reason.`,
           ],
         },
       ];

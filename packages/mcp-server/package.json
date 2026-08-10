@@ -21,7 +21,8 @@
     "probe:principal": "node scripts/probe-principal.mjs",
     "eval": "node eval/run.mjs",
     "snapshot:tools": "tsx scripts/snapshot-tools.ts",
-    "gen:tools": "tsx scripts/gen-tool-inventory.ts"
+    "gen:tools": "tsx scripts/gen-tool-inventory.ts",
+    "gate": "node scripts/eval-gate.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

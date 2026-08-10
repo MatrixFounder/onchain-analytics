@@ -88,6 +88,18 @@ confirmed volumes of the first target don't justify more: Dash Platform — hund
 
 - **Vendor counters drift** — don't hardcode counts of tools/networks/endpoints; before
   integrating, probe the **live tool-list** (verification already caught Dune 26≠29).
+- **Run the live gate before calling a task done** — `pnpm --filter @onchain-intel/mcp-server gate
+  --task <id>`. It runs the real server against real providers, blocks on a failure nobody has
+  filed, and appends one line to `packages/mcp-server/eval/ledger.jsonl` as the evidence it ran.
+  **This is a different instrument from `pnpm test`, not a slower copy of it.** The suite catches
+  "we broke it" and runs on fixtures by design (R-21 forbids network in CI), so it verifies our code
+  against *yesterday's snapshot* of a vendor. Only this gate catches "they broke it" — the class
+  with no commit of ours to trigger on: `token.holders` returned 50 rows at TASK-008 acceptance and
+  returns HTTP 403 today, and all 1651 tests stayed green throughout (L-6). A blocked gate means the
+  task is not done: file the failure, then acknowledge it in `eval/acknowledged.json` with its issue
+  id so it stops blocking unrelated work while staying named on every run. Adding coverage is adding
+  one file under `eval/cases/` — request, expectation and assertion together, no shared list to
+  forget (RF-5). Costs nothing: the gate is free-providers-only and never spends Nansen credits.
 - **Measure, don't eyeball** (§7): don't carry rough volume estimates from dialogs as facts;
   before designing for larger volumes, index ~1000 real blocks and take the actual table+index size.
 - **Nothing silently:** retention cleanup — a dedicated job with a log of "how many rows, which

@@ -1,0 +1,54 @@
+{
+  "$comment": [
+    "Known-failing eval rows, as DATA — adding or removing one is a config edit, never a code change.",
+    "",
+    "WHAT THIS IS NOT: this file does NOT affect `eval/run.mjs`, its verdicts, or its exit code.",
+    "`pnpm eval` stays red while a real defect is open, because it is also a release gate and a gate",
+    "that goes green over an open defect is worse than no gate. This file is read ONLY by",
+    "`scripts/eval-gate.mjs` (`pnpm gate`), and only to decide whether a failing row should BLOCK a",
+    "task from being called done. Acknowledgement is a property of the gate's report, not of grading.",
+    "",
+    "WHAT AN ENTRY MEANS: 'this row is failing, we know why, it is filed, and a human decided it must",
+    "not block unrelated work until it changes'. It does NOT mean 'hidden'. Every acknowledged row is",
+    "still NAMED on every gate run, with its issue id — closing the report does not close the",
+    "obligation to chase the vendor or retire the capability (L-2).",
+    "",
+    "STALE ENTRIES BLOCK, AND THAT IS THE POINT: when an acknowledged row starts passing, or stops",
+    "appearing in the matrix at all, the gate fails and names it. Without that, this list would only",
+    "ever grow — a blindfold assembled one honest decision at a time. Clearing a stale entry costs",
+    "one line of JSON, which is why blocking on it is the cheapest guard here.",
+    "",
+    "KEY: '<chain>/<capability>', exactly as the eval reports them. A chain-less row (the server and",
+    "registry checks) uses the em-dash the eval itself prints: '—/<capability>'.",
+    "",
+    "`issue` MUST reference a record that exists in docs/KNOWN_ISSUES.md. An acknowledgement without",
+    "a filed issue is just silence with extra steps."
+  ],
+  "acknowledged": {
+    "ethereum/token.holders": {
+      "issue": "L-6",
+      "since": "2026-08-10",
+      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
+    },
+    "base/token.holders": {
+      "issue": "L-6",
+      "since": "2026-08-10",
+      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
+    },
+    "arbitrum/token.holders": {
+      "issue": "L-6",
+      "since": "2026-08-10",
+      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
+    },
+    "polygon/token.holders": {
+      "issue": "L-6",
+      "since": "2026-08-10",
+      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
+    },
+    "gnosis/token.holders": {
+      "issue": "L-6",
+      "since": "2026-08-10",
+      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
+    }
+  }
+}

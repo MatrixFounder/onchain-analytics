@@ -86,12 +86,13 @@ const EXCLUDED_FILES = new Map([
     'packages/mcp-server/test/e2e.inprocess.test.ts',
     'call sites, not an inventory: each name appears with its own arguments and output schema',
   ],
-  [
-    'packages/mcp-server/eval/checks.mjs',
-    'a map keyed by tool name. eval-checks-coverage.test.ts asserts every key is a registered ' +
-      'tool, and that every tool the eval invokes (CAPABILITY_TOOLS + the capability-null tools) ' +
-      'has one. Deliberately NOT a complete inventory: the three paid tools are never called',
-  ],
+  // `eval/checks.mjs` was here while it held a literal map keyed by tool name. TASK-013a split the
+  // per-tool assertions into one file per case under `eval/cases/`, and the tool→case index is now
+  // DERIVED (`toolFor()` resolves each case's capability against the generated inventory), so the
+  // file names two tools in prose and none in code. The discovery check measured it below the
+  // threshold and flagged the entry as dormant — removed rather than kept, exactly as the rule two
+  // paragraphs up requires. If a future change puts a hand-written tool list back in that file, the
+  // gate will say so and the entry earns its place again.
   [
     'packages/mcp-server/test/fixtures/tools-list.snapshot.json',
     'the frozen contract snapshot — an inventory by design, and the deliberately NOT-derived one; ' +

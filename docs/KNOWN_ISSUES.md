@@ -106,6 +106,10 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 - **L-3** [`onchain-verify`'s staleness detector is permanently red by construction, and names no metric](issues/l-3-verify-staleness-detector-is-permanently-red-and-names-no-metric.md) — severity `SEV-2`, status `fixed`, opened 2026-07-27
 - **L-4** [Telegram entity parsing 400s on snake_case metric names, so the alert is never delivered](issues/l-4-telegram-entity-parsing-400s-on-snake-case-metric-names-no-alert-delivered.md) — severity `SEV-2`, status `fixed`, opened 2026-07-27
 - **L-5** [onchain_dex_volume reports gapDays: 0 for a window with no data at all — the empty-chart case breaks its own invariant](issues/l-5-dex-volume-empty-chart-reports-zero-gapdays-breaking-its-own-invariant.md) — severity `SEV-3`, status `fixed`, opened 2026-07-28
+- **L-6** [token.holders is advertised on ~30 chains and fails on all of them (blockscout HTTP 403); the live eval was already red](issues/l-6-token-holders-advertised-everywhere-blockscout-403-everywhere.md) — severity `SEV-2`, status `open`, opened 2026-08-10
+- **L-7** [The 10 MiB safeFetch cap refuses exactly the largest multichain protocols, by as little as 2 KB](issues/l-7-safefetch-10mib-cap-refuses-the-largest-protocols.md) — severity `SEV-2`, status `open`, opened 2026-08-10
+- **L-8** [Nansen ownershipPercentage 0 reaches the client as a real share for a 185.8M USDC holder](issues/l-8-ownership-percentage-zero-passes-through-as-a-real-share.md) — severity `SEV-3`, status `open`, opened 2026-08-10
+- **L-9** [A protocol that is not deployed on a chain is indistinguishable from a provider outage](issues/l-9-not-deployed-on-chain-indistinguishable-from-provider-outage.md) — severity `SEV-3`, status `open`, opened 2026-08-10
 
 ## security
 
@@ -118,3 +122,8 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 - **Q-3** [the 0-credit `entity.labels` query tier is structurally unrefusable by a credit-denominated gate](issues/q-3-nansen-zero-credit-entity-labels-tier-is-unrefusable-by-the-gate.md) — severity `SEV-3`, status `fixed`, opened 2026-07-25
 - **Q-4** [`token.risk` pays 1cr per call for `/tgm/token-information`, whose body is never read](issues/q-4-nansen-token-information-subcall-paid-but-never-consumed.md) — severity `SEV-3`, status `fixed`, opened 2026-07-25
 - **Q-5** [a literal NUL byte in registry-core.ts makes every repo-wide grep gate skip the SSRF-allowlist module silently](issues/q-5-a-literal-nul-byte-in-registry-core-ts-makes-every-repo-wide-grep-gate-skip-the-ssrf-allowlist-module-silently.md) — severity `SEV-2`, status `fixed`, opened 2026-07-27
+- **Q-6** [The self-imposed budget refusal names the ceiling where its own vendor branch names the remainder](issues/q-6-self-imposed-budget-refusal-names-the-ceiling-not-the-remainder.md) — severity `SEV-3`, status `open`, opened 2026-08-10
+- **Q-7** [totals.h24 is the previous whole day, not the last series point, and the last point is partial](issues/q-7-dex-volume-h24-is-the-previous-whole-day-not-the-last-series-point.md) — severity `SEV-4`, status `open`, opened 2026-08-10
+- **Q-8** [onchain_new_pairs returns long-established pools, and its name is what a client selects on](issues/q-8-new-pairs-returns-established-pools.md) — severity `SEV-3`, status `open`, opened 2026-08-10
+- **Q-9** [On a merged response the top-level source names one provider while its own points name another](issues/q-9-dash-history-top-level-source-contradicts-its-own-points.md) — severity `SEV-4`, status `open`, opened 2026-08-10
+- **Q-10** [onchain_new_pairs silently drops vendor rows that fail validation; the count goes only to stderr](issues/q-10-new-pairs-silently-drops-vendor-rows-that-fail-validation.md) — severity `SEV-3`, status `open`, opened 2026-08-10

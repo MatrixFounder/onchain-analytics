@@ -603,7 +603,14 @@ describe('TC-GATE-01 — no policy class is named or aliased after a container b
 
     // Out of scope by BOUNDARY, and measured rather than assumed: the eval harness really does
     // declare a helper by that name, and it is not scanned.
-    const evalHelper = path.join(repoRoot, 'packages/mcp-server/eval/checks.mjs');
+    //
+    // The pointer moved in TASK-013a: the helper lived in `eval/checks.mjs` while every per-tool
+    // assertion sat in that one file. Splitting the assertions into `eval/cases/` made the helper
+    // shared, so it moved to `eval/case-lib.mjs` — and this test failed on the move, which is the
+    // mechanism working. The assertion below is what makes the exemption non-vacuous, so it must
+    // keep pointing at a file that genuinely declares the banned name; if the helper moves again,
+    // repoint it rather than deleting the check.
+    const evalHelper = path.join(repoRoot, 'packages/mcp-server/eval/case-lib.mjs');
     expect(existsSync(evalHelper)).toBe(true);
     expect(
       bannedNameOccurrences(readFileSync(evalHelper, 'utf8')).code,
