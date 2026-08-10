@@ -299,8 +299,15 @@ describe('the registry is the inventory (R-110, R-112)', () => {
   it('states `capability` as an explicit null where a tool serves none', () => {
     // The two that compute their own answer: `onchain_ping` and `onchain_list_chains`. Written as
     // `null` rather than left off, so "serves no capability" is a statement and not an omission.
+    //
+    // **`capability: null` alone no longer means "serves none" (T-013 task 013-8).** A tool serving
+    // SEVERAL capabilities also carries `null` there and names them in `servedCapabilities`, so the
+    // distinguishing fact is the PAIR: serves-none is `null` AND no `servedCapabilities`. Filtering
+    // on `capability === null` by itself would report the fourteenth tool as serving nothing —
+    // which is exactly the misreading `eval-checks-coverage.test.ts` makes one gate over, fixed in
+    // the same commit.
     const withoutCapability = toolSpecs
-      .filter((spec) => spec.capability === null)
+      .filter((spec) => spec.capability === null && spec.servedCapabilities === undefined)
       .map((s) => s.name);
     expect(withoutCapability.sort()).toStrictEqual(['onchain_list_chains', 'onchain_ping']);
     for (const spec of toolSpecs) {
@@ -312,9 +319,18 @@ describe('the registry is the inventory (R-110, R-112)', () => {
     // TASK-008's actual defect: a capability advertised by a tool that no route could serve. Here
     // it becomes unrepresentable rather than reviewable.
     const routed = new Set(routes.map((route) => route.capability));
-    const unroutable = toolSpecs
-      .filter((spec) => spec.capability !== null && !routed.has(spec.capability))
-      .map((spec) => `${spec.name} -> ${spec.capability ?? ''}`);
+    // Every capability a spec DECLARES, from either field — `servedCapabilities` when it serves
+    // several, `capability` when it serves one. Reading only `capability` would leave the
+    // fourteenth tool's two capabilities unchecked entirely: it declares `null` there, so the old
+    // filter skipped it and the gate would pass while advertising two possibly-unroutable names.
+    const declared = toolSpecs.flatMap((spec) =>
+      (spec.servedCapabilities ?? (spec.capability === null ? [] : [spec.capability])).map(
+        (capability) => ({ name: spec.name, capability }),
+      ),
+    );
+    const unroutable = declared
+      .filter((entry) => !routed.has(entry.capability))
+      .map((entry) => `${entry.name} -> ${entry.capability}`);
     expect(unroutable).toStrictEqual([]);
   });
 
@@ -448,10 +464,53 @@ describe('each tool module declares its privileges once (adversarial cycle 2)', 
       const specField = specFields[0];
 
       if (specField === 'null') {
-        // A server-level tool (`ping`, `list_chains`): no capability, and none may be resolved.
-        if (declarations.length > 0) offenders.push(`${file}: capability null but declares one`);
-        if (source.includes('resolveCapability(')) {
-          offenders.push(`${file}: capability null but calls resolveCapability`);
+        // `capability: null` now covers TWO different tools (T-013 task 013-8, PLAN §0.11), and
+        // collapsing them is what this branch used to do:
+        //
+        //  - a SERVER-LEVEL tool (`ping`, `list_chains`) — computes its own answer, resolves
+        //    nothing, and carries no `servedCapabilities`;
+        //  - a MULTI-CAPABILITY tool — resolves one of SEVERAL capabilities chosen at call time, so
+        //    no single `const CAPABILITY` can name it, and the names live in one `as const` array.
+        //
+        // The second one calls `resolveCapability(` legitimately, so the old rule ("null means you
+        // may not resolve") reported it as an offender permanently. The rule is EXTENDED, not
+        // waived: the multi-capability shape has to prove the same property the single-capability
+        // shape does — the module names its capabilities in exactly one place, so retargeting the
+        // tool is one edit and cannot half-apply.
+        const servedField = /^ {2}servedCapabilities: (.+),$/m.exec(specBody)?.[1];
+        if (servedField === undefined) {
+          // Server-level: unchanged from before this task.
+          if (declarations.length > 0) offenders.push(`${file}: capability null but declares one`);
+          if (source.includes('resolveCapability(')) {
+            offenders.push(`${file}: capability null but calls resolveCapability`);
+          }
+          continue;
+        }
+
+        // Multi-capability. Exactly one `as const` array of names, the spec field must reference it
+        // BY NAME, and no capability string literal may reach `resolveCapability(` — the same three
+        // obligations the single-capability branch imposes, expressed for a list.
+        const servedDeclarations = [
+          ...source.matchAll(/^const SERVED_CAPABILITIES = \[[\s\S]*?\] as const;$/gm),
+        ];
+        if (servedDeclarations.length !== 1) {
+          offenders.push(
+            `${file}: expected exactly one \`const SERVED_CAPABILITIES = [...] as const\`, found ${servedDeclarations.length}`,
+          );
+          continue;
+        }
+        if (servedField !== 'SERVED_CAPABILITIES') {
+          offenders.push(
+            `${file}: spec says \`servedCapabilities: ${servedField}\`, not the SERVED_CAPABILITIES constant`,
+          );
+        }
+        for (const call of source.matchAll(/resolveCapability\(\s*[^,]+,\s*([^,]+),/g)) {
+          const argument = call[1]?.trim() ?? '?';
+          if (/^['"`]/.test(argument)) {
+            offenders.push(
+              `${file}: resolves the string literal ${argument}; a multi-capability tool must pass an element of SERVED_CAPABILITIES`,
+            );
+          }
         }
         continue;
       }

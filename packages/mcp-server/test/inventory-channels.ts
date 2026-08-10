@@ -64,14 +64,20 @@ export const INVENTORY_CHANNELS: readonly InventoryChannel[] = [
   {
     gate: 'packages/mcp-server/test/tool-spec.test.ts',
     action:
-      'a tool serving no capability must say `capability: null` explicitly, and is named in that test — "serves no capability" is a statement, not an omission',
+      'a tool serving no capability must say `capability: null` explicitly and is named in that test — "serves no capability" is a statement, not an omission. A tool serving SEVERAL says `capability: null` TOO and lists them in `servedCapabilities`, so the pair is what distinguishes the two; it must also declare them in one `const SERVED_CAPABILITIES = [...] as const` and pass an element of it to `resolveCapability(`, never a string literal (T-013 task 013-8)',
   },
   {
     gate: 'packages/mcp-server/test/eval-capability-coverage.test.ts',
     action:
       'wire the capability into `eval/capabilities.mjs` — CAPABILITY_TOOLS, or CAPABILITY_EXCLUSIONS with the reason. Hand-maintained on purpose: only the tool NAME is derived from the artifact',
     needsJudgement: true,
-    firesOnlyWhen: 'the tool serves a capability',
+    // Was 'the tool serves a capability' — measured wrong on the fourteenth tool (T-013 task
+    // 013-8). That tool DOES serve two, and this gate still did not fire, because
+    // `capabilitiesServedByTools()` read `capability` alone and a multi-capability tool carries
+    // `null` there. The gate was green over exactly the hole it exists to find. Both the reader and
+    // this text are fixed; the condition is about the FIELD, not about serving.
+    firesOnlyWhen:
+      'the tool declares a capability in `capability` or in `servedCapabilities` — a tool invisible to both is invisible to this gate',
   },
   {
     gate: 'packages/mcp-server/scripts/smoke-dist.mjs',

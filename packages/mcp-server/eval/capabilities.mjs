@@ -40,7 +40,13 @@ const INVENTORY = JSON.parse(
  * is watching (R-126).
  */
 function toolFor(capability) {
-  const entry = INVENTORY.tools.find((tool) => tool.capability === capability);
+  // Both identity fields (T-013 task 013-8): a tool serving SEVERAL capabilities carries
+  // `capability: null` and names them in `servedCapabilities`. Reading only the first field would
+  // throw the "no MCP tool serves this" error below for a capability a tool demonstrably serves.
+  const entry = INVENTORY.tools.find(
+    (tool) =>
+      tool.capability === capability || (tool.servedCapabilities ?? []).includes(capability),
+  );
   if (!entry) {
     throw new Error(
       `eval/capabilities.mjs: no MCP tool serves '${capability}'. Either the capability is wired ` +
@@ -96,6 +102,21 @@ export const CAPABILITY_TOOLS = [
     capability: 'chain.supply',
     tool: toolFor('chain.supply'),
     args: (c) => ({ chain: c }),
+  },
+  // T-013 — the merged Dash Platform history, one entry per capability because the tool resolves
+  // ONE of them per call and picks it by the `series` selector. Free on both participants
+  // (`platform-explorer`, `pg-history`), so exercising them live spends nothing; that is why they
+  // are wired rather than excluded. Probed only where the registry declares them, which today is
+  // `dash` alone — on any other chain `declaredFor(chain)` never offers them.
+  {
+    capability: 'privacy.shielded_pool.history',
+    tool: toolFor('privacy.shielded_pool.history'),
+    args: (c) => ({ chain: c, series: 'shielded_pool', limit: 20 }),
+  },
+  {
+    capability: 'platform.metrics.history',
+    tool: toolFor('platform.metrics.history'),
+    args: (c) => ({ chain: c, series: 'platform_metrics', limit: 20 }),
   },
 ];
 

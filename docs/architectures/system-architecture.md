@@ -2683,7 +2683,7 @@ client.
     Measured against the tree, it is neither: **three** type declarations name the field
     (`packages/mcp-server/src/tools/registry.ts:110`, `readonly capability: string | null;` — in
     `ToolDefinition`; the same line at `:139` in `ToolSpec`; **and**
-    `packages/mcp-server/scripts/gen-tool-inventory.ts:41`, `readonly capability: string | null;`
+    `packages/mcp-server/scripts/gen-tool-inventory.ts:42`, `readonly capability: string | null;`
     in `ToolInventoryEntry` — the schema of the
     _committed artifact_ `tool-inventory.json`, read by `smoke-dist.mjs` and the eval); and a
     `string[]` value is not equal to any string, so every reader that compares `capability` with

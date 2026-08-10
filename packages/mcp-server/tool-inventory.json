@@ -65,6 +65,15 @@
       "name": "onchain_token_risk",
       "title": "Token risk and reward indicators",
       "capability": "token.risk"
+    },
+    {
+      "name": "onchain_dash_platform_history",
+      "title": "Dash Platform history (merged)",
+      "capability": null,
+      "servedCapabilities": [
+        "privacy.shielded_pool.history",
+        "platform.metrics.history"
+      ]
     }
   ]
 }

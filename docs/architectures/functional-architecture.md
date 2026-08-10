@@ -121,6 +121,9 @@
     `onchain_protocol_tvl`.
   - M2 paid, Nansen-backed, budget-gated: `onchain_smart_money_flows`, `onchain_entity_label`,
     `onchain_token_risk`.
+  - **T-013** — `onchain_dash_platform_history`: the merged Dash Platform history
+    (`privacy.shielded_pool.history` + `platform.metrics.history`), the first tool to serve more
+    than one capability and the first to publish a MERGED series.
   - TASK-006 keyless, registry-backed: `onchain_list_chains` (discovery, zero network calls) and
     `onchain_chain_tvl` (chain-level TVL, DeFiLlama-backed).
   - TASK-007/008/009, free tiers: `onchain_dex_volume` (DEX volume history, DeFiLlama),
@@ -160,7 +163,7 @@ flowchart LR
     CACHE["Cache: lru-cache + SQLite DATA_DIR (D6)<br/>+ budget guard: usage ledger, daily ceiling (M2)"]
     PGHIST["pg-history adapter (optional, R-12)<br/>inside the Registry, not beside it"]
     SCHED["croner + job log — local/embedded profile only<br/>on a dedicated server the schedule lives in n8n (D8)"]
-    MCP["MCP server @onchain-intel/mcp-server — 13 tools<br/>ping · get_token · wallet_balances · new_pairs · protocol_tvl<br/>list_chains · chain_tvl · dex_volume · token_holders · chain_supply<br/>smart_money_flows · entity_label · token_risk"]
+    MCP["MCP server @onchain-intel/mcp-server — 14 tools<br/>ping · get_token · wallet_balances · new_pairs · protocol_tvl<br/>list_chains · chain_tvl · dex_volume · token_holders · chain_supply<br/>smart_money_flows · entity_label · token_risk"]
   end
 
   subgraph N8N["Autonomous loop — n8n + Supabase Postgres, dev VM<br/>snapshotter now; rule scheduling + alerts at M3"]

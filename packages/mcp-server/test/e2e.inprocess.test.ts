@@ -488,10 +488,13 @@ describe('onchain_dex_volume (TASK-007) — in-process E2E (real cache, fixture 
 
 /**
  * Degradation/`isError` path (ARCHITECTURE.md §9.1/§3.2 reviewer note — "handler wraps
- * `registry.resolve()` in try/catch; on `CapabilityUnavailableError` → `isError: true`"). M1 has
- * no MCP tool wired to a history/DSN-gated capability (`platform.metrics.history`/`pg-history` —
- * OQ-2, no 5th tool), so this proves the identical contract the only way one of the 4 REAL M1
- * tools can exercise it: a registry with NO adapters registered at all for `onchain_get_token`'s
+ * `registry.resolve()` in try/catch; on `CapabilityUnavailableError` → `isError: true`").
+ *
+ * **Superseded in part (T-013 task 013-8):** this said "M1 has no MCP tool wired to a
+ * history/DSN-gated capability (`platform.metrics.history`/`pg-history` — OQ-2, no 5th tool)".
+ * `onchain_dash_platform_history` is wired to both history capabilities now, so the gap is closed
+ * and the sentence is kept only to explain why THIS case is built the way it is. It proves the
+ * contract through a registry with NO adapters registered at all for `onchain_get_token`'s
  * capability, which is exactly `CapabilityRegistry`'s own documented "no adapter registered for
  * this id" `CapabilityUnavailableError` path (`packages/core`'s `registry.ts`).
  */

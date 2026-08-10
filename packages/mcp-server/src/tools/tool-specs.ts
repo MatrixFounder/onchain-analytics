@@ -1,5 +1,6 @@
 import { chainSupplyToolSpec } from './chain-supply.js';
 import { chainTvlToolSpec } from './chain-tvl.js';
+import { dashPlatformHistoryToolSpec } from './dash-platform-history.js';
 import { dexVolumeToolSpec } from './dex-volume.js';
 import { entityLabelToolSpec } from './entity-label.js';
 import { getTokenToolSpec } from './get-token.js';
@@ -48,4 +49,5 @@ export const toolSpecs: readonly ToolSpec[] = [
   smartMoneyFlowsToolSpec,
   entityLabelToolSpec,
   tokenRiskToolSpec,
+  dashPlatformHistoryToolSpec,
 ];

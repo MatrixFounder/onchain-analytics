@@ -2,7 +2,7 @@
 
 Движок ончейн-аналитики, выставленный наружу как **MCP-сервер**: адаптеры провайдеров (CoinGecko,
 DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализация в единую каноническую схему →
-двухуровневый кеш + бюджет-гард по кредитам → 13 инструментов, которые вызывает ваш агент.
+двухуровневый кеш + бюджет-гард по кредитам → 14 инструментов, которые вызывает ваш агент.
 
 **English version:** [README.md](README.md)
 
@@ -33,6 +33,7 @@ DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализаци�
   - [onchain_smart_money_flows](#onchain_smart_money_flows-платный)
   - [onchain_entity_label](#onchain_entity_label-платный)
   - [onchain_token_risk](#onchain_token_risk-платный)
+  - [onchain_dash_platform_history](#onchain_dash_platform_history)
 - [Формат ответа](#формат-ответа)
 - [Бюджет-гард по кредитам](#бюджет-гард-по-кредитам)
 - [Поведение без API-ключей](#поведение-без-api-ключей)
@@ -45,7 +46,7 @@ DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализаци�
 
 ## Что это даёт
 
-**13 MCP-инструментов.** Одна проверка живости, один инструмент реестра сетей, восемь бесплатных
+**14 MCP-инструментов.** Одна проверка живости, один инструмент реестра сетей, восемь бесплатных
 инструментов данных и три платных alpha-инструмента на Nansen.
 
 **Две сети:** `ethereum` и `solana`. Каждый инструмент принимает `chain` явно.
@@ -148,7 +149,7 @@ SSRF-allowlist.
 /mcp
 ```
 
-Под `onchain-intel` должно быть **13 инструментов**.
+Под `onchain-intel` должно быть **14 инструментов**.
 
 ---
 
@@ -178,21 +179,22 @@ SSRF-allowlist.
 
 Стоимость — в кредитах Nansen. Бесплатные инструменты не стоят ничего и не требуют ключа.
 
-| Инструмент                  | Стоимость      | TTL   | Нужен ключ       |
-| --------------------------- | -------------- | ----- | ---------------- |
-| `onchain_ping`              | —              | —     | нет              |
-| `onchain_get_token`         | бесплатно      | 60с   | нет              |
-| `onchain_wallet_balances`   | бесплатно      | 60с   | нет              |
-| `onchain_new_pairs`         | бесплатно      | 30с   | нет              |
-| `onchain_protocol_tvl`      | бесплатно      | 300с  | нет              |
-| `onchain_list_chains`       | бесплатно      | —     | нет              |
-| `onchain_chain_tvl`         | бесплатно      | 300с  | нет              |
-| `onchain_dex_volume`        | бесплатно      | 3600с | нет              |
-| `onchain_token_holders`     | бесплатно      | 3600с | нет              |
-| `onchain_chain_supply`      | бесплатно      | 600с  | нет              |
-| `onchain_smart_money_flows` | **10 кр**      | 300с  | `NANSEN_API_KEY` |
-| `onchain_entity_label`      | **0/5/100 кр** | 3600с | `NANSEN_API_KEY` |
-| `onchain_token_risk`        | **6 кр**       | 1800с | `NANSEN_API_KEY` |
+| Инструмент                      | Стоимость      | TTL   | Нужен ключ       |
+| ------------------------------- | -------------- | ----- | ---------------- |
+| `onchain_ping`                  | —              | —     | нет              |
+| `onchain_get_token`             | бесплатно      | 60с   | нет              |
+| `onchain_wallet_balances`       | бесплатно      | 60с   | нет              |
+| `onchain_new_pairs`             | бесплатно      | 30с   | нет              |
+| `onchain_protocol_tvl`          | бесплатно      | 300с  | нет              |
+| `onchain_list_chains`           | бесплатно      | —     | нет              |
+| `onchain_chain_tvl`             | бесплатно      | 300с  | нет              |
+| `onchain_dex_volume`            | бесплатно      | 3600с | нет              |
+| `onchain_token_holders`         | бесплатно      | 3600с | нет              |
+| `onchain_chain_supply`          | бесплатно      | 600с  | нет              |
+| `onchain_smart_money_flows`     | **10 кр**      | 300с  | `NANSEN_API_KEY` |
+| `onchain_entity_label`          | **0/5/100 кр** | 3600с | `NANSEN_API_KEY` |
+| `onchain_token_risk`            | **6 кр**       | 1800с | `NANSEN_API_KEY` |
+| `onchain_dash_platform_history` | бесплатно      | 3600с | нет              |
 
 ### onchain_ping
 
@@ -364,6 +366,33 @@ TVL протокола — в разрезе сети и суммарный — 
 
 ```json
 { "chain": "bitcoin" }
+```
+
+### onchain_dash_platform_history
+
+Исторические ряды Dash Platform, **слитые из двух бесплатных источников**: `platform-explorer`
+(собственная история вендора) и `pg-history` (ваш Postgres-леджер, если задан `ONCHAIN_PG_URL`).
+Единственный тул, обслуживающий больше одной способности, и единственный, чей ответ собирается из
+нескольких источников, а не из первого ответившего.
+
+Ряд выбирается параметром `series`:
+
+- `platform_metrics` — `identities_total` плюс `documents_total`, `data_contracts_total` и
+  `platform_total_credits`. **Последние три есть только в вашем леджере** — ради этого слияние и
+  делается: вендор их не публикует.
+- `shielded_pool` — **две разные величины**, сгруппированные раздельно и никогда не объединяемые:
+  `shielded_pool_shield_amount` (приток в приватный пул за транзакцию, от вендора) и
+  `shielded_pool_balance_credits` (ОСТАТОК пула, из вашего леджера). Это не два взгляда на одно
+  число, и рисовать их одной линией неверно.
+
+Точки всегда сгруппированы по `metric` — никогда не плоским списком, — а `valueRaw` остаётся точной
+целочисленной строкой и не должен парситься как float. Если источник не внёс вклад,
+`missingSources` называет его и причину, а ответ всё равно возвращает то, что дал второй источник.
+
+Вход:
+
+```json
+{ "chain": "dash", "series": "platform_metrics", "limit": 50 }
 ```
 
 ### onchain_smart_money_flows (платный)
@@ -719,7 +748,7 @@ Claude Code.
 
 ```
 packages/core/          движок: адаптеры, канонические типы, кеш, бюджет-гард
-packages/mcp-server/    MCP-сервер: 13 инструментов, валидация env, транспорт stdio
+packages/mcp-server/    MCP-сервер: 14 инструментов, валидация env, транспорт stdio
 docs/                   архитектура, ADR, roadmap, реестр issue
 n8n-workflows/          выгруженные workflow снапшоттера (отдельная always-on система)
 ```

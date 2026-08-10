@@ -14,6 +14,25 @@ export interface CacheMeta {
   capability: string;
 }
 
+/**
+ * The `_meta.cache` shape a MERGED answer publishes instead of {@link CacheMeta} (T-013, R-174(e)).
+ *
+ * **Why a sibling type rather than optional fields on `CacheMeta`.** `provider` is a single string
+ * that a merge has no honest value for — two participants answered — and `capability` would restate
+ * what the tool's own `series` input already says. Making those two optional on `CacheMeta` would
+ * have been a WEAKENING of a type eleven tools depend on, and R-175(b) permits only strictly
+ * additive changes there. A separate shape leaves those eleven untouched and states its own
+ * contract, and `perSource` — which participant was warm, which was paid for — is the fact a merged
+ * answer has that a single-winner one does not.
+ *
+ * Both shapes are accepted by `ToolOutcome.cache`; nothing downstream reads either one's fields,
+ * since `_meta` is passed through to the client verbatim.
+ */
+export interface MergedCacheMeta {
+  status: 'hit' | 'miss';
+  perSource?: { adapterId: string; cache: 'hit' | 'miss'; ageMs?: number }[];
+}
+
 /** Successful `registry.resolve()` outcome — `output` is the adapter's raw `normalize()` result,
  * still `unknown` here; each tool's own handler re-validates it against ITS canonical zod output
  * schema before returning (the anti-corruption layer doesn't stop at the Registry boundary — the

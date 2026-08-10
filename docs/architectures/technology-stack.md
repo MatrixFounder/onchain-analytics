@@ -134,7 +134,7 @@ onchain-analytics/
 │     │  ├─ index.ts                      # bin; the single transport choice (stdio, D3)
 │     │  ├─ server.ts                     # createServer({env,version,registry?}) — registry injectable
 │     │  ├─ env.ts                        # zod env schema (D10)
-│     │  └─ tools/                        # 13 registered tools + 2 shared helpers
+│     │  └─ tools/                        # 14 registered tools + 2 shared helpers
 │     │     ├─ ping.ts                    # unchanged since M0 (R-20)
 │     │     ├─ get-token.ts               # M1
 │     │     ├─ wallet-balances.ts         # M1

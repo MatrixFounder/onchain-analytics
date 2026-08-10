@@ -47,7 +47,7 @@ are **Accepted** in ADR-001; this document does not revisit them, it makes them 
 **What the engine is today** — twelve provider adapters behind one hot-swappable interface (eleven
 of them serving something; `dune` is a config stub), a chain registry of 458 networks, a two-level
 cache, an SSRF gate and per-provider rate limiting, a credit budget guard on the single paid
-provider, and thirteen workflow-oriented MCP tools served over local stdio. **T-013 (designed, not
+provider, and fourteen workflow-oriented MCP tools served over local stdio. **T-013 (designed, not
 yet built)** adds a compiled multi-source merge to two `series` capabilities and a 14th tool
 publishing the merged history — see §3/§11.
 
@@ -173,7 +173,7 @@ field, and `CapabilityResolution` gains three optional, merge-only fields.
 
 ## 5. Interfaces
 
-Contracts for all thirteen MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
+Contracts for all fourteen MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
 `ChainInputSchema` contract shared by every chain-accepting tool, the public API of
 `packages/core`, and the provider integration table that is the source of the per-adapter SSRF
 allowlist. **Plus the designed contract of a 14th, T-013's `onchain_dash_platform_history`, not yet

@@ -1385,5 +1385,179 @@
     "execution": {
       "taskSupport": "forbidden"
     }
+  },
+  {
+    "name": "onchain_dash_platform_history",
+    "title": "Dash Platform history (merged)",
+    "description": "Historical series for Dash Platform, MERGED from two free sources: platform-explorer (the vendor's own history) and pg-history (our own Postgres ledger, when ONCHAIN_PG_URL is configured). Pick the series with \"series\": \"platform_metrics\" returns identities_total plus documents_total, data_contracts_total and platform_total_credits — the last three exist only in our ledger. \"shielded_pool\" returns TWO DIFFERENT quantities, grouped separately and never combined: shielded_pool_shield_amount (inflow into the private pool, per transaction, from platform-explorer) and shielded_pool_balance_credits (the pool BALANCE, from our ledger). Points are always grouped by metric, never a flat list. valueRaw is an exact integer string — do not parse it as a float. When a source could not contribute, missingSources names it and why, and the answer still returns what the other source had. Both series are served on Dash only today — call onchain_list_chains with capability \"platform.metrics.history\" to see where each is available.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "series": {
+          "type": "string",
+          "enum": [
+            "shielded_pool",
+            "platform_metrics"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": [
+        "chain",
+        "series"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "series": {
+          "type": "string",
+          "enum": [
+            "shielded_pool",
+            "platform_metrics"
+          ]
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "metric": {
+                "type": "string"
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ts": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "asset": {
+                      "type": "string"
+                    },
+                    "valueRaw": {
+                      "type": "string"
+                    },
+                    "valueNum": {
+                      "type": "number"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ts",
+                    "asset",
+                    "valueRaw",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "metric",
+              "points"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "missingSources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "adapterId": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "adapterId",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "fromMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "toMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "fromMs",
+            "toMs"
+          ],
+          "additionalProperties": false
+        },
+        "truncated": {
+          "type": "object",
+          "properties": {
+            "series": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "series",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "series",
+        "groups",
+        "truncated",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
   }
 ]

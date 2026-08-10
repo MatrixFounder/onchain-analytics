@@ -96,12 +96,12 @@ function fakeBudgetStore(): BudgetStore {
 }
 
 describe('TC-GATE-03 — no internal key appears anywhere in the published contract (R-152)', () => {
-  it('no input or output schema of any of the 13 tools carries any of them, at any depth', async () => {
+  it('no input or output schema of any of the 14 tools carries any of them, at any depth', async () => {
     const tools = await captureToolsList();
 
     // Sign of work BEFORE the verdict: an empty capture, or one that stopped at the top level,
     // would report "nothing leaked" identically to a clean one.
-    expect(tools).toHaveLength(13);
+    expect(tools).toHaveLength(14);
     const keys = collectKeys(tools);
     expect(keys.has('inputSchema')).toBe(true);
     expect(keys.has('outputSchema')).toBe(true);

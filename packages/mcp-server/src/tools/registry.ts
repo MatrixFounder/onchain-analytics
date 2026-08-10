@@ -3,7 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BudgetStore, CapabilityRegistry } from '@onchain-intel/core';
 import type { z } from 'zod';
 import type { BudgetMeta } from './budget-meta.js';
-import type { CacheMeta, TimingMeta } from './resolve-capability.js';
+import type { CacheMeta, MergedCacheMeta, TimingMeta } from './resolve-capability.js';
 
 /**
  * The single source of the MCP tool inventory (TASK-011, ADR-002 D7).
@@ -78,7 +78,16 @@ export interface ToolContext {
  * elsewhere.)
  */
 export type ToolOutcome<TOutput> =
-  | { ok: true; output: TOutput; cache?: CacheMeta; timing?: TimingMeta; budget?: BudgetMeta }
+  | {
+      ok: true;
+      output: TOutput;
+      /** Either the shared single-winner shape or a merged answer's own (T-013 task 013-8). Nothing
+       * here reads its fields — `_meta` is passed to the client verbatim — so the union widens what
+       * a tool may PUBLISH without weakening `CacheMeta` for the eleven that use it (R-175(b)). */
+      cache?: CacheMeta | MergedCacheMeta;
+      timing?: TimingMeta;
+      budget?: BudgetMeta;
+    }
   | { ok: false; reason: string };
 
 /**

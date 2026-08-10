@@ -264,7 +264,11 @@ describe('documentation counts match the code they describe (WI-21)', () => {
 
     const interfaces = read('docs/architectures/interfaces.md');
     const lines = interfaces.split('\n');
-    const documented = new Map<string, string>();
+    // `Map<string, string[]>` since T-013 task 013-8: ONE tool may attribute more than one anchor.
+    // The fourteenth serves two capabilities, so its block carries two bare anchors, and a
+    // single-valued map would silently keep whichever came last — the pairing gate would then be
+    // comparing one of two documented facts and reporting agreement.
+    const documented = new Map<string, string[]>();
     const orphanAnchors: string[] = [];
     lines.forEach((line, index) => {
       const anchor = ANCHOR.exec(line.trim());
@@ -272,7 +276,7 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       for (let back = index; back >= 0 && index - back <= ANCHOR_WINDOW; back -= 1) {
         const tool = /(onchain_[a-z0-9_]+)/.exec(lines[back] ?? '');
         if (tool?.[1]) {
-          documented.set(tool[1], anchor[1] as string);
+          documented.set(tool[1], [...(documented.get(tool[1]) ?? []), anchor[1] as string]);
           return;
         }
       }
@@ -291,7 +295,16 @@ describe('documentation counts match the code they describe (WI-21)', () => {
 
     // Not vacuous: if the anchor convention is ever reworded, this empties and everything below
     // would pass by comparing nothing.
-    const withCapability = toolSpecs.filter((spec) => spec.capability !== null);
+    // Every tool that serves ANY capability, from either field — `servedCapabilities` when it
+    // serves several, `capability` when it serves one. A filter on `capability !== null` alone
+    // would skip the fourteenth tool entirely, so its two anchors would be checked by nothing.
+    const withCapability = toolSpecs
+      .map((spec) => ({
+        name: spec.name,
+        capabilities:
+          spec.servedCapabilities ?? (spec.capability === null ? [] : [spec.capability]),
+      }))
+      .filter((spec) => spec.capabilities.length > 0);
     const undocumented = withCapability
       .filter((spec) => !documented.has(spec.name))
       .map((spec) => spec.name);
@@ -301,11 +314,14 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     ).toStrictEqual([]);
     expect(documented.size).toBe(withCapability.length);
 
+    // Compared as SETS: a tool serving two capabilities must carry an anchor for each, and the
+    // order they appear in the document is not a fact about the code.
+    const sorted = (values: readonly string[]): string => [...values].sort().join(', ');
     const wrong = withCapability
-      .filter((spec) => documented.get(spec.name) !== spec.capability)
+      .filter((spec) => sorted(documented.get(spec.name) ?? []) !== sorted(spec.capabilities))
       .map(
         (spec) =>
-          `${spec.name}: §5 says ${documented.get(spec.name) ?? '(nothing)'}, code says ${spec.capability ?? ''}`,
+          `${spec.name}: §5 says ${sorted(documented.get(spec.name) ?? []) || '(nothing)'}, code says ${sorted(spec.capabilities)}`,
       );
     expect(
       wrong,
@@ -314,8 +330,12 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     ).toStrictEqual([]);
 
     // And no anchor may name a capability nothing serves — a leftover from a retargeted route.
-    const served = new Set(toolSpecs.map((spec) => spec.capability).filter(Boolean));
-    const stale = [...documented.values()].filter((capability) => !served.has(capability));
+    const served = new Set(
+      toolSpecs.flatMap(
+        (spec) => spec.servedCapabilities ?? (spec.capability === null ? [] : [spec.capability]),
+      ),
+    );
+    const stale = [...documented.values()].flat().filter((capability) => !served.has(capability));
     expect(stale, 'interfaces.md names a capability no registered tool serves.').toStrictEqual([]);
   });
 

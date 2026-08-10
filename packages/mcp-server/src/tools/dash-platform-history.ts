@@ -1,7 +1,8 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
-import { resolveCapability, type TimingMeta } from './resolve-capability.js';
+import { resolveCapability, type MergedCacheMeta, type TimingMeta } from './resolve-capability.js';
+import { defineTool } from './registry.js';
 import { contractViolationReason } from './contract-violation.js';
 
 /**
@@ -121,16 +122,14 @@ export const DashPlatformHistoryOutputSchema = z
 export type DashPlatformHistoryOutput = z.infer<typeof DashPlatformHistoryOutputSchema>;
 
 /**
- * This tool's OWN `_meta.cache` — deliberately not the shared `CacheMeta` (R-174(e)).
+ * This tool's `_meta.cache` — the shared `MergedCacheMeta`, deliberately not `CacheMeta` (R-174(e)).
  *
- * `CacheMeta.provider` is a single string, which a merged answer has no honest value for, and
- * `capability` would restate what `series` already says. `perSource` is the fact a merged answer
- * has that a single-winner one does not: which participant was warm and which was paid for.
+ * **Declared in `resolve-capability.ts` beside `CacheMeta`, not here** (013-8): `ToolOutcome.cache`
+ * has to accept it, so `registry.ts` needs to name the type, and a mechanism file importing a
+ * concrete tool would invert the dependency the tool registry is built to avoid. The alias is kept
+ * so this module's own exports still read in its vocabulary.
  */
-export interface DashPlatformHistoryCacheMeta {
-  status: 'hit' | 'miss';
-  perSource?: { adapterId: string; cache: 'hit' | 'miss'; ageMs?: number }[];
-}
+export type DashPlatformHistoryCacheMeta = MergedCacheMeta;
 
 export interface DashPlatformHistoryContext {
   registry: CapabilityRegistry;
@@ -266,3 +265,37 @@ export async function dashPlatformHistoryHandler(
     ...(outcome.timing ? { timing: outcome.timing } : {}),
   };
 }
+
+export const dashPlatformHistoryToolSpec = defineTool({
+  name: 'onchain_dash_platform_history',
+  title: 'Dash Platform history (merged)',
+  description:
+    'Historical series for Dash Platform, MERGED from two free sources: platform-explorer ' +
+    "(the vendor's own history) and pg-history (our own Postgres ledger, when ONCHAIN_PG_URL is " +
+    'configured). Pick the series with "series": "platform_metrics" returns identities_total plus ' +
+    'documents_total, data_contracts_total and platform_total_credits — the last three exist only ' +
+    'in our ledger. "shielded_pool" returns TWO DIFFERENT quantities, grouped separately and ' +
+    'never combined: shielded_pool_shield_amount (inflow into the private pool, per transaction, ' +
+    'from platform-explorer) and shielded_pool_balance_credits (the pool BALANCE, from our ' +
+    'ledger). Points are always grouped by metric, never a flat list. valueRaw is an exact ' +
+    'integer string — do not parse it as a float. When a source could not contribute, ' +
+    'missingSources names it and why, and the answer still returns what the other source had. ' +
+    'Both series are served on Dash only today — call onchain_list_chains with capability ' +
+    '"platform.metrics.history" to see where each is available.',
+  capability: null,
+  servedCapabilities: SERVED_CAPABILITIES,
+  needs: ['registry'],
+  inputSchema: DashPlatformHistoryInputSchema,
+  outputSchema: DashPlatformHistoryOutputSchema,
+  handler: async (input, ctx) => {
+    const outcome = await dashPlatformHistoryHandler(input, ctx);
+    return outcome.ok
+      ? {
+          ok: true,
+          output: outcome.value,
+          cache: outcome.cache,
+          ...(outcome.timing ? { timing: outcome.timing } : {}),
+        }
+      : outcome;
+  },
+});

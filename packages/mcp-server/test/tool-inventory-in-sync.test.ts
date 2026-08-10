@@ -85,7 +85,21 @@ describe('tool-inventory.json is in sync with the registry (R-114)', () => {
       tools: Record<string, unknown>[];
     };
     for (const tool of committed.tools) {
-      expect(Object.keys(tool).sort()).toStrictEqual(['capability', 'name', 'title']);
+      const keys = Object.keys(tool).sort();
+      // Three keys are mandatory on EVERY entry. `servedCapabilities` is the one permitted fourth,
+      // and only on a tool that serves several capabilities — never as a general escape hatch
+      // (T-013 task 013-8).
+      //
+      // **Why it belongs in the artifact at all, given "identity only".** `servedCapabilities` IS
+      // identity, exactly as `capability` is — it carries no schema and no description, which is
+      // what this assertion exists to keep out. And it has to be here specifically because
+      // `eval/capabilities.mjs` is `.mjs` and reads nothing but this file: a field that stopped at
+      // `ToolSpec` would leave that reader mapping the tool to no capability at all, silently.
+      const permitted =
+        tool['capability'] === null && Array.isArray(tool['servedCapabilities'])
+          ? ['capability', 'name', 'servedCapabilities', 'title']
+          : ['capability', 'name', 'title'];
+      expect(keys, `${String(tool['name'])} has unexpected keys`).toStrictEqual(permitted);
     }
   });
 

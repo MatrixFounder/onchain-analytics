@@ -132,6 +132,41 @@ const CAPABILITY_OF = new Map(
   toolSpecs.map((spec) => [spec.name, spec.capability] as [string, string | null]),
 );
 
+/**
+ * The TTL the table must state for a tool, or a REASON it cannot be stated (T-013 task 013-8).
+ *
+ * A tool serving several capabilities carries `capability: null`, and the pre-013-8 gate read that
+ * as "no cache" and demanded a `—` in the cell. That would publish a false claim in the product's
+ * own front page: both merged capabilities carry `ttlSeconds: 3600`. Owner decision 2026-08-06 —
+ * teach the gate to unfold `servedCapabilities` rather than print the dash.
+ *
+ * **The unfolding must be UNAMBIGUOUS.** If the listed capabilities disagree on TTL there is no
+ * single honest number for one cell, so this returns an error naming the tool and every value
+ * rather than silently picking one. A future multi-capability tool spanning two TTLs will hit that
+ * branch and be told to split the row, not quietly mislead.
+ */
+function expectedTtl(spec: {
+  name: string;
+  capability: string | null;
+  servedCapabilities?: readonly string[];
+}): { ttl: number | null } | { error: string } {
+  if (spec.servedCapabilities === undefined) {
+    return { ttl: spec.capability === null ? null : ttlFor(spec.capability) };
+  }
+  const ttls = [...new Set(spec.servedCapabilities.map((capability) => ttlFor(capability)))];
+  if (ttls.length !== 1) {
+    return {
+      error:
+        `${spec.name}: serves capabilities with DIFFERENT TTLs (` +
+        spec.servedCapabilities
+          .map((capability) => `${capability}=${String(ttlFor(capability))}s`)
+          .join(', ') +
+        ') — one table cell cannot state them; split the row or state the range explicitly',
+    };
+  }
+  return { ttl: ttls[0] as number };
+}
+
 const READMES = ['README.md', 'README.ru.md'] as const;
 
 describe('the README tool table states the TTL the code applies (WI-28)', () => {
@@ -142,17 +177,59 @@ describe('the README tool table states the TTL the code applies (WI-28)', () => 
     expect(rows.length).toBe(toolSpecs.length);
 
     const wrong = rows.flatMap((row) => {
-      const capability = CAPABILITY_OF.get(row.tool);
-      if (capability === undefined) return []; // an unknown tool is tool-inventory-docs.test.ts's job
-      const expected = capability === null ? null : ttlFor(capability);
-      return row.ttl === expected
+      const spec = toolSpecs.find((candidate) => candidate.name === row.tool);
+      if (spec === undefined) return []; // an unknown tool is tool-inventory-docs.test.ts's job
+      const resolved = expectedTtl(spec);
+      if ('error' in resolved) return [resolved.error];
+      return row.ttl === resolved.ttl
         ? []
-        : [`${row.tool}: table says ${row.ttl ?? '—'}, cache/ttl.ts says ${expected ?? '—'}`];
+        : [`${row.tool}: table says ${row.ttl ?? '—'}, cache/ttl.ts says ${resolved.ttl ?? '—'}`];
     });
     expect(
       wrong,
       `${relative}'s Tool reference TTL column disagrees with packages/core/src/cache/ttl.ts.`,
     ).toStrictEqual([]);
+  });
+});
+
+/**
+ * TC-GATE-09's other direction (T-013 task 013-8). The extension above is only trustworthy if it
+ * REFUSES the case it cannot state, so the refusal is exercised rather than asserted in prose — the
+ * same discipline every mutation protocol in this repository follows.
+ */
+describe('the TTL unfolding refuses a tool whose capabilities disagree (T-013 task 013-8)', () => {
+  it('names the tool and BOTH values instead of silently picking one', () => {
+    // 3600s and 1800s — real capabilities with genuinely different TTLs, so the disagreement is a
+    // fact about `cache/ttl.ts` and not a number invented for the test.
+    const synthetic = {
+      name: 'onchain_two_ttl_probe',
+      capability: null,
+      servedCapabilities: ['platform.metrics.history', 'token.risk'] as const,
+    };
+
+    const resolved = expectedTtl(synthetic);
+
+    expect('error' in resolved).toBe(true);
+    if (!('error' in resolved)) return;
+    expect(resolved.error).toContain('onchain_two_ttl_probe');
+    // Both values, because a message naming one of them reads as a verdict rather than a conflict.
+    expect(resolved.error).toContain('3600');
+    expect(resolved.error).toContain('1800');
+  });
+
+  it('accepts the shipped multi-capability tool, whose two capabilities agree at 3600s', () => {
+    const spec = toolSpecs.find((candidate) => candidate.servedCapabilities !== undefined);
+    expect(
+      spec,
+      'no multi-capability tool is registered — this gate would be vacuous',
+    ).toBeDefined();
+    if (!spec) return;
+
+    const resolved = expectedTtl(spec);
+
+    expect('error' in resolved).toBe(false);
+    if ('error' in resolved) return;
+    expect(resolved.ttl).toBe(3600);
   });
 });
 

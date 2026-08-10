@@ -48,7 +48,13 @@ const checkedNames = Object.keys(checks as Record<string, unknown>);
  * silently, so the proxy is deliberate; it is recorded here so the next reader does not mistake it
  * for a derivation.
  */
-const serverLevelTools = toolSpecs.filter((spec) => spec.capability === null).map((s) => s.name);
+// **`capability === null` alone is not "server-level" since T-013 task 013-8.** A multi-capability
+// tool carries `null` there too and names its capabilities in `servedCapabilities`; reading the bare
+// bit would classify the fourteenth tool as server-level and demand an `eval/checks.mjs` entry for
+// the wrong reason. Server-level is the PAIR: null, and no `servedCapabilities`.
+const serverLevelTools = toolSpecs
+  .filter((spec) => spec.capability === null && spec.servedCapabilities === undefined)
+  .map((s) => s.name);
 
 describe('eval/checks.mjs is keyed on tools that exist (R-126)', () => {
   it('has no check for a tool the registry does not declare', () => {

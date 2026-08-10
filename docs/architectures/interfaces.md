@@ -2,14 +2,14 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. External API — 13 MCP tools
+### 5.1. External API — 14 MCP tools
 
 `onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
 Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), one free
 DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
 BTC-supply tool with TASK-009 (§5.1.5).
 
-**The `chain` parameter, stated once.** Eleven of the thirteen tools take a chain, and every one of them
+**The `chain` parameter, stated once.** Twelve of the fourteen tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
 resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
 `ethereum` and `solana` are aliases and stay valid indefinitely. What a tool can actually serve is
@@ -114,7 +114,7 @@ reserved.
 
 `tokenAddress`/`query` reuse the same `.max()` bounds and the same
 `superRefine`/`isValidAddress` idiom as `onchain_get_token` above — reused, not reinvented.
-`onchain_entity_label` has the only compound `superRefine` of the thirteen tools: **at least one** of
+`onchain_entity_label` has the only compound `superRefine` of the fourteen tools: **at least one** of
 `query`/`tokenAddress` is required (otherwise there is nothing to search for), and `tokenAddress`
 is mandatory when `exhaustive: true`.
 
@@ -391,7 +391,7 @@ chain: ChainInputSchema, // §3.2 — accepts slug | alias | caip2, resolves to 
 aliases, not as a transitional mode. Response shapes do not change: tools still answer
 `chain: "ethereum"`, the canonical slug. Cache entries were not invalidated (§4.2.2).
 
-#### 5.1.6 The Dash Platform history tool (T-013) — DESIGNED, not built, as of 2026-08-05
+#### 5.1.6 The Dash Platform history tool (T-013) — BUILT and registered (013-7 / 013-8, 2026-08-09)
 
 **Owner decision `OQ-T013-1` (2026-08-05): merging is ON for both eligible capabilities, and the
 tool's answer groups by `metric`, never a flat point array.** Modelled on `onchain_dex_volume`
@@ -429,9 +429,9 @@ gap-filling D6 reason 3 names directly.
 //       // `{fromMs,toMs,days}` is explicitly NOT required for acceptance
 //     source: string, fetchedAt: number,
 //   }
-// Serves: privacy.shielded_pool.history, platform.metrics.history — not registered as `// Capability:`
-// anchors yet (§5.1.6 below), because no `ToolSpec` exists for `docs-counts.test.ts`'s `served`/
-// `stale` check to agree with.
+// Serves BOTH capabilities below — one anchor each, bare, within the 25-line attribution window.
+// Capability: privacy.shielded_pool.history
+// Capability: platform.metrics.history
 ```
 
 - `groups[].points` is a direct projection of the merged `Snapshot[]` the registry returns — `valueRaw`
@@ -493,7 +493,11 @@ Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built d
 'platform.metrics.history']`, is what R-170(b)'s "both capabilities listed, not null" actually
   reaches — the eval axis and the doc-pairing gate are updated to read it (system-architecture.md
   enumerates the three readers that need an actual behaviour change).
-- 🔴 **The `// Capability:` anchor is deliberately ABSENT here, corrected after round 2 (BL-1).**
+- ✅ **The two `// Capability:` anchors are PRESENT since 013-8** — bare, one per capability, both
+  inside the block above and therefore within the attribution window. What follows is the design
+  note that governed their absence until the `ToolSpec` existed; it is kept because it records two
+  wrong shapes that were tried, and both remain wrong today.
+- 🔴 **(Historical, until 013-8.) The `// Capability:` anchor is deliberately ABSENT here, corrected after round 2 (BL-1).**
   Round 1 tried a quoted/conjoined anchor and round 2's fix tried TWO bare ones — both wrong in
   opposite directions: quoted defeats the gate's regex (`/^\/\/ Capability: ([a-z][a-z0-9._-]*)/`)
   SILENTLY (documents nothing, gate stays green), while two bare anchors both attribute to

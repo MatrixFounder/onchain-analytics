@@ -156,6 +156,7 @@
 - **Credit-budget guard** (D6): дневной потолок, парсинг `credits_used`, отказ/деградация на free-провайдера при превышении.
 - (Опц.) **Bitquery**-адаптер для realtime DEX-трейдов (free 1,000pts на eval, далее Commercial).
 - **MCP-tools:** `onchain_smart_money_flows`, `onchain_entity_label`, `onchain_token_risk`.
+- **T-013:** `onchain_dash_platform_history` — слитый ряд двух источников, селектор `series`.
 
 **Exit-критерии:** smart-money-запрос отдаёт метки+потоки; budget-guard реально режет при достижении лимита (тест); деградация на free работает.
 **Зависит от:** M1. **Риск-гейт:** ключи только из `.env`/секретов, не в логах/кеш-ключах; бюджет-алерт.

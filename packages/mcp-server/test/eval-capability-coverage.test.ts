@@ -30,7 +30,15 @@ import { ADD_A_TOOL as CHECKLIST } from './inventory-channels.js';
 function capabilitiesServedByTools(): Map<string, string> {
   const byCapability = new Map<string, string>();
   for (const spec of toolSpecs) {
-    if (spec.capability !== null) byCapability.set(spec.capability, spec.name);
+    // **Both fields, since T-013 task 013-8 — and this gate is why.** It is RF-5's own guard: a
+    // capability an MCP tool serves must have an eval case or a recorded reason. A multi-capability
+    // tool carries `capability: null`, so the old single-field read made it INVISIBLE here — the
+    // gate stayed green over exactly the hole it was built to find, which the 013-8 unfixed run
+    // confirmed by measurement (it was the one channel of the eight that did not fire).
+    for (const capability of spec.servedCapabilities ??
+      (spec.capability === null ? [] : [spec.capability])) {
+      byCapability.set(capability, spec.name);
+    }
   }
   return byCapability;
 }

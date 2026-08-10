@@ -61,13 +61,30 @@ const GATED_DOCUMENTS = [
  * "it was already like that" is how the seventeen accumulated.
  */
 const EXCLUDED_FILES = new Map([
+  // **Two entries removed by T-013 task 013-8, and the MECHANISM matters more than the case.**
+  // `e2e.inprocess.test.ts` and `m2-degradation.integration.test.ts` each name 8 tools. That was
+  // `>= 8` against a 13-tool registry and is `< 9` against a 14-tool one — the threshold is
+  // `ceil(TOOL_NAMES.length * 0.6)`, so it MOVES ON EVERY TOOL ADDED, and an exclusion that was
+  // live yesterday becomes decoration today without anyone touching it.
+  //
+  // Both were genuinely "call sites, not an inventory", and that reason is still true; it is simply
+  // no longer load-bearing, because the discovery check would not flag either file anyway. Keeping
+  // them would buy a permanent exemption for files that might one day grow a hand-written list —
+  // the exact drift this gate exists to catch — which is what the check below refuses.
+  //
+  // **The rule for the next tool: after registering it, re-measure `namedTools()` for every entry
+  // here against the new threshold.** Being in this list is not a durable property of a file.
+  //
+  // **`e2e.inprocess.test.ts` came BACK in the same task, and that is the mechanism working, not a
+  // reversal.** Removing its entry was correct at the moment it was measured: it named 8 of 14.
+  // Then 013-8 corrected that file's own docstring — which had claimed no MCP tool was wired to a
+  // history/DSN-gated capability, a sentence the fourteenth tool falsified — and naming the tool
+  // there took it to 9, at which point the discovery check flagged it and the exclusion became
+  // load-bearing again. Same file, same reason, different measurement; the entry is only ever as
+  // good as the last count.
   [
     'packages/mcp-server/test/e2e.inprocess.test.ts',
     'call sites, not an inventory: each name appears with its own arguments and output schema',
-  ],
-  [
-    'packages/mcp-server/test/m2-degradation.integration.test.ts',
-    'call sites, not an inventory (see e2e.inprocess.test.ts)',
   ],
   [
     'packages/mcp-server/eval/checks.mjs',
@@ -128,10 +145,6 @@ const PLANNED_TOOL_NAMES = new Map([
   // `// Capability:` anchors: an entry here says "documented, deliberately absent", and once the
   // spec is registered `TOOL_NAMES` covers the name, so a stale entry would be a second mechanism
   // claiming the same fact.
-  [
-    'onchain_dash_platform_history',
-    'T-013 series merge (ROADMAP §Now T-013, ADR-002 D5/D6; docs/TASK.md R-170)',
-  ],
 ]);
 
 /**

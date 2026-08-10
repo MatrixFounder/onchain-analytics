@@ -2,7 +2,7 @@
 
 An on-chain analytics engine exposed as an **MCP server**: provider adapters (CoinGecko,
 DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → normalization into one canonical schema →
-two-level cache + credit budget guard → 13 workflow-oriented tools your agent can call.
+two-level cache + credit budget guard → 14 workflow-oriented tools your agent can call.
 
 **Русская версия:** [README.ru.md](README.ru.md)
 
@@ -34,6 +34,7 @@ two-level cache + credit budget guard → 13 workflow-oriented tools your agent 
   - [onchain_smart_money_flows](#onchain_smart_money_flows-paid)
   - [onchain_entity_label](#onchain_entity_label-paid)
   - [onchain_token_risk](#onchain_token_risk-paid)
+  - [onchain_dash_platform_history](#onchain_dash_platform_history)
 - [Response envelope](#response-envelope)
 - [Credit budget guard](#credit-budget-guard)
 - [Behaviour without API keys](#behaviour-without-api-keys)
@@ -46,7 +47,7 @@ two-level cache + credit budget guard → 13 workflow-oriented tools your agent 
 
 ## What you get
 
-**13 MCP tools.** One liveness check, one chain-registry tool, eight free/keyless data tools,
+**14 MCP tools.** One liveness check, one chain-registry tool, eight free/keyless data tools,
 and three paid Nansen-backed alpha tools.
 
 **Two chains:** `ethereum` and `solana`. Every tool takes an explicit `chain`.
@@ -148,7 +149,7 @@ Restart Claude Code, then confirm the tools appear:
 /mcp
 ```
 
-You should see **13 tools** under `onchain-intel`.
+You should see **14 tools** under `onchain-intel`.
 
 ---
 
@@ -178,21 +179,22 @@ The agent calls `onchain_protocol_tvl` and gets back real data plus cache metada
 
 Cost is in Nansen credits. Free tools cost nothing and need no key.
 
-| Tool                        | Cost           | TTL   | Key required     |
-| --------------------------- | -------------- | ----- | ---------------- |
-| `onchain_ping`              | —              | —     | no               |
-| `onchain_get_token`         | free           | 60s   | no               |
-| `onchain_wallet_balances`   | free           | 60s   | no               |
-| `onchain_new_pairs`         | free           | 30s   | no               |
-| `onchain_protocol_tvl`      | free           | 300s  | no               |
-| `onchain_list_chains`       | free           | —     | no               |
-| `onchain_chain_tvl`         | free           | 300s  | no               |
-| `onchain_dex_volume`        | free           | 3600s | no               |
-| `onchain_token_holders`     | free           | 3600s | no               |
-| `onchain_chain_supply`      | free           | 600s  | no               |
-| `onchain_smart_money_flows` | **10 cr**      | 300s  | `NANSEN_API_KEY` |
-| `onchain_entity_label`      | **0/5/100 cr** | 3600s | `NANSEN_API_KEY` |
-| `onchain_token_risk`        | **6 cr**       | 1800s | `NANSEN_API_KEY` |
+| Tool                            | Cost           | TTL   | Key required     |
+| ------------------------------- | -------------- | ----- | ---------------- |
+| `onchain_ping`                  | —              | —     | no               |
+| `onchain_get_token`             | free           | 60s   | no               |
+| `onchain_wallet_balances`       | free           | 60s   | no               |
+| `onchain_new_pairs`             | free           | 30s   | no               |
+| `onchain_protocol_tvl`          | free           | 300s  | no               |
+| `onchain_list_chains`           | free           | —     | no               |
+| `onchain_chain_tvl`             | free           | 300s  | no               |
+| `onchain_dex_volume`            | free           | 3600s | no               |
+| `onchain_token_holders`         | free           | 3600s | no               |
+| `onchain_chain_supply`          | free           | 600s  | no               |
+| `onchain_smart_money_flows`     | **10 cr**      | 300s  | `NANSEN_API_KEY` |
+| `onchain_entity_label`          | **0/5/100 cr** | 3600s | `NANSEN_API_KEY` |
+| `onchain_token_risk`            | **6 cr**       | 1800s | `NANSEN_API_KEY` |
+| `onchain_dash_platform_history` | free           | 3600s | no               |
 
 ### onchain_ping
 
@@ -364,6 +366,33 @@ Input:
 
 ```json
 { "chain": "bitcoin" }
+```
+
+### onchain_dash_platform_history
+
+Historical series for Dash Platform, **merged from two free sources**: `platform-explorer` (the
+vendor's own history) and `pg-history` (your own Postgres ledger, used when `ONCHAIN_PG_URL` is
+configured). It is the only tool that serves more than one capability, and the only one whose answer
+is assembled from several sources rather than the first that replies.
+
+Pick the series with `series`:
+
+- `platform_metrics` — `identities_total` plus `documents_total`, `data_contracts_total` and
+  `platform_total_credits`. **The last three exist only in your own ledger**, which is the point of
+  merging: the vendor publishes none of them.
+- `shielded_pool` — **two different quantities**, grouped separately and never combined:
+  `shielded_pool_shield_amount` (inflow into the private pool, per transaction, from the vendor) and
+  `shielded_pool_balance_credits` (the pool BALANCE, from your ledger). They are not two views of one
+  number, and plotting them as one line would be wrong.
+
+Points are always grouped by `metric` — never a flat list — and `valueRaw` is an exact integer
+string that must not be parsed as a float. When a source could not contribute, `missingSources`
+names it and the reason, and the answer still returns what the other source had.
+
+Input:
+
+```json
+{ "chain": "dash", "series": "platform_metrics", "limit": 50 }
 ```
 
 ### onchain_smart_money_flows (paid)
@@ -711,7 +740,7 @@ resets the cache — and also the usage ledger, so the daily cap starts from zer
 
 ```
 packages/core/          engine: adapters, canonical types, cache, budget guard
-packages/mcp-server/    MCP server: 13 tools, env validation, stdio transport
+packages/mcp-server/    MCP server: 14 tools, env validation, stdio transport
 docs/                   architecture, ADR, roadmap, issue ledger
 n8n-workflows/          exported snapshotter workflows (separate always-on system)
 ```
