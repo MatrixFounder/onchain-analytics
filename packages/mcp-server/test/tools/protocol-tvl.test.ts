@@ -15,6 +15,16 @@ const FAKE_TVL = {
   chain: 'ethereum' as const,
   tvlUsd: 1_000_000,
   totalTvlUsd: 5_000_000,
+  // L-7/L-9 widened the contract: where the protocol is deployed, and whether it is deployed on the
+  // asked-for chain at all, are now part of the answer rather than something a caller must infer
+  // from an error string.
+  deployed: true,
+  deployments: [
+    { chain: 'ethereum', tvlUsd: 1_000_000 },
+    { chain: 'base', tvlUsd: null },
+  ],
+  unmappedDeployments: 0,
+  aggregatedFrom: [],
   source: 'defillama',
   fetchedAt: 1_800_000_000_000,
 };

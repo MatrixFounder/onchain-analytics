@@ -14,65 +14,155 @@ import { createDefillamaAdapter, loadChainRegistry } from '../src/index.js';
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const FIXED_NOW = 1_700_000_000_000;
 
-interface DefillamaFixture {
-  chain: string;
-  raw: {
-    name: string;
-    chainTvls: Record<string, { tvl: { date: number; totalLiquidityUSD: number }[] }>;
-    tvl: { date: number; totalLiquidityUSD: number }[];
-  };
-}
-
 const CHAINS = loadChainRegistry();
 
-/**
- * The fixture stores the chain as a SLUG; `normalize()` consumes the adapter's private fetch
- * result, whose `chain` became a resolved `ChainInfo` in TASK-006 (task 006-5). Resolving here
- * keeps the fixtures as recorded vendor evidence and leaves every expected OUTPUT below untouched.
- */
-function loadFixture(name: string): {
-  chain: ReturnType<typeof CHAINS.resolve>;
-  raw: DefillamaFixture['raw'];
-} {
-  const raw = readFileSync(path.join(testDir, 'fixtures', 'defillama', `${name}.json`), 'utf8');
-  const fixture = JSON.parse(raw) as DefillamaFixture;
-  return { chain: CHAINS.resolve(fixture.chain), raw: fixture.raw };
+/** One `/protocols` row, in the shape the tests below read it. Every value is real — see
+ * `fixtures/defillama/protocols-catalog.evidence.md`. */
+interface CatalogRow {
+  slug: string;
+  name?: string;
+  tvl: number | null;
+  chains?: string[];
+  chainTvls?: Record<string, number>;
+  parentProtocolSlug?: string;
+  tokensExcludedFromParent?: Record<string, string[]>;
 }
+
+const CATALOG: CatalogRow[] = JSON.parse(
+  readFileSync(path.join(testDir, 'fixtures', 'defillama', 'protocols-catalog.json'), 'utf8'),
+) as CatalogRow[];
+
+const catalogRow = (slug: string): CatalogRow => {
+  const row = CATALOG.find((r) => r.slug === slug);
+  if (!row) throw new Error(`fixture has no row for ${slug}`);
+  return row;
+};
+
+/** The private fetch-result shape `normalize()` consumes, assembled the way `fetch()` assembles it:
+ * the untouched catalog as `raw`, plus the slug the caller asked for. */
+const fetchResultFor = (chain: string, slug: string, raw: unknown = CATALOG): unknown => ({
+  chain: CHAINS.resolve(chain),
+  raw,
+  fetchedAt: FIXED_NOW,
+  protocol: { slug },
+});
 
 describe('defillama adapter (contract, R-7)', () => {
   const adapter = createDefillamaAdapter({ now: () => FIXED_NOW });
 
-  it('normalizes the ethereum/uniswap fixture into the protocol.tvl result shape', () => {
-    const fixture = loadFixture('uniswap');
-    const chainSeries = fixture.raw.chainTvls['Ethereum']!.tvl;
-    const totalSeries = fixture.raw.tvl;
+  /**
+   * `protocol.tvl` reads the shared `/protocols` catalog since L-7 — the per-protocol document it
+   * used to fetch is 27.57 MiB for `aave-v3` against a 10 MiB cap, and grows daily. The expectations
+   * below are computed FROM the fixture row rather than transcribed, with one exception each side:
+   * where a live vendor answer was recorded for the same slug (evidence file), the literal is
+   * asserted too, so a fixture edited to match a changed normalizer still fails.
+   */
+  describe('protocol.tvl out of the shared catalog (L-7)', () => {
+    it('a direct row answers with its own figures and no aggregation', () => {
+      const row = catalogRow('lido');
 
-    const result = adapter.normalize('protocol.tvl', fixture);
+      const result = adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'lido'));
 
-    expect(result).toEqual({
-      protocol: fixture.raw.name,
-      chain: 'ethereum',
-      tvlUsd: chainSeries[chainSeries.length - 1]!.totalLiquidityUSD,
-      totalTvlUsd: totalSeries[totalSeries.length - 1]!.totalLiquidityUSD,
-      source: 'defillama',
-      fetchedAt: FIXED_NOW,
+      expect(result).toMatchObject({
+        protocol: 'Lido',
+        chain: 'ethereum',
+        tvlUsd: row.chainTvls!['Ethereum'],
+        totalTvlUsd: row.tvl,
+        deployed: true,
+        aggregatedFrom: [],
+        source: 'defillama',
+        fetchedAt: FIXED_NOW,
+      });
+      // The live `/protocol/lido` document answered these exact numbers on the recording day
+      // (evidence file): the catalog is not an approximation of the route it replaced.
+      expect(result).toMatchObject({
+        tvlUsd: 17_756_637_169.095158,
+        totalTvlUsd: 17_760_598_548.192703,
+      });
     });
-  });
 
-  it('normalizes the solana/raydium fixture into the protocol.tvl result shape', () => {
-    const fixture = loadFixture('raydium');
-    const chainSeries = fixture.raw.chainTvls['Solana']!.tvl;
-    const totalSeries = fixture.raw.tvl;
+    it('a parent with no row of its own sums its children and SAYS it did', () => {
+      const children = CATALOG.filter((r) => r.parentProtocolSlug === 'raydium');
+      expect(children.length).toBeGreaterThan(1);
 
-    const result = adapter.normalize('protocol.tvl', fixture);
+      const result = adapter.normalize('protocol.tvl', fetchResultFor('solana', 'raydium'));
 
-    expect(result).toEqual({
-      protocol: fixture.raw.name,
-      chain: 'solana',
-      tvlUsd: chainSeries[chainSeries.length - 1]!.totalLiquidityUSD,
-      totalTvlUsd: totalSeries[totalSeries.length - 1]!.totalLiquidityUSD,
-      source: 'defillama',
-      fetchedAt: FIXED_NOW,
+      expect(result).toMatchObject({
+        // No display name exists for a parent in this document, so the caller's own slug is used
+        // rather than one guessed from the children's names.
+        protocol: 'raydium',
+        chain: 'solana',
+        deployed: true,
+        aggregatedFrom: children.map((r) => r.slug),
+      });
+      // The vendor's own `/protocol/raydium` answered 841 761 617.263464 — to the cent (evidence
+      // file). A single-chain protocol is where a summing error has nowhere to hide.
+      expect(result).toMatchObject({ tvlUsd: 841_761_617.263464, totalTvlUsd: 841_761_617.263464 });
+    });
+
+    it('a slug that is BOTH a row and a parent resolves to the row, as the vendor does', () => {
+      // `/protocol/beanstalk` answers 0 — the row — not the 3.2M its parent's children total.
+      const result = adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'beanstalk'));
+
+      expect(result).toMatchObject({ protocol: 'Beanstalk', totalTvlUsd: 0, aggregatedFrom: [] });
+    });
+
+    it('a chain the protocol is not on is an ANSWER, not a failure (L-9)', () => {
+      const result = adapter.normalize('protocol.tvl', fetchResultFor('bitcoin', 'aave-v3'));
+
+      // The defect this replaces: `capability unavailable: protocol.tvl on bitcoin` — a fact about
+      // the world rendered as a fault in the engine, indistinguishable from a provider outage.
+      expect(result).toMatchObject({ chain: 'bitcoin', deployed: false, tvlUsd: 0 });
+      expect((result as { totalTvlUsd: number }).totalTvlUsd).toBeGreaterThan(0);
+    });
+
+    it('deployed with no plain-TVL bucket is null, never zero', () => {
+      const row = catalogRow('ether.fi-stake');
+      // The vendor lists Base as a deployment and publishes only `Base-staking` for it.
+      expect(row.chains).toContain('Base');
+      expect(row.chainTvls!['Base']).toBeUndefined();
+
+      const result = adapter.normalize('protocol.tvl', fetchResultFor('base', 'ether.fi-stake'));
+
+      // Zero here would claim a measurement nobody made; `deployed` carries the other half.
+      expect(result).toMatchObject({ chain: 'base', deployed: true, tvlUsd: null });
+    });
+
+    it('reports the whole deployment set in our slugs, TVL-descending, counting what it cannot name', () => {
+      const result = adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'aave-v3')) as {
+        deployments: { chain: string; tvlUsd: number | null }[];
+        unmappedDeployments: number;
+      };
+
+      // The point of the field: "where is this protocol" stops being a chain-by-chain sweep whose
+      // misses are indistinguishable from failures (L-9).
+      expect(result.deployments.map((d) => d.chain)).toContain('base');
+      expect(result.deployments.map((d) => d.chain)).not.toContain('bitcoin');
+      // Vendor display names only — never a raw echo. Every emitted chain resolves in OUR registry.
+      for (const d of result.deployments) expect(CHAINS.tryResolve(d.chain)?.slug).toBe(d.chain);
+      const values = result.deployments.map((d) => d.tvlUsd ?? -1);
+      expect([...values].sort((a, b) => b - a)).toEqual(values);
+      expect(result.unmappedDeployments).toBeGreaterThanOrEqual(0);
+    });
+
+    it('refuses a slug the catalog does not carry, rather than inventing a zero', () => {
+      expect(() =>
+        adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'no-such')),
+      ).toThrow(/unknown protocol slug "no-such"/);
+    });
+
+    it('refuses a row that publishes no TVL at all', () => {
+      expect(catalogRow('fantom').tvl).toBeNull();
+
+      expect(() => adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'fantom'))).toThrow(
+        /publishes no TVL total/,
+      );
+    });
+
+    it('refuses a catalog that is not an array', () => {
+      expect(() =>
+        adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'lido', { protocols: [] })),
+      ).toThrow(/did not return an array/);
     });
   });
 
@@ -205,41 +295,119 @@ describe('defillama adapter (contract, R-7)', () => {
     });
   });
 
-  it('fetch() builds the documented protocol endpoint through safeFetch (no real network)', async () => {
-    const fixture = loadFixture('uniswap');
-    const calls: string[] = [];
-    const fakeFetchImpl: typeof fetch = async (url) => {
-      calls.push(String(url));
-      return new Response(JSON.stringify(fixture.raw), { status: 200 });
+  describe('fetch() — one shared catalog, and the one route that still fetches per call', () => {
+    /** An adapter whose transport records every URL and answers the catalog fixture. */
+    const recordingAdapter = (
+      docFor: (url: string) => unknown = () => CATALOG,
+    ): { adapter: ReturnType<typeof createDefillamaAdapter>; calls: string[] } => {
+      const calls: string[] = [];
+      const fetchImpl: typeof fetch = async (url) => {
+        calls.push(String(url));
+        return new Response(JSON.stringify(docFor(String(url))), { status: 200 });
+      };
+      return { adapter: createDefillamaAdapter({ fetchImpl, now: () => FIXED_NOW }), calls };
     };
-    const testAdapter = createDefillamaAdapter({ fetchImpl: fakeFetchImpl, now: () => FIXED_NOW });
 
-    const result = await testAdapter.fetch('protocol.tvl', {
-      chain: 'ethereum',
-      protocolSlug: 'uniswap',
+    it('hits the catalog, not the per-protocol document (no real network)', async () => {
+      const { adapter: testAdapter, calls } = recordingAdapter();
+
+      const result = await testAdapter.fetch('protocol.tvl', {
+        chain: 'ethereum',
+        protocolSlug: 'lido',
+      });
+
+      expect(calls).toEqual(['https://api.llama.fi/protocols']);
+      expect(result).toMatchObject({
+        chain: CHAINS.resolve('ethereum'),
+        fetchedAt: FIXED_NOW,
+        protocol: { slug: 'lido' },
+      });
     });
 
-    expect(calls).toEqual(['https://api.llama.fi/protocol/uniswap']);
-    expect(result).toEqual({ chain: CHAINS.resolve('ethereum'), raw: fixture.raw });
+    it('serves a second slug inside the TTL window with no further transfer', async () => {
+      const { adapter: testAdapter, calls } = recordingAdapter();
+
+      await testAdapter.fetch('protocol.tvl', { chain: 'ethereum', protocolSlug: 'lido' });
+      await testAdapter.fetch('protocol.tvl', { chain: 'solana', protocolSlug: 'raydium' });
+
+      // The whole point of the move: the old route paid a multi-megabyte download PER CALL.
+      expect(calls).toEqual(['https://api.llama.fi/protocols']);
+    });
+
+    it('asks the vendor for its own aggregate when summing would double-count', async () => {
+      // `ether.fi`'s children declare `tokensExcludedFromParent`; summing them overstates the
+      // vendor's own total by 9.5 % (evidence file), so this parent is answered by the vendor.
+      const vendorDoc = { name: 'ether.fi', tvl: [{ date: 1, totalLiquidityUSD: 3_491_186_951 }] };
+      const { adapter: testAdapter, calls } = recordingAdapter((url) =>
+        url.endsWith('/protocols') ? CATALOG : vendorDoc,
+      );
+
+      const raw = await testAdapter.fetch('protocol.tvl', {
+        chain: 'ethereum',
+        protocolSlug: 'ether.fi',
+      });
+      const result = testAdapter.normalize('protocol.tvl', raw);
+
+      expect(calls).toEqual([
+        'https://api.llama.fi/protocols',
+        'https://api.llama.fi/protocol/ether.fi',
+      ]);
+      // The vendor's number, not our sum — and the deployment set still comes from the catalog,
+      // because a parent's own document answers `chains: []`.
+      expect(result).toMatchObject({ protocol: 'ether.fi', totalTvlUsd: 3_491_186_951 });
+      expect((result as { deployments: unknown[] }).deployments.length).toBeGreaterThan(0);
+    });
+
+    it('refuses an unknown slug from the catalog, before spending a request on it', async () => {
+      const { adapter: testAdapter, calls } = recordingAdapter();
+
+      await expect(
+        testAdapter.fetch('protocol.tvl', { chain: 'ethereum', protocolSlug: 'no-such' }),
+      ).rejects.toThrow(/unknown protocol slug "no-such"/);
+      expect(calls).toEqual(['https://api.llama.fi/protocols']);
+    });
   });
 
   describe('tvl value validation (adversarial cycle 2, finding 1b)', () => {
-    it('throws a clear error when the chain-scoped series’ last point is negative', () => {
-      const fixture = loadFixture('uniswap');
-      const corrupted = structuredClone(fixture);
-      const series = corrupted.raw.chainTvls['Ethereum']!.tvl;
-      series[series.length - 1]!.totalLiquidityUSD = -1;
+    /** The catalog with one row's numbers corrupted — `structuredClone` so the shared fixture is
+     * never mutated for the tests that run after. */
+    const corruptedCatalog = (slug: string, mutate: (row: CatalogRow) => void): CatalogRow[] => {
+      const copy = structuredClone(CATALOG);
+      const row = copy.find((r) => r.slug === slug);
+      if (!row) throw new Error(`fixture has no row for ${slug}`);
+      mutate(row);
+      return copy;
+    };
 
-      expect(() => adapter.normalize('protocol.tvl', corrupted)).toThrow(/invalid tvl value\(s\)/);
+    it('throws a clear error when the chain-scoped value is negative', () => {
+      const raw = corruptedCatalog('lido', (row) => {
+        row.chainTvls!['Ethereum'] = -1;
+      });
+
+      expect(() =>
+        adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'lido', raw)),
+      ).toThrow(/invalid tvl value\(s\)/);
     });
 
-    it('throws a clear error when the top-level series’ last point is negative', () => {
-      const fixture = loadFixture('uniswap');
-      const corrupted = structuredClone(fixture);
-      const series = corrupted.raw.tvl;
-      series[series.length - 1]!.totalLiquidityUSD = -1;
+    it('throws a clear error when the protocol-wide total is negative', () => {
+      const raw = corruptedCatalog('lido', (row) => {
+        row.tvl = -1;
+      });
 
-      expect(() => adapter.normalize('protocol.tvl', corrupted)).toThrow(/invalid tvl value\(s\)/);
+      expect(() =>
+        adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'lido', raw)),
+      ).toThrow(/invalid tvl value\(s\)/);
+    });
+
+    it('throws when a value on ANOTHER chain is garbage — new surface, same rule', () => {
+      // `deployments` publishes every chain, so a bad number no caller asked for still reaches one.
+      const raw = corruptedCatalog('lido', (row) => {
+        row.chainTvls!['Solana'] = Number.NEGATIVE_INFINITY;
+      });
+
+      expect(() =>
+        adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'lido', raw)),
+      ).toThrow(/invalid tvl value\(s\)/);
     });
   });
 });

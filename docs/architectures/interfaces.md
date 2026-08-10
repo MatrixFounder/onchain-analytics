@@ -37,7 +37,10 @@ the two refusal shapes, backward compatibility — is in §5.1.3.
 // upstream fetch instead of sharing one cache entry)
 // onchain_protocol_tvl — { chain: ChainInput, protocolSlug: string (.max(128)) }
 // Capability: protocol.tvl
-// → { protocol, chain, tvlUsd, totalTvlUsd, source, fetchedAt }
+// → { protocol, chain, tvlUsd, totalTvlUsd, deployed, deployments, unmappedDeployments,
+//     aggregatedFrom, source, fetchedAt }
+// (`tvlUsd` is nullable since L-9: 0 + deployed:false = "not on this chain", null + deployed:true =
+//  "on this chain, but the vendor publishes no plain-TVL figure for it")
 ```
 
 `address`/`protocolSlug` carry explicit `.max()` bounds: `address.max(64)` (a real EVM address is
@@ -215,7 +218,7 @@ this payload is by construction a chain that still exists.
 
 **Why `onchain_chain_tvl` is a separate tool and not a parameter of `onchain_protocol_tvl` (R-53b).**
 A chain and a protocol are different subjects with different sources (`/v2/chains` vs
-`/protocol/{slug}`) and different output contracts: a protocol has `totalTvlUsd` across all chains, a
+`/protocols`) and different output contracts: a protocol has `totalTvlUsd` across all chains, a
 chain has no such notion. Merging them would introduce a parameter that changes the meaning of every
 other field — the worst form of contract overloading. The result shape follows the `ProtocolTvlResult`
 precedent: `tvlUsd: number`, with non-finite or negative values refused **before** the cache is

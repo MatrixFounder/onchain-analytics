@@ -116,10 +116,16 @@ let dexVolumeFetchCount = 0;
 
 const defillamaFixtureFetch = async (input: FetchUrlInput): Promise<Response> => {
   const url = urlOf(input);
-  if (url.includes('/protocol/uniswap'))
-    return jsonResponse(loadFixtureRaw('defillama', 'uniswap'));
-  if (url.includes('/protocol/raydium'))
-    return jsonResponse(loadFixtureRaw('defillama', 'raydium'));
+  // L-7: `protocol.tvl` reads ONE shared catalog instead of a per-protocol document. Like the DEX
+  // fixture below (and unlike the retired `uniswap`/`raydium` ones), this file is the WHOLE recorded
+  // vendor body — there is no `raw` envelope.
+  if (url.endsWith('/protocols')) {
+    return jsonResponse(
+      JSON.parse(
+        readFileSync(path.join(coreFixturesRoot, 'defillama', 'protocols-catalog.json'), 'utf8'),
+      ) as unknown,
+    );
+  }
   // TASK-007: the DEX-volume document. Unlike the two above, this fixture is the WHOLE recorded
   // vendor body (there is no `raw` envelope) — it is what the adapter's HTTP step receives.
   if (url.includes('/overview/dexs/')) {

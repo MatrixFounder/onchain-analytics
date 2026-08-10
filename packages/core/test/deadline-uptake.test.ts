@@ -95,15 +95,13 @@ const SUBJECTS: Subject[] = [
     capability: 'pairs.new',
     args: { chain: 'ethereum' },
   },
-  {
-    id: 'defillama',
-    create: (deps) => createDefillamaAdapter(deps),
-    // `protocol.tvl` on purpose: it is the one path with no shared document, so the deadline is
-    // forwarded the ordinary way and this pair of cases means the same thing here as elsewhere. The
-    // other two capabilities use `awaitSharedDocument`, which has its own case below.
-    capability: 'protocol.tvl',
-    args: { chain: 'ethereum', protocolSlug: 'uniswap' },
-  },
+  // `defillama` used to sit here on `protocol.tvl`, "the one path with no shared document". L-7
+  // moved that capability onto the shared `/protocols` catalog, so ALL THREE of its capabilities now
+  // bound the caller's WAIT (`awaitSharedDocument`) instead of the limiter — deliberately, so one
+  // caller's ceiling cannot abort a download another caller is awaiting. Both halves of that are
+  // proved by the dedicated describe block below, and the one path that still forwards a deadline to
+  // the limiter — the per-call `vendor-aggregate` fall-back — has its own gate case. Driving it from
+  // this table would assert a property the adapter is designed NOT to have.
   {
     id: 'rpc-evm',
     create: (deps) => createRpcEvmAdapter(deps),
@@ -294,7 +292,10 @@ describe('WI-37 gate — every adapter that can wait forwards the deadline to th
     // requires a key, a budget store and a reservation, and `nansen-deadline-boundary.test.ts` owns
     // that. Named rather than silently missing — an omission with no name is how a gate's coverage
     // shrinks without anyone deciding it should.
-    const covered = new Set([...GATE_SUBJECTS.map((s) => s.id), 'nansen']);
+    // `defillama` is covered by the two cases immediately below rather than by the table: its
+    // ordinary paths bound the WAIT and not the limiter (see the comment where it left `SUBJECTS`),
+    // so the table's assertion would be the wrong one to make about it.
+    const covered = new Set([...GATE_SUBJECTS.map((s) => s.id), 'nansen', 'defillama']);
     const cannotWait = ['dash-platform', 'dune'];
     expect(
       adapterRegistrations
@@ -334,6 +335,50 @@ describe('WI-37 gate — every adapter that can wait forwards the deadline to th
       expect(new Set(deadlines)).toStrictEqual(new Set([deadlineAtMs]));
     },
   );
+
+  /** The catalog shape `protocol.tvl` reads, trimmed to the one case that still issues a per-call
+   * request: a parent whose child nets out double-counted tokens, so summing the catalog would be
+   * wrong and only the vendor's own aggregate will do (`resolveProtocol`). */
+  const EXCLUDING_PARENT_CATALOG = JSON.stringify([
+    {
+      slug: 'child-of-parent',
+      name: 'Child',
+      parentProtocolSlug: 'excluding-parent',
+      tokensExcludedFromParent: { Ethereum: ['SOMETOKEN'] },
+      tvl: 1,
+      chains: ['Ethereum'],
+      chainTvls: { Ethereum: 1 },
+    },
+  ]);
+
+  it('defillama forwards the caller deadline on its per-call fall-back path', async () => {
+    const { throttle, deadlines } = recordingThrottle();
+    const deadlineAtMs = Date.now() + 30_000;
+    let call = 0;
+    const adapter = createDefillamaAdapter({
+      throttle,
+      fetchImpl: () => {
+        call += 1;
+        // First the shared catalog, which must SETTLE for the fall-back to be reached at all; then
+        // the per-call `/protocol/{slug}` request, left hanging like every other gate case.
+        return call === 1
+          ? Promise.resolve(new Response(EXCLUDING_PARENT_CATALOG, { status: 200 }))
+          : new Promise<Response>(() => {});
+      },
+    });
+
+    void adapter
+      .fetch('protocol.tvl', { chain: 'ethereum', protocolSlug: 'excluding-parent' }, deadlineAtMs)
+      .catch(() => undefined);
+    // Two ticks: one for the catalog request, one for the fall-back it unblocks.
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // `toContain`, NOT the table's `not.toContain(undefined)`: the catalog's own limiter call is
+    // deliberately deadline-free (a shared download is caller-independent), so `undefined` is
+    // present here BY DESIGN and asserting its absence would forbid the design.
+    expect(deadlines).toContain(deadlineAtMs);
+  });
 
   it('the gate DETECTS an adapter that drops the deadline on the floor', () => {
     // Positive control, run against a literal rather than by editing a real adapter: the check must

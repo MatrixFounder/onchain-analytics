@@ -133,8 +133,13 @@ const dexscreenerFixtureFetch = async (input: FetchUrlInput): Promise<Response> 
 
 const defillamaFixtureFetch = async (input: FetchUrlInput): Promise<Response> => {
   const url = urlOf(input);
-  if (url.includes('/protocol/uniswap'))
-    return jsonResponse(loadFixtureRaw('defillama', 'uniswap'));
+  // L-7: one shared catalog, and it is the whole recorded vendor body (no `raw` envelope).
+  if (url.endsWith('/protocols'))
+    return jsonResponse(
+      JSON.parse(
+        readFileSync(path.join(coreFixturesRoot, 'defillama', 'protocols-catalog.json'), 'utf8'),
+      ) as unknown,
+    );
   throw new Error(`fixture fetchImpl: no defillama route for ${url}`);
 };
 

@@ -286,14 +286,29 @@ Input:
 
 ```json
 {
-  "protocol": "Uniswap",
+  "protocol": "uniswap",
   "chain": "ethereum",
-  "tvlUsd": 2181604650,
-  "totalTvlUsd": 3155131415,
+  "tvlUsd": 2115652448.748167,
+  "totalTvlUsd": 3010303811.127217,
+  "deployed": true,
+  "deployments": [
+    { "chain": "ethereum", "tvlUsd": 2115652448.748167 },
+    { "chain": "base", "tvlUsd": 364101280.4103535 }
+  ],
+  "unmappedDeployments": 10,
+  "aggregatedFrom": ["uniswap-v3", "uniswap-v4", "uniswap-v2", "uniswap-v1", "uniswap-auctions"],
   "source": "defillama",
   "fetchedAt": 1785013396663
 }
 ```
+
+`deployments` is shown truncated — the real answer lists all 42 chains this engine can name,
+TVL-descending, and `unmappedDeployments: 10` says how many more the vendor listed under names the
+chain registry does not carry, so the list can be read as complete or not. A protocol that is **not**
+on the requested chain answers `deployed: false` with `tvlUsd: 0`, which is the answer rather than an
+error; `tvlUsd: null` with `deployed: true` means the vendor publishes only staking/borrowed buckets
+there and no plain figure. `aggregatedFrom` is non-empty when the slug names a family
+(`uniswap`) rather than one protocol (`uniswap-v3`), and lists exactly what was summed.
 
 ### onchain_list_chains
 

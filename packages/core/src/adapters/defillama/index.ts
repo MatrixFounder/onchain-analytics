@@ -98,12 +98,39 @@ export interface DexVolumeResult {
 }
 
 export interface ProtocolTvlResult {
+  /** The vendor's display name for a row it names itself; the requested SLUG for a parent whose
+   * total we summed (the catalog carries no parent display name, and inventing one from the
+   * children's common prefix would be a guess — see `aggregatedFrom`). */
   protocol: string;
   /** The chain's canonical SLUG. Widened from the closed `Chain` enum in TASK-006 (task 006-5) —
    * the vocabulary lives in the registry now, not in a type literal. */
   chain: string;
-  tvlUsd: number;
+  /**
+   * Current TVL on `chain` — THREE states, because the vendor genuinely has three (L-9):
+   *
+   * - a **number** — the protocol is deployed here and publishes a plain-TVL figure;
+   * - **`0`** with `deployed: false` — not deployed here. A negative ANSWER, not a failure: "Aave
+   *   is not on Bitcoin" is correct, and nothing locked is genuinely zero;
+   * - **`null`** with `deployed: true` — deployed here, but every figure the vendor publishes for
+   *   this chain sits in a `-staking`/`-borrowed`/`-pool2` bucket and none in the plain one
+   *   (measured 2026-08-11: 41 of the 6 917 catalog rows that list chains). Reporting `0` there
+   *   would claim a measurement nobody made.
+   */
+  tvlUsd: number | null;
   totalTvlUsd: number;
+  /** Whether the protocol is deployed on `chain` at all. Splits "no deployment" from "the provider
+   * could not answer", which used to arrive as the same `capability unavailable` (L-9). */
+  deployed: boolean;
+  /** Every chain the protocol is deployed on, as OUR canonical slugs, TVL-descending (`null` last).
+   * The chain-by-chain sweep L-9 recorded as undecidable is now one call. */
+  deployments: { chain: string; tvlUsd: number | null }[];
+  /** Deployment chains whose vendor name the registry does not carry. Counted rather than dropped,
+   * so a caller can tell a COMPLETE `deployments` list from a partial one. */
+  unmappedDeployments: number;
+  /** Catalog slugs summed to produce this answer, when the requested slug is a parent with no row
+   * of its own (`uniswap` → `uniswap-v1..v4`). Empty when one row answered — so an aggregate is
+   * never mistaken for a measurement. */
+  aggregatedFrom: string[];
   source: string;
   fetchedAt: number;
 }
@@ -133,19 +160,23 @@ export interface DefillamaAdapterDeps {
 }
 
 /** This adapter's own private hand-off shape from its HTTP step to `normalize()` — `raw` is the
- * untouched `/protocol/{slug}` response body (the FULL multi-chain payload); `chain` is carried
- * alongside it because the response has no field identifying "which chain the caller asked
- * for" — only `normalize()` does the `chainTvls[chain]` slice (ARCHITECTURE.md §3.2). */
+ * untouched vendor body; `chain` is carried alongside it because no vendor response identifies
+ * "which chain the caller asked for" — only `normalize()` slices for it (ARCHITECTURE.md §3.2). */
 interface DefillamaFetchResult {
   chain: ChainInfo;
   raw: unknown;
-  /** `chain.tvl` and `dex.volume.history`: when the shared document this row came from was actually
-   * fetched. Present so `normalize()` reports the DATA's age rather than its own (vdd-multi
-   * cycle 6, M-1). Absent for `protocol.tvl`, which fetches per call. */
+  /** When the shared document this row came from was actually fetched. Present so `normalize()`
+   * reports the DATA's age rather than its own (vdd-multi cycle 6, M-1) — true for all three
+   * capabilities since `protocol.tvl` stopped fetching per call (L-7). */
   fetchedAt?: number;
   /** `dex.volume.history` only — the validated arguments, carried across to `normalize()` because
    * the vendor document has no notion of the window the caller asked for. */
   dex?: DexVolumeArgs;
+  /** `protocol.tvl` only. The catalog has no notion of which slug was asked for, so it travels
+   * beside it. `vendorDoc` is set ONLY on the narrow fall-back path — a parent whose children
+   * declare `tokensExcludedFromParent`, where summing the catalog would double-count (see
+   * `resolveProtocol`). */
+  protocol?: { slug: string; vendorDoc?: unknown };
 }
 
 interface DefillamaTvlPoint {
@@ -159,7 +190,51 @@ interface DefillamaProtocolResponse {
   tvl?: DefillamaTvlPoint[];
 }
 
+/**
+ * One row of `/protocols` — only the fields this adapter reads, all `unknown` because every one of
+ * them is third-party text or numbers that must be checked before use.
+ *
+ * `chainTvls` here is a map of CURRENT numbers (`{"Ethereum": 1.16e10, "Base-borrowed": 3.1e8}`),
+ * which is a different shape from the same-named field in `/protocol/{slug}`, where each value is
+ * an object holding a full daily series. That difference is the whole point of the move (L-7): the
+ * point question "what is the TVL now" was being answered by downloading a decade of history.
+ */
+interface DefillamaCatalogRow {
+  slug?: unknown;
+  name?: unknown;
+  tvl?: unknown;
+  chains?: unknown;
+  chainTvls?: unknown;
+  /** The address a PARENT is reachable at — measured, not assumed: `/protocol/ether.fi` answers
+   * 200 and `/protocol/ether-fi` answers 400, so the `parent#<id>` suffix is an internal id and
+   * this field is the slug (probe 2026-08-11; the two disagree on 256 of 2 147 rows). */
+  parentProtocolSlug?: unknown;
+  /** Tokens the vendor SUBTRACTS when it totals this row into its parent, to undo double-counting.
+   * Its presence is why a naive sum of children is not always the parent's own answer — measured
+   * at +9.5 % on `ether.fi` (3.823 B summed vs the vendor's 3.491 B). */
+  tokensExcludedFromParent?: unknown;
+}
+
 const CHAINS_URL = 'https://api.llama.fi/v2/chains';
+
+/**
+ * The protocol catalog — ONE shared document that answers `protocol.tvl` for every slug, replacing
+ * a per-call `GET /protocol/{slug}` (L-7).
+ *
+ * The old route could not be kept at any cap. Measured 2026-08-11 against the live vendor: the
+ * document for `aave-v3` is **27.57 MiB** decompressed, against a 10 MiB cap — and it grows with
+ * every new chain and every further day of history, so raising the constant buys weeks. (L-7's own
+ * table recorded overshoots of 2–16 KB. Those were `Content-Length` values read from a HEAD request,
+ * i.e. GZIP-COMPRESSED sizes, compared against a cap that `capResponseStream` applies to DECODED
+ * bytes; the real overshoot was ~18 MiB, not 2 KB.) This catalog is 8.14 MiB for all 8 009
+ * protocols, it is fetched once per TTL rather than once per call, and it grows with the protocol
+ * COUNT — ~1 066 bytes a row, so ~1 800 new protocols of headroom under the same cap.
+ *
+ * The size is deliberately still checked by the ordinary cap rather than exempted: if this document
+ * ever does outgrow it, the live eval gate (`pnpm gate`) fails on `protocol.tvl` and says so, which
+ * is exactly the signal the old route never gave us — it broke silently between tasks.
+ */
+const PROTOCOLS_URL = 'https://api.llama.fi/protocols';
 
 /**
  * `DEFILLAMA_DEX_CHAINS` as a `Set`, built once at module load (TASK-007 task 007-2).
@@ -581,10 +656,219 @@ function lastTotalLiquidityUsd(series: DefillamaTvlPoint[] | undefined): number 
   return typeof lastPoint?.totalLiquidityUSD === 'number' ? lastPoint.totalLiquidityUSD : undefined;
 }
 
+/** `/protocols` as rows, or a loud refusal. A vendor that starts answering an object where it
+ * answered an array is a contract break, not something to paper over with `[]`. */
+function catalogRows(raw: unknown): DefillamaCatalogRow[] {
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      `defillama.normalize(protocol.tvl): ${PROTOCOLS_URL} did not return an array (got ${typeof raw})`,
+    );
+  }
+  return raw as DefillamaCatalogRow[];
+}
+
 /**
- * DeFiLlama adapter (ARCHITECTURE.md §3.2/§5.3, R-7): `protocol.tvl` via
- * `GET /protocol/{slug}`, sliced to `chainTvls[chain]` for the chain-specific TVL and the
- * top-level `tvl` series for the protocol-wide total.
+ * How a slug resolves against the catalog. `direct` is one named row; `aggregate` sums a parent's
+ * children; `vendor-aggregate` is a parent we refuse to sum ourselves.
+ */
+type ProtocolResolution =
+  | { kind: 'direct'; rows: DefillamaCatalogRow[] }
+  | { kind: 'aggregate'; rows: DefillamaCatalogRow[] }
+  | { kind: 'vendor-aggregate'; rows: DefillamaCatalogRow[] };
+
+/**
+ * Resolve a caller's slug the way the VENDOR resolves it — measured against live answers on
+ * 2026-08-11, not inferred from the field names:
+ *
+ * 1. **A row of its own wins.** `/protocol/beanstalk` answers `0`, the direct row's own figure,
+ *    even though a `beanstalk` parent exists whose children total 3.2 M. Five slugs in the catalog
+ *    are both a row and a parent; on all of them the vendor answers the row.
+ * 2. **Otherwise sum the parent's children.** `uniswap` has no row; summing `uniswap-v1..v4` gives
+ *    3.010 B against the vendor's own 3.014 B (−0.12 %, one refresh cycle apart, not a different
+ *    quantity). Checked the same way on `aave`, `raydium`, `sky` and `beanstalk-farms`.
+ * 3. **Except when the children declare `tokensExcludedFromParent`** — then the vendor subtracts a
+ *    double-count we cannot reproduce from this document, and summing is simply wrong: `ether.fi`
+ *    sums to 3.823 B against the vendor's 3.491 B, an error of +9.5 %. 38 of the 802 parent slugs
+ *    are in this class (curve-finance, ethena, spark, jupiter…). For those we ask the vendor for
+ *    its own aggregate rather than inventing one — a fall-back that is small in practice (9 of the
+ *    10 largest are under 1.7 MiB) and, where it is not, fails visibly instead of quietly lying.
+ */
+function resolveProtocol(rows: DefillamaCatalogRow[], slug: string): ProtocolResolution | null {
+  const direct = rows.find((r) => r.slug === slug);
+  if (direct) return { kind: 'direct', rows: [direct] };
+  const children = rows.filter((r) => r.parentProtocolSlug === slug);
+  if (children.length === 0) return null;
+  const excludes = children.some((r) => {
+    const t = r.tokensExcludedFromParent;
+    return typeof t === 'object' && t !== null && Object.keys(t).length > 0;
+  });
+  return { kind: excludes ? 'vendor-aggregate' : 'aggregate', rows: children };
+}
+
+/** A row's `chains` as vendor display names, ignoring anything that is not a string. */
+function rowChains(row: DefillamaCatalogRow): string[] {
+  return Array.isArray(row.chains)
+    ? row.chains.filter((c): c is string => typeof c === 'string')
+    : [];
+}
+
+/** A row's current TVL on one vendor chain name, or `null` when it publishes none there.
+ * Reads ONLY the plain key: `Base-borrowed`/`Base-staking`/`Base-pool2` are different quantities,
+ * and folding them in would inflate "locked value" with borrowed and staked positions. */
+function rowChainTvl(row: DefillamaCatalogRow, vendorChain: string): number | null {
+  const map = row.chainTvls;
+  if (typeof map !== 'object' || map === null) return null;
+  const value = (map as Record<string, unknown>)[vendorChain];
+  return typeof value === 'number' ? value : null;
+}
+
+/** A row's `chainTvls` keys, or `[]`. */
+function rowChainTvlKeys(row: DefillamaCatalogRow): string[] {
+  const map = row.chainTvls;
+  return typeof map === 'object' && map !== null ? Object.keys(map) : [];
+}
+
+/**
+ * `protocol.tvl` out of the shared catalog (L-7, L-9).
+ *
+ * `vendorDoc` is consulted for the total on the `vendor-aggregate` path ONLY — everywhere else the
+ * deployment set and every per-chain figure come from the catalog rows, including on that path,
+ * because a PARENT's own document answers `chains: []` (measured on `uniswap`, `aave` and
+ * `raydium`) and so cannot say where the protocol is deployed.
+ */
+function normalizeProtocolTvl(
+  chain: ChainInfo,
+  raw: unknown,
+  slug: string,
+  vendorDoc: unknown,
+  vendorChainToSlug: ReadonlyMap<string, string>,
+  fetchedAt: number,
+): ProtocolTvlResult {
+  const rows = catalogRows(raw);
+  const resolved = resolveProtocol(rows, slug);
+  if (!resolved) {
+    throw new Error(
+      `defillama.normalize: unknown protocol slug "${slug}" — neither a row nor a parent in the catalog`,
+    );
+  }
+
+  // Vendor chain name → summed current TVL across the contributing rows. `null` records "listed as
+  // a deployment, but no plain-TVL figure published", which is NOT the same as zero and must not
+  // collapse into it (L-9).
+  const perChain = new Map<string, number | null>();
+  let unmappedDeployments = 0;
+  const add = (vendorChain: string, value: number | null): void => {
+    const prev = perChain.get(vendorChain);
+    if (value === null) {
+      if (prev === undefined) perChain.set(vendorChain, null);
+      return;
+    }
+    perChain.set(vendorChain, (prev ?? 0) + value);
+  };
+  for (const row of resolved.rows) {
+    // Collect this row's chains FIRST, then contribute each exactly once. The two vendor fields
+    // overlap almost entirely, so adding straight from both loops double-counts every ordinary
+    // chain — caught by the fixture, where `lido` on ethereum came back at exactly 2× its figure.
+    const rowVendorChains = new Set<string>();
+    // The declared deployment list is the authority on WHERE, so an unknown name here is a genuine
+    // gap in our registry and gets counted. A `chainTvls` key cannot be counted the same way: the
+    // bucket keys (`X-borrowed`) live in that same namespace, so an unrecognised one is far more
+    // likely a bucket than a chain, and counting it would inflate the gap with noise.
+    for (const vendorChain of rowChains(row)) {
+      if (vendorChainToSlug.has(vendorChain)) rowVendorChains.add(vendorChain);
+      else unmappedDeployments += 1;
+    }
+    // A figure published for a chain the row forgot to list still counts as a deployment — the
+    // vendor's two fields are maintained separately and do drift.
+    for (const key of rowChainTvlKeys(row)) {
+      if (vendorChainToSlug.has(key)) rowVendorChains.add(key);
+    }
+    for (const vendorChain of rowVendorChains) add(vendorChain, rowChainTvl(row, vendorChain));
+  }
+
+  const deployments = [...perChain]
+    .map(([vendorChain, tvlUsd]) => ({
+      // Non-null by construction: only keys `vendorChainToSlug` knows ever reach `perChain`.
+      chain: vendorChainToSlug.get(vendorChain) as string,
+      tvlUsd,
+    }))
+    // TVL-descending, unknown last. `-1` rather than `0` so a genuine zero still outranks a
+    // missing measurement — the two mean different things and the order should say so.
+    .sort((a, b) => (b.tvlUsd ?? -1) - (a.tvlUsd ?? -1));
+
+  const vendorChain = chain.vendors['defillama'] ?? chain.name;
+  const deployed = perChain.has(vendorChain);
+  // Not deployed → `0`, which is a true statement about the world. Deployed with no plain figure →
+  // `null`, because we did not measure it. See `ProtocolTvlResult.tvlUsd`.
+  const tvlUsd = deployed ? (perChain.get(vendorChain) ?? null) : 0;
+
+  let totalTvlUsd: number | undefined;
+  if (resolved.kind === 'vendor-aggregate') {
+    totalTvlUsd = lastTotalLiquidityUsd((vendorDoc as DefillamaProtocolResponse | undefined)?.tvl);
+  } else {
+    let sum = 0;
+    let measured = false;
+    for (const row of resolved.rows) {
+      if (typeof row.tvl === 'number') {
+        sum += row.tvl;
+        measured = true;
+      }
+    }
+    totalTvlUsd = measured ? sum : undefined;
+  }
+  if (totalTvlUsd === undefined) {
+    throw new Error(`defillama.normalize: protocol "${slug}" publishes no TVL total`);
+  }
+
+  const directName = resolved.kind === 'direct' ? resolved.rows[0]?.name : undefined;
+  const vendorName =
+    resolved.kind === 'vendor-aggregate'
+      ? (vendorDoc as DefillamaProtocolResponse | undefined)?.name
+      : undefined;
+  const protocol =
+    typeof directName === 'string'
+      ? directName
+      : typeof vendorName === 'string'
+        ? vendorName
+        : slug;
+
+  // Adversarial cycle 2, finding 1b, unchanged in intent: a bad vendor value (negative, NaN,
+  // ±Infinity) must never be cached as a "successful" result. Widened to the per-chain list, which
+  // is new surface for the same class of garbage.
+  const invalid = (v: number | null): boolean => v !== null && (!Number.isFinite(v) || v < 0);
+  if (
+    invalid(tvlUsd) ||
+    !Number.isFinite(totalTvlUsd) ||
+    totalTvlUsd < 0 ||
+    deployments.some((d) => invalid(d.tvlUsd))
+  ) {
+    throw new Error(
+      `defillama.normalize: invalid tvl value(s) for chain ${chain.slug} (tvlUsd=${String(tvlUsd)}, totalTvlUsd=${totalTvlUsd})`,
+    );
+  }
+
+  return {
+    protocol,
+    chain: chain.slug,
+    tvlUsd,
+    totalTvlUsd,
+    deployed,
+    deployments,
+    unmappedDeployments,
+    aggregatedFrom:
+      resolved.kind === 'direct'
+        ? []
+        : resolved.rows.map((r) => r.slug).filter((s): s is string => typeof s === 'string'),
+    source: 'defillama',
+    fetchedAt,
+  };
+}
+
+/**
+ * DeFiLlama adapter (ARCHITECTURE.md §3.2/§5.3, R-7): `protocol.tvl` out of the shared
+ * `GET /protocols` catalog, sliced to `chainTvls[chain]` for the chain-specific TVL and summed (or
+ * read from the vendor's own parent document) for the protocol-wide total — see `PROTOCOLS_URL`
+ * and `resolveProtocol` for why it is that document and not `/protocol/{slug}` (L-7).
  */
 export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): ProviderAdapter {
   const fetchImpl = deps.fetchImpl ?? fetch;
@@ -651,6 +935,32 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
    */
   let chainsCatalog: { at: number; body: Promise<unknown> } | null = null;
   const CHAINS_CATALOG_TTL_MS = 300_000;
+
+  /**
+   * One shared, short-lived copy of `/protocols` — the same single-slot shape as `chainsCatalog`
+   * above, for the same reason and now with a much larger prize (L-7). Every `protocol.tvl` call
+   * used to download that protocol's own multi-megabyte history; they now share one 8.14 MiB
+   * document per TTL window, and a second slug inside the window costs no transfer at all.
+   *
+   * The window is read from the capability manifest rather than restated as a literal, so a TTL
+   * edit cannot leave this serving data older than the engine's own cache would (the
+   * two-windows-in-series defect, vdd-multi cycle 6 M-1).
+   */
+  let protocolsCatalog: { at: number; body: Promise<unknown> } | null = null;
+  const PROTOCOLS_CATALOG_TTL_MS = ttlFor('protocol.tvl') * 1000;
+
+  /**
+   * Vendor chain display name → our canonical slug, built once per adapter instance.
+   *
+   * The catalog names chains the vendor's way (`Binance`, `xDai`, `zkSync Era`); every string this
+   * adapter emits must be OURS (the anti-corruption rule the DEX contract states at length). A
+   * `Map` because `deployments` does one lookup per deployment chain per call — 22 for `aave-v3`.
+   */
+  const vendorChainToSlug = new Map<string, string>();
+  for (const info of chains.list()) {
+    const vendorName = info.vendors['defillama'];
+    if (vendorName != null) vendorChainToSlug.set(vendorName, info.slug);
+  }
 
   /**
    * One shared, short-lived copy of each chain's DEX-volume document (TASK-007 task 007-4, R-70).
@@ -858,6 +1168,35 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
     };
   };
 
+  /** `/protocols`, shared and short-lived — the `fetchChainsCatalog` pattern above, verbatim,
+   * including the rule that a failed fetch is evicted rather than remembered for the window. */
+  const fetchProtocolsCatalog = async (
+    deadlineAtMs?: number,
+  ): Promise<{ body: unknown; fetchedAt: number }> => {
+    const cached = protocolsCatalog;
+    if (cached && now() - cached.at < PROTOCOLS_CATALOG_TTL_MS) {
+      return {
+        body: await awaitSharedDocument(cached.body, deadlineAtMs, 'defillama protocols catalog'),
+        fetchedAt: cached.at,
+      };
+    }
+    const body = (async (): Promise<unknown> => {
+      await throttle('defillama', RATE_LIMIT);
+      const response = await safeFetch(PROTOCOLS_URL, {}, HOSTS, fetchImpl);
+      if (!response.ok) throw new Error(`defillama: HTTP ${response.status} for ${PROTOCOLS_URL}`);
+      return (await response.json()) as unknown;
+    })();
+    const entry = { at: now(), body };
+    protocolsCatalog = entry;
+    body.catch(() => {
+      if (protocolsCatalog === entry) protocolsCatalog = null;
+    });
+    return {
+      body: await awaitSharedDocument(body, deadlineAtMs, 'defillama protocols catalog'),
+      fetchedAt: entry.at,
+    };
+  };
+
   return {
     id: 'defillama',
     // TASK-006 (R-54): "does DeFiLlama know this chain" is a fact the registry already records —
@@ -925,11 +1264,28 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
         return { chain, raw: catalog.body, fetchedAt: catalog.fetchedAt };
       }
       const { chain, protocolSlug } = extractFetchArgs(args, chains);
+      const catalog = await fetchProtocolsCatalog(deadlineAtMs);
+      const resolved = resolveProtocol(catalogRows(catalog.body), protocolSlug);
+      // An unknown slug is settled HERE, against the catalog, instead of costing a request that
+      // would come back 400 or — worse — 200 with a body meaning something else.
+      if (!resolved) {
+        throw new Error(
+          `defillama.fetch: unknown protocol slug "${protocolSlug}" — neither a row nor a parent in the catalog`,
+        );
+      }
+      if (resolved.kind !== 'vendor-aggregate') {
+        return {
+          chain,
+          raw: catalog.body,
+          fetchedAt: catalog.fetchedAt,
+          protocol: { slug: protocolSlug },
+        };
+      }
+      // The narrow fall-back: this parent nets out double-counted tokens, so only the vendor's own
+      // aggregate is right. A per-call request, so the deadline is forwarded the ordinary way —
+      // limiter first, then the transport, spread conditionally so a call without a deadline builds
+      // the options object it built before WI-37.
       const url = `https://api.llama.fi/protocol/${encodeURIComponent(protocolSlug)}`;
-
-      // `protocol.tvl` — the one path with no shared document, so the deadline is forwarded the
-      // ordinary way: limiter first, then the transport, spread conditionally so a call without a
-      // deadline builds the options object it built before WI-37.
       await throttle('defillama', RATE_LIMIT, 1, deadlineAtMs);
       const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
         ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
@@ -937,14 +1293,19 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
       if (!response.ok) {
         throw new Error(`defillama: HTTP ${response.status} for ${url}`);
       }
-      const raw: unknown = await response.json();
-      return { chain, raw };
+      const vendorDoc: unknown = await response.json();
+      return {
+        chain,
+        raw: catalog.body,
+        fetchedAt: catalog.fetchedAt,
+        protocol: { slug: protocolSlug, vendorDoc },
+      };
     },
     normalize: (
       cap: string,
       rawResult: unknown,
     ): ProtocolTvlResult | ChainTvlResult | DexVolumeResult => {
-      const { chain, raw, fetchedAt, dex } = rawResult as DefillamaFetchResult;
+      const { chain, raw, fetchedAt, dex, protocol } = rawResult as DefillamaFetchResult;
       if (cap === 'dex.volume.history') {
         if (!dex) {
           throw new Error(
@@ -954,38 +1315,17 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
         return normalizeDexVolume(chain, raw, dex, fetchedAt ?? now());
       }
       if (cap === 'chain.tvl') return normalizeChainTvl(chain, raw, fetchedAt ?? now());
-      const body = raw as DefillamaProtocolResponse;
-
-      const chainKey = chain.vendors['defillama'] ?? chain.name;
-      const tvlUsd = lastTotalLiquidityUsd(body.chainTvls?.[chainKey]?.tvl);
-      const totalTvlUsd = lastTotalLiquidityUsd(body.tvl);
-      if (tvlUsd === undefined || totalTvlUsd === undefined || typeof body.name !== 'string') {
-        throw new Error(`defillama.normalize: missing tvl series for chain ${chain.slug}`);
+      if (!protocol) {
+        throw new Error('defillama.normalize(protocol.tvl): fetch result carries no protocol slug');
       }
-      // Adversarial cycle 2, finding 1b: a bad vendor value (negative, NaN, +/-Infinity) must
-      // never be cached as a "successful" ProtocolTvlResult — `onchain_protocol_tvl`'s own output
-      // schema already rejects a negative tvlUsd/totalTvlUsd (`.nonnegative()`), but by then it
-      // would already have been written to the cache as this adapter's "normalized" result. Loudly
-      // reject it HERE instead, before it's ever cached.
-      if (
-        !Number.isFinite(tvlUsd) ||
-        tvlUsd < 0 ||
-        !Number.isFinite(totalTvlUsd) ||
-        totalTvlUsd < 0
-      ) {
-        throw new Error(
-          `defillama.normalize: invalid tvl value(s) for chain ${chain.slug} (tvlUsd=${tvlUsd}, totalTvlUsd=${totalTvlUsd})`,
-        );
-      }
-
-      return {
-        protocol: body.name,
-        chain: chain.slug,
-        tvlUsd,
-        totalTvlUsd,
-        source: 'defillama',
-        fetchedAt: now(),
-      };
+      return normalizeProtocolTvl(
+        chain,
+        raw,
+        protocol.slug,
+        protocol.vendorDoc,
+        vendorChainToSlug,
+        fetchedAt ?? now(),
+      );
     },
     isAvailable: () => ({ ok: true }),
   };

@@ -47,13 +47,57 @@ export type ProtocolTvlInput = z.infer<typeof ProtocolTvlInputSchema>;
  * `tvlUsd`/`totalTvlUsd` are `.nonnegative()` — a TVL is never negative — mirroring the same
  * constraint `PoolSchema.liquidityUsd`/`volume24hUsd` already apply (task 003-1) to analogous
  * USD-denominated fields.
+ *
+ * **Widened by L-9**, which is a contract change and not a cosmetic one: `tvlUsd` became
+ * `.nullable()`, and four fields joined it. The defect was that "this protocol is not on this chain"
+ * — a correct answer whose value is zero — arrived as `capability unavailable`, the same shape as a
+ * DeFiLlama outage or a renamed slug, so a caller could not tell a fact about the world from a fault
+ * in the engine. `deployed` splits those, `null` marks the third state (deployed, but the vendor
+ * publishes only staking/borrowed buckets for this chain, so the figure is unknown rather than
+ * zero), and `deployments` makes the chain-by-chain sweep unnecessary — that sweep was undecidable,
+ * because a miss and a failure looked alike. Every `.describe()` below is paid on every request, and
+ * is there because the model is the consumer that has to tell these states apart.
  */
 export const ProtocolTvlOutputSchema = z
   .object({
     protocol: z.string(),
     chain: SUPPORTED_CHAIN,
-    tvlUsd: z.number().nonnegative(),
+    tvlUsd: z
+      .number()
+      .nonnegative()
+      .nullable()
+      .describe(
+        'Current TVL on `chain`. 0 with deployed=false means the protocol is not on this chain ' +
+          '(a true answer, not an error). null with deployed=true means it IS on this chain but ' +
+          'the provider publishes no plain-TVL figure there — only staking/borrowed/pool2 ' +
+          'buckets — so the value is unknown rather than zero.',
+      ),
     totalTvlUsd: z.number().nonnegative(),
+    deployed: z
+      .boolean()
+      .describe(
+        'Whether the protocol is deployed on `chain` at all. false is an answer, not a failure.',
+      ),
+    deployments: z
+      .array(z.object({ chain: z.string(), tvlUsd: z.number().nonnegative().nullable() }).strict())
+      .describe(
+        'Every chain the protocol is deployed on, TVL-descending. Answers "where is this ' +
+          'protocol" in one call — do not sweep chain by chain.',
+      ),
+    unmappedDeployments: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe(
+        'Deployment chains this engine has no registry entry for, so they are absent from ' +
+          '`deployments`. 0 means the list is complete.',
+      ),
+    aggregatedFrom: z
+      .array(z.string())
+      .describe(
+        'Non-empty when `protocolSlug` names a family rather than one protocol (e.g. "uniswap"): ' +
+          'the slugs whose TVL was summed. Empty when a single protocol answered.',
+      ),
     source: z.string(),
     fetchedAt: z.number().int(),
   })
@@ -115,8 +159,10 @@ export const protocolTvlToolSpec = defineTool({
   name: 'onchain_protocol_tvl',
   title: 'Protocol TVL',
   description:
-    'Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug. Use ' +
-    'onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.',
+    'Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug, plus the full list of ' +
+    'chains the protocol is deployed on. A protocol that is not on the requested chain answers ' +
+    'deployed=false with tvlUsd=0 — that is the answer, not an error. Use onchain_chain_tvl for a ' +
+    'whole chain; onchain_list_chains to find the `chain` value.',
   inputSchema: ProtocolTvlInputSchema,
   outputSchema: ProtocolTvlOutputSchema,
   capability: CAPABILITY,

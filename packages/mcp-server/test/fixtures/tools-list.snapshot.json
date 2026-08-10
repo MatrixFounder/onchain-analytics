@@ -341,7 +341,7 @@
   {
     "name": "onchain_protocol_tvl",
     "title": "Protocol TVL",
-    "description": "Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug. Use onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.",
+    "description": "Protocol TVL (chain-scoped and total) for a DeFiLlama protocol slug, plus the full list of chains the protocol is deployed on. A protocol that is not on the requested chain answers deployed=false with tvlUsd=0 — that is the answer, not an error. Use onchain_chain_tvl for a whole chain; onchain_list_chains to find the `chain` value.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -375,12 +375,65 @@
           "maxLength": 64
         },
         "tvlUsd": {
-          "type": "number",
-          "minimum": 0
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Current TVL on `chain`. 0 with deployed=false means the protocol is not on this chain (a true answer, not an error). null with deployed=true means it IS on this chain but the provider publishes no plain-TVL figure there — only staking/borrowed/pool2 buckets — so the value is unknown rather than zero."
         },
         "totalTvlUsd": {
           "type": "number",
           "minimum": 0
+        },
+        "deployed": {
+          "type": "boolean",
+          "description": "Whether the protocol is deployed on `chain` at all. false is an answer, not a failure."
+        },
+        "deployments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "chain": {
+                "type": "string"
+              },
+              "tvlUsd": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "chain",
+              "tvlUsd"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Every chain the protocol is deployed on, TVL-descending. Answers \"where is this protocol\" in one call — do not sweep chain by chain."
+        },
+        "unmappedDeployments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Deployment chains this engine has no registry entry for, so they are absent from `deployments`. 0 means the list is complete."
+        },
+        "aggregatedFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Non-empty when `protocolSlug` names a family rather than one protocol (e.g. \"uniswap\"): the slugs whose TVL was summed. Empty when a single protocol answered."
         },
         "source": {
           "type": "string"
@@ -396,6 +449,10 @@
         "chain",
         "tvlUsd",
         "totalTvlUsd",
+        "deployed",
+        "deployments",
+        "unmappedDeployments",
+        "aggregatedFrom",
         "source",
         "fetchedAt"
       ],
