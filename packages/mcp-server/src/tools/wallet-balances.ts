@@ -109,8 +109,15 @@ export async function walletBalancesHandler(
 export const walletBalancesToolSpec = defineTool({
   name: 'onchain_wallet_balances',
   title: 'Native balance of a wallet',
+  // WI-53 — the units sentence is here, not only in `types/wallet.ts`, because a TypeScript
+  // docstring never reaches an MCP client and the description is the only contract one reads. A
+  // consumer with the schema in front of them read `amountNum` as ETH and was wrong by 10^18: the
+  // adjacent `decimals` key and the name beside `amountRaw` both invite that reading.
   description:
     'Native asset balance for a wallet address, from a curated JSON-RPC endpoint. ' +
+    "amountRaw is the exact integer in the chain's smallest unit (wei/lamports) as a string. " +
+    'amountNum is a lossy convenience in the SAME smallest unit — decimals are NOT applied, so ' +
+    'divide by 10^decimals for a human-scale figure, and never treat it as the source of truth. ' +
     'Served only on chains with an approved RPC host — call ' +
     'onchain_list_chains({capability:"wallet.balances.native"}) for the list.',
   inputSchema: WalletBalancesInputSchema,

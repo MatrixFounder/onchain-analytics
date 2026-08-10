@@ -160,12 +160,24 @@ describe('nansen adapter (contract — golden normalization, R-31/R-32/R-33)', (
       traderCount: 142,
       tokenAgeDays: 2912,
       tokenSectors: ['Stablecoin'],
+      // L-8 — `ownershipPercentage` is deliberately ABSENT here, and its absence is the assertion.
+      //
+      // This expectation used to be built by copying `row.ownership_percentage` straight out of
+      // the fixture, which made it unfalsifiable on that field by construction: it asserted "we
+      // reproduce the vendor", the one thing an anti-corruption layer must not promise. The live
+      // 2026-07-24 capture shows why that mattered — **all ten** rows carry
+      // `ownership_percentage: 0` while holding positive balances, the largest 4 534 414 876 USDC
+      // ($4.53B). A holder with a positive balance cannot own 0% of a finite supply, so the field
+      // was provably wrong and had been shipping since M2 with a green golden over it.
+      //
+      // The normalizer now omits the field on that contradiction (positive amount, zero share) and
+      // keeps the rest of the row. Spelling the absence out rather than regenerating the golden is
+      // the point: the next reader sees a rule, not a diff.
       topHolders: holdersFixture.data.map((row) => ({
         address: normalizeAddress('ethereum', row.address),
         addressLabel: row.address_label,
         tokenAmount: row.token_amount,
         valueUsd: row.value_usd,
-        ownershipPercentage: row.ownership_percentage,
       })),
       source: 'nansen',
       fetchedAt: FIXED_NOW,

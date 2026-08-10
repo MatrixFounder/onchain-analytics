@@ -86,7 +86,7 @@
       "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."
     },
     "packages/core/test/nansen.contract.test.ts": {
-      "sha256": "8652a140ac52d4bc528de2ec552e3eaba3e2dd0ae94b1e0194b6339295eb9d6c",
+      "sha256": "dfaef6cfb9753e15ce0652d486f57ed078668b0da01e9a5648f1bea9cb1b2b7f",
       "note": "The original GOLDEN_TEST_SHA subject: golden assertions against live-recorded Nansen responses. Silent tuning here is indistinguishable from the vendor changing its answer."
     }
   }

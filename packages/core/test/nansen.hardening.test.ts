@@ -355,6 +355,60 @@ describe('M2 hardening — adversarial review cycle 1', () => {
       expect(flow.topHolders).toHaveLength(1);
     });
 
+    // L-8 — the vendor reports `ownership_percentage: 0` for holders with large positive balances
+    // (measured: all ten rows of the live 2026-07-24 USDC capture, the largest 4.53B USDC). A
+    // positive balance cannot own 0% of a finite supply, so forwarding that zero ships a
+    // confidently wrong concentration figure with nothing in the payload to mark it.
+    //
+    // Both directions are asserted, because a guard that only ever removes is indistinguishable
+    // from deleting the field: the contradiction is dropped, a REAL zero (dust holder, zero
+    // amount) survives, and an ordinary share survives untouched.
+    it('omits a self-contradictory ownershipPercentage and keeps the legitimate ones', () => {
+      const flow = normalizeSmartMoneyFlow(
+        {
+          chain: 'ethereum',
+          family: 'evm' as const,
+          tokenAddress: WANTED,
+          netflow: { body: { data: [netflowRow] }, creditsUsedHeader: '5' },
+          holders: {
+            body: {
+              data: [
+                {
+                  address: '0x0000000000000000000000000000000000000001',
+                  token_amount: 4534414876.262725,
+                  value_usd: 4533081450.345171,
+                  ownership_percentage: 0,
+                },
+                {
+                  address: '0x0000000000000000000000000000000000000002',
+                  token_amount: 0,
+                  value_usd: 0,
+                  ownership_percentage: 0,
+                },
+                {
+                  address: '0x0000000000000000000000000000000000000003',
+                  token_amount: 100,
+                  value_usd: 100,
+                  ownership_percentage: 0.1798,
+                },
+              ],
+            },
+            creditsUsedHeader: '5',
+          },
+        } as never,
+        () => 1,
+      );
+
+      expect(flow.topHolders).toHaveLength(3);
+      // The contradiction: field absent, and the rest of the row intact — omission, not refusal.
+      expect(flow.topHolders?.[0]).not.toHaveProperty('ownershipPercentage');
+      expect(flow.topHolders?.[0]?.tokenAmount).toBe(4534414876.262725);
+      // A genuine zero for a zero balance is not a contradiction and must survive.
+      expect(flow.topHolders?.[1]?.ownershipPercentage).toBe(0);
+      // An ordinary share is untouched.
+      expect(flow.topHolders?.[2]?.ownershipPercentage).toBe(0.1798);
+    });
+
     it('raises a typed normalization error, not a TypeError, on a null token.risk indicator', () => {
       expect(() =>
         normalizeTokenRiskScore(

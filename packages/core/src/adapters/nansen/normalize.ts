@@ -210,6 +210,7 @@ function mapTopHolders(holdersBody: unknown, chain: Chain): SmartMoneyFlow['topH
 
   const topHolders: SmartMoneyFlow['topHolders'] = [];
   let dropped = 0;
+  let ownershipDropped = 0;
   // `.slice()` caps BEFORE the per-row work (adversarial cycle 1): response size is entirely the
   // vendor's choice — no pagination is sent — and every row costs a keccak256 in normalizeAddress
   // plus a slot in the cached row and in the model's context.
@@ -223,6 +224,25 @@ function mapTopHolders(holdersBody: unknown, chain: Chain): SmartMoneyFlow['topH
       dropped += 1;
       continue;
     }
+    // L-8 — a holder with a POSITIVE balance cannot own 0% of a finite supply, so a vendor zero
+    // here is provably wrong rather than merely surprising. Measured: on Base USDC every one of
+    // the ten top holders arrived with `ownership_percentage: 0`, including an address holding
+    // 185 843 941 USDC, while the same field on Ethereum WETH was populated correctly.
+    //
+    // `ownershipPercentage` is OPTIONAL, so ABSENCE is the typed way to say "the vendor did not
+    // give us this" — precisely the distinction a forwarded zero destroys, leaving every
+    // concentration reading confidently wrong with nothing in the payload to mark it.
+    //
+    // Omit, do not refuse: the rest of the row (address, label, amount, valueUsd) is good, unlike
+    // the whole-response cases DF-1 and L-1 where refusing was right. And the guard keys on the
+    // CONTRADICTION — positive amount with a zero share — never on the zero alone, because a dust
+    // holder legitimately rounds to zero and dropping that would be its own fabrication.
+    const claimsPositiveBalance =
+      (typeof row.token_amount === 'number' && row.token_amount > 0) ||
+      (typeof row.value_usd === 'number' && row.value_usd > 0);
+    const ownershipIsContradictory = row.ownership_percentage === 0 && claimsPositiveBalance;
+    if (ownershipIsContradictory) ownershipDropped += 1;
+
     topHolders.push({
       address: normalizeAddress(chain, row.address),
       ...(typeof row.address_label === 'string'
@@ -230,7 +250,7 @@ function mapTopHolders(holdersBody: unknown, chain: Chain): SmartMoneyFlow['topH
         : {}),
       ...(typeof row.token_amount === 'number' ? { tokenAmount: row.token_amount } : {}),
       ...(typeof row.value_usd === 'number' ? { valueUsd: row.value_usd } : {}),
-      ...(typeof row.ownership_percentage === 'number'
+      ...(typeof row.ownership_percentage === 'number' && !ownershipIsContradictory
         ? { ownershipPercentage: row.ownership_percentage }
         : {}),
     });
@@ -239,6 +259,14 @@ function mapTopHolders(holdersBody: unknown, chain: Chain): SmartMoneyFlow['topH
     // Silent shrinkage is exactly what made the netflow bug expensive to find — make it observable.
     process.stderr.write(
       `nansen normalize: dropped ${dropped} holder row(s) with a missing/invalid address\n`,
+    );
+  }
+  if (ownershipDropped > 0) {
+    // A suppressed field needs a reader too (L-2): the row still ships, so without this line the
+    // only trace of the vendor contradiction would be a key that quietly is not there.
+    process.stderr.write(
+      `nansen normalize: omitted ownershipPercentage on ${ownershipDropped} holder row(s) ` +
+        `reporting 0% against a positive balance (L-8)\n`,
     );
   }
   return topHolders;

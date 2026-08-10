@@ -628,10 +628,41 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
       // configured or derived, so an operator can tell "my NANSEN_DAILY_CREDIT_CAP" apart from
       // "the default the engine chose for me" (and knows `NANSEN_DAILY_CREDIT_CAP=off` exists).
       const capOrigin = typeof deps.dailyCreditCap === 'number' ? 'configured' : 'derived';
-      const reason = bindingIsVendor
-        ? `vendor: need ${cost}, remaining (as of last resync) ${snapshot.creditsRemainingAtObserve}`
-        : `self-imposed cap (${capOrigin}): need ${cost}, allows ${capNow}` +
+      let reason: string;
+      if (bindingIsVendor) {
+        reason = `vendor: need ${cost}, remaining (as of last resync) ${snapshot.creditsRemainingAtObserve}`;
+      } else {
+        // Q-6: the two branches of ONE refusal used to answer two different questions — the vendor
+        // branch named the REMAINING allowance, this one named the CEILING. "need 6, allows 30"
+        // while refusing reads as a self-contradiction, and the single number that explains the
+        // refusal (the remainder, 4 in the filed case) was the only one absent. The reader could
+        // not compare the two branches, act on either, or learn one rule from them.
+        //
+        // Best-effort, and never allowed to REPLACE the refusal: `getUsage()` can throw for
+        // reasons that have nothing to do with the budget (SQLITE_BUSY), and turning a clear
+        // budget refusal into a storage error would destroy the message this exists to sharpen.
+        // The ceiling stays in the text either way, so the fallback is strictly less informative
+        // than the fix and never less informative than what it replaced.
+        let usedNow: number | null;
+        try {
+          usedNow = await deps.budgetStore.getUsage('nansen', bucket);
+        } catch {
+          usedNow = null;
+        }
+        // `effectiveCeiling`, not `capNow`. In this branch the two are the same number by
+        // construction — a self-imposed cap that is not the binding one cannot have refused — but
+        // `capNow` is `number | undefined` (`undefined` when the cap is switched off), and the
+        // line this replaces interpolated it raw, so a mis-shaped call would have rendered
+        // "allows undefined". The ceiling that actually refused is both the type-safe value and
+        // the honest one to name.
+        const budget =
+          usedNow === null
+            ? `cap ${effectiveCeiling} (remaining unavailable)`
+            : `remaining ${Math.max(0, effectiveCeiling - usedNow)} of ${effectiveCeiling}`;
+        reason =
+          `self-imposed cap (${capOrigin}): need ${cost}, ${budget}` +
           ` — set NANSEN_DAILY_CREDIT_CAP to raise it, or ${DAILY_CAP_OFF} to disable it`;
+      }
       throw new NansenBudgetExceededError(reason);
     }
 

@@ -303,8 +303,13 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
     await expect(gate.ensureBudget('smart-money.flows', {})).resolves.toMatchObject({
       reservedTotal: 10,
     });
+    // Q-6: the refusal must name the REMAINING allowance, not the ceiling. It used to read
+    // "need 10, allows 20" — a sentence that says the request fits and then refuses it, and whose
+    // only explanatory number (the remainder) was absent. The `of 20` half keeps the ceiling
+    // visible, so this assertion fails both on a regression to ceiling-only AND on dropping the
+    // ceiling entirely.
     await expect(gate.ensureBudget('smart-money.flows', {})).rejects.toThrow(
-      /self-imposed cap \(configured\): need 10, allows 20/,
+      /self-imposed cap \(configured\): need 10, remaining 0 of 20/,
     );
   });
 
@@ -432,8 +437,10 @@ describe('ensureBudget() — pre-call budget gate (R-36/R-37, task 005-3)', () =
     await gate.ensureBudget('smart-money.flows', {}); // 10 -> usage 10
     await gate.ensureBudget('smart-money.flows', {}); // 10 -> usage 20
     await gate.ensureBudget('smart-money.flows', {}); // 10 -> usage 30 (exactly at the cap)
+    // Q-6, derived-ceiling half: same requirement as the configured branch above — the remainder
+    // is the number that explains the refusal, so it is the number the message must carry.
     await expect(gate.ensureBudget('smart-money.flows', {})).rejects.toThrow(
-      /self-imposed cap \(derived\): need 10, allows 30/,
+      /self-imposed cap \(derived\): need 10, remaining 0 of 30/,
     );
   });
 
