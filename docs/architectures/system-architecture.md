@@ -2652,10 +2652,20 @@ would otherwise take down the whole process (logged to stderr, then ignored).
 explicitly, never left to `pg`'s defaults. **All** failure paths — `pool.query(...)` and the
 **construction** of `new Pool(...)`
 itself (a constructor throw on an invalid DSN used to bypass the query try/catch and could leak
-host/port/user to the caller) — are sanitized to a single
-`'pg-history: database unavailable'` (`SANITIZED_QUERY_FAILURE_MESSAGE`, with `{cause: error}`). The
-raw detail goes to stderr only; the DSN and any fragment of it never reach the caller or the MCP
-client.
+host/port/user to the caller) — are sanitized, with `{cause: error}` attached. The raw detail goes to
+stderr only; the DSN and any fragment of it never reach the caller or the MCP client.
+
+**Two sanitized outcomes, not one (WI-47 item 4).** The paragraph above claims "the database answered
+with an error" and "the database did not answer at all" are different facts — and until WI-47 that
+was true only of the timeout. A query failure now raises **`PgServerRejectedError`** when the far end
+answered with a Postgres ErrorResponse, carrying its **validated** SQLSTATE and severity
+(`pg-history: database reachable, request rejected (SQLSTATE 42P01, ERROR)`), and
+`'pg-history: database unavailable'` (`SANITIZED_QUERY_FAILURE_MESSAGE`) only when nothing answered.
+The discriminator is `severity` together with a SQLSTATE-shaped `code`, chosen from a live probe of
+five real failures rather than from the docs: `code` alone would classify Node's `EPIPE` — a socket
+dying, the opposite fact — as an answer. It is deliberately NOT a claim that the query was wrong;
+`28P01` and Supavisor's `XX000` are the server rejecting the CALLER, and both are equally "someone
+was home". The server's own message stays unsurfaced: it quotes the DSN's username back.
 
 #### Component: `@onchain-intel/mcp-server` (M0, extended in M1)
 

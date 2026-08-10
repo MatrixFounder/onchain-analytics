@@ -134,6 +134,92 @@ export class PgQueryTimeoutError extends Error {
 }
 
 /**
+ * Thrown when the far end SPOKE POSTGRES BACK AT US and the answer was an error (WI-47 item 4).
+ *
+ * **The fact it carries is "reachable".** This is the distinction WI-47 was written about: the live
+ * `pg-history` failure was `relation "snapshots" does not exist` — a healthy database answering a
+ * query it could not serve — and it reached the operator as `database unavailable`, which sent the
+ * diagnosis to the VM, the ports and the credentials while the server was answering the whole time.
+ * `PgQueryTimeoutError` already draws this line for the timeout case; this draws it for the other
+ * one, so that "unavailable" is left meaning only what it says.
+ *
+ * **It does NOT mean "the query was wrong."** Measured against the shipped Supabase installation
+ * before naming this class: a wrong password answers `28P01/FATAL` and an unknown Supavisor tenant
+ * answers `XX000/FATAL`, both of which are the server REJECTING US rather than rejecting a
+ * statement — and both arrive here, because both are the far end speaking the protocol. The
+ * SQLSTATE and severity say which; this class says only that someone was home.
+ *
+ * **DSN-free by construction, and checked rather than trusted.** The server's own message text is
+ * NOT surfaced — it demonstrably carries DSN fragments (`password authentication failed for user
+ * "<the DSN's username>"`), which is exactly the leak D2 closed. Only the SQLSTATE and severity are
+ * interpolated, and only after each is validated against the protocol's own shape, so a server that
+ * puts something else in those fields cannot smuggle it into a caller-visible message.
+ */
+/** A SQLSTATE is five characters from `[0-9A-Z]` (Postgres Appendix A). Validated rather than
+ * trusted because the value is interpolated into a caller-visible message — see the class below. */
+const SQLSTATE_RE = /^[0-9A-Z]{5}$/;
+/** `ERROR`, `FATAL`, `PANIC`, and the non-error severities. Bounded and validated for the same
+ * reason; a server with a localized `lc_messages` simply drops out of the message rather than
+ * being interpolated unchecked. */
+const SEVERITY_RE = /^[A-Z]{3,7}$/;
+
+export class PgServerRejectedError extends Error {
+  /** The server's SQLSTATE, or `'unknown'` if what arrived was not shaped like one. */
+  public readonly sqlstate: string;
+  /** The server's severity — `undefined` rather than a guess when it is not protocol-shaped. */
+  public readonly severity: string | undefined;
+
+  constructor(
+    sqlstate: string,
+    severity?: string,
+    /** The original error, for local debugging only — same contract as the sanitized rethrow
+     * below: this codebase's own handling never reads `.cause`, so the validated message above
+     * stays the only thing that reaches a caller or an MCP client. */
+    options?: ErrorOptions,
+  ) {
+    // Validated HERE, in the constructor, so "DSN-free by construction" is a property of the class
+    // and not of one call site remembering to check first. Both inputs are server-controlled
+    // strings on their way into a caller-visible message; a future second call site inherits the
+    // guarantee instead of having to re-derive it.
+    const safeState = SQLSTATE_RE.test(sqlstate) ? sqlstate : 'unknown';
+    const safeSeverity =
+      severity !== undefined && SEVERITY_RE.test(severity) ? severity : undefined;
+    super(
+      `pg-history: database reachable, request rejected (SQLSTATE ${safeState}${
+        safeSeverity === undefined ? '' : `, ${safeSeverity}`
+      })`,
+      options,
+    );
+    this.name = 'PgServerRejectedError';
+    this.sqlstate = safeState;
+    this.severity = safeSeverity;
+  }
+}
+
+/**
+ * Duck-typed "did this come from a Postgres ErrorResponse?" — structural on purpose, because
+ * `PgPoolLike` is structural: `instanceof pg.DatabaseError` would be unassertable by any fake pool,
+ * which is the whole reason this module can be tested without a live database (R-21).
+ *
+ * **Both fields are required, and that is a measurement, not caution.** `code` alone is not a
+ * discriminator: Node's own `EPIPE` — a socket dying mid-write, i.e. precisely a NOT-reachable
+ * failure — is also five uppercase characters and would be misreported as an answer. `severity` is
+ * mandatory in the protocol's ErrorResponse and was present on every server answer measured
+ * (`42P01/ERROR`, `28P01/FATAL`, `XX000/FATAL`) and on neither transport failure (`ECONNREFUSED`
+ * carried no severity; a connect timeout carried no `code` at all).
+ */
+function serverErrorFields(error: unknown): { sqlstate: string; severity?: string } | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const { code, severity } = error as { code?: unknown; severity?: unknown };
+  if (typeof code !== 'string' || !SQLSTATE_RE.test(code)) return undefined;
+  if (typeof severity !== 'string' || severity.length === 0) return undefined;
+  // Handed on RAW: this function answers "was anybody home?", and `PgServerRejectedError` decides
+  // what is safe to say about it. Splitting it that way keeps the reachability judgement and the
+  // message-safety guarantee from having to be correct in the same place.
+  return { sqlstate: code, severity };
+}
+
+/**
  * `promise` with an upper bound on how long THIS process waits for it (WI-35).
  *
  * It does not cancel the query — nothing in the `pg` wire protocol lets a client take back a
@@ -160,14 +246,42 @@ function withQueryBound<T>(promise: Promise<T>, boundMs: number, reason: () => E
   });
 }
 
-/** The ONLY message ever surfaced to a caller (and, transitively, an MCP client) when the
- * underlying `pool.query()` call itself fails — the real error (which may embed the DSN's host/
- * port/user, e.g. `pg`'s own "connection to server at ... failed" text) is written to stderr ONLY
- * (adversarial cycle 1, fix D2/D10). */
+/**
+ * The message surfaced to a caller (and, transitively, an MCP client) when `pool.query()` fails and
+ * NOTHING ANSWERED — the real error (which may embed the DSN's host/port/user, e.g. `pg`'s own
+ * "connection to server at ... failed" text) is written to stderr ONLY (adversarial cycle 1, fix
+ * D2/D10).
+ *
+ * **It used to cover both failures and now covers one (WI-47 item 4).** A server that answered with
+ * an ErrorResponse takes `PgServerRejectedError` instead, so this text is no longer the single exit
+ * from the catch — which is what finally makes it true: `unavailable` now describes only the case
+ * where the database really was unreachable.
+ */
 const SANITIZED_QUERY_FAILURE_MESSAGE = 'pg-history: database unavailable';
 
+/**
+ * Detail for the STDERR line only — never for a caller (every call site below writes it to stderr
+ * and then throws something sanitized). Because it is stderr-only it may contain DSN fragments; that
+ * is the deliberate split D2 established.
+ *
+ * **It unwraps `AggregateError`, and that is the second finding of WI-47 item 4.** Measured: a dead
+ * port arrives as an `AggregateError` whose own `message` is the EMPTY STRING, with the real detail
+ * (`ECONNREFUSED`, and one entry per address the host resolved to) hidden in `.errors`. The
+ * single most ordinary "the database is not there" failure was logging a line that ended in a colon
+ * and said nothing — a diagnostic nobody can read is not a diagnostic, which is the same complaint
+ * WI-47 filed about the caller-visible side. `code` is appended for the same reason: on that path it
+ * is the only part that names the failure.
+ */
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (!(error instanceof Error)) return String(error);
+  const parts: string[] = [];
+  if (error.message.length > 0) parts.push(error.message);
+  const { code, errors } = error as Error & { code?: unknown; errors?: unknown };
+  if (typeof code === 'string' && code.length > 0) parts.push(`code=${code}`);
+  if (Array.isArray(errors) && errors.length > 0) {
+    parts.push(`aggregated: [${errors.map((inner) => errorMessage(inner)).join('; ')}]`);
+  }
+  return parts.length > 0 ? parts.join(' ') : `${error.name} (no detail)`;
 }
 
 /**
@@ -190,8 +304,11 @@ function errorMessage(error: unknown): string {
  * - `connectionTimeoutMillis`/`max` (see their constants above) are always passed to `PoolCtor`.
  * - Any failure from the actual `pool.query(...)` call (as opposed to the guard clauses above,
  *   which throw their own already-safe, DSN-free messages) is logged to stderr with its full
- *   detail, then rethrown as the single sanitized `SANITIZED_QUERY_FAILURE_MESSAGE` — the DSN's
- *   host/port/user never reach the caller (and, transitively, never reach an MCP client).
+ *   detail, then rethrown SANITIZED — the DSN's host/port/user never reach the caller (and,
+ *   transitively, never reach an MCP client). Sanitized now means one of two DSN-free outcomes
+ *   rather than one (WI-47 item 4): `PgServerRejectedError` when the far end answered with a
+ *   Postgres ErrorResponse, carrying its validated SQLSTATE and severity, and
+ *   `SANITIZED_QUERY_FAILURE_MESSAGE` when nothing answered at all.
  *
  * **Bounded in time (WI-35).** Until this landed, `connectionTimeoutMillis` bounded ACQUIRING a
  * connection and nothing bounded using one: `await pool.query(...)` waited as long as it took, which
@@ -318,6 +435,17 @@ export function createReadClient(deps: ReadClientDeps = {}): ReadClient {
         process.stderr.write(
           `pg/read-client: query failed (full detail on stderr only, never surfaced to the caller): ${errorMessage(error)}\n`,
         );
+        // WI-47 item 4 — split "the server answered with an error" off from "the server is not
+        // there" BEFORE falling back to the generic message. Sanitizing is still what happens here:
+        // the error came from outside, and only two validated protocol fields of it survive (see
+        // `PgServerRejectedError`). What changes is that the operator is no longer told to go look
+        // for a database that is answering. Everything with no ErrorResponse behind it —
+        // `ECONNREFUSED`, a connect timeout, a socket that died — keeps the generic message, which
+        // is now the honest description of exactly that residue rather than of both cases at once.
+        const fields = serverErrorFields(error);
+        if (fields) {
+          throw new PgServerRejectedError(fields.sqlstate, fields.severity, { cause: error });
+        }
         // `cause` preserves the original error for local debugging/stack-trace purposes (and
         // satisfies this repo's `preserve-caught-error` lint rule) — it is NEVER read by this
         // codebase's own error handling (every catch site here only ever reads `.message`, never

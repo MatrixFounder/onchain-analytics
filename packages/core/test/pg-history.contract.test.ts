@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createPgHistoryAdapter } from '../src/index.js';
-import { createReadClient, PgQueryTimeoutError } from '../src/pg/read-client.js';
+import {
+  createReadClient,
+  PgQueryTimeoutError,
+  PgServerRejectedError,
+} from '../src/pg/read-client.js';
 import type { PgPoolCtor, PgPoolLike } from '../src/pg/read-client.js';
 import { isolatedThrottle } from './helpers/isolated-throttle.js';
 import { createThrottle } from '../src/net/rate-limit.js';
@@ -224,8 +228,12 @@ describe('pg-history adapter (contract, R-12 — mocked pg client, no live PG)',
       async query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }> {
         SchemaResolvingPool.lastSql = text;
         if (!/\bFROM\s+onchain\.snapshots\b/i.test(text)) {
+          // `severity` alongside `code`, because that is what a real ErrorResponse carries and
+          // WI-47 item 4 made the pair load-bearing: the client classifies "the server answered"
+          // on both fields, so a fixture with only `code` would no longer model the server it is
+          // standing in for. Measured shape — `42P01` / `ERROR`.
           const error = new Error('relation "snapshots" does not exist');
-          (error as Error & { code?: string }).code = '42P01';
+          Object.assign(error, { code: '42P01', severity: 'ERROR' });
           throw error;
         }
         void values;
@@ -244,8 +252,10 @@ describe('pg-history adapter (contract, R-12 — mocked pg client, no live PG)',
 
     const rows = await adapter.fetch('platform.metrics.history', { chain: 'dash' });
 
-    // Asserted on the OUTCOME first: with a bare name this rejects with the sanitized
-    // "database unavailable", which is exactly how the defect presented in production.
+    // Asserted on the OUTCOME first: with a bare name this rejects, which is exactly how the
+    // defect presented in production. (Since WI-47 item 4 that rejection reads
+    // `database reachable, request rejected (SQLSTATE 42P01, ERROR)` rather than the generic
+    // "database unavailable" — a better reproduction of the live symptom, not a different one.)
     expect(rows).toEqual(FAKE_ROWS);
     // …and on the SQL, so the reason it passed is the schema and not a lenient fake.
     expect(SchemaResolvingPool.lastSql).toMatch(/FROM\s+onchain\.snapshots/i);
@@ -372,6 +382,153 @@ describe('pg-history adapter (contract, R-12 — mocked pg client, no live PG)',
       }
 
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('db.internal'));
+      stderrSpy.mockRestore();
+    });
+
+    // -------------------------------------------------------------------------------------
+    // WI-47 item 4 — "the server answered with an error" against "the server is not there".
+    //
+    // None of these shapes is invented. Each reproduces one failure MEASURED against the shipped
+    // Supabase installation before the class was named (probe recorded in the WI-47 record):
+    //   unqualified name -> DatabaseError, code 42P01, severity ERROR  (the production symptom)
+    //   wrong password   -> DatabaseError, code 28P01, severity FATAL  (message names the DSN user)
+    //   unknown tenant   -> DatabaseError, code XX000, severity FATAL  (Supavisor's own answer)
+    //   dead port        -> AggregateError, code ECONNREFUSED, message EMPTY STRING
+    //   unroutable host  -> plain Error, no code at all
+    // The first three are answers from a reachable server; the last two are not.
+    // -------------------------------------------------------------------------------------
+
+    /** A pool whose `query()` throws a CHOSEN error — which error is the entire thing under test
+     * here, so the fixture takes it instead of hardcoding one. */
+    function poolThrowing(error: unknown): PgPoolCtor {
+      return class implements PgPoolLike {
+        async query(): Promise<{ rows: unknown[] }> {
+          throw error;
+        }
+      } as unknown as PgPoolCtor;
+    }
+
+    /** The two fields a real Postgres ErrorResponse always carries, as `pg` exposes them. */
+    function serverError(code: string, severity: string, message: string): Error {
+      return Object.assign(new Error(message), { code, severity });
+    }
+
+    it('read-client.ts: a server ErrorResponse becomes PgServerRejectedError naming its SQLSTATE — never the generic "database unavailable" (WI-47 item 4)', async () => {
+      // KILLED_BY: delete the `if (fields) throw new PgServerRejectedError(...)` branch from the
+      // query catch in read-client.ts — the WI-47 symptom collapses back into "unavailable".
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const client = createReadClient({
+        env: { ONCHAIN_PG_URL: SECRET_DSN },
+        PoolCtor: poolThrowing(
+          serverError('42P01', 'ERROR', 'relation "snapshots" does not exist'),
+        ),
+      });
+
+      const thrown = await client.query('SELECT 1').then(
+        () => expect.unreachable(),
+        (error: unknown) => error,
+      );
+
+      expect(thrown).toBeInstanceOf(PgServerRejectedError);
+      expect((thrown as PgServerRejectedError).sqlstate).toBe('42P01');
+      expect((thrown as PgServerRejectedError).severity).toBe('ERROR');
+      // The operator-facing half — "reachable" is the single word whose absence sent WI-47's
+      // diagnosis to the VM, the ports and the credentials while the database was answering.
+      expect((thrown as Error).message).toContain('reachable');
+      expect((thrown as Error).message).toContain('42P01');
+      expect((thrown as Error).message).not.toContain('unavailable');
+      stderrSpy.mockRestore();
+    });
+
+    it("read-client.ts: the server's OWN message is never surfaced — a 28P01 quotes the DSN's username back at us (D10)", async () => {
+      // KILLED_BY: pass `errorMessage(error)` into PgServerRejectedError AND drop the constructor's
+      // SEVERITY_RE check — both, because either alone is absorbed by the other. Run: passing the
+      // server text in on its own leaves this test GREEN (the constructor rejects the unshaped
+      // string and the leak never forms); defeating both turns this one red. That is the ordering
+      // this test exists to pin — it guards the constructor's validation, not the call site's.
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const client = createReadClient({
+        env: { ONCHAIN_PG_URL: SECRET_DSN },
+        PoolCtor: poolThrowing(
+          serverError('28P01', 'FATAL', 'password authentication failed for user "app_user"'),
+        ),
+      });
+
+      const thrown = await client.query('SELECT 1').then(
+        () => expect.unreachable(),
+        (error: unknown) => error,
+      );
+
+      expect(thrown).toBeInstanceOf(PgServerRejectedError);
+      expect((thrown as Error).message).toContain('28P01');
+      expect(String(thrown)).not.toContain('app_user');
+      expect(String(thrown)).not.toContain(SECRET_DSN);
+      // …while the full detail still reaches stderr, which is the half that may carry it.
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('app_user'));
+      stderrSpy.mockRestore();
+    });
+
+    it('read-client.ts: EPIPE — five uppercase characters, no severity — stays "database unavailable" (the discriminator is not `code` alone)', async () => {
+      // KILLED_BY: drop the `severity` requirement from serverErrorFields(). EPIPE then matches
+      // SQLSTATE_RE and a socket dying mid-write — the definition of NOT reachable — gets reported
+      // as an answer from a healthy server, inverting the fact this whole change exists to carry.
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const client = createReadClient({
+        env: { ONCHAIN_PG_URL: SECRET_DSN },
+        PoolCtor: poolThrowing(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })),
+      });
+
+      await expect(client.query('SELECT 1')).rejects.toThrow('pg-history: database unavailable');
+      stderrSpy.mockRestore();
+    });
+
+    it('read-client.ts: a dead port (AggregateError with an EMPTY message) still logs a readable stderr line naming ECONNREFUSED', async () => {
+      // KILLED_BY: revert errorMessage() to `error.message`. The line then ends at its colon and
+      // says nothing — the single most ordinary "the database is not there" failure logging a
+      // blank diagnostic, which is the same complaint WI-47 filed about the caller-facing side.
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const inner = Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:59999'), {
+        code: 'ECONNREFUSED',
+      });
+      const client = createReadClient({
+        env: { ONCHAIN_PG_URL: SECRET_DSN },
+        PoolCtor: poolThrowing(
+          Object.assign(new AggregateError([inner], ''), { code: 'ECONNREFUSED' }),
+        ),
+      });
+
+      await expect(client.query('SELECT 1')).rejects.toThrow('pg-history: database unavailable');
+
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('ECONNREFUSED'));
+      // …and specifically NOT a line that trails off after the colon.
+      expect(stderrSpy).not.toHaveBeenCalledWith(
+        expect.stringMatching(/never surfaced to the caller\):\s*\n$/),
+      );
+      stderrSpy.mockRestore();
+    });
+
+    it('read-client.ts: a severity that is not protocol-shaped is DROPPED rather than interpolated (validated, not trusted)', async () => {
+      // KILLED_BY: interpolate `severity` without the SEVERITY_RE check. The SQLSTATE and severity
+      // are server-controlled strings going into a message promised to be DSN-free; validating
+      // their shape is what makes that promise hold for a field we do not generate.
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const client = createReadClient({
+        env: { ONCHAIN_PG_URL: SECRET_DSN },
+        PoolCtor: poolThrowing(
+          serverError('42P01', 'ОШИБКА postgres://smuggled', 'relation does not exist'),
+        ),
+      });
+
+      const thrown = await client.query('SELECT 1').then(
+        () => expect.unreachable(),
+        (error: unknown) => error,
+      );
+
+      expect(thrown).toBeInstanceOf(PgServerRejectedError);
+      expect((thrown as PgServerRejectedError).sqlstate).toBe('42P01');
+      expect((thrown as PgServerRejectedError).severity).toBeUndefined();
+      expect((thrown as Error).message).toContain('42P01');
+      expect((thrown as Error).message).not.toContain('smuggled');
       stderrSpy.mockRestore();
     });
 
