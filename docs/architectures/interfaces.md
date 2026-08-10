@@ -182,7 +182,7 @@ entered (a traversal fact, tier-free — the registry never classifies paidness)
 it to `budgetMeta()`, which reports the paid adapter among them. Under-reporting is the expensive
 direction: an agent that believes a call was free repeats it (R-41). The WIRE shape is unchanged;
 `attempted` never reaches a client. `tier` itself is NEVER added to this object, or to `_meta`
-anywhere else, on any of the 13 tools (R-152) — the internal cost-tier classification is our unit
+anywhere else, on any of the 14 tools (R-152) — the internal cost-tier classification is our unit
 economics, not part of the client's contract (ADR-002 D8, ADR-003 D4).
 
 #### 5.1.3 The two registry-backed tools (TASK-006) — free

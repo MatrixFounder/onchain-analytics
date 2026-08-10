@@ -2683,9 +2683,11 @@ was home". The server's own message stays unsurfaced: it quotes the DSN's userna
 - **The tool inventory is data, not prose (TASK-011, [ADR-002](../onchain-analytics/ADR-002-configurable-routing.md)
   D7).** Every tool module exports a `ToolSpec` — `name`, `title?`, `description`, the served
   `capability` (`null` for the two that serve none), both zod schemas, and a handler — and
-  `createServer` registers by iterating `toolSpecs`. `title?` is part of the type because 4 of the
-  13 tools carry one and 9 do not; a spec without it would silently drop four titles from
-  `tools/list`. One helper (`defineTool`) is the only place that touches `server.registerTool`, so
+  `createServer` registers by iterating `toolSpecs`. `title?` is OPTIONAL in the type because it
+  described a split when written — 4 of the 13 tools carried one and 9 did not, and a spec without
+  it would silently drop four titles from `tools/list`. **Today all 14 carry one** (measured while
+  closing WI-48), so the optionality is now a tolerance the type still permits, not a state it
+  describes; whether to require it is a separate decision, deliberately not taken here. One helper (`defineTool`) is the only place that touches `server.registerTool`, so
   a tool's name is **declared** exactly once.
   - 🔴 **DESIGNED, corrected (T-013) — `capability` does NOT widen to a union. A new, additive
     field carries the second capability instead.** A first draft of this entry proposed
@@ -2760,7 +2762,7 @@ spec.servedCapabilities`.
   - 🔴 **Least privilege stays a RUNTIME fact, not a type-level promise.** Today `server.ts` hands
     each tool a fresh literal (`{version}`, `{registry}`, `{registry, budgetStore}`), so a free
     tool has no reference to the budget store at all. A uniform loop that passed one wide context
-    to all thirteen would replace that with self-restraint — and self-restraint is weak here,
+    to all fourteen would replace that with self-restraint — and self-restraint is weak here,
     because `budgetStore` is declared **optional** in all three M2 contexts, so any tool could add
     `budgetStore?: BudgetStore` to its own context type and read it, compiling silently. So the
     spec declares the context keys it needs (`needs: ['registry', 'budgetStore']`), the handler
@@ -2866,7 +2868,7 @@ these documents state, and the tool/adapter names they must contain, compared ag
   assumption) next to it in `test/fixtures/<adapter>/<name>.evidence.md`. **Not part of CI.**
 - **`packages/mcp-server/test/e2e.stdio.test.ts`** (spawn; the mechanism is unchanged from M0) —
   spawns `src/index.ts` as a child process through `tsx`. It asserts that `tools/list` contains
-  exactly the **thirteen** tools **derived from `toolSpecs`** — `toHaveLength(expected.length)` at
+  exactly the **fourteen** tools **derived from `toolSpecs`** — `toHaveLength(expected.length)` at
   `packages/mcp-server/test/e2e.stdio.test.ts:162`, `expect(tools, ADD_A_TOOL).toHaveLength(expected.length);`, not a hand-written literal, since TASK-011 made the inventory data — and keeps running
   `onchain_ping` end to end. It deliberately does **not** call the other tools over this transport:
   the `registry` injection is in-process, and using the real registry inside a spawned process

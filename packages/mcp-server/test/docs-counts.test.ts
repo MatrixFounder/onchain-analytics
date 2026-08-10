@@ -31,7 +31,15 @@ import { createServer } from '../src/server.js';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
 
-/** English number words the docs use for these counts, so both spellings are comparable. */
+/**
+ * Number words the docs use for these counts, so every spelling is comparable to a digit.
+ *
+ * **Russian entries are not decoration (WI-48).** `ROADMAP.md` is the one gated document written in
+ * Russian, and it states the tool count as a WORD — `**Четырнадцать тулов**`. That spelling is
+ * exactly what drifted: the section calls itself the list of what the server serves today, named
+ * this gate as its guard, and sat at «Тринадцать» for four days after the 14th tool shipped,
+ * because every pattern here read English.
+ */
 const WORDS: Record<string, number> = {
   nine: 9,
   ten: 10,
@@ -41,6 +49,14 @@ const WORDS: Record<string, number> = {
   fourteen: 14,
   fifteen: 15,
   sixteen: 16,
+  девять: 9,
+  десять: 10,
+  одиннадцать: 11,
+  двенадцать: 12,
+  тринадцать: 13,
+  четырнадцать: 14,
+  пятнадцать: 15,
+  шестнадцать: 16,
 };
 
 /** `"twelve"` / `"12"` → 12. */
@@ -172,11 +188,131 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       ...claimsWithSource('README.ru.md', /\*\*(\d+) MCP-инструментов\.\*\*/g),
       ...claimsWithSource('README.ru.md', /должно быть \*\*(\d+) инструментов\*\*/g),
       ...claimsWithSource('README.ru.md', /MCP-сервер: (\d+) инструментов/g),
+      // **WI-48 — seven sentences that stated the total and had never been given a pattern.** All
+      // seven were stale at thirteen while the server served fourteen, and the whole suite was
+      // green. The mechanism is the one this file's docstring already names: a gate only ever reads
+      // the sentence it was handed. `tool-inventory-docs.test.ts` covers the same documents, but it
+      // asks only whether a document NAMES the tool — which 013-8 satisfied by adding one line to
+      // ROADMAP's M2 *plan* list, leaving the "today" table untouched and passing.
+      //
+      // Cyrillic needs its own character class: JS `\w` does not match `Четырнадцать`.
+      ...claimsWithSource(
+        'docs/onchain-analytics/ROADMAP.md',
+        /\*\*([А-Яа-яЁё]+) тулов\*\*, в порядке публикации/g,
+      ),
+      ...claimsWithSource('packages/mcp-server/.AGENTS.md', /\*\*The (\w+) tools today:\*\*/g),
+      ...claimsWithSource('packages/mcp-server/.AGENTS.md', /capture of all (\d+) tools/g),
+      ...claimsWithSource(
+        'docs/architectures/interfaces.md',
+        /on any of the (\d+) tools \(R-152\)/g,
+      ),
+      ...claimsWithSource(
+        'docs/architectures/system-architecture.md',
+        /to all (\w+) would replace that/g,
+      ),
+      ...claimsWithSource(
+        'docs/architectures/system-architecture.md',
+        /exactly the \*\*(\w+)\*\* tools/g,
+      ),
+      // The `title?` sentence stated "4 of the 13 tools carry one and 9 do not". Measured while
+      // closing WI-48: all 14 carry one, so the sentence was wrong about the FACT as well as the
+      // number, and its replacement is anchored here so it cannot drift back.
+      ...claimsWithSource(
+        'docs/architectures/system-architecture.md',
+        /Today all (\d+) carry one/g,
+      ),
     ];
     // If a sentence is reworded, its pattern stops matching and the array shrinks — which would let
     // the test pass while checking less than it claims. The claim COUNT is therefore asserted too.
-    expect(claims.length).toBeGreaterThanOrEqual(17);
+    expect(claims.length).toBeGreaterThanOrEqual(24);
     assertClaims(claims, actual, 'MCP tool count');
+  });
+
+  /**
+   * Where a document ENUMERATES the tools, the list must be the live list (WI-48).
+   *
+   * **A right count is not a right list, and both halves failed independently.** When WI-48 was
+   * opened, `packages/mcp-server/.AGENTS.md` listed all fourteen names under the words "The
+   * thirteen tools today", while `functional-architecture.md`'s diagram node said "14 tools" over
+   * an enumeration of thirteen. One document had the names and not the number; the other had the
+   * number and not the names. A count gate catches only the first, which is why this exists beside
+   * the one above rather than inside it.
+   *
+   * **Why `tool-inventory-docs.test.ts` does not already cover this.** That gate asks whether a
+   * document NAMES a given tool — anywhere in the file. 013-8 satisfied it for ROADMAP by adding
+   * one line to the M2 *plan* list, so the section that calls itself "the tools today" never had to
+   * change. Naming somewhere and enumerating correctly are different promises; this checks the
+   * second.
+   *
+   * **Regions, not whole files, and that is load-bearing.** ROADMAP names three M3 tools that do
+   * not exist yet (`onchain_watch_add`/`_list`/`_remove`) a few lines below the table; a whole-file
+   * scan would demand the server serve them. Each region is delimited, and a delimiter that stops
+   * matching FAILS rather than quietly selecting nothing.
+   */
+  it('lists the tool NAMES correctly wherever a document enumerates them (WI-48)', async () => {
+    const actual = await registeredToolNames();
+
+    /** Backticked `onchain_*` tokens — the form prose and tables use. */
+    const backticked = (block: string): string[] =>
+      [...block.matchAll(/`(onchain_[a-z_]+)`/g)].map((m) => m[1] as string);
+
+    const regions: {
+      file: string;
+      from: RegExp;
+      to: RegExp;
+      extract: (block: string) => string[];
+    }[] = [
+      {
+        // The "Текущий состав тулов" table — the section WI-48 was filed about.
+        file: 'docs/onchain-analytics/ROADMAP.md',
+        from: /\*\*[А-Яа-яЁё]+ тулов\*\*, в порядке публикации:/,
+        to: /^Запланированные и \*\*ещё не построенные\*\*/m,
+        extract: backticked,
+      },
+      {
+        file: 'packages/mcp-server/.AGENTS.md',
+        from: /\*\*The \w+ tools today:\*\*/,
+        to: /— in publication order/,
+        extract: backticked,
+      },
+      {
+        // The C4 diagram node. Names appear WITHOUT the `onchain_` prefix and separated by `·`,
+        // so this region needs its own reader rather than the backtick one.
+        file: 'docs/architectures/functional-architecture.md',
+        from: /MCP\["MCP server @onchain-intel\/mcp-server — \d+ tools/,
+        to: /"\]/,
+        extract: (block) =>
+          block
+            .replace(/<br\s*\/?>/g, ' · ')
+            .split('·')
+            .map((name) => name.trim())
+            .filter((name) => /^[a-z][a-z_]*$/.test(name))
+            .map((name) => `onchain_${name}`),
+      },
+    ];
+
+    for (const region of regions) {
+      const text = read(region.file);
+      const opening = region.from.exec(text);
+      expect(
+        opening,
+        `${region.file}: the enumeration's opening no longer matches ${String(region.from)} — the ` +
+          `region cannot be located, so this gate would check nothing. Re-anchor it.`,
+      ).not.toBeNull();
+
+      const afterOpening = text.slice((opening as RegExpExecArray).index + opening![0].length);
+      const closing = region.to.exec(afterOpening);
+      expect(
+        closing,
+        `${region.file}: the enumeration's closing no longer matches ${String(region.to)}.`,
+      ).not.toBeNull();
+
+      const listed = [...new Set(region.extract(afterOpening.slice(0, closing!.index)))].sort();
+      expect(
+        listed,
+        `${region.file}: the enumerated tool list disagrees with the live server. Update it.`,
+      ).toStrictEqual(actual);
+    }
   });
 
   it('states the route count correctly, and does not re-copy the route table (WI-24)', () => {
