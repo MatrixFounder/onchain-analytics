@@ -146,8 +146,22 @@ export function createPgHistoryAdapter(deps: PgHistoryAdapterDeps = {}): Provide
       // …and to the query, which is the other thing this adapter waits on. Spread conditionally so
       // a call with no deadline hands `read-client.ts` byte-for-byte the options object it built
       // before this change — the same construction `blockscout` uses for `safeFetch`.
+      // **`onchain.snapshots`, schema-qualified — never a bare `snapshots` (WI-47).** The bare form
+      // resolved through the `search_path` that `read-client.ts` sets as a connection STARTUP
+      // parameter (`options: '-c search_path=onchain'`), and a startup parameter is not something a
+      // connection POOLER has to honour. Measured against the shipped Supabase installation: host
+      // `:5432` is owned by `supabase-pooler`, Supavisor answers `current_setting('search_path')`
+      // with its own `cvj, public, extensions`, and the bare name failed with `relation "snapshots"
+      // does not exist` while the qualified one read 3 039 rows. `pg-history` could not return a
+      // single row through a pooler, and the sanitized reason ("database unavailable") pointed the
+      // operator at a database that was healthy the whole time.
+      //
+      // Qualifying is also what DB-SCHEMA §1 already prescribes for Postgres — "своя схема
+      // `onchain`, не `public`" — so this is the convention arriving in the one query that had not
+      // adopted it, not a new rule. `options` above stays: it is correct and useful on a DIRECT
+      // connection, and it is now a convenience rather than something correctness depends on.
       return readClient.query<SnapshotRow>(
-        'SELECT ts, asset, metric, value_raw, value_num, source, height FROM snapshots ' +
+        'SELECT ts, asset, metric, value_raw, value_num, source, height FROM onchain.snapshots ' +
           'WHERE asset = $1 AND metric = ANY($2) ORDER BY ts DESC LIMIT $3',
         [DASH_PLATFORM_ASSET, metrics, DEFAULT_HISTORY_LIMIT],
         deadlineAtMs === undefined ? {} : { deadlineAtMs },

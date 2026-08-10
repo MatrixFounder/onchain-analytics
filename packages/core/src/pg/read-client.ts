@@ -257,6 +257,12 @@ export function createReadClient(deps: ReadClientDeps = {}): ReadClient {
         try {
           pool = new PoolCtor({
             connectionString,
+            // **Convenience, NOT a correctness dependency (WI-47).** Every query this client is
+            // given must name its schema itself, because this is a connection STARTUP parameter and
+            // a pooler is free to ignore or replace it: Supavisor, which owns port 5432 on the
+            // shipped Supabase installation, answers with its own `cvj, public, extensions` and
+            // drops this entirely. It is kept because it is correct on a direct connection and
+            // makes an interactive `psql` session against the same DSN behave the same way.
             options: '-c search_path=onchain',
             connectionTimeoutMillis: DEFAULT_CONNECTION_TIMEOUT_MS,
             max: DEFAULT_MAX_POOL_SIZE,

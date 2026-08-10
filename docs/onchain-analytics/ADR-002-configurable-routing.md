@@ -543,7 +543,7 @@ T-011 пропажу тула ловили два рукописных лите�
 
 ```
 packages/core/src/adapters/pg-history/index.ts:95
-  'SELECT ts, asset, metric, value_raw, value_num, source, height FROM snapshots ...'
+  'SELECT ts, asset, metric, value_raw, value_num, source, height FROM onchain.snapshots ...'
 packages/core/src/adapters/pg-history/index.ts:120
   source: row.source,
 ```
@@ -801,7 +801,7 @@ Sergey.
   в §Контекст).
 - **2026-08-01 — OQ-B закрыт, D9 уточнён.** Владелец подтвердил три значения и выбрал вариант 2 по
   месту крепления яруса. Уточнение не косметическое: `pg-history` — сквозной канал к разнородному
-  леджеру (`SELECT … source … FROM snapshots`), поэтому ярус адаптера для него лишь умолчание, а
+  леджеру (`SELECT … source … FROM onchain.snapshots`), поэтому ярус адаптера для него лишь умолчание, а
   ярус строки берётся из её `source`. Отсюда же подтверждено, что `derived` — не авансовое
   значение: такие строки уже сегодня проходят через движок наружу. Словарь источников не
   дублируется — заполняется скриптом из `metrics.source_priority` ∪ `DISTINCT snapshots.source`,

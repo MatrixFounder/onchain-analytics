@@ -202,6 +202,55 @@ describe('pg-history adapter (contract, R-12 — mocked pg client, no live PG)',
     ]);
   });
 
+  /**
+   * WI-47 — every query this adapter sends must name its SCHEMA, because `search_path` does not
+   * survive a connection pooler.
+   *
+   * **Why the existing fakes could not catch this.** `FakePool.query()` returns `FAKE_ROWS` for any
+   * SQL at all, so a bare `FROM snapshots` and a qualified `FROM onchain.snapshots` are the same
+   * string to it — the whole suite was green while the adapter could not read a single row through
+   * the shipped Supabase installation. `SchemaResolvingPool` below closes that by RESOLVING the
+   * name the way a real server does: it answers only when the table is qualified, and otherwise
+   * raises PostgreSQL's own `42P01` with PostgreSQL's own wording.
+   *
+   * Found by the live acceptance call of 013-10, not by this suite; this is the case that would
+   * have found it first.
+   */
+  it('WI-47: names the schema, so the query resolves where search_path is not ours to set', async () => {
+    /** Rejects an unqualified table exactly as a server whose `search_path` excludes `onchain`
+     * does — which is what Supavisor substitutes (`cvj, public, extensions`, measured). */
+    class SchemaResolvingPool implements PgPoolLike {
+      static lastSql: string | undefined;
+      async query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }> {
+        SchemaResolvingPool.lastSql = text;
+        if (!/\bFROM\s+onchain\.snapshots\b/i.test(text)) {
+          const error = new Error('relation "snapshots" does not exist');
+          (error as Error & { code?: string }).code = '42P01';
+          throw error;
+        }
+        void values;
+        return { rows: FAKE_ROWS };
+      }
+      on(): this {
+        return this;
+      }
+    }
+
+    const adapter = createPgHistoryAdapter({
+      env: { ONCHAIN_PG_URL: SECRET_DSN },
+      poolCtor: SchemaResolvingPool as unknown as PgPoolCtor,
+      throttle: isolatedThrottle(),
+    });
+
+    const rows = await adapter.fetch('platform.metrics.history', { chain: 'dash' });
+
+    // Asserted on the OUTCOME first: with a bare name this rejects with the sanitized
+    // "database unavailable", which is exactly how the defect presented in production.
+    expect(rows).toEqual(FAKE_ROWS);
+    // …and on the SQL, so the reason it passed is the schema and not a lenient fake.
+    expect(SchemaResolvingPool.lastSql).toMatch(/FROM\s+onchain\.snapshots/i);
+  });
+
   it('normalize() converts stringified bigint ts/height columns back into numbers and parses as Snapshot[]', async () => {
     resetFakePool();
     const adapter = createPgHistoryAdapter({

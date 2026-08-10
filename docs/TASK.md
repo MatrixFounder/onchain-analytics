@@ -650,7 +650,7 @@ valueRaw, valueNum?, source}[]}` (`points` — прямая проекция `Sn
   `source_priority` в `packages/core/src`/`packages/mcp-server/src`
 - (b) ранг конфликта (R-162) — скомпилированная структура, не SQL-запрос и не чтение
   `ReadClient`-подобного объекта в новом коде слияния
-- (c) `pg-history`'s СУЩЕСТВУЮЩИЙ SELECT (`packages/core/src/adapters/pg-history/index.ts:150-152`, `'SELECT ts, asset, metric, value_raw, value_num, source, height`) не меняется этой задачей —
+- (c) `pg-history`'s СУЩЕСТВУЮЩИЙ SELECT (`packages/core/src/adapters/pg-history/index.ts:150-152`, `'SELECT ts, asset, metric, value_raw, value_num, source, height`) не меняется ЭТОЙ задачей (T-013) —
   слияние работает НАД его результатом, не переписывает запрос
 
 **R-181**
