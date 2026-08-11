@@ -25,6 +25,10 @@
       "sha256": "c0589d9a0122668e46887468da9ccae26fe1c79653b93419516333d616b97872",
       "note": "TASK-009 — coherent live snapshot of three plain-text surfaces (2026-07-29): blockchain.info /q/totalbc, /q/getblockcount and mempool.space /blocks/tip/height, taken back-to-back so they are comparable. It carries the decisive measurement of the task: /q/totalbc is 120092.8 subsidies past the halving boundary — FRACTIONAL, so it cannot be the halving formula nor a stale copy of one (a stale copy sits at an integer offset), and is therefore actually-claimed supply rather than emission. The whole two-field design of ChainSupply rests on that, and the task text it overrode prescribed the opposite."
     },
+    "docs/onchain-analytics/raw/defillama-chain-name-vocabularies-2026-08-11.json": {
+      "sha256": "f499e27c6378a4e4fe5e503369da50d4e5bc93e214abbcbdd8beb512a0533d1b",
+      "note": "Two live keyless recordings of DeFiLlama's chain catalogue under its TWO naming vocabularies (GET /chains, legacy — the one GET /protocols speaks; GET /v2/chains, current — the one registry.data.json's vendors.defillama carries). src/adapters/defillama/chain-aliases.ts is GENERATED from it, and without that map protocol.tvl answers a confident `deployed: false, tvlUsd: 0` for 43 of 458 chains. The generator test compares the committed module against a regeneration from this evidence — editing BOTH would pass that check, which is what this pin closes."
+    },
     "docs/onchain-analytics/raw/defillama-dex-echo-probe-2026-07-28.json": {
       "sha256": "0c2ebb9ab0534b594bc9a09454ae9c0a6ed1ff9b2405b4a4e64024fcecc2f6d9",
       "note": "TASK-007 backlog item 6 — live keyless verification that DeFiLlama's `chain` echo equals the `vendors.defillama` name we send, for all 274 covered chains. It is the evidence that normalizeDexVolume's identity guard cannot misfire on a covered chain, and (incidentally) the first measured proof that a COVERED chain can return `total24h: null` — the justification for nullable aggregates, which until now cited a chain that is not covered."

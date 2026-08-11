@@ -145,6 +145,54 @@ describe('defillama adapter (contract, R-7)', () => {
       expect(result.unmappedDeployments).toBeGreaterThanOrEqual(0);
     });
 
+    /**
+     * The regression for the two-vocabulary defect, and it is stated as a REGRESSION on purpose:
+     * every one of the 1298 tests stayed green while `protocol.tvl` answered `deployed: false,
+     * tvlUsd: 0` for 43 of 458 chains, because nothing asserted a chain whose name differs between
+     * the two vendor listings. `/protocols` says `Binance`/`Optimism`/`xDai`; `vendors.defillama`
+     * (from `/v2/chains`) says `BSC`/`OP Mainnet`/`Gnosis`. Delete `chain-aliases.ts` from the
+     * adapter and these three cases fail; nothing else in the suite does.
+     */
+    it.each([
+      ['bsc', 'Binance'],
+      ['op-mainnet', 'Optimism'],
+      ['gnosis', 'xDai'],
+    ])(
+      'resolves %s, which the catalog names %s, as deployed with a real figure',
+      (slug, legacy) => {
+        const row = catalogRow('aave-v3');
+        // The premise, asserted rather than assumed: the fixture really does use the legacy name, and
+        // really does not use the one our registry carries.
+        expect(row.chains).toContain(legacy);
+        expect(CHAINS.resolve(slug).vendors['defillama']).not.toBe(legacy);
+
+        const result = adapter.normalize('protocol.tvl', fetchResultFor(slug, 'aave-v3')) as {
+          deployed: boolean;
+          tvlUsd: number | null;
+        };
+
+        expect(result.deployed).toBe(true);
+        expect(result.tvlUsd).toBe(row.chainTvls![legacy]);
+        expect(result.tvlUsd).toBeGreaterThan(0);
+      },
+    );
+
+    it('accounts for the WHOLE protocol total across chains when none is unnameable', () => {
+      // Catches both halves of what went wrong in this area: a DROPPED chain (the vocabulary defect,
+      // which pushed the ratio under 100 %) and a DOUBLE-COUNTED one (the accumulator bug found
+      // during wave 2, which pushed it to exactly 200 %). Conditioned on `unmappedDeployments === 0`,
+      // so it is an exact invariant rather than an approximate one.
+      const result = adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'aave-v3')) as {
+        deployments: { tvlUsd: number | null }[];
+        unmappedDeployments: number;
+        totalTvlUsd: number;
+      };
+
+      expect(result.unmappedDeployments).toBe(0);
+      const summed = result.deployments.reduce((acc, d) => acc + (d.tvlUsd ?? 0), 0);
+      expect(summed / result.totalTvlUsd).toBeCloseTo(1, 2);
+    });
+
     it('refuses a slug the catalog does not carry, rather than inventing a zero', () => {
       expect(() =>
         adapter.normalize('protocol.tvl', fetchResultFor('ethereum', 'no-such')),

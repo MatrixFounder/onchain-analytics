@@ -4,6 +4,7 @@ import { loadChainRegistry } from '../../chain/registry.js';
 import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { CapabilityNotCoveredOnChainError } from '../../chain/errors.js';
 import { DEFILLAMA_DEX_CHAINS } from './dex-chains.js';
+import { DEFILLAMA_CHAIN_ALIASES } from './chain-aliases.js';
 import { ttlFor } from '../../cache/ttl.js';
 import { stringifyTruncated } from '../stringify-truncated.js';
 import { adapterRegistrations } from '../../providers.config.js';
@@ -755,52 +756,58 @@ function normalizeProtocolTvl(
   // Vendor chain name → summed current TVL across the contributing rows. `null` records "listed as
   // a deployment, but no plain-TVL figure published", which is NOT the same as zero and must not
   // collapse into it (L-9).
+  // **Keyed by OUR slug, never by a vendor name.** Keying it the vendor's way is what let the
+  // two-vocabulary defect through: the accumulator filled with `/protocols` names (`Optimism`) while
+  // the lookup below asked with the registry's (`OP Mainnet`), so 43 chains missed each other and
+  // answered `deployed: false`. One canonical key means the question and the answer cannot be
+  // phrased in different languages.
   const perChain = new Map<string, number | null>();
   let unmappedDeployments = 0;
-  const add = (vendorChain: string, value: number | null): void => {
-    const prev = perChain.get(vendorChain);
+  const add = (slug: string, value: number | null): void => {
+    const prev = perChain.get(slug);
     if (value === null) {
-      if (prev === undefined) perChain.set(vendorChain, null);
+      if (prev === undefined) perChain.set(slug, null);
       return;
     }
-    perChain.set(vendorChain, (prev ?? 0) + value);
+    perChain.set(slug, (prev ?? 0) + value);
   };
   for (const row of resolved.rows) {
     // Collect this row's chains FIRST, then contribute each exactly once. The two vendor fields
     // overlap almost entirely, so adding straight from both loops double-counts every ordinary
     // chain — caught by the fixture, where `lido` on ethereum came back at exactly 2× its figure.
-    const rowVendorChains = new Set<string>();
+    // A `Map` keyed by slug also folds the case where a row names one chain under both vocabularies.
+    const rowChainsBySlug = new Map<string, string>();
     // The declared deployment list is the authority on WHERE, so an unknown name here is a genuine
     // gap in our registry and gets counted. A `chainTvls` key cannot be counted the same way: the
     // bucket keys (`X-borrowed`) live in that same namespace, so an unrecognised one is far more
     // likely a bucket than a chain, and counting it would inflate the gap with noise.
     for (const vendorChain of rowChains(row)) {
-      if (vendorChainToSlug.has(vendorChain)) rowVendorChains.add(vendorChain);
-      else unmappedDeployments += 1;
+      const slug = vendorChainToSlug.get(vendorChain);
+      if (slug === undefined) unmappedDeployments += 1;
+      else rowChainsBySlug.set(slug, vendorChain);
     }
     // A figure published for a chain the row forgot to list still counts as a deployment — the
     // vendor's two fields are maintained separately and do drift.
     for (const key of rowChainTvlKeys(row)) {
-      if (vendorChainToSlug.has(key)) rowVendorChains.add(key);
+      const slug = vendorChainToSlug.get(key);
+      // A figure beats a bare listing when both name the same chain: `rowChainTvl` is read with the
+      // key that actually carries the number.
+      if (slug !== undefined && rowChainTvl(row, key) !== null) rowChainsBySlug.set(slug, key);
+      else if (slug !== undefined && !rowChainsBySlug.has(slug)) rowChainsBySlug.set(slug, key);
     }
-    for (const vendorChain of rowVendorChains) add(vendorChain, rowChainTvl(row, vendorChain));
+    for (const [slug, vendorChain] of rowChainsBySlug) add(slug, rowChainTvl(row, vendorChain));
   }
 
   const deployments = [...perChain]
-    .map(([vendorChain, tvlUsd]) => ({
-      // Non-null by construction: only keys `vendorChainToSlug` knows ever reach `perChain`.
-      chain: vendorChainToSlug.get(vendorChain) as string,
-      tvlUsd,
-    }))
+    .map(([slug, tvlUsd]) => ({ chain: slug, tvlUsd }))
     // TVL-descending, unknown last. `-1` rather than `0` so a genuine zero still outranks a
     // missing measurement — the two mean different things and the order should say so.
     .sort((a, b) => (b.tvlUsd ?? -1) - (a.tvlUsd ?? -1));
 
-  const vendorChain = chain.vendors['defillama'] ?? chain.name;
-  const deployed = perChain.has(vendorChain);
+  const deployed = perChain.has(chain.slug);
   // Not deployed → `0`, which is a true statement about the world. Deployed with no plain figure →
   // `null`, because we did not measure it. See `ProtocolTvlResult.tvlUsd`.
-  const tvlUsd = deployed ? (perChain.get(vendorChain) ?? null) : 0;
+  const tvlUsd = deployed ? (perChain.get(chain.slug) ?? null) : 0;
 
   let totalTvlUsd: number | undefined;
   if (resolved.kind === 'vendor-aggregate') {
@@ -955,11 +962,30 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
    * The catalog names chains the vendor's way (`Binance`, `xDai`, `zkSync Era`); every string this
    * adapter emits must be OURS (the anti-corruption rule the DEX contract states at length). A
    * `Map` because `deployments` does one lookup per deployment chain per call — 22 for `aave-v3`.
+   *
+   * **BOTH vocabularies are registered, and that is a correctness requirement, not a convenience.**
+   * DeFiLlama serves one chain catalogue under two naming schemes, and the endpoints this adapter
+   * reads sit on opposite sides: `vendors.defillama` comes from `/v2/chains` (`OP Mainnet`, `BSC`,
+   * `Gnosis`), while `/protocols` says `Optimism`, `Binance`, `xDai`. Registering only the registry's
+   * name missed **43 of 458 chains**, and the miss was silent in the worst available way — since
+   * L-9 an unmatched chain reads as `deployed: false, tvlUsd: 0`, so `aave` answered "not deployed"
+   * on `optimism`, `bsc`, `gnosis` and `zksync-era` while holding hundreds of millions there. The
+   * legacy names come from `DEFILLAMA_CHAIN_ALIASES`, generated from the vendor's own identity
+   * columns (see that module's generator), never from a hand-kept list.
    */
   const vendorChainToSlug = new Map<string, string>();
+  const currentToLegacy = new Map<string, string>();
+  for (const [legacy, current] of DEFILLAMA_CHAIN_ALIASES) currentToLegacy.set(current, legacy);
   for (const info of chains.list()) {
     const vendorName = info.vendors['defillama'];
-    if (vendorName != null) vendorChainToSlug.set(vendorName, info.slug);
+    if (vendorName == null) continue;
+    vendorChainToSlug.set(vendorName, info.slug);
+    const legacy = currentToLegacy.get(vendorName);
+    // Never let an alias overwrite a registry name: the generator already proves the rename is a
+    // bijection on the recorded evidence, so this can only fire if a future registry row adopts a
+    // legacy name as its own — in which case the row itself is the authority.
+    if (legacy !== undefined && !vendorChainToSlug.has(legacy))
+      vendorChainToSlug.set(legacy, info.slug);
   }
 
   /**

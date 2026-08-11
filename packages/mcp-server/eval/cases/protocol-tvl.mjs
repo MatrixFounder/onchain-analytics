@@ -36,7 +36,33 @@ export default {
       problems.push('a deployments row has no chain slug');
     }
     if (!Array.isArray(r?.aggregatedFrom)) problems.push('aggregatedFrom is not an array');
-    if (num(r?.unmappedDeployments) === null) problems.push('unmappedDeployments is not a number');
+
+    // The two checks the FIRST version of this case lacked, added after it passed ✅ on `bsc` and
+    // `gnosis` while the answer was `deployed: false, tvlUsd: 0` for chains holding hundreds of
+    // millions. The three-state contract above made a wrong answer syntactically legal; these two
+    // ask whether it is also ARITHMETICALLY possible.
+    if (num(r?.unmappedDeployments) === null) {
+      problems.push('unmappedDeployments is not a number');
+    } else if (r.unmappedDeployments > 0) {
+      // The vendor named a deployment chain our registry cannot. Either the registry has drifted or
+      // the two vendor documents disagree on naming again — both need a human, and both are
+      // invisible from any single answer.
+      problems.push(
+        `${r.unmappedDeployments} deployment chain(s) could not be named — registry drift, or the ` +
+          'vendor changed chain naming again',
+      );
+    } else if (Array.isArray(r?.deployments) && num(r?.totalTvlUsd) !== null && r.totalTvlUsd > 0) {
+      // With nothing unnameable, the per-chain figures must account for the whole protocol. Catches
+      // BOTH failures seen in this area: chains silently dropped (the ratio falls under 1) and
+      // chains counted twice (it hit exactly 2 during development).
+      const summed = r.deployments.reduce((acc, d) => acc + (num(d?.tvlUsd) ?? 0), 0);
+      const ratio = summed / r.totalTvlUsd;
+      if (ratio < 0.97 || ratio > 1.03) {
+        problems.push(
+          `per-chain TVL sums to ${(100 * ratio).toFixed(1)}% of totalTvlUsd with no unmapped chains`,
+        );
+      }
+    }
 
     return problems;
   },
