@@ -847,6 +847,600 @@
     }
   },
   {
+    "name": "onchain_chain_tvl_history",
+    "title": "Chain TVL history",
+    "description": "How a CHAIN's total value locked changed over time, from DeFiLlama — free and keyless. Returns the daily series plus a ready-made `change` (absolute and percent) across the window, so \"how much did TVL move in 30 days\" is one call and no arithmetic. Use onchain_chain_tvl for the current figure alone, and onchain_protocol_tvl_history for one protocol; onchain_list_chains to find the `chain` value.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1825
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "fromMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "toMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "fromMs",
+            "toMs",
+            "days"
+          ],
+          "additionalProperties": false,
+          "description": "The window ACTUALLY covered — `days` is what you asked for when the chain has that much history, and less when it does not."
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ts": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "tvlUsd": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "ts",
+              "tvlUsd"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Daily points, ts epoch-ms UTC, oldest first. One point per day, never stitched."
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "gapDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Daily steps MISSING inside the covered window. `points + gapDays === window.days` — so a gap is distinguishable from a real zero rather than being guessed at."
+        },
+        "change": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "fromTs": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "toTs": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "fromUsd": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "toUsd": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "absUsd": {
+                  "type": "number"
+                },
+                "pct": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "fromTs",
+                "toTs",
+                "fromUsd",
+                "toUsd",
+                "absUsd",
+                "pct"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Change across the window, already computed — answer \"how much did TVL move\" from this rather than by doing arithmetic on the series. null when there is nothing to compare; pct is null on a zero base, because \"grew from nothing\" has no percentage."
+        },
+        "truncated": {
+          "type": "object",
+          "properties": {
+            "series": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "series",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "name",
+        "window",
+        "series",
+        "points",
+        "gapDays",
+        "change",
+        "truncated",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_list_protocols",
+    "title": "Protocols on a chain",
+    "description": "Which DeFi protocols are on a chain, ranked — by TVL or by 1d/7d/30d TVL growth. Start here when you do not already know a protocol slug: it answers \"the five largest protocols on X\" and \"what is growing fastest on X\" without guessing names, and the slugs it returns are what onchain_protocol_tvl and onchain_protocol_tvl_history take. Free and keyless (DeFiLlama); onchain_list_chains to find the `chain` value.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "sortedBy": {
+          "description": "Ranking key, descending. Protocols the provider publishes no figure for always sort LAST, never as a zero.",
+          "type": "string",
+          "enum": [
+            "tvl",
+            "change1d",
+            "change7d",
+            "change30d"
+          ]
+        },
+        "minTvlUsd": {
+          "description": "Floor on this chain's TVL, applied BEFORE ranking. Use it with a change* sort: without a floor the top of a growth ranking is dust doubling from nothing.",
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string"
+        },
+        "protocols": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tvlUsd": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "TVL on THIS chain. null means the protocol is listed here but the provider publishes only staking/borrowed buckets for it — unknown, not zero."
+              },
+              "totalTvlUsd": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "change": {
+                "type": "object",
+                "properties": {
+                  "d1": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "d7": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "d30": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "d1",
+                  "d7",
+                  "d30"
+                ],
+                "additionalProperties": false,
+                "description": "Percent change of the protocol TOTAL TVL. null where the provider publishes nothing — never 0, because a missing measurement and a flat month are different."
+              },
+              "parent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The family this belongs to (\"uniswap\" for \"uniswap-v3\"). Pass it to onchain_protocol_tvl to get the family total."
+              }
+            },
+            "required": [
+              "slug",
+              "name",
+              "category",
+              "tvlUsd",
+              "totalTvlUsd",
+              "change",
+              "parent"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "matched": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "How many protocols matched BEFORE `limit` — so a truncated list looks truncated."
+        },
+        "limit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sortedBy": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "name",
+        "protocols",
+        "matched",
+        "limit",
+        "sortedBy",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_protocol_tvl_history",
+    "title": "Protocol TVL history",
+    "description": "How ONE protocol's TVL on ONE chain changed over time, with a ready-made `change` across the window. Free and keyless (DeFiLlama). Use onchain_list_protocols to rank many protocols by growth — that is a shared cheap document, while this route downloads the protocol's full history and refuses the few that are too large (mostly exchange trackers, not protocols). Use onchain_list_chains to find the `chain` value.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "protocolSlug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1825
+        }
+      },
+      "required": [
+        "chain",
+        "protocolSlug"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "string"
+        },
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "deployed": {
+          "type": "boolean",
+          "description": "Whether the protocol is on this chain at all. false comes with an empty series and window.days 0 — an answer, not an error."
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "fromMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "toMs": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "fromMs",
+            "toMs",
+            "days"
+          ],
+          "additionalProperties": false
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ts": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "tvlUsd": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "ts",
+              "tvlUsd"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "gapDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "`points + gapDays === window.days` always — including when deployed is false."
+        },
+        "change": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "fromTs": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "toTs": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "fromUsd": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "toUsd": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "absUsd": {
+                  "type": "number"
+                },
+                "pct": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "fromTs",
+                "toTs",
+                "fromUsd",
+                "toUsd",
+                "absUsd",
+                "pct"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "truncated": {
+          "type": "object",
+          "properties": {
+            "series": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "series",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "protocol",
+        "chain",
+        "deployed",
+        "window",
+        "series",
+        "points",
+        "gapDays",
+        "change",
+        "truncated",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
     "name": "onchain_token_holders",
     "title": "Top token holders",
     "description": "Top token holders and their exact balances. Coverage is per chain — call onchain_list_chains({capability:\"token.holders\"}) first. Returns at most one vendor page; check truncated and droppedRows before treating the list as the complete holder set. Balances are exact base-unit strings with no decimals applied — get decimals from onchain_get_token.",

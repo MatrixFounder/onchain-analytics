@@ -116,6 +116,7 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
         'stopped validating, say why rather than letting the gate check one fewer.',
     ).toStrictEqual([
       'chain-supply.ts',
+      'chain-tvl-history.ts',
       'chain-tvl.ts',
       // T-013 task 013-7. In the list BEFORE it is registered: this gate reads `src/tools` with
       // `readdirSync`, so it sees a module the registry does not, which is exactly why the module
@@ -124,7 +125,9 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       'dex-volume.ts',
       'entity-label.ts',
       'get-token.ts',
+      'list-protocols.ts',
       'new-pairs.ts',
+      'protocol-tvl-history.ts',
       'protocol-tvl.ts',
       'smart-money-flows.ts',
       'token-holders.ts',

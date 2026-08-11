@@ -2,14 +2,14 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. External API — 14 MCP tools
+### 5.1. External API — 17 MCP tools
 
 `onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
 Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), one free
 DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
 BTC-supply tool with TASK-009 (§5.1.5).
 
-**The `chain` parameter, stated once.** Twelve of the fourteen tools take a chain, and every one of them
+**The `chain` parameter, stated once.** Fifteen of the seventeen tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
 resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
 `ethereum` and `solana` are aliases and stay valid indefinitely. What a tool can actually serve is
@@ -117,7 +117,7 @@ reserved.
 
 `tokenAddress`/`query` reuse the same `.max()` bounds and the same
 `superRefine`/`isValidAddress` idiom as `onchain_get_token` above — reused, not reinvented.
-`onchain_entity_label` has the only compound `superRefine` of the fourteen tools: **at least one** of
+`onchain_entity_label` has the only compound `superRefine` of the seventeen tools: **at least one** of
 `query`/`tokenAddress` is required (otherwise there is nothing to search for), and `tokenAddress`
 is mandatory when `exhaustive: true`.
 
@@ -185,7 +185,7 @@ entered (a traversal fact, tier-free — the registry never classifies paidness)
 it to `budgetMeta()`, which reports the paid adapter among them. Under-reporting is the expensive
 direction: an agent that believes a call was free repeats it (R-41). The WIRE shape is unchanged;
 `attempted` never reaches a client. `tier` itself is NEVER added to this object, or to `_meta`
-anywhere else, on any of the 14 tools (R-152) — the internal cost-tier classification is our unit
+anywhere else, on any of the 17 tools (R-152) — the internal cost-tier classification is our unit
 economics, not part of the client's contract (ADR-002 D8, ADR-003 D4).
 
 #### 5.1.3 The two registry-backed tools (TASK-006) — free
@@ -245,6 +245,38 @@ truncated and narrow the filter, instead of concluding there are only 50 chains.
 //     source: "defillama", fetchedAt
 //   }
 // Capability: dex.volume.history
+//
+// onchain_chain_tvl_history — how a CHAIN's TVL changed over time (WI-50), DeFiLlama, keyless
+// { chain: ChainInput, days?: 1..1825 (default 90) }
+// → {
+//     chain, name,
+//     window: { fromMs, toMs, days },   // the window ACTUALLY covered, clamped to real history
+//     series: Array<{ ts, tvlUsd }>,    // day-bucketed, strictly increasing, never stitched
+//     points, gapDays,                  // points + gapDays === window.days, always
+//     change: { fromTs, toTs, fromUsd, toUsd, absUsd, pct } | null,  // pct null on a zero base
+//     truncated: { series: boolean, reason: string },
+//     source: "defillama", fetchedAt
+//   }
+// Capability: chain.tvl.history
+//
+// onchain_list_protocols — the protocol POPULATION on a chain, ranked (WI-49), keyless
+// { chain: ChainInput, limit?: 1..200 (default 20),
+//   sortedBy?: "tvl" | "change1d" | "change7d" | "change30d", minTvlUsd?: number }
+// → {
+//     chain, name,
+//     protocols: Array<{ slug, name, category, tvlUsd, totalTvlUsd,
+//                        change: { d1, d7, d30 },   // percent; null where the vendor publishes none
+//                        parent }>,                 // the family, e.g. "uniswap" for "uniswap-v3"
+//     matched,   // how many matched BEFORE limit — a truncated list looks truncated
+//     limit, sortedBy, source: "defillama", fetchedAt
+//   }
+// Capability: protocol.list
+//
+// onchain_protocol_tvl_history — ONE protocol's TVL on ONE chain over time (WI-50), keyless
+// { chain: ChainInput, protocolSlug: string (.max(128)), days?: 1..1825 (default 90) }
+// → { protocol, chain, deployed, window, series, points, gapDays, change, truncated,
+//     source: "defillama", fetchedAt }   // deployed:false ⇒ empty series and window.days 0
+// Capability: protocol.tvl.history
 ```
 
 **Why the vendor's aggregates are passed through instead of recomputed (R-67, OQ-1).** `total24h`

@@ -64,10 +64,10 @@ describe('TC-UNIT-02 — no manifest entry for a capability nothing routes', () 
     expect(orphans).toStrictEqual([]);
   });
 
-  it('covers exactly the 20 routed capabilities, named', () => {
+  it('covers exactly the 23 routed capabilities, named', () => {
     // Named, not counted: two tables of the same SIZE that disagree on one key would pass a count.
     expect(Object.keys(capabilityManifests).sort()).toStrictEqual(routedCapabilities);
-    expect(routedCapabilities).toHaveLength(20);
+    expect(routedCapabilities).toHaveLength(23);
   });
 });
 
@@ -153,6 +153,9 @@ const TTL_SECONDS_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
   'protocol.tvl': 300,
   'chain.tvl': 300,
   'dex.volume.history': 3600,
+  'chain.tvl.history': 3600,
+  'protocol.list': 300,
+  'protocol.tvl.history': 3600,
   'privacy.shielded_pool': 3600,
   'platform.identities': 3600,
   'platform.contracts': 3600,
@@ -170,7 +173,7 @@ const TTL_SECONDS_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
 
 describe('TC-UNIT-05 — every `ttlSeconds` is byte-identical to the pre-move table', () => {
   it('pins all 20, so a TTL edit disguised as a migration fails here', () => {
-    expect(Object.keys(TTL_SECONDS_BEFORE_THE_MOVE)).toHaveLength(20);
+    expect(Object.keys(TTL_SECONDS_BEFORE_THE_MOVE)).toHaveLength(23);
     expect(
       Object.fromEntries(
         Object.entries(capabilityManifests).map(([capability, m]) => [capability, m.ttlSeconds]),
@@ -650,7 +653,7 @@ function scannedFieldCount(source: string): number {
 describe('TC-UNIT-08 — every deadline number carries a two-number derivation record (R-149)', () => {
   it('the real table: 23 numbers scanned, every one with both numbers beside it', () => {
     // Sign of work FIRST: a scan that matched nothing would report "no defects" identically.
-    expect(scannedFieldCount(manifestSource)).toBe(23); // 20 deadlineMs + 3 paidLegMs
+    expect(scannedFieldCount(manifestSource)).toBe(26); // 23 deadlineMs + 3 paidLegMs
     expect(
       derivationRecordDefects(manifestSource),
       'R-149: the comment beside a deadline is where the NEXT edit copies its reasoning from. It ' +
@@ -734,7 +737,7 @@ function stubAdapter(id: string): ProviderAdapter {
 }
 
 describe('TC-INT-01 — the real configuration constructs without throwing', () => {
-  it('all 20 routed capabilities are covered by the default manifest table', () => {
+  it('all 23 routed capabilities are covered by the default manifest table', () => {
     expect(() => new CapabilityRegistry(routes, new Map())).not.toThrow();
     // Sign of work: the routes really did go through the loop.
     expect(routes.length).toBeGreaterThan(20);
@@ -1094,7 +1097,7 @@ describe('TC-F5-GATE — every manifest row states its own enforcement, and the 
   const enforced = enforcedCapabilities(aware, spendsTime);
 
   it('the scan found the real table and the real adapters — otherwise everything below is vacuous', () => {
-    expect(blocks.size).toBe(20);
+    expect(blocks.size).toBe(23);
     expect([...blocks.keys()].sort()).toStrictEqual(
       [...new Set(routes.map((r) => r.capability))].sort(),
     );

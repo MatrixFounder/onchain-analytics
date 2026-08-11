@@ -40,6 +40,9 @@ export const routes: CapabilityRoute[] = [
   // `chain.tvl` is separate from `protocol.tvl`: different endpoint, different output contract,
   // and — measured — a different chain set (274 vs 458, see the adapter's `chainSupport`).
   { capability: 'dex.volume.history', adapterIds: ['defillama'] },
+  { capability: 'chain.tvl.history', adapterIds: ['defillama'] },
+  { capability: 'protocol.list', adapterIds: ['defillama'] },
+  { capability: 'protocol.tvl.history', adapterIds: ['defillama'] },
   { capability: 'wallet.balances.native', adapterIds: ['rpc-evm'] },
   { capability: 'wallet.balances.native', adapterIds: ['rpc-solana'] },
   {

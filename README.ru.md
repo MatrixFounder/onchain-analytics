@@ -2,7 +2,7 @@
 
 Движок ончейн-аналитики, выставленный наружу как **MCP-сервер**: адаптеры провайдеров (CoinGecko,
 DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализация в единую каноническую схему →
-двухуровневый кеш + бюджет-гард по кредитам → 14 инструментов, которые вызывает ваш агент.
+двухуровневый кеш + бюджет-гард по кредитам → 17 инструментов, которые вызывает ваш агент.
 
 **English version:** [README.md](README.md)
 
@@ -46,7 +46,7 @@ DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализаци�
 
 ## Что это даёт
 
-**14 MCP-инструментов.** Одна проверка живости, один инструмент реестра сетей, восемь бесплатных
+**17 MCP-инструментов.** Одна проверка живости, один инструмент реестра сетей, восемь бесплатных
 инструментов данных и три платных alpha-инструмента на Nansen.
 
 **Две сети:** `ethereum` и `solana`. Каждый инструмент принимает `chain` явно.
@@ -149,7 +149,7 @@ SSRF-allowlist.
 /mcp
 ```
 
-Под `onchain-intel` должно быть **14 инструментов**.
+Под `onchain-intel` должно быть **17 инструментов**.
 
 ---
 
@@ -189,6 +189,9 @@ SSRF-allowlist.
 | `onchain_list_chains`           | бесплатно      | —     | нет              |
 | `onchain_chain_tvl`             | бесплатно      | 300с  | нет              |
 | `onchain_dex_volume`            | бесплатно      | 3600с | нет              |
+| `onchain_chain_tvl_history`     | бесплатно      | 3600с | нет              |
+| `onchain_list_protocols`        | бесплатно      | 300с  | нет              |
+| `onchain_protocol_tvl_history`  | бесплатно      | 3600с | нет              |
 | `onchain_token_holders`         | бесплатно      | 3600с | нет              |
 | `onchain_chain_supply`          | бесплатно      | 600с  | нет              |
 | `onchain_smart_money_flows`     | **10 кр**      | 300с  | `NANSEN_API_KEY` |
@@ -748,7 +751,7 @@ Claude Code.
 
 ```
 packages/core/          движок: адаптеры, канонические типы, кеш, бюджет-гард
-packages/mcp-server/    MCP-сервер: 14 инструментов, валидация env, транспорт stdio
+packages/mcp-server/    MCP-сервер: 17 инструментов, валидация env, транспорт stdio
 docs/                   архитектура, ADR, roadmap, реестр issue
 n8n-workflows/          выгруженные workflow снапшоттера (отдельная always-on система)
 ```

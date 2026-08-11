@@ -2,6 +2,9 @@ import { chainSupplyToolSpec } from './chain-supply.js';
 import { chainTvlToolSpec } from './chain-tvl.js';
 import { dashPlatformHistoryToolSpec } from './dash-platform-history.js';
 import { dexVolumeToolSpec } from './dex-volume.js';
+import { chainTvlHistoryToolSpec } from './chain-tvl-history.js';
+import { listProtocolsToolSpec } from './list-protocols.js';
+import { protocolTvlHistoryToolSpec } from './protocol-tvl-history.js';
 import { entityLabelToolSpec } from './entity-label.js';
 import { getTokenToolSpec } from './get-token.js';
 import { listChainsToolSpec } from './list-chains.js';
@@ -44,6 +47,9 @@ export const toolSpecs: readonly ToolSpec[] = [
   listChainsToolSpec,
   chainTvlToolSpec,
   dexVolumeToolSpec,
+  chainTvlHistoryToolSpec,
+  listProtocolsToolSpec,
+  protocolTvlHistoryToolSpec,
   tokenHoldersToolSpec,
   chainSupplyToolSpec,
   smartMoneyFlowsToolSpec,

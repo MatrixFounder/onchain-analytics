@@ -730,7 +730,7 @@ describe('TC-INT-02 — the step order is manifest FIRST, policy class second', 
 describe('TC-INT-03 — the real route table validates, and carries exactly one descriptor', () => {
   it('constructs without throwing', () => {
     expect(() => new CapabilityRegistry(routes, new Map())).not.toThrow();
-    expect(routes).toHaveLength(21);
+    expect(routes).toHaveLength(24);
   });
 
   it('`entity.labels` is the only route with a policy, and it is the converted one', () => {

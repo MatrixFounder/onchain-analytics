@@ -665,7 +665,7 @@ export class CapabilityRegistry {
 (`packages/core/src/adapters/registry.ts:234-238`, `, which for a negative entry is the wrong`, narrowing `matching` routes), and set by ZERO of the 21 entries in
 `providers.config.ts` — re-measured 2026-08-03, the same result already recorded at TASK-006 and in
 ADR-002 itself. T-012 deletes the field together with the filter that read it, per the escape hatch
-ADR-002 D2 specifies: if a construction-time audit of all 21 routes ever finds one that genuinely
+ADR-002 D2 specifies: if a construction-time audit of all 24 routes ever finds one that genuinely
 needs to narrow chains BELOW what `chainSupport()` already expresses, the field returns with that
 route named as the consumer (open-questions.md records the closure).
 
@@ -712,7 +712,7 @@ field-mapping) on the identical ground. Exactly two entries are needed today:
 
 | `kind`              | Predicate                                                       | Replaces                                                                                                                                                                                                                                                                                                    |
 | ------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `any`               | always `true` (today's implicit default)                        | 20 of 21 routes, which carry no policy today                                                                                                                                                                                                                                                                |
+| `any`               | always `true` (today's implicit default)                        | 23 of 24 routes, which carry no policy today                                                                                                                                                                                                                                                                |
 | `someElementHasAny` | array, and ≥ 1 element has a non-empty value at one of `fields` | `entity.labels`'s literal predicate (`packages/core/src/providers.config.ts:132-142`, `that nansen exists; the policy belongs here, as data, beside`), bit-for-bit — 🔴 NEVER named or aliased `nonEmpty` anywhere (H-1: a non-empty array of contentless Blockscout rows must still count as unsatisfying) |
 
 **Resolved at `CapabilityRegistry` CONSTRUCTION, never lazily inside `resolve()` (R-135).** See the
@@ -1114,7 +1114,7 @@ that runs out WHILE a hop is already in flight, which is the ORDINARY case, not 
 **every route ends on some adapter's last hop, and that hop has no next iteration**, so the
 next-iteration pre-check (below, and the registry loop under "Call deadline") cannot rescue it. On a
 single-adapter route the pre-check never runs at all — and single-adapter is the common shape today,
-**13 of the 21 routes** (measured from`providers.config.ts`; the other 8 are the five
+**13 of the 24 routes** (measured from`providers.config.ts`; the other 8 are the five
 `dash-platform`+`platform-explorer`pairs, the two`platform-explorer`+`pg-history`history routes,
 and`entity.labels`). The argument does **not** rest on that count: the last-hop clause holds for all
 21 regardless, which is why it is stated first. An earlier draft of this paragraph asserted "19 of
@@ -1415,7 +1415,7 @@ on 2026-08-05 rather than by any gate.
 `providers.config.ts` holds the declarative routes plus the adapter registry (id →
 hosts/rate-limit/env):
 
-**The route table is NOT reproduced here.** `providers.config.ts` holds **21 routes** over 20
+**The route table is NOT reproduced here.** `providers.config.ts` holds **24 routes** over 23
 distinct capabilities, and the authoritative list is that file — a copy in this document is a copy
 that drifts, which is exactly what happened between TASK-006 and TASK-010 (WI-24: this section
 carried `chains:` literals for fourteen routes months after they were deleted from the code, and
@@ -2326,6 +2326,9 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
   | `chain.tvl`                                                 | 300s  | an aggregate DeFiLlama recomputes on its own cadence — no faster-moving than a protocol's TVL, so the same bucket (R-53d)          |
   | `pool.info`                                                 | 300s  | shares its adapter and its liquidity/volume-style volatility with `protocol.tvl`, not with `pairs.new`                             |
   | `dex.volume.history`                                        | 3600s | the vendor's own step is **one day** — a shorter TTL cannot buy a newer number, only a second identical download (R-64)            |
+  | `chain.tvl.history`                                         | 3600s | same vendor, same one-day step as the DEX series above — the rationale is identical (WI-50)                                        |
+  | `protocol.tvl.history`                                      | 3600s | same one-day step, and here a shorter TTL would buy a second multi-megabyte download                                               |
+  | `protocol.list`                                             | 300s  | read out of the same `/protocols` document as `protocol.tvl`, so it inherits that bucket rather than inventing one (WI-49)         |
   | `privacy.shielded_pool`, `platform.*`                       | 3600s | no point polling faster than the existing snapshotter's hourly cadence                                                             |
   | `privacy.shielded_pool.history`, `platform.metrics.history` | 3600s | historical views of an already-hourly capability — the row above's rationale applies unchanged                                     |
   | `token.holders`                                             | 3600s | low volatility (was credit-metered under `dune`; free under `blockscout` since TASK-008)                                           |
@@ -2358,7 +2361,7 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
 
   | Capability                                                                                                                                    | `deadlineMs` | `paidLegMs`                                       | Derivation                                                                                                                                                                                                                                                                                                                               |
   | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `token.price`, `token.metadata`, `pairs.new`, `protocol.tvl`, `chain.tvl`, `pool.info`, `dex.volume.history`, `token.holders`, `chain.supply` | ~15_000      | — (free-only route)                               | single-free-adapter tier: one adapter, one attempt, no composite sub-calls — `token.holders` is `shape: 'set'` but still a single-adapter route (M-5: tier is route composition, not `shape`)                                                                                                                                            |
+  | `token.price`, `token.metadata`, `pairs.new`, `protocol.tvl`, `chain.tvl`, `pool.info`, `dex.volume.history`, `chain.tvl.history`, `protocol.list`, `protocol.tvl.history`, `token.holders`, `chain.supply` | ~15_000      | — (free-only route)                               | single-free-adapter tier: one adapter, one attempt, no composite sub-calls — `token.holders` is `shape: 'set'` but still a single-adapter route (M-5: tier is route composition, not `shape`)                                                                                                                                            |
   | `wallet.balances.native`                                                                                                                      | ~15_000      | — (free-only route)                               | single-free-adapter tier: each of its two routes (`rpc-evm` XOR `rpc-solana`) is a single free adapter — also `shape: 'set'`, same M-5 note                                                                                                                                                                                              |
   | `privacy.shielded_pool`, `platform.identities/contracts/documents/credits`                                                                    | ~15_000      | — (free-only route)                               | **OVERRIDE, not an alignment:** `dash-platform.isAvailable()` is unconditionally false ⇒ zero attempts ⇒ single-LIVE-adapter route (`platform-explorer` alone). Back to ~30_000 when live gRPC lands                                                                                                                                     |
   | `privacy.shielded_pool.history`, `platform.metrics.history`                                                                                   | ~30_000      | — (free-only route)                               | ≤2-free-adapters tier: `platform-explorer` + `pg-history` in sequence — but **not** two HTTP legs: the second speaks the Postgres wire protocol, so its envelope is **E-PG = 50_000** (30_000 limiter + the 20_000 in-process query bound), not the HTTP template. Measured envelope 140_000, applied 30_000, cuts 110_000 (WI-34/WI-35) |
@@ -2685,7 +2688,7 @@ was home". The server's own message stays unsurfaced: it quotes the DSN's userna
   `capability` (`null` for the two that serve none), both zod schemas, and a handler — and
   `createServer` registers by iterating `toolSpecs`. `title?` is OPTIONAL in the type because it
   described a split when written — 4 of the 13 tools carried one and 9 did not, and a spec without
-  it would silently drop four titles from `tools/list`. **Today all 14 carry one** (measured while
+  it would silently drop four titles from `tools/list`. **Today all 17 carry one** (measured while
   closing WI-48), so the optionality is now a tolerance the type still permits, not a state it
   describes; whether to require it is a separate decision, deliberately not taken here. One helper (`defineTool`) is the only place that touches `server.registerTool`, so
   a tool's name is **declared** exactly once.
@@ -2762,7 +2765,7 @@ spec.servedCapabilities`.
   - 🔴 **Least privilege stays a RUNTIME fact, not a type-level promise.** Today `server.ts` hands
     each tool a fresh literal (`{version}`, `{registry}`, `{registry, budgetStore}`), so a free
     tool has no reference to the budget store at all. A uniform loop that passed one wide context
-    to all fourteen would replace that with self-restraint — and self-restraint is weak here,
+    to all seventeen would replace that with self-restraint — and self-restraint is weak here,
     because `budgetStore` is declared **optional** in all three M2 contexts, so any tool could add
     `budgetStore?: BudgetStore` to its own context type and read it, compiling silently. So the
     spec declares the context keys it needs (`needs: ['registry', 'budgetStore']`), the handler
@@ -2868,7 +2871,7 @@ these documents state, and the tool/adapter names they must contain, compared ag
   assumption) next to it in `test/fixtures/<adapter>/<name>.evidence.md`. **Not part of CI.**
 - **`packages/mcp-server/test/e2e.stdio.test.ts`** (spawn; the mechanism is unchanged from M0) —
   spawns `src/index.ts` as a child process through `tsx`. It asserts that `tools/list` contains
-  exactly the **fourteen** tools **derived from `toolSpecs`** — `toHaveLength(expected.length)` at
+  exactly the **seventeen** tools **derived from `toolSpecs`** — `toHaveLength(expected.length)` at
   `packages/mcp-server/test/e2e.stdio.test.ts:162`, `expect(tools, ADD_A_TOOL).toHaveLength(expected.length);`, not a hand-written literal, since TASK-011 made the inventory data — and keeps running
   `onchain_ping` end to end. It deliberately does **not** call the other tools over this transport:
   the `registry` injection is in-process, and using the real registry inside a spawned process

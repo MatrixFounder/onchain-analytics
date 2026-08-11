@@ -47,7 +47,7 @@ are **Accepted** in ADR-001; this document does not revisit them, it makes them 
 **What the engine is today** — twelve provider adapters behind one hot-swappable interface (eleven
 of them serving something; `dune` is a config stub), a chain registry of 458 networks, a two-level
 cache, an SSRF gate and per-provider rate limiting, a credit budget guard on the single paid
-provider, and fourteen workflow-oriented MCP tools served over local stdio. **T-013 (designed, not
+provider, and seventeen workflow-oriented MCP tools served over local stdio. **T-013 (designed, not
 yet built)** adds a compiled multi-source merge to two `series` capabilities and a 14th tool
 publishing the merged history — see §3/§11.
 
@@ -173,11 +173,16 @@ field, and `CapabilityResolution` gains three optional, merge-only fields.
 
 ## 5. Interfaces
 
-Contracts for all fourteen MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
+Contracts for all seventeen MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
 `ChainInputSchema` contract shared by every chain-accepting tool, the public API of
 `packages/core`, and the provider integration table that is the source of the per-adapter SSRF
-allowlist. **Plus the designed contract of a 14th, T-013's `onchain_dash_platform_history`, not yet
-built.** → [architectures/interfaces.md](architectures/interfaces.md)
+allowlist, including T-013's `onchain_dash_platform_history`. **Plus the three free tools added
+2026-08-11 over documents the engine already loads (WI-49/WI-50): `onchain_list_protocols` — the
+protocol POPULATION on a chain, ranked by TVL or by 1d/7d/30d growth, so a protocol question no
+longer has to start from a slug the caller already knows — and `onchain_chain_tvl_history` /
+`onchain_protocol_tvl_history`, daily TVL runs carrying the same `window`/`gapDays`/`truncated`
+contract `onchain_dex_volume` publishes, produced by the same shaper.**
+→ [architectures/interfaces.md](architectures/interfaces.md)
 
 ## 6. Technology stack
 

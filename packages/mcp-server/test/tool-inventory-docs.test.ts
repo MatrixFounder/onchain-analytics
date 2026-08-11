@@ -82,10 +82,12 @@ const EXCLUDED_FILES = new Map([
   // there took it to 9, at which point the discovery check flagged it and the exclusion became
   // load-bearing again. Same file, same reason, different measurement; the entry is only ever as
   // good as the last count.
-  [
-    'packages/mcp-server/test/e2e.inprocess.test.ts',
-    'call sites, not an inventory: each name appears with its own arguments and output schema',
-  ],
+  // `e2e.inprocess.test.ts` was here while it drove enough tools to read as an inventory. The three
+  // capabilities added 2026-08-11 (WI-49/WI-50) raised the threshold without adding call sites to
+  // that file, so the entry stopped excluding anything — removed for the reason the rule two
+  // paragraphs up gives, and NOT because the file changed. Adding e2e call sites for
+  // `onchain_list_protocols`, `onchain_chain_tvl_history` and `onchain_protocol_tvl_history` would
+  // push it back over the threshold and the entry earns its place again; the gate will say so.
   // `eval/checks.mjs` was here while it held a literal map keyed by tool name. TASK-013a split the
   // per-tool assertions into one file per case under `eval/cases/`, and the tool→case index is now
   // DERIVED (`toolFor()` resolves each case's capability against the generated inventory), so the

@@ -71,7 +71,7 @@
  * ---------------------------------------------------------------------------------------------
  * ## ENFORCEMENT — where a `deadlineMs` below is APPLIED, and where it is only DECLARED
  *
- * **Measured 2026-08-05 over the shipped registry** (`providers.config.ts` — 21 routes, 20
+ * **Measured 2026-08-05, re-measured 2026-08-11** over the shipped registry (`providers.config.ts` — 24 routes, 23
  * capabilities, 12 adapters), and this section exists because the per-row records below read as
  * statements about running code:
  *
@@ -92,7 +92,11 @@
  *   an adapter in the population by whether it imports a transport module at all, so the day a live
  *   gRPC transport lands for `dash-platform` (ARCHITECTURE.md §11) it enters the population and the
  *   five rows it routes go red until it reads the deadline. It is not an id list somebody maintains.
- * - **20 of 20 capabilities are therefore actually bounded by their row below.**
+ * - **23 of 23 capabilities are therefore actually bounded by their row below.** The three added
+ *   on 2026-08-11 (`chain.tvl.history`, `protocol.list`, `protocol.tvl.history`) enter on the same
+ *   two `defillama` mechanisms already described: the first two are served from SHARED documents, so
+ *   the ceiling bounds the caller's wait, and the third is the one per-call route left in this
+ *   adapter, so it reaches `throttle()` and `safeFetch` directly.
  *
  * **How this section read before WI-37, and why the distinction was worth writing down.** Until
  * 2026-08-05 the figures were 2 of 12 and 4 of 20: `blockscout` (012-8) and `nansen` (012-9) were the
@@ -198,7 +202,7 @@ export type CapabilityManifest =
     });
 
 /**
- * All 20 routed capabilities (`providers.config.ts` — 21 routes, 20 distinct capabilities;
+ * All 23 routed capabilities (`providers.config.ts` — 24 routes, 23 distinct capabilities;
  * `wallet.balances.native` is routed twice). TC-UNIT-01 enumerates the routes against this table and
  * TC-UNIT-02 the reverse, so neither a new route without a row nor a row for a retired capability can
  * survive a test run.
@@ -317,6 +321,46 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // **ENFORCED TODAY**, by the OTHER of `defillama`'s two mechanisms: `/v2/chains` is a document
     // SHARED between concurrent callers, so the ceiling bounds this caller's WAIT and deliberately
     // does not abort a download somebody else is also awaiting (WI-37, `awaitSharedDocument`).
+    deadlineMs: 15_000,
+  },
+  'protocol.list': {
+    // A collection with no time dimension — the population of protocols on a chain, ranked. `set`,
+    // by the same reading that classified `pool.info`: the return is a collection, not one row.
+    shape: 'set',
+    // Read out of the SAME `/protocols` document `protocol.tvl` uses, plus the month-ago baseline.
+    // The 300 s bucket is inherited rather than invented: serving a ranking from a fresher window
+    // than the per-protocol figures it ranks would let the two disagree inside one conversation.
+    ttlSeconds: 300,
+    // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
+    // ceiling (OD-2), not a measurement.
+    // **ENFORCED TODAY** — shared-document path, both documents (WI-37).
+    deadlineMs: 15_000,
+  },
+  'protocol.tvl.history': {
+    // A `ts`-ordered daily run, same shaper as the other two histories.
+    shape: 'series',
+    // The vendor's step is one day, so a shorter TTL cannot buy a fresher number — and here it
+    // would buy a second multi-megabyte download, which is the whole reason this route is narrow.
+    ttlSeconds: 3600,
+    // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
+    // ceiling (OD-2), not a measurement.
+    // **ENFORCED TODAY** — the one `defillama` path with no shared document, so the deadline reaches
+    // `throttle()` and `safeFetch` directly and can cancel the request (WI-37).
+    deadlineMs: 15_000,
+  },
+  'chain.tvl.history': {
+    // A `ts`-ordered daily run with `window`/`gapDays` describing it — the same substance as
+    // `dex.volume.history`, produced by the same shaper (`daily-series.ts`), so the same class.
+    shape: 'series',
+    // The vendor's own step for this dataset is ONE DAY (`/v2/historicalChainTvl/{chain}` is
+    // `[{date: <unix seconds>, tvl}]`, measured 2026-08-11 over 3 240 points for Ethereum), so a TTL
+    // shorter than a day cannot buy a fresher number — it can only buy a second identical download.
+    // The same hour `dex.volume.history` uses, for the same reason.
+    ttlSeconds: 3600,
+    // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
+    // ceiling (OD-2), not a measurement.
+    // **ENFORCED TODAY** — shared-document path: the ceiling bounds this caller's WAIT and
+    // deliberately does not abort a download another caller is awaiting (WI-37).
     deadlineMs: 15_000,
   },
   'dex.volume.history': {

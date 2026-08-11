@@ -5,6 +5,7 @@ import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { CapabilityNotCoveredOnChainError } from '../../chain/errors.js';
 import { DEFILLAMA_DEX_CHAINS } from './dex-chains.js';
 import { DEFILLAMA_CHAIN_ALIASES } from './chain-aliases.js';
+import { bucketDailyPoints, changeAcross, windowDailySeries } from './daily-series.js';
 import { ttlFor } from '../../cache/ttl.js';
 import { stringifyTruncated } from '../stringify-truncated.js';
 import { adapterRegistrations } from '../../providers.config.js';
@@ -40,6 +41,52 @@ export interface ChainTvlResult {
   name: string;
   tvlUsd: number;
   source: string;
+  fetchedAt: number;
+}
+
+/**
+ * `chain.tvl.history` result (WI-50 option 1). A FOURTH contract on this adapter, and separate from
+ * `ChainTvlResult` for the reason that one is separate from `ProtocolTvlResult`: a scalar and a run
+ * over time are different subjects, and folding them together needs a parameter that changes the
+ * meaning of every other field.
+ *
+ * The series contract — `window`/`points`/`gapDays`/`truncated` — is deliberately IDENTICAL to
+ * `DexVolumeResult`'s, computed by the same code (`daily-series.ts`). A second history capability
+ * with its own subtly different gap arithmetic is how the same defect gets found twice.
+ */
+export interface ChainTvlHistoryResult {
+  /** Canonical SLUG, ours. */
+  chain: string;
+  /** Display name from the registry, ours — never the vendor's echo. */
+  name: string;
+  /** The window ACTUALLY covered, which is what was requested whenever the chain has that much
+   * history and less when it does not. */
+  window: { fromMs: number; toMs: number; days: number };
+  /** Daily points, `ts` epoch-ms UTC (the vendor sends unix SECONDS), day-bucketed and unique. */
+  series: { ts: number; tvlUsd: number }[];
+  points: number;
+  /** Daily steps MISSING inside the covered window. Invariant: `points + gapDays === window.days`
+   * whenever a series was requested — so a consumer can tell a gap from a zero without guessing. */
+  gapDays: number;
+  /**
+   * The answer to "by how much did it change", computed from the window's own endpoints so a caller
+   * does not have to do arithmetic on a 90-point array — the question WI-50 was filed for.
+   *
+   * `null` when there is nothing to compare; `pct` is `null` on a zero base rather than `Infinity`,
+   * because "grew from nothing" has no percentage. `fromTs`/`toTs` are the days ACTUALLY used, which
+   * are the first and last PRESENT days — gaps are never stitched, so they can sit inside the window.
+   */
+  change: {
+    fromTs: number;
+    toTs: number;
+    fromUsd: number;
+    toUsd: number;
+    absUsd: number;
+    pct: number | null;
+  } | null;
+  truncated: { series: boolean; reason: string };
+  source: string;
+  /** Age of the DOCUMENT, not of `normalize()`. */
   fetchedAt: number;
 }
 
@@ -95,6 +142,78 @@ export interface DexVolumeResult {
   truncated: { series: boolean; reason: string };
   source: string;
   /** Age of the DOCUMENT, not of `normalize()` — see `fetchDexDocument`. */
+  fetchedAt: number;
+}
+
+/**
+ * `protocol.list` result (WI-49 option 1) — the POPULATION the engine could not enumerate.
+ *
+ * Until this, every protocol question had to start from a slug the caller already knew, so "the five
+ * largest protocols on Base" was unanswerable without guessing names. The catalog that `protocol.tvl`
+ * already loads carries all 8 009 of them, so the population costs no new request inside the window.
+ */
+export interface ProtocolListResult {
+  /** The chain the list is filtered to — canonical SLUG, ours. */
+  chain: string;
+  name: string;
+  protocols: {
+    slug: string;
+    /** Vendor display name, the one field here that is the vendor's own text. */
+    name: string;
+    category: string | null;
+    /** TVL on THIS chain. `null` when the protocol is listed here but publishes only
+     * staking/borrowed buckets for it — the same three-state rule `protocol.tvl` states. */
+    tvlUsd: number | null;
+    /** TVL across every chain, so a caller can see how much of a protocol this chain is. */
+    totalTvlUsd: number | null;
+    /**
+     * Percent change of the protocol's TOTAL TVL. `d1`/`d7` are the vendor's own figures; `d30` is
+     * computed from one document's own `tvl` and `tvlPrevMonth`, so both sides are the same
+     * observation rather than two moments stitched together. `null` where the vendor publishes
+     * nothing, never `0` — a missing measurement and a flat month are different facts.
+     */
+    change: { d1: number | null; d7: number | null; d30: number | null };
+    /** The family this belongs to (`uniswap` for `uniswap-v3`), so a caller can roll up or drill
+     * down without a second call. `null` for a standalone protocol. */
+    parent: string | null;
+  }[];
+  /** How many protocols matched the filter BEFORE `limit` was applied — so a truncated list is
+   * visibly truncated instead of looking like the whole answer. */
+  matched: number;
+  limit: number;
+  sortedBy: string;
+  source: string;
+  fetchedAt: number;
+}
+
+/**
+ * `protocol.tvl.history` result (WI-50 option 2, narrowed by measurement).
+ *
+ * The chain-scoped series for ONE protocol. Deliberately not a ranking input: the only free source
+ * is the per-protocol document, which measured 27.57 MiB for `aave-v3` on 2026-08-11, so asking it
+ * for many protocols is not a thing this engine will do. Ranking by growth is `protocol.list`'s job,
+ * out of the shared documents.
+ */
+export interface ProtocolTvlHistoryResult {
+  protocol: string;
+  chain: string;
+  /** Whether the protocol is on this chain at all — the same negative-answer rule `protocol.tvl`
+   * uses (L-9). `false` comes with an empty series rather than an error. */
+  deployed: boolean;
+  window: { fromMs: number; toMs: number; days: number };
+  series: { ts: number; tvlUsd: number }[];
+  points: number;
+  gapDays: number;
+  change: {
+    fromTs: number;
+    toTs: number;
+    fromUsd: number;
+    toUsd: number;
+    absUsd: number;
+    pct: number | null;
+  } | null;
+  truncated: { series: boolean; reason: string };
+  source: string;
   fetchedAt: number;
 }
 
@@ -178,6 +297,14 @@ interface DefillamaFetchResult {
    * declare `tokensExcludedFromParent`, where summing the catalog would double-count (see
    * `resolveProtocol`). */
   protocol?: { slug: string; vendorDoc?: unknown };
+  /** `chain.tvl.history` only — the validated arguments, carried across because the vendor document
+   * has no notion of the window the caller asked for. */
+  chainHistory?: ChainTvlHistoryArgs;
+  /** `protocol.list` only — the validated arguments plus the month-ago document, which is a SECOND
+   * shared body and so cannot travel in `raw`. */
+  protocolList?: { args: ProtocolListArgs; lite: unknown };
+  /** `protocol.tvl.history` only. */
+  protocolHistory?: ProtocolTvlHistoryArgs;
 }
 
 interface DefillamaTvlPoint {
@@ -238,6 +365,37 @@ const CHAINS_URL = 'https://api.llama.fi/v2/chains';
 const PROTOCOLS_URL = 'https://api.llama.fi/protocols';
 
 /**
+ * The month-ago baseline, read ONLY for `protocol.list`'s `change.d30` (WI-50 scenario 6).
+ *
+ * A second document rather than a field on the first, because the vendor puts them in different
+ * places: `/protocols` carries `change_1d`/`change_7d` but no 30-day figure, and this one carries
+ * `tvlPrevDay`/`tvlPrevWeek`/`tvlPrevMonth` but no `slug`. They join on `defillamaId` ↔ `id`, which
+ * covered 7 843 of 7 843 rows on the 2026-08-11 recording. 6.33 MiB.
+ *
+ * It is emphatically NOT a lighter replacement for the catalog: besides lacking `slug`, it names
+ * chains in the CURRENT vocabulary while `/protocols` uses the legacy one, so swapping to it would
+ * silently reverse which 43 chains are broken (L-10).
+ */
+const PROTOCOLS_LITE_URL = 'https://api.llama.fi/lite/protocols2';
+
+/**
+ * Response cap for the ONE route that is still fetched per call, `protocol.tvl.history`.
+ *
+ * Raised from the 10 MiB default because this document genuinely is large and there is no lighter
+ * source of a protocol's own history — but raised to a MEASURED number, not an optimistic one.
+ * Sizes of the 30 largest protocols by TVL, decompressed, 2026-08-11: 20 of 30 are under 10 MiB;
+ * `aave-v3` 27.57, `curve-finance` 27.77, `morpho-blue` 27.52, `binance-cex` 30.18 MiB. At 32 MiB
+ * every DeFi protocol in that top 30 is served.
+ *
+ * What is deliberately NOT served: `gate` (65.96 MiB) and `mexc` (40.03 MiB), both centralised-
+ * exchange balance trackers rather than protocols. They fail loudly on the cap, which is the honest
+ * outcome — the alternative is a 66 MiB parse inside a long-lived stdio process for an answer nobody
+ * asked an on-chain analytics engine for. `protocol.list` ranks by growth without touching this
+ * route at all, so the expensive path is never the one a screening question takes.
+ */
+const PROTOCOL_HISTORY_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
  * `DEFILLAMA_DEX_CHAINS` as a `Set`, built once at module load (TASK-007 task 007-2).
  *
  * A `Set` rather than `Array.includes` because `chainSupport()` is called once per registry row when
@@ -275,7 +433,6 @@ const DEFAULT_DEX_DAYS = 90;
 /** Hard ceiling on the requested window (5 years). An input bound only — the per-answer point cap is
  * `args.days` itself, for the reason spelled out at the truncation step in `normalizeDexVolume`. */
 const MAX_DEX_DAYS = 1825;
-const DAY_MS = 86_400_000;
 
 /**
  * Response-size cap for this endpoint specifically. The live per-chain document is ~250KB with the
@@ -288,6 +445,38 @@ interface DexVolumeArgs {
   chain: ChainInfo;
   days: number;
   includeSeries: boolean;
+}
+
+interface ChainTvlHistoryArgs {
+  chain: ChainInfo;
+  days: number;
+}
+
+/**
+ * Validates `chain.tvl.history` arguments. Coverage is the plain registry predicate — the vendor
+ * publishes history for every chain in its own catalogue (probed live across 17 names spanning the
+ * catalogue, 2026-08-11), so unlike `dex.volume.history` there is no narrower set to check against.
+ */
+function extractChainTvlHistoryArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): ChainTvlHistoryArgs {
+  const rawChain = args['chain'];
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  if (!chain || chain.vendors['defillama'] == null) {
+    throw new Error(
+      `defillama.fetch(chain.tvl.history): invalid args ${stringifyTruncated(args, 200)} ` +
+        '(expected {chain: <a chain DeFiLlama covers>})',
+    );
+  }
+  const rawDays = args['days'];
+  const days = rawDays === undefined ? DEFAULT_DEX_DAYS : rawDays;
+  if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > MAX_DEX_DAYS) {
+    throw new Error(
+      `defillama.fetch(chain.tvl.history): days must be an integer in 1..${MAX_DEX_DAYS} (got ${String(days)})`,
+    );
+  }
+  return { chain, days };
 }
 
 /**
@@ -359,7 +548,6 @@ interface DefillamaDexResponse {
 
 /** Earliest plausible daily point — the Bitcoin genesis day. Anything before it is a decoding
  * mistake (seconds read as milliseconds, or the reverse), not history. */
-const EARLIEST_PLAUSIBLE_TS_MS = Date.UTC(2009, 0, 3);
 
 /**
  * Renders an UNTRUSTED vendor value for an error message WITHOUT echoing it (cycle 3, security H-2).
@@ -436,153 +624,60 @@ function normalizeDexVolume(
   }
 
   const rawChart = Array.isArray(body.totalDataChart) ? body.totalDataChart : [];
-  const points: { ts: number; volumeUsd: number }[] = [];
-  for (const entry of rawChart) {
-    if (!Array.isArray(entry) || entry.length < 2) continue;
-    const [rawTs, rawVolume] = entry as [unknown, unknown];
-    // 2. TIME. The vendor sends unix SECONDS; the canonical form is epoch-ms UTC (DB-SCHEMA §1.2).
-    //    BUCKETED to the day (cycle 3, logic L-2), not merely converted: the window anchor below is
-    //    floored to a day boundary while the points used to be compared raw, so the moment the
-    //    vendor stops publishing exactly at midnight — an end-of-day convention, or a partial
-    //    current-day point — the newest point (the one that DEFINED the window) failed `ts <= toMs`
-    //    and silently vanished from its own window. At `days: 1` that returned an empty series.
-    //    Bucketing both sides is also what the project's own `ts_bucket` convention prescribes.
-    if (typeof rawTs !== 'number' || !Number.isInteger(rawTs)) continue;
-    const exactTs = rawTs * 1000;
-    if (exactTs < EARLIEST_PLAUSIBLE_TS_MS || exactTs > fetchedAt + DAY_MS) continue;
-    const ts = Math.floor(exactTs / DAY_MS) * DAY_MS;
-    // 3. VALUE. A non-finite or negative volume is rejected LOUDLY rather than dropped: unlike a
-    //    malformed timestamp (a decoding question about one point), a negative traded volume means
-    //    the document itself is not what we think it is. It must never be cached as a success —
-    //    the tool's own `.nonnegative()` schema would otherwise meet an already-memoized bad value.
-    if (typeof rawVolume !== 'number' || !Number.isFinite(rawVolume) || rawVolume < 0) {
-      throw new Error(
-        `defillama.normalize(dex.volume.history): invalid volume for ${chain.slug} at ts=${ts} ` +
-          `(volumeUsd=${describeVendorValue(rawVolume)})`,
-      );
-    }
-    points.push({ ts, volumeUsd: rawVolume });
-  }
-  points.sort((a, b) => a.ts - b.ts);
-
-  // 2b. DEDUPE by day (cycle 3, logic L-4). Two points landing in the same day bucket — a vendor
-  //     publishing glitch, or the sub-daily granularity the truncation guard below anticipates —
-  //     used to inflate the point count while leaving `gapDays` at 0, so a duplicate MASKED exactly
-  //     one genuine missing day. Last value for a day wins; the count of collisions is a drift
-  //     signal, so it is surfaced rather than swallowed.
-  let duplicateDays = 0;
-  const deduped: { ts: number; volumeUsd: number }[] = [];
-  for (const point of points) {
-    const previous = deduped[deduped.length - 1];
-    if (previous && previous.ts === point.ts) {
-      deduped[deduped.length - 1] = point;
-      duplicateDays += 1;
-      continue;
-    }
-    deduped.push(point);
-  }
-
-  // 3b. A chart that the vendor SENT and we could read NOTHING from is a decoding failure, not an
-  //     empty history — and it must be loud (the "a diagnostic nobody reads is not a diagnostic"
-  //     lesson, L-2). A partial drop stays visible on its own: a discarded point inside the window
-  //     shows up as a `gapDays` increment. A TOTAL wipeout does not — it produces an empty series
-  //     with `gapDays: 0`, which reads exactly like "this chain has never traded". That is the shape
-  //     a unit change (`date` in milliseconds instead of seconds) would produce for every point at
-  //     once, so the one case with no other signal gets an explicit one.
-  if (rawChart.length > 0 && deduped.length === 0) {
+  // Steps 2, 2b and 3 below now live in `daily-series.ts`, shared with the two TVL-history
+  // capabilities — the arithmetic that L-1, L-4 and L-5 were each found in is written once. The
+  // comments are kept here because they explain THIS endpoint's inputs; the invariants they
+  // describe are enforced there.
+  const {
+    points: deduped,
+    duplicateDays,
+    seen: chartEntries,
+  } = bucketDailyPoints(
+    (function* () {
+      for (const entry of rawChart) {
+        if (!Array.isArray(entry) || entry.length < 2) continue;
+        const [rawTs, rawVolume] = entry as [unknown, unknown];
+        yield { tsSeconds: rawTs, value: rawVolume };
+      }
+    })(),
+    {
+      maxTsMs: fetchedAt,
+      onInvalidValue: (value, ts) => {
+        throw new Error(
+          `defillama.normalize(dex.volume.history): invalid volume for ${chain.slug} at ts=${ts} ` +
+            `(volumeUsd=${describeVendorValue(value)})`,
+        );
+      },
+    },
+  );
+  // 3b. A chart the vendor SENT and we could read NOTHING from is a decoding failure, not an empty
+  //     history — and it must be loud (L-2). A partial drop stays visible on its own as a `gapDays`
+  //     increment; a TOTAL wipeout does not, and that is exactly the shape a unit change (`date` in
+  //     milliseconds instead of seconds) would produce for every point at once.
+  if (chartEntries > 0 && deduped.length === 0) {
     throw new Error(
-      `defillama.normalize(dex.volume.history): the vendor sent ${rawChart.length} chart points for ` +
+      `defillama.normalize(dex.volume.history): the vendor sent ${chartEntries} chart points for ` +
         `${chain.slug} and none were readable — the point encoding has changed`,
     );
   }
 
-  // 4. WINDOW. Anchored on the newest point the vendor actually has, not on "now": the series is
-  //    daily and the current day is not published until it closes, so anchoring on the clock would
-  //    report a phantom gap at the end of every window. Both sides are day-buckets now (step 2), so
-  //    the anchoring point is always inside its own window.
-  const lastTs = deduped.length > 0 ? deduped[deduped.length - 1]!.ts : fetchedAt;
-  const toMs = Math.floor(lastTs / DAY_MS) * DAY_MS;
-  const requestedFromMs = toMs - (args.days - 1) * DAY_MS;
-  const windowed = deduped.filter((point) => point.ts >= requestedFromMs && point.ts <= toMs);
-
-  // 5. TRUNCATION — a GRANULARITY-DRIFT guard, and worth stating precisely because the obvious
-  //    version of this check is dead code. The window is `args.days` long and `args.days` is
-  //    bounded, so a separate "max points" constant could never fire: a daily series inside an
-  //    N-day window has at most N points by construction.
-  //
-  //    Day-bucketing (step 2b) now folds sub-daily points together, so this fires only if the
-  //    vendor produces more DISTINCT days than the window holds — which day-bucketing makes
-  //    impossible too. It is kept as a defence-in-depth invariant rather than a live branch, and
-  //    `truncated` keeps its meaning: "you did not get what you asked for", never ordinary
-  //    windowing, which is the tool doing its job.
-  const cappedByWindow = windowed.length > args.days;
-  const series = cappedByWindow ? windowed.slice(-args.days) : windowed;
-  const returnedSeries = args.includeSeries ? series : [];
-  // Folding duplicate days is also "you did not get everything the vendor sent", so it raises the
-  // same flag rather than a second one — the reason string says which of the two happened. Reported
-  // rather than swallowed: silently collapsing duplicates is how the masked-gap defect (L-4) hid.
-  const foldedDuplicates = args.includeSeries && duplicateDays > 0;
-  const truncatedSeries = cappedByWindow || foldedDuplicates;
-
-  // 6. GAPS, counted against the WINDOW ACTUALLY COVERED — not against the span of the returned
-  //    points (cycle 3, logic L-1, the critic's HIGH). The previous version derived the expected
-  //    count from `series[0]`..`series[n-1]`, which makes any gap at the LEADING edge arithmetically
-  //    unreachable: move the existing hole to the window's first day and `gapDays` reports 0, and a
-  //    chain younger than the window (or any chain at `days: 1825`) reported a five-year window with
-  //    "no missing steps". The trailing edge was safe only because `toMs` comes from the last point.
-  //
-  //    So the frame is the window. `fromMs` is clamped to the first point we actually have, and the
-  //    clamp is REPORTED: a short history becomes visible in `window` (fromMs/days) instead of
-  //    hiding inside a field nobody cross-checks. What remains in `gapDays` is then exactly what the
-  //    name says — days missing INSIDE the covered range. Never stitched: an interpolated point is a
-  //    number nobody measured.
-  //
-  //    With `includeSeries: false` there is no series to judge, so the covered window collapses to
-  //    the request and `gapDays` is 0 — `points: 0` is the honest signal there, not a gap count.
-  //    The clamp is conditioned on WHERE THE HISTORY STARTS, not on the first returned point — that
-  //    distinction is the whole difficulty. "The window's first day is missing" and "the chain has
-  //    no history that far back" produce an identical returned series; what separates them is
-  //    whether the vendor has ANY point before the window. If it does, the window is fully within
-  //    the chain's lifetime and a missing first day is a real gap. If it does not, the history
-  //    simply begins later and there is nothing to report as missing. Clamping on the returned
-  //    series alone would swallow exactly the leading-edge gap this fix exists to expose.
-  //    A series that was REQUESTED and came back EMPTY is the one case the two rules above do not
-  //    meet (L-5). `deduped` is empty only when the vendor published nothing at all for this chain —
-  //    measured live 2026-07-28 on 5 of the 274 covered chains (`bchyper`, `bsquared`,
-  //    `camp-network`, `doge`, `zigchain`), which answer HTTP 200 with `totalDataChart: []`. The
-  //    covered window used to collapse to 0 there while `window.days` fell back to `args.days`, so
-  //    the two halves of the invariant were computed in different frames and N unmeasured days
-  //    reported `gapDays: 0` — "nothing is missing" over a window where nothing exists. The whole
-  //    requested window is the honest count: the vendor claims to cover this chain (it is in the
-  //    generated `DEFILLAMA_DEX_CHAINS` set) and published no day of it. The leading-edge clamp does
-  //    NOT apply — it exists for a chain whose history starts later, and a chain with no point
-  //    anywhere gives no evidence of when its history starts.
-  const earliestKnown = deduped[0];
-  const historyStartsInsideWindow =
-    earliestKnown !== undefined && earliestKnown.ts > requestedFromMs;
-  const fromMs =
-    returnedSeries.length > 0 && historyStartsInsideWindow ? earliestKnown.ts : requestedFromMs;
-  const coveredDays =
-    returnedSeries.length > 0
-      ? Math.round((toMs - fromMs) / DAY_MS) + 1
-      : args.includeSeries
-        ? args.days
-        : 0;
-  const gapDays = Math.max(0, coveredDays - returnedSeries.length);
+  const shaped = windowDailySeries(deduped, {
+    days: args.days,
+    includeSeries: args.includeSeries,
+    duplicateDays,
+    fallbackNowMs: fetchedAt,
+  });
 
   return {
     chain: chain.slug,
     name: chain.name,
-    // `days` reports the window ACTUALLY covered, which is `args.days` whenever the chain has that
-    // much history and less when it does not. A caller comparing `window.days` with what it asked
-    // for learns the difference; a caller that does not still gets an internally consistent answer
-    // where `points + gapDays === days`. With a requested series and no vendor points at all the
-    // two expressions agree by construction (`coveredDays === args.days`, L-5); with
-    // `includeSeries: false` the request is reported unchanged and the invariant does not apply.
-    window: { fromMs, toMs, days: returnedSeries.length > 0 ? coveredDays : args.days },
-    series: returnedSeries,
-    points: returnedSeries.length,
-    gapDays,
+    // `window`, `points`, `gapDays` and `truncated` come straight from the shared shaper — see
+    // `daily-series.ts` for the three defects each of them encodes. The invariant a caller can rely
+    // on is `points + gapDays === window.days` whenever a series was requested.
+    window: shaped.window,
+    series: shaped.series.map((p) => ({ ts: p.ts, volumeUsd: p.valueUsd })),
+    points: shaped.points,
+    gapDays: shaped.gapDays,
     totals: {
       h24: optionalUsd(body.total24h, 'total24h', chain.slug),
       d7: optionalUsd(body.total7d, 'total7d', chain.slug),
@@ -590,16 +685,83 @@ function normalizeDexVolume(
       d1y: optionalUsd(body.total1y, 'total1y', chain.slug),
       allTime: optionalUsd(body.totalAllTime, 'totalAllTime', chain.slug),
     },
-    truncated: {
-      series: truncatedSeries,
-      reason: cappedByWindow
-        ? `vendor returned ${windowed.length} distinct days inside a ${args.days}-day window — ` +
-          `series capped at ${args.days} (the source is documented as daily; check for granularity drift)`
-        : foldedDuplicates
-          ? `vendor sent ${duplicateDays} extra point(s) for days already present — folded to one ` +
-            `per day, last value wins (the source is documented as daily; check for granularity drift)`
-          : '',
+    truncated: shaped.truncated,
+    source: 'defillama',
+    fetchedAt,
+  };
+}
+
+/**
+ * `chain.tvl.history` out of `GET /v2/historicalChainTvl/{vendorName}` (WI-50 option 1).
+ *
+ * The endpoint was probed live on 2026-08-11 before this was designed, per the project's
+ * vendor-drift discipline: it answers 200 for every one of the 461 chains in `/v2/chains`, including
+ * space- and punctuation-bearing names (`zkSync Era`, `X Layer`, `OP Mainnet`) and chains a few
+ * weeks old, and it is small — 120 KB for Ethereum's full 3 240-day history, 42 KB for Base. So
+ * unlike `dex.volume.history` this capability needs no separate covered-chain list: any chain the
+ * registry carries a `defillama` name for has history here.
+ *
+ * `[{date: <unix seconds>, tvl: <usd>}]`, oldest first.
+ */
+function normalizeChainTvlHistory(
+  chain: ChainInfo,
+  raw: unknown,
+  args: ChainTvlHistoryArgs,
+  fetchedAt: number,
+): ChainTvlHistoryResult {
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      `defillama.normalize(chain.tvl.history): expected an array for ${chain.slug}, got ${describeVendorValue(raw)}`,
+    );
+  }
+  const rows = raw as { date?: unknown; tvl?: unknown }[];
+  const {
+    points: deduped,
+    duplicateDays,
+    seen,
+  } = bucketDailyPoints(
+    (function* () {
+      for (const row of rows) {
+        if (typeof row !== 'object' || row === null) continue;
+        yield { tsSeconds: row.date, value: row.tvl };
+      }
+    })(),
+    {
+      maxTsMs: fetchedAt,
+      // A negative or non-finite TVL means the document is not what we think it is — loud, never
+      // dropped, and never cached as a success. Same rule as the DEX series, same reason.
+      onInvalidValue: (value, ts) => {
+        throw new Error(
+          `defillama.normalize(chain.tvl.history): invalid tvl for ${chain.slug} at ts=${ts} ` +
+            `(tvlUsd=${describeVendorValue(value)})`,
+        );
+      },
     },
+  );
+  // The vendor sent rows and none decoded: a unit or field change, not an empty history (L-2).
+  if (seen > 0 && deduped.length === 0) {
+    throw new Error(
+      `defillama.normalize(chain.tvl.history): the vendor sent ${seen} points for ${chain.slug} ` +
+        'and none were readable — the point encoding has changed',
+    );
+  }
+
+  const shaped = windowDailySeries(deduped, {
+    days: args.days,
+    includeSeries: true,
+    duplicateDays,
+    fallbackNowMs: fetchedAt,
+  });
+
+  return {
+    chain: chain.slug,
+    name: chain.name,
+    window: shaped.window,
+    series: shaped.series.map((p) => ({ ts: p.ts, tvlUsd: p.valueUsd })),
+    points: shaped.points,
+    gapDays: shaped.gapDays,
+    change: changeAcross(shaped.series),
+    truncated: shaped.truncated,
     source: 'defillama',
     fetchedAt,
   };
@@ -737,6 +899,331 @@ function rowChainTvlKeys(row: DefillamaCatalogRow): string[] {
  * because a PARENT's own document answers `chains: []` (measured on `uniswap`, `aave` and
  * `raydium`) and so cannot say where the protocol is deployed.
  */
+/** One row of `/lite/protocols2`'s `protocols` array — read ONLY for the month-ago baseline.
+ * That document is not usable as the main catalog: it carries no `slug`, and it names chains in the
+ * CURRENT vocabulary while `/protocols` uses the legacy one (measured 2026-08-11). It joins to the
+ * catalog on `defillamaId` ↔ `id`, which covered 7 843 of 7 843 rows on the recording. */
+interface DefillamaLiteRow {
+  defillamaId?: unknown;
+  tvl?: unknown;
+  tvlPrevMonth?: unknown;
+}
+
+type ProtocolSort = 'tvl' | 'change1d' | 'change7d' | 'change30d';
+
+interface ProtocolListArgs {
+  chain: ChainInfo;
+  limit: number;
+  sortedBy: ProtocolSort;
+  minTvlUsd: number;
+}
+
+const PROTOCOL_LIST_SORTS: readonly ProtocolSort[] = ['tvl', 'change1d', 'change7d', 'change30d'];
+const DEFAULT_PROTOCOL_LIST_LIMIT = 20;
+const MAX_PROTOCOL_LIST_LIMIT = 200;
+
+function extractProtocolListArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): ProtocolListArgs {
+  const rawChain = args['chain'];
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  if (!chain || chain.vendors['defillama'] == null) {
+    throw new Error(
+      `defillama.fetch(protocol.list): invalid args ${stringifyTruncated(args, 200)} ` +
+        '(expected {chain: <a chain DeFiLlama covers>})',
+    );
+  }
+  const rawLimit = args['limit'];
+  const limit = rawLimit === undefined ? DEFAULT_PROTOCOL_LIST_LIMIT : rawLimit;
+  if (
+    typeof limit !== 'number' ||
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > MAX_PROTOCOL_LIST_LIMIT
+  ) {
+    throw new Error(
+      `defillama.fetch(protocol.list): limit must be an integer in 1..${MAX_PROTOCOL_LIST_LIMIT} (got ${String(limit)})`,
+    );
+  }
+  const rawSort = args['sortedBy'];
+  const sortedBy = rawSort === undefined ? 'tvl' : rawSort;
+  if (typeof sortedBy !== 'string' || !PROTOCOL_LIST_SORTS.includes(sortedBy as ProtocolSort)) {
+    throw new Error(
+      `defillama.fetch(protocol.list): sortedBy must be one of ${PROTOCOL_LIST_SORTS.join('|')} (got ${String(sortedBy)})`,
+    );
+  }
+  const rawMin = args['minTvlUsd'];
+  const minTvlUsd = rawMin === undefined ? 0 : rawMin;
+  if (typeof minTvlUsd !== 'number' || !Number.isFinite(minTvlUsd) || minTvlUsd < 0) {
+    throw new Error(
+      `defillama.fetch(protocol.list): minTvlUsd must be a non-negative number (got ${String(minTvlUsd)})`,
+    );
+  }
+  return { chain, limit, sortedBy: sortedBy as ProtocolSort, minTvlUsd };
+}
+
+/** A finite number, or `null` — the vendor's "no figure" and a real `0` must not look alike. */
+function optionalNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * `protocol.list` out of the shared catalog plus the month-ago baseline (WI-49 option 1).
+ *
+ * The chain filter runs on OUR slug, resolved through `vendorChainToSlug`, so it inherits the
+ * two-vocabulary fix rather than re-earning L-10: filtering on `chain.vendors.defillama` by string
+ * would silently return an empty list for the 43 renamed chains — the same defect, in a tool whose
+ * empty answer looks even more plausible than a wrong number.
+ */
+interface ProtocolTvlHistoryArgs {
+  chain: ChainInfo;
+  protocolSlug: string;
+  days: number;
+}
+
+function extractProtocolTvlHistoryArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): ProtocolTvlHistoryArgs {
+  const rawChain = args['chain'];
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  const protocolSlug = args['protocolSlug'];
+  if (!chain || chain.vendors['defillama'] == null || typeof protocolSlug !== 'string') {
+    throw new Error(
+      `defillama.fetch(protocol.tvl.history): invalid args ${stringifyTruncated(args, 200)} ` +
+        '(expected {chain: <a chain DeFiLlama covers>, protocolSlug: string})',
+    );
+  }
+  const rawDays = args['days'];
+  const days = rawDays === undefined ? DEFAULT_DEX_DAYS : rawDays;
+  if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > MAX_DEX_DAYS) {
+    throw new Error(
+      `defillama.fetch(protocol.tvl.history): days must be an integer in 1..${MAX_DEX_DAYS} (got ${String(days)})`,
+    );
+  }
+  return { chain, protocolSlug, days };
+}
+
+/**
+ * `protocol.tvl.history` out of `GET /protocol/{slug}` (WI-50 option 2).
+ *
+ * **The one route this engine still fetches per call, and the only free source of a protocol's own
+ * history.** `PROTOCOL_HISTORY_MAX_BYTES` documents what that costs and where it stops.
+ *
+ * The chain key is resolved through the SAME slug map `protocol.tvl` uses: this document names
+ * chains in the legacy vocabulary too (`Optimism`, `Binance`), so matching `vendors.defillama` by
+ * string would re-earn L-10 here — with an empty series instead of a zero, which is if anything
+ * easier to believe.
+ */
+function normalizeProtocolTvlHistory(
+  chain: ChainInfo,
+  raw: unknown,
+  args: ProtocolTvlHistoryArgs,
+  vendorChainToSlug: ReadonlyMap<string, string>,
+  fetchedAt: number,
+): ProtocolTvlHistoryResult {
+  const body = (raw ?? {}) as DefillamaProtocolResponse;
+  const chainTvls = body.chainTvls;
+  if (typeof chainTvls !== 'object' || chainTvls === null) {
+    throw new Error(
+      `defillama.normalize(protocol.tvl.history): no chainTvls for ${args.protocolSlug} ` +
+        `(got ${describeVendorValue(chainTvls)})`,
+    );
+  }
+  // Only PLAIN buckets: `Base-borrowed`/`Base-staking`/`Base-pool2` are different quantities, and
+  // a history that silently folded them in would not be TVL.
+  let series: DefillamaTvlPoint[] | undefined;
+  for (const [key, value] of Object.entries(chainTvls)) {
+    if (vendorChainToSlug.get(key) !== chain.slug) continue;
+    const candidate = (value as { tvl?: DefillamaTvlPoint[] } | undefined)?.tvl;
+    if (Array.isArray(candidate)) {
+      series = candidate;
+      break;
+    }
+  }
+  // Not deployed here is an ANSWER, not a failure — the rule L-9 established, applied to a series:
+  // an empty run with `deployed: false` rather than an error a caller cannot tell from an outage.
+  if (series === undefined) {
+    return {
+      protocol: typeof body.name === 'string' ? body.name : args.protocolSlug,
+      chain: chain.slug,
+      deployed: false,
+      // `days: 0`, NOT the requested window — and the difference is the invariant's whole worth.
+      // `points + gapDays === window.days` has to hold universally or a caller cannot rely on it,
+      // and the first draft here reported a 30-day window with 0 points and 0 gaps, which is the
+      // shape L-5 was filed for. Zero is also the honest reading: "missing" describes days the
+      // vendor claims to cover and did not publish, and a protocol that is not on this chain has
+      // no days to be missing. `deployed: false` is what carries the answer.
+      window: { fromMs: fetchedAt, toMs: fetchedAt, days: 0 },
+      series: [],
+      points: 0,
+      gapDays: 0,
+      change: null,
+      truncated: { series: false, reason: '' },
+      source: 'defillama',
+      fetchedAt,
+    };
+  }
+
+  const {
+    points: deduped,
+    duplicateDays,
+    seen,
+  } = bucketDailyPoints(
+    (function* () {
+      for (const point of series) {
+        if (typeof point !== 'object' || point === null) continue;
+        yield { tsSeconds: point.date, value: point.totalLiquidityUSD };
+      }
+    })(),
+    {
+      maxTsMs: fetchedAt,
+      onInvalidValue: (value, ts) => {
+        throw new Error(
+          `defillama.normalize(protocol.tvl.history): invalid tvl for ${args.protocolSlug} on ` +
+            `${chain.slug} at ts=${ts} (tvlUsd=${describeVendorValue(value)})`,
+        );
+      },
+    },
+  );
+  if (seen > 0 && deduped.length === 0) {
+    throw new Error(
+      `defillama.normalize(protocol.tvl.history): the vendor sent ${seen} points for ` +
+        `${args.protocolSlug} on ${chain.slug} and none were readable — the point encoding has changed`,
+    );
+  }
+
+  const shaped = windowDailySeries(deduped, {
+    days: args.days,
+    includeSeries: true,
+    duplicateDays,
+    fallbackNowMs: fetchedAt,
+  });
+
+  return {
+    protocol: typeof body.name === 'string' ? body.name : args.protocolSlug,
+    chain: chain.slug,
+    deployed: true,
+    window: shaped.window,
+    series: shaped.series.map((p) => ({ ts: p.ts, tvlUsd: p.valueUsd })),
+    points: shaped.points,
+    gapDays: shaped.gapDays,
+    change: changeAcross(shaped.series),
+    truncated: shaped.truncated,
+    source: 'defillama',
+    fetchedAt,
+  };
+}
+
+function normalizeProtocolList(
+  chain: ChainInfo,
+  raw: unknown,
+  liteRaw: unknown,
+  args: ProtocolListArgs,
+  vendorChainToSlug: ReadonlyMap<string, string>,
+  fetchedAt: number,
+): ProtocolListResult {
+  const rows = catalogRows(raw);
+  // `defillamaId` → the month-ago pair, both read from the SAME document so the two sides of the
+  // percentage are one observation rather than two moments stitched together.
+  const monthly = new Map<string, { tvl: number | null; prev: number | null }>();
+  if (Array.isArray(liteRaw)) {
+    for (const row of liteRaw as DefillamaLiteRow[]) {
+      if (typeof row !== 'object' || row === null) continue;
+      const id = row.defillamaId;
+      if (id === undefined || id === null) continue;
+      monthly.set(String(id), {
+        tvl: optionalNumber(row.tvl),
+        prev: optionalNumber(row.tvlPrevMonth),
+      });
+    }
+  }
+
+  const matched: ProtocolListResult['protocols'] = [];
+  for (const row of rows) {
+    const slug = row.slug;
+    if (typeof slug !== 'string') continue;
+    // Does this row live on the requested chain? Ask in OUR vocabulary, never the vendor's.
+    let vendorChain: string | null = null;
+    for (const name of rowChains(row)) {
+      if (vendorChainToSlug.get(name) === chain.slug) {
+        vendorChain = name;
+        break;
+      }
+    }
+    if (vendorChain === null) {
+      for (const key of rowChainTvlKeys(row)) {
+        if (vendorChainToSlug.get(key) === chain.slug) {
+          vendorChain = key;
+          break;
+        }
+      }
+    }
+    if (vendorChain === null) continue;
+
+    const tvlUsd = rowChainTvl(row, vendorChain);
+    if (tvlUsd !== null && tvlUsd < args.minTvlUsd) continue;
+    // A row with no figure on this chain cannot satisfy a positive floor either — dropping it keeps
+    // `minTvlUsd` meaning one thing rather than "at least this much, or unknown".
+    if (tvlUsd === null && args.minTvlUsd > 0) continue;
+
+    const totalTvlUsd = optionalNumber(row.tvl);
+    const lite = monthly.get(String((row as { id?: unknown }).id));
+    const d30 =
+      lite && lite.tvl !== null && lite.prev !== null && lite.prev !== 0
+        ? ((lite.tvl - lite.prev) / lite.prev) * 100
+        : null;
+
+    matched.push({
+      slug,
+      name: typeof row.name === 'string' ? row.name : slug,
+      category:
+        typeof (row as { category?: unknown }).category === 'string'
+          ? ((row as { category?: unknown }).category as string)
+          : null,
+      tvlUsd,
+      totalTvlUsd,
+      change: {
+        d1: optionalNumber((row as { change_1d?: unknown }).change_1d),
+        d7: optionalNumber((row as { change_7d?: unknown }).change_7d),
+        d30,
+      },
+      parent: typeof row.parentProtocolSlug === 'string' ? row.parentProtocolSlug : null,
+    });
+  }
+
+  // Descending, and a MISSING key always sorts last rather than as a zero: a protocol the vendor
+  // publishes no change for must not outrank one that genuinely shrank.
+  const key = (p: ProtocolListResult['protocols'][number]): number | null =>
+    args.sortedBy === 'tvl'
+      ? p.tvlUsd
+      : args.sortedBy === 'change1d'
+        ? p.change.d1
+        : args.sortedBy === 'change7d'
+          ? p.change.d7
+          : p.change.d30;
+  matched.sort((a, b) => {
+    const av = key(a);
+    const bv = key(b);
+    if (av === null && bv === null) return a.slug < b.slug ? -1 : 1;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return bv - av;
+  });
+
+  return {
+    chain: chain.slug,
+    name: chain.name,
+    protocols: matched.slice(0, args.limit),
+    matched: matched.length,
+    limit: args.limit,
+    sortedBy: args.sortedBy,
+    source: 'defillama',
+    fetchedAt,
+  };
+}
+
 function normalizeProtocolTvl(
   chain: ChainInfo,
   raw: unknown,
@@ -1196,6 +1683,104 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
 
   /** `/protocols`, shared and short-lived — the `fetchChainsCatalog` pattern above, verbatim,
    * including the rule that a failed fetch is evicted rather than remembered for the window. */
+  /**
+   * One shared, short-lived copy of each chain's TVL-history document (`chain.tvl.history`).
+   *
+   * Bounded and swept exactly like `dexDocuments`, and it reuses that map's slot budget for the same
+   * reason the budget exists: these documents are the same order of magnitude (42–120 KB measured),
+   * so a second unbounded map beside a bounded one would quietly undo the memory bound the first one
+   * was given. Unsettled entries are never evicted (WI-12) — the download the caller is awaiting
+   * would otherwise complete with nothing recording it.
+   */
+  const chainHistoryDocuments = new Map<
+    string,
+    { at: number; body: Promise<unknown>; settled: boolean }
+  >();
+  const CHAIN_HISTORY_TTL_MS = ttlFor('chain.tvl.history') * 1000;
+
+  const fetchChainHistoryDocument = async (
+    vendorName: string,
+    deadlineAtMs?: number,
+  ): Promise<{ body: unknown; fetchedAt: number }> => {
+    const what = 'defillama chain history document';
+    const cached = chainHistoryDocuments.get(vendorName);
+    if (cached && now() - cached.at < CHAIN_HISTORY_TTL_MS) {
+      return {
+        body: await awaitSharedDocument(cached.body, deadlineAtMs, what),
+        fetchedAt: cached.at,
+      };
+    }
+    if (cached) chainHistoryDocuments.delete(vendorName);
+    const sweepAt = now();
+    for (const [key, entry] of chainHistoryDocuments) {
+      if (entry.settled && sweepAt - entry.at >= CHAIN_HISTORY_TTL_MS) {
+        chainHistoryDocuments.delete(key);
+      }
+    }
+    while (chainHistoryDocuments.size >= MAX_DEX_DOCUMENTS) {
+      const evictable = [...chainHistoryDocuments].find(([, e]) => e.settled);
+      if (!evictable) break;
+      chainHistoryDocuments.delete(evictable[0]);
+    }
+    const url = `https://api.llama.fi/v2/historicalChainTvl/${encodeURIComponent(vendorName)}`;
+    const body = (async (): Promise<unknown> => {
+      await throttle('defillama', RATE_LIMIT);
+      const response = await safeFetch(url, {}, HOSTS, fetchImpl);
+      if (!response.ok) throw new Error(`defillama: HTTP ${response.status} for ${url}`);
+      return (await response.json()) as unknown;
+    })();
+    const entry = { at: now(), body, settled: false };
+    chainHistoryDocuments.set(vendorName, entry);
+    body.then(
+      () => {
+        entry.settled = true;
+      },
+      () => {
+        entry.settled = true;
+        if (chainHistoryDocuments.get(vendorName) === entry)
+          chainHistoryDocuments.delete(vendorName);
+      },
+    );
+    return { body: await awaitSharedDocument(body, deadlineAtMs, what), fetchedAt: entry.at };
+  };
+
+  /** The month-ago baseline, cached in its own single slot beside the catalog. Its TTL comes from
+   * `protocol.list` — the only capability that reads it — for the reason `chain.tvl` states: two TTL
+   * windows in series do not compose into one. */
+  let protocolsLite: { at: number; body: Promise<unknown> } | null = null;
+  const PROTOCOLS_LITE_TTL_MS = ttlFor('protocol.list') * 1000;
+
+  const fetchProtocolsLite = async (
+    deadlineAtMs?: number,
+  ): Promise<{ body: unknown; fetchedAt: number }> => {
+    const what = 'defillama protocols lite catalog';
+    const cached = protocolsLite;
+    if (cached && now() - cached.at < PROTOCOLS_LITE_TTL_MS) {
+      return {
+        body: await awaitSharedDocument(cached.body, deadlineAtMs, what),
+        fetchedAt: cached.at,
+      };
+    }
+    const body = (async (): Promise<unknown> => {
+      await throttle('defillama', RATE_LIMIT);
+      const response = await safeFetch(PROTOCOLS_LITE_URL, {}, HOSTS, fetchImpl);
+      if (!response.ok) {
+        throw new Error(`defillama: HTTP ${response.status} for ${PROTOCOLS_LITE_URL}`);
+      }
+      const parsed = (await response.json()) as { protocols?: unknown };
+      // Only the array is retained. The rest of that document is a second chain catalogue and a
+      // parent listing, both in a vocabulary this adapter deliberately does not speak — keeping them
+      // alive in a cache slot would be ~2 MiB of heap nothing reads.
+      return Array.isArray(parsed?.protocols) ? parsed.protocols : [];
+    })();
+    const entry = { at: now(), body };
+    protocolsLite = entry;
+    body.catch(() => {
+      if (protocolsLite === entry) protocolsLite = null;
+    });
+    return { body: await awaitSharedDocument(body, deadlineAtMs, what), fetchedAt: entry.at };
+  };
+
   const fetchProtocolsCatalog = async (
     deadlineAtMs?: number,
   ): Promise<{ body: unknown; fetchedAt: number }> => {
@@ -1239,7 +1824,14 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
       return chain.vendors['defillama'] != null;
     },
     // No `chains` narrowing: the chain dimension is the coverage matrix's job now (§4.2.3).
-    capabilities: () => [{ id: 'protocol.tvl' }, { id: 'chain.tvl' }, { id: 'dex.volume.history' }],
+    capabilities: () => [
+      { id: 'protocol.tvl' },
+      { id: 'chain.tvl' },
+      { id: 'dex.volume.history' },
+      { id: 'chain.tvl.history' },
+      { id: 'protocol.list' },
+      { id: 'protocol.tvl.history' },
+    ],
     // Zero for all three: this vendor is keyless and free on every endpoint we call. Unlike
     // `dune`'s `costOf: () => ({credits: 0})` — which is a sleeping fail-closed inversion on a
     // CREDIT-METERED vendor — there is no meter here to under-report.
@@ -1276,6 +1868,53 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
           // must see the age of the DATA).
           fetchedAt: document.fetchedAt,
           dex: dexArgs,
+        };
+      }
+      if (cap === 'protocol.list') {
+        const listArgs = extractProtocolListArgs(args, chains);
+        // Both documents are shared and both are awaited under the caller's ceiling; neither
+        // download is cancelled by it (`awaitSharedDocument`).
+        const [catalog, lite] = await Promise.all([
+          fetchProtocolsCatalog(deadlineAtMs),
+          fetchProtocolsLite(deadlineAtMs),
+        ]);
+        return {
+          chain: listArgs.chain,
+          raw: catalog.body,
+          // The OLDER of the two, so `fetchedAt` never claims a freshness the answer does not have.
+          fetchedAt: Math.min(catalog.fetchedAt, lite.fetchedAt),
+          protocolList: { args: listArgs, lite: lite.body },
+        };
+      }
+      if (cap === 'protocol.tvl.history') {
+        const histArgs = extractProtocolTvlHistoryArgs(args, chains);
+        const url = `https://api.llama.fi/protocol/${encodeURIComponent(histArgs.protocolSlug)}`;
+        // Per-call, so the deadline is forwarded the ordinary way — limiter first, then transport.
+        await throttle('defillama', RATE_LIMIT, 1, deadlineAtMs);
+        const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
+          maxResponseBytes: PROTOCOL_HISTORY_MAX_BYTES,
+          ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+        });
+        if (!response.ok) throw new Error(`defillama: HTTP ${response.status} for ${url}`);
+        const raw: unknown = await response.json();
+        return { chain: histArgs.chain, raw, protocolHistory: histArgs };
+      }
+      if (cap === 'chain.tvl.history') {
+        const historyArgs = extractChainTvlHistoryArgs(args, chains);
+        // Non-null by construction: `extractChainTvlHistoryArgs` already required it. Asserted
+        // rather than assumed, because the alternative is `undefined` reaching a URL.
+        const vendorName = historyArgs.chain.vendors['defillama'];
+        if (vendorName == null) {
+          throw new Error(
+            `defillama.fetch(chain.tvl.history): no vendor name for ${historyArgs.chain.slug}`,
+          );
+        }
+        const document = await fetchChainHistoryDocument(vendorName, deadlineAtMs);
+        return {
+          chain: historyArgs.chain,
+          raw: document.body,
+          fetchedAt: document.fetchedAt,
+          chainHistory: historyArgs,
         };
       }
       if (cap === 'chain.tvl') {
@@ -1330,8 +1969,15 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
     normalize: (
       cap: string,
       rawResult: unknown,
-    ): ProtocolTvlResult | ChainTvlResult | DexVolumeResult => {
-      const { chain, raw, fetchedAt, dex, protocol } = rawResult as DefillamaFetchResult;
+    ):
+      | ProtocolTvlResult
+      | ChainTvlResult
+      | DexVolumeResult
+      | ChainTvlHistoryResult
+      | ProtocolListResult
+      | ProtocolTvlHistoryResult => {
+      const { chain, raw, fetchedAt, dex, protocol, chainHistory, protocolList, protocolHistory } =
+        rawResult as DefillamaFetchResult;
       if (cap === 'dex.volume.history') {
         if (!dex) {
           throw new Error(
@@ -1339,6 +1985,43 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
           );
         }
         return normalizeDexVolume(chain, raw, dex, fetchedAt ?? now());
+      }
+      if (cap === 'protocol.list') {
+        if (!protocolList) {
+          throw new Error(
+            'defillama.normalize(protocol.list): fetch result carries no validated args',
+          );
+        }
+        return normalizeProtocolList(
+          chain,
+          raw,
+          protocolList.lite,
+          protocolList.args,
+          vendorChainToSlug,
+          fetchedAt ?? now(),
+        );
+      }
+      if (cap === 'protocol.tvl.history') {
+        if (!protocolHistory) {
+          throw new Error(
+            'defillama.normalize(protocol.tvl.history): fetch result carries no validated args',
+          );
+        }
+        return normalizeProtocolTvlHistory(
+          chain,
+          raw,
+          protocolHistory,
+          vendorChainToSlug,
+          fetchedAt ?? now(),
+        );
+      }
+      if (cap === 'chain.tvl.history') {
+        if (!chainHistory) {
+          throw new Error(
+            'defillama.normalize(chain.tvl.history): fetch result carries no validated args',
+          );
+        }
+        return normalizeChainTvlHistory(chain, raw, chainHistory, fetchedAt ?? now());
       }
       if (cap === 'chain.tvl') return normalizeChainTvl(chain, raw, fetchedAt ?? now());
       if (!protocol) {

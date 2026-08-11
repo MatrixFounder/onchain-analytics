@@ -218,9 +218,16 @@ describe('defillama adapter (contract, R-7)', () => {
   // The chain dimension is the coverage matrix's job (§4.2.3) — a second list here could only
   // drift from it. What the adapter answers about chains now goes through `chainSupport()`.
   // CHANGED EXPECTATION (TASK-007 task 007-1, R-61): a third capability on the same adapter.
-  it('capabilities() declares all three capabilities without a hardcoded chain list', () => {
+  it('capabilities() declares all six capabilities without a hardcoded chain list', () => {
     const caps = adapter.capabilities();
-    expect(caps.map((c) => c.id)).toEqual(['protocol.tvl', 'chain.tvl', 'dex.volume.history']);
+    expect(caps.map((c) => c.id)).toEqual([
+      'protocol.tvl',
+      'chain.tvl',
+      'dex.volume.history',
+      'chain.tvl.history',
+      'protocol.list',
+      'protocol.tvl.history',
+    ]);
     for (const cap of caps) expect(cap.chains).toBeUndefined();
   });
 

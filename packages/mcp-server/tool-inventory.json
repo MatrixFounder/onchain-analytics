@@ -42,6 +42,21 @@
       "capability": "dex.volume.history"
     },
     {
+      "name": "onchain_chain_tvl_history",
+      "title": "Chain TVL history",
+      "capability": "chain.tvl.history"
+    },
+    {
+      "name": "onchain_list_protocols",
+      "title": "Protocols on a chain",
+      "capability": "protocol.list"
+    },
+    {
+      "name": "onchain_protocol_tvl_history",
+      "title": "Protocol TVL history",
+      "capability": "protocol.tvl.history"
+    },
+    {
       "name": "onchain_token_holders",
       "title": "Top token holders",
       "capability": "token.holders"

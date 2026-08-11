@@ -269,7 +269,7 @@ graph LR
 > первого было мало: 013-8 удовлетворил его строкой в плановом списке M2, и таблица четверо суток
 > утверждала «Тринадцать» при 14 живых. Источник — `src/tools/tool-specs.ts` (ADR-002 D7).
 
-**Четырнадцать тулов**, в порядке публикации:
+**Семнадцать тулов**, в порядке публикации:
 
 | Тул | Capability | Ярус |
 | --- | --- | --- |
@@ -281,6 +281,9 @@ graph LR
 | `onchain_list_chains` | — | бесплатно, без сети |
 | `onchain_chain_tvl` | `chain.tvl` | бесплатно |
 | `onchain_dex_volume` | `dex.volume.history` | бесплатно |
+| `onchain_chain_tvl_history` | `chain.tvl.history` | бесплатно |
+| `onchain_list_protocols` | `protocol.list` | бесплатно |
+| `onchain_protocol_tvl_history` | `protocol.tvl.history` | бесплатно |
 | `onchain_token_holders` | `token.holders` | бесплатно |
 | `onchain_chain_supply` | `chain.supply` | бесплатно |
 | `onchain_smart_money_flows` | `smart-money.flows` | **платно** (Nansen) |

@@ -189,6 +189,9 @@ const TTL_FOR_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
   'protocol.tvl': 300,
   'chain.tvl': 300,
   'dex.volume.history': 3600,
+  'chain.tvl.history': 3600,
+  'protocol.list': 300,
+  'protocol.tvl.history': 3600,
   'privacy.shielded_pool': 3600,
   'platform.identities': 3600,
   'platform.contracts': 3600,
@@ -205,7 +208,7 @@ const TTL_FOR_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
 };
 
 describe('TC-UNIT-01 — the move changed no TTL: `ttlFor()` answers exactly as before', () => {
-  it('covers all 20 routed capabilities, so no row escaped the comparison', () => {
+  it('covers all 23 routed capabilities, so no row escaped the comparison', () => {
     expect(Object.keys(TTL_FOR_BEFORE_THE_MOVE).sort()).toStrictEqual(routedCapabilities);
   });
 
@@ -226,7 +229,7 @@ describe('TC-UNIT-02 — `DEFAULT_TTL_SECONDS` survives, for the input it is act
     expect(ttlFor('capability.which.nothing.routes')).toBe(300);
   });
 
-  it('is unreachable for the 20 routed capabilities — enumerated, not asserted in general', () => {
+  it('is unreachable for the 23 routed capabilities — enumerated, not asserted in general', () => {
     // R-138d wants this stated by enumeration. What makes it a property rather than a coincidence is
     // `CapabilityRegistry`'s construction-time manifest check (012-4), which this cannot observe;
     // `capability-manifest.test.ts`'s TC-INT-02 is where that half is tested.

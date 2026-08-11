@@ -173,7 +173,7 @@ review as "a bigger limit".
 
 ### 7.3. Attack surface and hardening
 
-- **stdout discipline** (M0 invariant) holds for all 14 tools. `_meta` — including `_meta.budget`
+- **stdout discipline** (M0 invariant) holds for all 17 tools. `_meta` — including `_meta.budget`
   (§5.1.2) — and every log line go through the MCP protocol response or stderr, never through raw
   stdout.
 - **The eval's reference sources are a second egress path, and it is bounded by being outside the
