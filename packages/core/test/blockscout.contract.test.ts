@@ -17,7 +17,10 @@ import { BLOCKSCOUT_CHAIN_IDS } from '../src/adapters/blockscout/chains.js';
  * 274; a capability advertised everywhere and served nowhere). None of it needs a transport, so
  * none of it should wait for one.
  */
-const adapter = createBlockscoutAdapter();
+// L-6: an explicit env, never the ambient one. `createBlockscoutAdapter()` reads `process.env` by
+// default, so a developer with a real key in their shell and CI without one would exercise DIFFERENT
+// availability branches from the same file — the verdict has depended on the key since L-6.
+const adapter = createBlockscoutAdapter({ env: { BLOCKSCOUT_PRO_API_KEY: 'proapi_test_value' } });
 const registryChains = loadChainRegistry();
 const allChains = registryChains.list();
 
@@ -35,11 +38,27 @@ describe('blockscout adapter (contract, R-73)', () => {
     expect(adapter.costOf('entity.labels', {})).toEqual({ credits: 0 });
   });
 
-  it('is available without any key — the grace period is a working state, not a degraded one', () => {
-    // Measured 2026-07-28: the facade answers HTTP 200 with no key at all. Declaring
-    // `requiresEnv: ['BLOCKSCOUT_PRO_API_KEY']` would disable a working capability on a stock
-    // install, so availability must not depend on the key being present.
-    expect(adapter.isAvailable?.()).toEqual({ ok: true });
+  it('declines BY NAME without a key — the grace period ended, and an advertisement is not a capability', () => {
+    // The inversion of what this test asserted until 2026-08-11, and the inversion is the point.
+    //
+    // It used to read "is available without any key — the grace period is a working state", on a
+    // measurement that was true when taken (2026-07-28: the facade answered 200 keyless). L-6: the
+    // facade now answers 403 to every `/v1/*` data route without a PRO key. Keeping `{ok: true}`
+    // would have kept `onchain_list_chains` advertising `token.holders` on 39 chains that answer on
+    // none — the exact "advertised by the matrix, served nowhere" defect this adapter was built to
+    // remove, arriving from the vendor's side instead of ours.
+    //
+    // The reason string is asserted, not just the flag: it reaches the operator through the
+    // registry's `tried[]`, and a refusal nobody can act on is the L-2 lesson one layer down.
+    const keyless = createBlockscoutAdapter({ env: {} });
+    const verdict = keyless.isAvailable?.();
+    expect(verdict?.ok).toBe(false);
+    expect((verdict as { reason: string }).reason).toContain('BLOCKSCOUT_PRO_API_KEY');
+  });
+
+  it('is available once the key is configured', () => {
+    const keyed = createBlockscoutAdapter({ env: { BLOCKSCOUT_PRO_API_KEY: 'proapi_test_value' } });
+    expect(keyed.isAvailable?.()).toEqual({ ok: true });
   });
 
   describe('coverage (R-77)', () => {

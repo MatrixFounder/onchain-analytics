@@ -33,6 +33,32 @@ import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS, unwiredCapabilities } from './
 
 const evalDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(evalDir, '..');
+/**
+ * The repo-root `.env`, loaded into THIS process so the spawned server inherits it.
+ *
+ * L-6 fallout, measured 2026-08-11. `loadEnv()` calls `process.loadEnvFile()` with no argument, so
+ * the server reads `.env` relative to its own CWD — and this runner spawns it in `packageRoot`,
+ * where no `.env` exists. The load threw ENOENT, which `loadEnv` ignores by design, so every secret
+ * in the repo-root `.env` was invisible to the server under eval. It did not matter while no
+ * capability required a key; the moment blockscout did, the gate reported `token.holders` broken
+ * against a key the operator had correctly configured. A false red costs what a false green costs:
+ * both teach you to stop reading the gate.
+ *
+ * Loaded HERE rather than fixed by spawning in the repo root, which was tried first and is worse:
+ * `--import tsx` resolves from the CWD and `tsx` is installed only under `packages/mcp-server`, so
+ * moving the CWD trades a missing secret for a server that will not start at all.
+ *
+ * Absent `.env` stays non-fatal, exactly as `loadEnv` treats it — a contributor with no secrets
+ * still gets the free contour. Failures are reported by CLASS; the file's contents are never echoed.
+ */
+const repoRoot = path.resolve(packageRoot, '../..');
+try {
+  process.loadEnvFile(path.join(repoRoot, '.env'));
+} catch (error) {
+  if (error?.code !== 'ENOENT') {
+    console.error(`eval: warning: could not load the repo-root .env (${error?.code ?? 'unknown'})`);
+  }
+}
 const PROTOCOL_VERSION = '2025-11-25';
 const CALL_TIMEOUT_MS = 30_000;
 const THROTTLE_MS = Number(process.env.ONCHAIN_EVAL_THROTTLE_MS ?? 350);
@@ -49,6 +75,8 @@ function startServer() {
     process.execPath,
     ['--import', 'tsx', path.join(packageRoot, 'src/index.ts')],
     {
+      // Stays `packageRoot` (`--import tsx` resolves from here); the secrets arrive through the
+      // inherited `env` below, loaded by `repoRoot` above.
       cwd: packageRoot,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, DATA_DIR: dataDir, LOG_LEVEL: 'error' },

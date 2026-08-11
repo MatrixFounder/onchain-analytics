@@ -268,9 +268,18 @@ export const adapterRegistrations: AdapterRegistration[] = [
   // future key-gated direct path adds it back in the same commit that calls it; that is the change
   // that should need justifying.
   //
-  // `requiresEnv` is EMPTY on purpose. The facade answers without a key today, so demanding one
-  // would disable a working capability on a stock install; the key is read inside `fetch()` —
-  // AFTER the cache key is derived, like `COINGECKO_*` — so it can never enter a cache key.
+  // L-6 (2026-08-11): `requiresEnv` is NO LONGER empty. It used to be, "on purpose", because the
+  // facade answered without a key and demanding one would have disabled a working capability on a
+  // stock install. The facade stopped: every `/v1/*` data route now answers 403 keyless. The
+  // premise expired, so the entry follows it — an install without the key has no working capability
+  // to protect, only an advertisement (`isAvailable()` in the adapter is what actually enforces
+  // this; `requiresEnv` documents it). The key is still read inside `fetch()`, AFTER the cache key
+  // is derived, like `COINGECKO_*` — so it can never enter a cache key.
+  //
+  // `tier` stays `'free'` and that is not an oversight: ADR-002 D8 defines it as "no cost at the
+  // VENDOR", never "unmetered" (see `assertMergeParticipantsAreFree`'s own note, which already
+  // cites this adapter as the worked example of free-with-a-ceiling). The PRO key meters credits,
+  // it does not bill them.
   {
     id: 'blockscout',
     hosts: ['mcp.blockscout.com'],
@@ -303,7 +312,7 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // vendor as costing more than it buys. That stays true until the ceiling is actually reached,
     // at which point it becomes its own task with a measurement attached.
     rateLimit: { capacity: 5, refillPerSec: 2 },
-    requiresEnv: [],
+    requiresEnv: ['BLOCKSCOUT_PRO_API_KEY'],
     tier: 'free',
     // ADR-002 D9's own worked example, quoted: "everything it hands back is edited by outsiders".
     // The token/address metadata behind `entity.labels` is user-submitted, so the rank is a fact

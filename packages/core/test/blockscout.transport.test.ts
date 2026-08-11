@@ -48,18 +48,29 @@ function adapterWith(
   body: unknown,
   status = 200,
   env: Record<string, string | undefined> = {},
-): { adapter: ReturnType<typeof createBlockscoutAdapter>; urls: string[] } {
+): {
+  adapter: ReturnType<typeof createBlockscoutAdapter>;
+  urls: string[];
+  /**
+   * L-6: headers are recorded for the same reason urls always were — the key moved into one, and an
+   * assertion that cannot see the channel the secret travels on cannot check it. Read through
+   * `Headers` so the assertion is case-insensitive, which is what HTTP actually guarantees.
+   */
+  headers: Headers[];
+} {
   const urls: string[] = [];
+  const headers: Headers[] = [];
   const adapter = createBlockscoutAdapter({
     now: () => FIXED_NOW,
     env,
     throttle: isolatedThrottle(FIXED_NOW),
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init) => {
       urls.push(String(url));
+      headers.push(new Headers(init?.headers ?? {}));
       return new Response(JSON.stringify(body), { status });
     },
   });
-  return { adapter, urls };
+  return { adapter, urls, headers };
 }
 
 describe('blockscout transport — token.holders (R-74)', () => {
@@ -289,24 +300,37 @@ describe('blockscout transport — entity.labels (R-75)', () => {
   });
 });
 
-describe('blockscout — the key in the URL (R-79, D10)', () => {
-  it('sends the key as the apikey query parameter when configured', async () => {
-    const { adapter, urls } = adapterWith(HOLDERS, 200, { BLOCKSCOUT_PRO_API_KEY: KEY });
+describe('blockscout — the key in the HEADER (R-79, D10, L-6)', () => {
+  it('sends the key in the vendor PRO header, and never in the URL', async () => {
+    // L-6, measured 2026-08-11: the header is the ONLY channel the facade reads. The same bogus key
+    // answers 401 here (seen, rejected) and the byte-identical keyless 403 as `?apikey=` (never
+    // seen), so this assertion is the difference between a configured key working and not.
+    const { adapter, urls, headers } = adapterWith(HOLDERS, 200, { BLOCKSCOUT_PRO_API_KEY: KEY });
     await adapter.fetch('token.holders', { chain: 'ethereum', tokenAddress: USDC });
-    expect(urls[0]).toContain(`apikey=${KEY}`);
+    expect(headers[0]?.get('Blockscout-MCP-Pro-Api-Key')).toBe(KEY);
+    // Both halves matter: the key must arrive AND must have left the URL. Asserting only the
+    // header would let a copy linger in the query string, which is where D10's whole exposure was.
+    expect(urls[0]).not.toContain(KEY);
+    expect(urls[0]).not.toContain('apikey');
   });
 
-  it('omits it entirely when unset — keyless is a working state, not a broken one', async () => {
-    const { adapter, urls } = adapterWith(HOLDERS, 200, {});
+  it('sends no auth header at all when unset — the vendor own keyless answer, not a forged one', async () => {
+    // An empty header would be a key the vendor evaluates and rejects (401 = "your key is bad"),
+    // which is a different and less actionable statement than 403 = "you have no key".
+    const { adapter, urls, headers } = adapterWith(HOLDERS, 200, {});
     await adapter.fetch('token.holders', { chain: 'ethereum', tokenAddress: USDC });
+    expect(headers[0]?.has('Blockscout-MCP-Pro-Api-Key')).toBe(false);
     expect(urls[0]).not.toContain('apikey');
   });
 
   it('never leaks the key into an error message', async () => {
-    // Asserted on the key SUBSTRING, not on "the message looks safe". The vendor puts the secret in
-    // the query string, so any code path that interpolates a URL into an error publishes it — this
-    // is the case `rpc-solana` predicted when it chose to report hostOf() instead of full URLs.
-    for (const status of [401, 402, 429, 500]) {
+    // Asserted on the key SUBSTRING, not on "the message looks safe". Since L-6 the key is no
+    // longer in the URL, so the class of leak this guards changed from likely to residual — the
+    // assertion stays because it is what would notice a future route putting it back.
+    //
+    // 403 is in this list since L-6: it is the status the facade actually uses for "no key", and it
+    // now degrades rather than hard-failing.
+    for (const status of [401, 402, 403, 429, 500]) {
       const { adapter } = adapterWith({ error: 'nope' }, status, { BLOCKSCOUT_PRO_API_KEY: KEY });
       const error = await adapter
         .fetch('token.holders', { chain: 'ethereum', tokenAddress: USDC })

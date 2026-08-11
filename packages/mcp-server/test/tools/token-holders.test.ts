@@ -61,7 +61,11 @@ function ctx(body: unknown = HOLDERS_FIXTURE, calls: string[] = [], cache?: Regi
     [
       'blockscout',
       createBlockscoutAdapter({
-        env: {},
+        // L-6: a key is now the precondition for the adapter being available at all — the facade
+        // stopped answering keyless. `env: {}` here would make every case below assert the
+        // "declined before the network" path instead of the tool contract it is written for.
+        // Placeholder value, never a credential: `fetchImpl` is injected and nothing leaves.
+        env: { BLOCKSCOUT_PRO_API_KEY: 'proapi_test_placeholder_not_a_secret' },
         fetchImpl: ((url: string | URL) => {
           calls.push(String(url));
           return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));

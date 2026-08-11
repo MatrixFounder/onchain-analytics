@@ -20,6 +20,7 @@ import {
 import { createBlockscoutAdapter } from '../src/adapters/blockscout/index.js';
 import { createBlockchainInfoAdapter } from '../src/adapters/blockchain-info/index.js';
 import { adapterRegistrations, routes } from '../src/providers.config.js';
+import { BLOCKSCOUT_TEST_ENV } from './helpers/blockscout-env.js';
 
 /**
  * Task 012-8 — the call deadline at the REGISTRY layer (ADR-002 D4, R-140/R-144/R-145/R-157).
@@ -605,7 +606,7 @@ describe('blockscout takes the deadline (task 012-8, the only adapter that does 
     await throttle('blockscout', BLOCKSCOUT_RATE_LIMIT, 3);
 
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }));
-    const adapter = createBlockscoutAdapter({ env: {}, throttle, fetchImpl });
+    const adapter = createBlockscoutAdapter({ env: BLOCKSCOUT_TEST_ENV, throttle, fetchImpl });
 
     const thrown = await adapter.fetch('entity.labels', LABEL_ARGS, Date.now() - 1).then(
       () => undefined,
@@ -642,7 +643,7 @@ describe('blockscout takes the deadline (task 012-8, the only adapter that does 
   it('TC-INT-08b: a deadline expiring mid-flight beats the 5 000 ms hop timeout, and says so', async () => {
     const throttle = createThrottle({ now: Date.now, wait: () => Promise.resolve() });
     const fetchImpl = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
-    const adapter = createBlockscoutAdapter({ env: {}, throttle, fetchImpl });
+    const adapter = createBlockscoutAdapter({ env: BLOCKSCOUT_TEST_ENV, throttle, fetchImpl });
 
     const startedAt = Date.now();
     const thrown = await adapter.fetch('entity.labels', LABEL_ARGS, Date.now() + 50).then(
@@ -722,7 +723,7 @@ describe('the terminal branch catches a SWALLOWED typed error (task 012-8, C-1 b
   it('TC-INT-11a: blockscout now delivers DeadlineExceededError as itself, so `tried` says deadline', async () => {
     const throttle = createThrottle({ now: Date.now, wait: () => Promise.resolve() });
     const adapter = createBlockscoutAdapter({
-      env: {},
+      env: BLOCKSCOUT_TEST_ENV,
       throttle,
       fetchImpl: () => new Promise<Response>(() => {}),
     });

@@ -229,19 +229,38 @@ interface LabelsFetchResult {
 type BlockscoutFetchResult = HoldersFetchResult | LabelsFetchResult;
 
 /**
+ * The header the facade reads the PRO key from — the vendor's own name for it, measured.
+ *
+ * L-6: it used to be the query parameter `apikey`, which the facade does not read AT ALL. The two
+ * channels are distinguishable live and were measured against each other on 2026-08-11: a
+ * deliberately bogus key in this HEADER answers `401 Unauthorized` (seen and rejected), while the
+ * same bogus key in `?apikey=` answers the byte-identical **keyless** 403 (never seen). So a key
+ * configured in `.env` bought exactly nothing until this constant existed.
+ *
+ * It also has to match `SENSITIVE_HEADER_RE` in `net/safe-fetch.ts` (`/authorization|api-?key/i`),
+ * which strips headers across a redirect to a different host — `…-Pro-Api-Key` does. That is not a
+ * coincidence to rely on silently: a future rename to something without "api key" in it would send
+ * the key to whatever host the facade redirects to, so rename this and that regex together.
+ */
+const PRO_KEY_HEADER = 'Blockscout-MCP-Pro-Api-Key';
+
+/**
  * HTTP statuses that mean "ask someone else", not "the answer is no".
  *
- * `401` — a rejected key. Measured caveat (2026-07-28): the FACADE currently ignores auth entirely
- * and answers 200 even to a garbage key, so this branch is unreachable there today and is covered by
- * fixture rather than by a live probe. The DIRECT host does enforce it (`401` bogus, `402` absent),
- * and the facade's enforcement is announced, so the branch must exist before it is observable —
- * the alternative is discovering it in production on the day the grace period ends.
- * `402` — no key where one is now required. Same handling for the same reason.
+ * `401` — a rejected key. Reachable and measured since 2026-08-11 (bogus key in `PRO_KEY_HEADER`).
+ * `402` — no key where one is now required. Kept: it is what the DIRECT host answers.
+ * `403` — **the status the facade actually chose for "your keyless session is over"** (L-6). The
+ * comment this list carried before predicted this branch would be needed "before it is observable —
+ * the alternative is discovering it in production on the day the grace period ends". The prediction
+ * was right and the list was still wrong, because it enumerated 401/402 and the vendor picked 403:
+ * an anticipated branch keyed on the wrong number is an unanticipated branch. The consequence was
+ * not cosmetic — `token.holders` routes through this adapter alone, so instead of degrading it
+ * raised a hard error on every call for ~30 chains.
  * `429` — throttled. Ours is a client-side limiter with no server signal to read (the responses
- * carry no `RateLimit-*` or `Retry-After` headers at all), so a 429 is information we cannot
- * anticipate, only yield to.
+ * carry no `RateLimit-*` and no credit-balance headers at all — re-measured 2026-08-11 WITH a valid
+ * key), so a 429 is information we cannot anticipate, only yield to.
  */
-const DEGRADE_STATUSES = new Set([401, 402, 429]);
+const DEGRADE_STATUSES = new Set([401, 402, 403, 429]);
 
 /**
  * Thrown for a status that should send the registry to the next adapter in the chain. Carries no
@@ -302,12 +321,18 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
    * Performs the request and hands back a SANITIZED body — the raw one is never returned, so no
    * caller can accidentally read a field this adapter is supposed to have removed.
    *
-   * **The key is applied HERE and nowhere else.** `apikey` is a query parameter rather than a
-   * header (the vendor's choice, measured), which is exactly the case `rpc-solana` anticipated when
-   * it decided to report `hostOf(endpoint)` instead of full URLs. So: the key is read inside
-   * `fetch()` — after `CapabilityRegistry` has already derived the cache key from
-   * `(provider, capability, normalizedArgs)`, where it is not an argument — and every error below
-   * names a HOST, never a URL.
+   * **The key is applied HERE and nowhere else** — as the `PRO_KEY_HEADER` request header, which is
+   * the only channel the facade reads (see that constant for the measurement). It is still read
+   * inside `fetch()`, after `CapabilityRegistry` has derived the cache key from
+   * `(provider, capability, normalizedArgs)` where it is not an argument, so it can never enter one.
+   *
+   * L-6 moved it out of the URL, which changes what the error-path wrapper below is FOR. This was
+   * the one adapter in the repo that put a secret in a URL, and that fact is the entire justification
+   * recorded at the `catch` for re-messaging `safeFetch`'s throws. It is no longer true: the query
+   * string now carries `chain_id` and `endpoint_path` and nothing else. The wrapper stays anyway —
+   * it costs one branch, it still bounds vendor- and network-supplied text on the path that reaches
+   * the model, and a future key-in-URL route would otherwise re-open the hole silently — but it is
+   * now defence in depth rather than the thing standing between a key and the transcript.
    */
   async function request(
     base: string,
@@ -324,7 +349,12 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
 
     const apiKey = env['BLOCKSCOUT_PRO_API_KEY'];
-    if (apiKey !== undefined && apiKey.length > 0) url.searchParams.set('apikey', apiKey);
+    // Built conditionally rather than always-with-an-empty-value: an empty `PRO_KEY_HEADER` is a
+    // key the vendor would evaluate and reject (401), which reads as "your key is bad" instead of
+    // "you have no key". `isAvailable()` already refuses the keyless case, so reaching here without
+    // one means a direct call — and it should get the vendor's own keyless answer, not a fake one.
+    const authHeaders: Record<string, string> =
+      apiKey !== undefined && apiKey.length > 0 ? { [PRO_KEY_HEADER]: apiKey } : {};
 
     // The limiter gets it FIRST, and that ordering is the point: `entity.labels` costs three tokens
     // against a `{capacity: 5, refillPerSec: 2}` bucket, so a burst puts this call seconds behind a
@@ -342,7 +372,7 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
     try {
       response = await safeFetch(
         url.toString(),
-        { method: 'GET' },
+        { method: 'GET', headers: authHeaders },
         ALLOWLIST,
         fetchImpl,
         // H-3/H-5: explicit bounds rather than `safeFetch`'s 10 MB / 15 s defaults. See the two
@@ -569,10 +599,37 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
       );
     },
 
-    // No env precondition: the facade answers without a key today, and demanding one would disable
-    // a working capability on a stock install. `BLOCKSCOUT_PRO_API_KEY` is read inside `fetch()`
-    // when present — after the cache key is derived, so it can never enter one.
-    isAvailable: () => ({ ok: true }),
+    /**
+     * L-6: the key is now a PRECONDITION, because the facade stopped answering without one.
+     *
+     * This used to return `{ok: true}` unconditionally, on the reasoning that "the facade answers
+     * without a key today, and demanding one would disable a working capability on a stock
+     * install". Both halves were true when written and the first stopped being true on 2026-08-11:
+     * every `/v1/*` data route now answers 403 keyless, with a body telling the caller to obtain a
+     * PRO key. The second half was the one to re-read — an install with no key does not have "a
+     * working capability" to disable, it has an advertisement. Left as-is, `chainSupport()` kept
+     * `onchain_list_chains` promising `token.holders` on 39 chains that answer on none, which is
+     * verbatim the "advertised by the matrix, served nowhere" defect this adapter was written to
+     * REMOVE — reintroduced from the vendor's side rather than ours.
+     *
+     * So it declines by name. The registry records the reason in `tried[]` and walks on;
+     * `entity.labels` falls through to Nansen exactly as it does for any other unavailable adapter;
+     * and the coverage matrix stops claiming chains nobody can serve. Nothing here reads the key's
+     * VALUE — only whether one is present — so this stays outside the cache key and out of logs
+     * (D10).
+     */
+    isAvailable: () => {
+      const apiKey = env['BLOCKSCOUT_PRO_API_KEY'];
+      if (apiKey === undefined || apiKey.length === 0) {
+        return {
+          ok: false,
+          reason:
+            'BLOCKSCOUT_PRO_API_KEY is not set — the facade stopped serving keyless requests ' +
+            '(HTTP 403) and cannot answer without one',
+        };
+      }
+      return { ok: true };
+    },
   };
 }
 

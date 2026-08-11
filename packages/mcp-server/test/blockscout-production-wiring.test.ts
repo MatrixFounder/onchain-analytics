@@ -12,9 +12,15 @@ import { EnvSchema, toProcessEnv } from '../src/env.js';
  * parses `process.env` regardless of what any adapter is given, so a whitespace-only value already
  * stops the server from booting either way. What the wiring changes is the value the adapter USES:
  * `toProcessEnv(env)` hands over the TRIMMED string, while `deps.env ?? process.env` falls back to
- * the raw one. `echo key >> .env` leaves a trailing newline, which becomes `apikey=key%0A` — a
- * silent total auth failure the day the vendor's grace period ends, on a key the operator can see
- * is "set correctly" in their `.env`.
+ * the raw one. `echo key >> .env` leaves a trailing newline on a key the operator can see is "set
+ * correctly" in their `.env`.
+ *
+ * **L-6 changed what an untrimmed key does, and it got LOUDER rather than safer.** The key now
+ * travels in the `Blockscout-MCP-Pro-Api-Key` header instead of `?apikey=`, so a trailing newline
+ * is no longer percent-encoded into a silently-wrong query value — it is an invalid header value,
+ * which `fetch` refuses outright. That is a better failure, and it is emphatically not a reason to
+ * drop the trimming: "throws at the transport instead of authenticating" is still a dead capability,
+ * and the guarantee this test names is that the operator's newline never reaches the wire at all.
  *
  * Two assertions, because they cover different things and only one of them is strong.
  */
@@ -25,10 +31,12 @@ describe('blockscout production wiring — the validated env reaches the adapter
     // The strong half: behaviour, end to end, through the same two functions `main()` composes.
     const env = EnvSchema.parse({ BLOCKSCOUT_PRO_API_KEY: 'proapi_real_value\n' });
     const urls: string[] = [];
+    const sent: Headers[] = [];
     const adapter = createBlockscoutAdapter({
       env: toProcessEnv(env),
-      fetchImpl: ((url: string | URL) => {
+      fetchImpl: ((url: string | URL, init?: RequestInit) => {
         urls.push(String(url));
+        sent.push(new Headers(init?.headers ?? {}));
         return Promise.resolve(
           new Response(JSON.stringify({ data: { items: [] } }), { status: 200 }),
         );
@@ -42,9 +50,15 @@ describe('blockscout production wiring — the validated env reaches the adapter
       })
       .catch(() => undefined);
 
-    expect(urls[0]).toContain('apikey=proapi_real_value');
-    // The failure this exists for: a raw `process.env` read would emit the percent-encoded newline.
-    expect(urls[0]).not.toContain('%0A');
+    expect(sent[0]?.get('Blockscout-MCP-Pro-Api-Key')).toBe('proapi_real_value');
+    // The failure this exists for: a raw `process.env` read would carry the newline through.
+    // Asserted on the VALUE, because `Headers` normalizes on construction and would hide it from a
+    // stringified view — and asserted as an exact match above rather than `toContain`, so a value
+    // that merely STARTS with the key still fails.
+    expect(sent[0]?.get('Blockscout-MCP-Pro-Api-Key')).not.toMatch(/\s/);
+    // L-6: and the key is not in the URL at all any more — the channel it used to travel on.
+    expect(urls[0]).not.toContain('apikey');
+    expect(urls[0]).not.toContain('proapi_real_value');
   });
 
   it('`src/index.ts` constructs the adapter WITH an env, not with none', () => {

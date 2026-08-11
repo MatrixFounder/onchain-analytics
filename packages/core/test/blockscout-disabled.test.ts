@@ -7,6 +7,7 @@ import {
   type ProviderAdapter,
 } from '../src/index.js';
 import { isolatedThrottle } from './helpers/isolated-throttle.js';
+import { BLOCKSCOUT_TEST_ENV } from './helpers/blockscout-env.js';
 
 /**
  * TASK-008 task 008-6 — "the provider is switched off" must be indistinguishable from "the provider
@@ -72,8 +73,13 @@ describe('blockscout switched off (008-6, OQ-2)', () => {
     // The actual claim of this task: an operator flipping the provider off produces the SAME
     // observable behaviour as the provider failing. If these diverged, the "just switch it off"
     // plan would be untested in exactly the situation it exists for.
+    // L-6: the key is REQUIRED here, and requiring it is what keeps this test testing its claim.
+    // The claim is "a provider that fails on the wire looks like a provider that is absent", so the
+    // left-hand side must actually reach the wire. Since L-6, `env: {}` means `isAvailable()`
+    // declines BEFORE `fetchImpl`, so the 401 below would never be issued and the final assertion
+    // (that the degrade branch RAN) would be asserting a path nothing walked.
     const offline = createBlockscoutAdapter({
-      env: {},
+      env: BLOCKSCOUT_TEST_ENV,
       throttle: isolatedThrottle(),
       fetchImpl: async () => new Response(JSON.stringify({ error: 'nope' }), { status: 401 }),
     });

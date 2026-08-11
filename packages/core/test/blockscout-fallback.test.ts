@@ -9,6 +9,7 @@ import type { CacheGetResult, CacheStore } from '../src/adapters/cache-store.js'
 import type { ProviderAdapter } from '../src/adapters/types.js';
 import type { EntityLabel } from '../src/types/entity-label.js';
 import { isolatedThrottle } from './helpers/isolated-throttle.js';
+import { BLOCKSCOUT_TEST_ENV } from './helpers/blockscout-env.js';
 
 /**
  * vdd-multi TASK-008, H-1 — the free-first handoff, asserted by RUNNING both adapters.
@@ -96,7 +97,7 @@ function registryWith(
 ): { registry: CapabilityRegistry; paidCalls: string[] } {
   const blockscout = createBlockscoutAdapter({
     now: () => 1_700_000_000_000,
-    env: {},
+    env: BLOCKSCOUT_TEST_ENV,
     throttle: isolatedThrottle(1_700_000_000_000),
     fetchImpl: () => Promise.resolve(new Response(JSON.stringify(vendorBody), { status: 200 })),
   });
@@ -219,7 +220,7 @@ describe('entity.labels — free source first, paid source only when it cannot a
     // and it silently voided R-40 (an explicit `isError` naming the missing key).
     const blockscout = createBlockscoutAdapter({
       now: () => 1_700_000_000_000,
-      env: {},
+      env: BLOCKSCOUT_TEST_ENV,
       throttle: isolatedThrottle(1_700_000_000_000),
       fetchImpl: () => Promise.resolve(new Response(JSON.stringify(NO_TAGS), { status: 200 })),
     });
@@ -290,7 +291,7 @@ describe('entity.labels — free source first, paid source only when it cannot a
     ];
     const blockscout = createBlockscoutAdapter({
       now: () => 1_700_000_000_000,
-      env: {},
+      env: BLOCKSCOUT_TEST_ENV,
       throttle: isolatedThrottle(1_700_000_000_000),
       fetchImpl: () => Promise.resolve(new Response(JSON.stringify(NO_TAGS), { status: 200 })),
     });

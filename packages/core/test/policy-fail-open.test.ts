@@ -8,6 +8,7 @@ import type { CacheGetResult, CacheStore } from '../src/adapters/cache-store.js'
 import type { CapabilityRoute, ProviderAdapter } from '../src/adapters/types.js';
 import type { EntityLabel } from '../src/types/entity-label.js';
 import { isolatedThrottle } from './helpers/isolated-throttle.js';
+import { BLOCKSCOUT_TEST_ENV } from './helpers/blockscout-env.js';
 
 /**
  * TC-INT-06 (task 012-6) — **the fail-open guard M-1**, moved here out of
@@ -131,7 +132,7 @@ describe('TC-INT-06 — a route policy that throws fails OPEN, and never blames 
     // `resolve()` untyped. Both are asserted below, on the fresh path and on the cache-hit path.
     const blockscout = createBlockscoutAdapter({
       now: () => 1_700_000_000_000,
-      env: {},
+      env: BLOCKSCOUT_TEST_ENV,
       throttle: isolatedThrottle(1_700_000_000_000),
       fetchImpl: () => Promise.resolve(new Response(JSON.stringify(LABELED), { status: 200 })),
     });

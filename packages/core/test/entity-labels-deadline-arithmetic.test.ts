@@ -18,6 +18,7 @@ import { capabilityManifests } from '../src/capability-manifest.js';
 import { CapabilityNotCoveredOnChainError } from '../src/chain/errors.js';
 import { createThrottle, type TokenBucketConfig, type Throttle } from '../src/net/rate-limit.js';
 import { adapterRegistrations, routes } from '../src/providers.config.js';
+import { BLOCKSCOUT_TEST_ENV } from './helpers/blockscout-env.js';
 
 /**
  * Task 012-10 — AC-8: the arithmetic of ONE `entity.labels` call, end to end, on a VIRTUAL clock.
@@ -289,7 +290,7 @@ function buildHarness(opts: {
 
   const blockscout = createBlockscoutAdapter({
     now: () => Date.now(),
-    env: {},
+    env: BLOCKSCOUT_TEST_ENV,
     throttle,
     fetchImpl,
   });
