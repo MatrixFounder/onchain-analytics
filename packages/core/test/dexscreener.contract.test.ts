@@ -85,9 +85,21 @@ describe('dexscreener adapter (contract, R-6)', () => {
 
     expect(expected.length).toBeGreaterThan(0);
     expect(result.pools).toEqual(expected);
-    // Q-10: the fixture page is not cut and carries no malformed row, so the caller must be told
-    // the page IS the whole answer. An always-true `truncated` would be as useless as no field.
-    expect(result.truncated).toEqual({ pairs: false, reason: '' });
+    // L-14 — THIS ASSERTION USED TO READ `{pairs: false, reason: ''}`, on the reasoning that the
+    // page was neither cut by `limit` nor carrying a malformed row, so it "IS the whole answer".
+    // Both halves of that were true and the conclusion was still wrong: the recorded page is FULL
+    // (30 rows, the vendor cap), and 28 of its 30 slots hold OTHER chains. The engine was
+    // answering "ethereum has these 2 pairs, nothing was lost" — for ethereum. Derived from the
+    // fixture, not written as a literal, so re-recording it cannot make the test silently wrong.
+    const ethRows = fixture.raw.pairs.filter((pair) => pair.chainId === 'ethereum').length;
+    expect(fixture.raw.pairs.length).toBe(30);
+    expect(ethRows).toBeLessThan(fixture.limit); // nothing was cut by `limit` — the old premise
+    expect(result.truncated.pairs).toBe(true);
+    expect(result.truncated.reason).toContain(`FULL page of ${fixture.raw.pairs.length} row(s)`);
+    expect(result.truncated.reason).toContain(
+      `${fixture.raw.pairs.length - ethRows} slot(s) of that page held OTHER chains`,
+    );
+    expect(result.truncated.reason).not.toContain('cut by limit');
   });
 
   it('normalizes the solana search fixture into canonical Pool[], scoped to solana only', () => {
@@ -105,13 +117,20 @@ describe('dexscreener adapter (contract, R-6)', () => {
     // than `limit` allows, so the page has always been a cut one — and until now nothing in the
     // response said so. The assertion is written against the vendor page rather than as a literal,
     // so re-recording the fixture cannot make it silently wrong.
-    const cut =
-      fixture.raw.pairs.filter((pair) => pair.chainId === 'solana').length - expected.length;
+    const solRows = fixture.raw.pairs.filter((pair) => pair.chainId === 'solana').length;
+    const cut = solRows - expected.length;
     expect(cut).toBeGreaterThan(0);
-    expect(result.truncated).toEqual({
-      pairs: true,
-      reason: `${cut} further row(s) on this chain were cut by limit=${fixture.limit}`,
-    });
+    expect(result.truncated.pairs).toBe(true);
+    expect(result.truncated.reason).toContain(
+      `${cut} further row(s) on this chain were cut by limit=${fixture.limit}`,
+    );
+    // L-14: this page is BOTH cut by us and capped by the vendor, and the two are reported
+    // separately on purpose — the first can be widened by asking for more, the second cannot.
+    expect(fixture.raw.pairs.length).toBe(30);
+    expect(result.truncated.reason).toContain(`FULL page of ${fixture.raw.pairs.length} row(s)`);
+    expect(result.truncated.reason).toContain(
+      `${fixture.raw.pairs.length - solRows} slot(s) of that page held OTHER chains`,
+    );
   });
 
   // CHANGED EXPECTATION (task 006-5, R-54): the `chains` literal is gone — coverage is the
@@ -228,6 +247,81 @@ describe('dexscreener adapter (contract, R-6)', () => {
         adapter.normalize('pairs.active', { chain: CHAINS.resolve('ethereum'), limit: 10, raw }),
       ).toThrow(/all 1 candidate pair\(s\).*were malformed/);
       stderrSpy.mockRestore();
+    });
+  });
+
+  describe('vendor page cap (L-14)', () => {
+    /** A page of `n` well-formed ethereum rows — the only variable these cases care about. */
+    const ethPage = (n: number): { schemaVersion: string; pairs: unknown[] } => ({
+      schemaVersion: '1.0.0',
+      pairs: Array.from({ length: n }, (_unused, i) => ({
+        chainId: 'ethereum',
+        dexId: 'uniswap',
+        pairAddress: `0x${i}`,
+        baseToken: { symbol: 'WETH' },
+        quoteToken: { symbol: 'USDC' },
+      })),
+    });
+
+    const normalizePage = (raw: unknown, limit = 100): PoolPage =>
+      adapter.normalize('pairs.active', {
+        chain: CHAINS.resolve('ethereum'),
+        limit,
+        raw,
+      }) as PoolPage;
+
+    // THE GUARD THAT MATTERS. The check added for L-14 answers "possibly incomplete" from a full
+    // page, and a check that fires on every page is worth exactly as much as one that never fires
+    // — which is the failure L-10 already cost this project once. This case is the one that fails
+    // if the condition is ever loosened to always-true.
+    it('a SHORT page is still reported as complete — the check is not always-true', () => {
+      const result = normalizePage(ethPage(29));
+
+      expect(result.pools).toHaveLength(29);
+      expect(result.truncated).toEqual({ pairs: false, reason: '' });
+    });
+
+    // Brackets the pinned constant from the other side: 29 → complete, 30 → capped. Together these
+    // two cases fail if `VENDOR_PAGE_SIZE` is edited without re-probing the vendor.
+    it('a FULL page is reported as capped, naming the cap rather than our own limit', () => {
+      const result = normalizePage(ethPage(30));
+
+      expect(result.pools).toHaveLength(30);
+      expect(result.truncated.pairs).toBe(true);
+      expect(result.truncated.reason).toContain('FULL page of 30 row(s) (cap 30)');
+      expect(result.truncated.reason).toContain('q=ETH');
+      // Nothing of ours cut anything here, so neither of the two older causes may appear — the
+      // vendor cap is a THIRD kind, and telling the caller to retry with a bigger `limit` would be
+      // advice that cannot work.
+      expect(result.truncated.reason).not.toContain('cut by limit');
+      expect(result.truncated.reason).not.toContain('dropped');
+      expect(result.truncated.reason).toContain('0 slot(s) of that page held OTHER chains');
+    });
+
+    it('counts the slots a capped page gave to other chains', () => {
+      const mixed = ethPage(30);
+      // Ten of the thirty slots go elsewhere — the shape that made `q=BERA` return 20 berachain
+      // rows, and `q=ETH` return 2 ethereum ones.
+      for (let i = 0; i < 10; i += 1) {
+        (mixed.pairs[i] as { chainId: string }).chainId = 'solana';
+      }
+
+      const result = normalizePage(mixed);
+
+      expect(result.pools).toHaveLength(20);
+      expect(result.truncated.pairs).toBe(true);
+      expect(result.truncated.reason).toContain('10 slot(s) of that page held OTHER chains');
+    });
+
+    it('reports the vendor cap ALONGSIDE our own cut, never folded into it', () => {
+      const result = normalizePage(ethPage(30), 5);
+
+      expect(result.pools).toHaveLength(5);
+      expect(result.truncated.pairs).toBe(true);
+      expect(result.truncated.reason).toContain(
+        '25 further row(s) on this chain were cut by limit=5',
+      );
+      expect(result.truncated.reason).toContain('FULL page of 30 row(s)');
     });
   });
 });

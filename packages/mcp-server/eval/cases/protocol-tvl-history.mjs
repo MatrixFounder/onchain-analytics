@@ -1,4 +1,5 @@
 import { num, nonEmpty } from '../case-lib.mjs';
+import { endpointContextIntegrity } from './shared/endpoint-context.mjs';
 
 export default {
   capability: 'protocol.tvl.history',
@@ -6,7 +7,8 @@ export default {
     probe.protocolSlug ? { chain, protocolSlug: probe.protocolSlug, days: 30 } : null,
   catches:
     'the per-protocol document outgrowing its raised cap, changing series shape, or losing the ' +
-    'chain key — which would report a deployed protocol as absent',
+    'chain key — which would report a deployed protocol as absent; and `change.endpointContext` ' +
+    'vanishing or being re-based, which would leave a 30-day headline resting on one point again (L-13)',
   check: (r) => {
     const problems = [nonEmpty(r?.protocol, 'protocol')].filter(Boolean);
     if (typeof r?.deployed !== 'boolean') return [...problems, 'deployed is not a boolean'];
@@ -28,6 +30,11 @@ export default {
         'not deployed, yet the window claims days — the invariant is being papered over',
       );
     }
+    // L-13. Deliberately NOT gated on `deployed`: a protocol that is absent here answers
+    // `change: null`, and the helper treats that as the legal no-context case rather than a gap.
+    problems.push(
+      ...endpointContextIntegrity(r?.change, 'protocol.tvl.history', r?.series?.length),
+    );
     return problems;
   },
 };

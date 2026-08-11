@@ -171,10 +171,31 @@ evidence rather than written down as a number.
 **Fix path.** Nothing to fix in our code — the ceiling is doing its job. One decision is left with
 the owner, and it needs a measurement first rather than a guess:
 
-1. Re-measure periodically, **and on a different day** — every sample so far is from 2026-08-11. If
-   base recovers, this closes itself; if ethereum's own latency keeps drifting toward 5 s, the hop
-   ceiling is the number to revisit — and raising it is not free, since `REQUEST_TIMEOUT_MS` exists
-   to keep the free-first `entity.labels` walk from starving the paid source behind it.
+1. ~~Re-measure periodically, **and on a different day** — every sample so far is from 2026-08-11.~~
+   **MEASURED 2026-08-12** on the live gate, two independent runs the same day. It did not recover,
+   and it spread:
+
+   | row | 2026-08-11 | 2026-08-12 |
+   |---|---|---|
+   | base/token.holders | timeout | timeout |
+   | polygon/token.holders | timeout | timeout |
+   | arbitrum/token.holders | answered when warm (2.05 s) | **timeout, both runs** |
+
+   So the failure is not a one-day vendor incident — it reproduces across days — and arbitrum, which
+   this record already placed "in the same class" and which `acknowledged.json` excused only on the
+   grounds that it "is not in the eval chain set", has now stopped answering too. The direction of
+   travel is toward more chains failing, not fewer.
+
+   **The decision this hands back to the owner is unchanged and now better supported:** raising the
+   hop ceiling is still forbidden here for the reason stated below, so the live options are to keep
+   acknowledging a widening set, or to route `token.holders` to the paid source
+   ([L-6](l-6-token-holders-advertised-everywhere-blockscout-403-everywhere.md) fix-path item 1,
+   still not done — a budget decision, not a wiring one), or to retire the capability. Continuing to
+   acknowledge is a choice with a slope: each added row is one more chain where the catalogue
+   promises what the engine cannot deliver.
+
+   Re-measurement still stands as a periodic obligation; what closed is only the question "is this a
+   single bad day".
 2. ~~Consider the per-chain public instances as a second adapter for this capability.~~ **CLOSED
    2026-08-11 by measurement** — see the section above. The instances answer, but not for holders on
    the chains that matter: base and polygon time out on the public instance exactly as they do on

@@ -7,6 +7,7 @@ import { DEFILLAMA_DEX_CHAINS } from './dex-chains.js';
 import { DEFILLAMA_CHAIN_ALIASES } from './chain-aliases.js';
 import { MAX_VENDOR_NAME_LENGTH, truncateVendorText } from '../truncate-vendor-text.js';
 import { bucketDailyPoints, changeAcross, windowDailySeries, DAY_MS } from './daily-series.js';
+import type { WindowChange } from './daily-series.js';
 import { ttlFor } from '../../cache/ttl.js';
 import { stringifyTruncated } from '../stringify-truncated.js';
 import { adapterRegistrations } from '../../providers.config.js';
@@ -77,14 +78,7 @@ export interface ChainTvlHistoryResult {
    * because "grew from nothing" has no percentage. `fromTs`/`toTs` are the days ACTUALLY used, which
    * are the first and last PRESENT days — gaps are never stitched, so they can sit inside the window.
    */
-  change: {
-    fromTs: number;
-    toTs: number;
-    fromUsd: number;
-    toUsd: number;
-    absUsd: number;
-    pct: number | null;
-  } | null;
+  change: WindowChange | null;
   truncated: { series: boolean; reason: string };
   source: string;
   /** Age of the DOCUMENT, not of `normalize()`. */
@@ -312,14 +306,7 @@ export interface ProtocolTvlHistoryResult {
   series: { ts: number; tvlUsd: number }[];
   points: number;
   gapDays: number;
-  change: {
-    fromTs: number;
-    toTs: number;
-    fromUsd: number;
-    toUsd: number;
-    absUsd: number;
-    pct: number | null;
-  } | null;
+  change: WindowChange | null;
   truncated: { series: boolean; reason: string };
   source: string;
   fetchedAt: number;

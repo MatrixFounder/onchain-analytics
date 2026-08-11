@@ -1,5 +1,6 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
+import { WindowChangeSchema } from './window-change.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import {
@@ -62,22 +63,7 @@ export const ChainTvlHistoryOutputSchema = z
         'Daily steps MISSING inside the covered window. `points + gapDays === window.days` — so a ' +
           'gap is distinguishable from a real zero rather than being guessed at.',
       ),
-    change: z
-      .object({
-        fromTs: z.number().int(),
-        toTs: z.number().int(),
-        fromUsd: z.number().nonnegative(),
-        toUsd: z.number().nonnegative(),
-        absUsd: z.number(),
-        pct: z.number().nullable(),
-      })
-      .strict()
-      .nullable()
-      .describe(
-        'Change across the window, already computed — answer "how much did TVL move" from this ' +
-          'rather than by doing arithmetic on the series. null when there is nothing to compare; ' +
-          'pct is null on a zero base, because "grew from nothing" has no percentage.',
-      ),
+    change: WindowChangeSchema,
     truncated: z.object({ series: z.boolean(), reason: z.string() }).strict(),
     source: z.string(),
     fetchedAt: z.number().int(),

@@ -33,7 +33,12 @@
     "polygon/token.holders": {
       "issue": "L-12",
       "since": "2026-08-11",
-      "why": "Same endpoint, same measurement (arbitrum is in the same class but is not in the eval chain set). Named here rather than hidden: this row became acknowledgeable only when RF-9 stopped reporting a transport timeout as `rate-limited`, which had kept an open vendor failure out of the failure set entirely."
+      "why": "Same endpoint, same measurement. Named here rather than hidden: this row became acknowledgeable only when RF-9 stopped reporting a transport timeout as `rate-limited`, which had kept an open vendor failure out of the failure set entirely. (When written, this entry noted arbitrum as 'in the same class but not in the eval chain set'; arbitrum now appears in the matrix and has its own entry.)"
+    },
+    "arbitrum/token.holders": {
+      "issue": "L-12",
+      "since": "2026-08-12",
+      "why": "Same endpoint, same 5s hop-ceiling timeout as base and polygon. This row is the DIFFERENT-DAY re-measurement L-12's fix-path item 1 asked for, and it answers that question badly: on 2026-08-11 arbitrum answered the facade in 2.05s once the shared backend was warm, and on 2026-08-12 it timed out on two independent gate runs. The set is widening rather than recovering. Acknowledged so it does not block unrelated work, NOT because it is settled — L-12 now carries the owner decision between routing token.holders to the paid source (L-6 fix-path item 1, a budget call) and retiring the capability."
     }
   }
 }

@@ -178,18 +178,96 @@ export function windowDailySeries(
  * number nobody can act on. `fromTs`/`toTs` are the points ACTUALLY used, which are the first and
  * last present days — not necessarily the window's edges, because gaps are not stitched.
  */
-export function changeAcross(series: readonly DailyPoint[]): {
+/** One alternative endpoint for the same window — L-13's `endpointContext` entries. */
+export interface EndpointAlternative {
+  valueUsd: number;
+  absUsd: number;
+  pct: number | null;
+}
+
+/** How many trailing points the robust level is taken over, endpoint excluded. */
+const RECENT_LEVEL_POINTS = 7;
+/** Below this the median is not robust enough to be worth publishing. */
+const MIN_RECENT_LEVEL_POINTS = 3;
+
+/** `pct` on the SAME base as `change.pct`, with the same zero-base idiom (null, never Infinity). */
+function pctFrom(fromUsd: number, absUsd: number): number | null {
+  return fromUsd === 0 ? null : (absUsd / fromUsd) * 100;
+}
+
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  // Length is guaranteed >= 1 by every caller, so both branches are defined.
+  return sorted.length % 2 === 0
+    ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
+    : (sorted[mid] ?? 0);
+}
+
+/**
+ * The change across a window. ONE declaration, referenced by both history contracts on the
+ * defillama adapter — they carried byte-identical inline copies until L-13 had to extend both, and
+ * a shape duplicated in two places is a shape that drifts on the third edit.
+ */
+export interface WindowChange {
   fromTs: number;
   toTs: number;
   fromUsd: number;
   toUsd: number;
   absUsd: number;
   pct: number | null;
-} | null {
+  /**
+   * L-13 — the same window measured to two other endpoints, so a headline resting on a single
+   * point is visible as such. Both are `null` when the series is too short to supply them.
+   */
+  endpointContext: {
+    prevPoint: EndpointAlternative | null;
+    recentLevel: (EndpointAlternative & { points: number }) | null;
+  };
+}
+
+export function changeAcross(series: readonly DailyPoint[]): WindowChange | null {
   const first = series[0];
   const last = series[series.length - 1];
   if (first === undefined || last === undefined || first.ts === last.ts) return null;
   const absUsd = last.valueUsd - first.valueUsd;
+
+  // L-13 — the SAME question measured against two other endpoints, so a caller can see whether the
+  // headline rests on one point. Nothing here is a verdict: measured across five chains, a one-day
+  // vendor artifact is SMALLER than the ordinary daily noise of the chain it appeared on
+  // (berachain p90 = 17.5% against an artifact of ≈13%), so no magnitude test separates the two,
+  // and at the last point of a window there is no next day to see a snap-back with. What can be
+  // published honestly is the comparison itself; the reading stays with the caller.
+  //
+  // Both alternatives are measured from the SAME `first` as `absUsd`/`pct`, which is what makes
+  // them directly comparable to the headline rather than a second, differently-based number.
+  const prev = series[series.length - 2];
+  const prevPoint: EndpointAlternative | null =
+    // `series.length >= 3` — at two points `prev` IS `first`, and "the window ending at its own
+    // start" is not an alternative reading, it is zero by construction.
+    prev !== undefined && series.length >= 3
+      ? {
+          valueUsd: prev.valueUsd,
+          absUsd: prev.valueUsd - first.valueUsd,
+          pct: pctFrom(first.valueUsd, prev.valueUsd - first.valueUsd),
+        }
+      : null;
+
+  // Endpoint EXCLUDED: a level the endpoint helped compute could not disagree with it.
+  const trailing = series.slice(Math.max(1, series.length - 1 - RECENT_LEVEL_POINTS), -1);
+  const recentLevel =
+    trailing.length >= MIN_RECENT_LEVEL_POINTS
+      ? (() => {
+          const medianUsd = median(trailing.map((p) => p.valueUsd));
+          return {
+            valueUsd: medianUsd,
+            absUsd: medianUsd - first.valueUsd,
+            pct: pctFrom(first.valueUsd, medianUsd - first.valueUsd),
+            points: trailing.length,
+          };
+        })()
+      : null;
+
   return {
     fromTs: first.ts,
     toTs: last.ts,
@@ -197,5 +275,6 @@ export function changeAcross(series: readonly DailyPoint[]): {
     toUsd: last.valueUsd,
     absUsd,
     pct: first.valueUsd === 0 ? null : (absUsd / first.valueUsd) * 100,
+    endpointContext: { prevPoint, recentLevel },
   };
 }

@@ -1015,6 +1015,93 @@
                       "type": "null"
                     }
                   ]
+                },
+                "endpointContext": {
+                  "type": "object",
+                  "properties": {
+                    "prevPoint": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "valueUsd": {
+                              "type": "number"
+                            },
+                            "absUsd": {
+                              "type": "number"
+                            },
+                            "pct": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "valueUsd",
+                            "absUsd",
+                            "pct"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The SAME window measured as if it ended one point earlier. null when the series is too short for that to be a different reading (fewer than 3 points)."
+                    },
+                    "recentLevel": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "valueUsd": {
+                              "type": "number"
+                            },
+                            "absUsd": {
+                              "type": "number"
+                            },
+                            "pct": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "points": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "valueUsd",
+                            "absUsd",
+                            "pct",
+                            "points"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The same window measured to the MEDIAN of the trailing points, endpoint excluded (`points` says how many). null when fewer than 3 such points exist."
+                    }
+                  },
+                  "required": [
+                    "prevPoint",
+                    "recentLevel"
+                  ],
+                  "additionalProperties": false,
+                  "description": "L-13 — the same question measured to two other endpoints, on the same base as `pct`, so they are directly comparable to it. This is CONTEXT, not a verdict: a one-day vendor artifact can be smaller than a chain’s ordinary daily noise, and at the last point of a window there is no later day that would reveal a snap-back — so the engine does not claim which reading is right. When `pct` and these two disagree sharply, the headline rests on a single point and the series is worth reading before quoting the number."
                 }
               },
               "required": [
@@ -1023,7 +1110,8 @@
                 "fromUsd",
                 "toUsd",
                 "absUsd",
-                "pct"
+                "pct",
+                "endpointContext"
               ],
               "additionalProperties": false
             },
@@ -1841,6 +1929,93 @@
                       "type": "null"
                     }
                   ]
+                },
+                "endpointContext": {
+                  "type": "object",
+                  "properties": {
+                    "prevPoint": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "valueUsd": {
+                              "type": "number"
+                            },
+                            "absUsd": {
+                              "type": "number"
+                            },
+                            "pct": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "valueUsd",
+                            "absUsd",
+                            "pct"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The SAME window measured as if it ended one point earlier. null when the series is too short for that to be a different reading (fewer than 3 points)."
+                    },
+                    "recentLevel": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "valueUsd": {
+                              "type": "number"
+                            },
+                            "absUsd": {
+                              "type": "number"
+                            },
+                            "pct": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "points": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "valueUsd",
+                            "absUsd",
+                            "pct",
+                            "points"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The same window measured to the MEDIAN of the trailing points, endpoint excluded (`points` says how many). null when fewer than 3 such points exist."
+                    }
+                  },
+                  "required": [
+                    "prevPoint",
+                    "recentLevel"
+                  ],
+                  "additionalProperties": false,
+                  "description": "L-13 — the same question measured to two other endpoints, on the same base as `pct`, so they are directly comparable to it. This is CONTEXT, not a verdict: a one-day vendor artifact can be smaller than a chain’s ordinary daily noise, and at the last point of a window there is no later day that would reveal a snap-back — so the engine does not claim which reading is right. When `pct` and these two disagree sharply, the headline rests on a single point and the series is worth reading before quoting the number."
                 }
               },
               "required": [
@@ -1849,14 +2024,16 @@
                 "fromUsd",
                 "toUsd",
                 "absUsd",
-                "pct"
+                "pct",
+                "endpointContext"
               ],
               "additionalProperties": false
             },
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Change across the window, already computed — answer \"how much did TVL move\" from this rather than by doing arithmetic on the series. null when there is nothing to compare; pct is null on a zero base, because \"grew from nothing\" has no percentage."
         },
         "truncated": {
           "type": "object",

@@ -17,6 +17,21 @@ const RATE_LIMIT = REGISTRATION.rateLimit;
 const DEFAULT_LIMIT = 10;
 
 /**
+ * L-14 — the size of one `/latest/dex/search` page, **measured, not assumed**.
+ *
+ * The vendor publishes no page-size contract, and a constant guessed from a single sample is the
+ * L-11 defect class (a number nobody probed, keyed into a branch that then never fires). Probe of
+ * 2026-08-11: `q` in `{BERA, ETH, SOL, AVAX, MATIC, USDC, HOLD}` returned **exactly 30** rows every
+ * time, and `q=zzzqqxunlikely9` returned **0** — so 30 is a CAP, not a fixed-size response padded
+ * out. Evidence: `test/fixtures/dexscreener/page-size.evidence.md`.
+ *
+ * Used only as "the page came back full, therefore rows beyond it exist and were never sent". If
+ * the vendor raises the cap, a full page still reads as full and the signal stays correct; if it
+ * lowers the cap, the check goes quiet and the regression test that pins 30 fails loudly.
+ */
+const VENDOR_PAGE_SIZE = 30;
+
+/**
  * There is no keyless DexScreener endpoint that lists "newest pairs for chain X" directly
  * (confirmed by a live probe of `/token-profiles/latest/v1` and `/token-boosts/latest/v1` —
  * neither carries liquidity/volume data, and neither accepts a chain filter). The confirmed,
@@ -162,13 +177,24 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
     normalize: (_cap: string, rawResult: unknown): PoolPage => {
       const { chain, limit, raw } = rawResult as DexscreenerFetchResult;
       const body = raw as DexscreenerSearchResponse;
-      const onThisChain = (body.pairs ?? []).filter(
+      const vendorRows = body.pairs ?? [];
+      const onThisChain = vendorRows.filter(
         (pair) => pair.chainId === (chain.vendors['dexscreener'] ?? chain.slug),
       );
       const candidates = onThisChain.slice(0, limit);
       // Q-10: counted BEFORE the slice, because "the vendor had more and we cut it" is one of the
       // two ways this page can be short, and it is invisible afterwards.
       const cutByLimit = onThisChain.length - candidates.length;
+
+      // L-14: the two counters above measure only what WE lose. This route is a relevance search
+      // over an index that is not chain-scoped server-side, so two losses happen before any of our
+      // arithmetic runs, and `truncated` used to report `false` through both:
+      //   1. the vendor page is capped — rows past `VENDOR_PAGE_SIZE` were never sent;
+      //   2. rows for OTHER chains consume slots in that same capped page.
+      // Measured on the repo's own fixture: `q=ETH` returns 30 rows of which **2** are ethereum,
+      // so the busiest EVM chain answered with two pairs and a completeness claim.
+      const vendorPageFull = vendorRows.length >= VENDOR_PAGE_SIZE;
+      const otherChainRows = vendorRows.length - onThisChain.length;
 
       // Adversarial cycle 1, fix G — explicit degradation instead of an all-or-nothing throw:
       // one malformed pair in an otherwise-good batch used to fail the ENTIRE onchain_active_pairs
@@ -245,11 +271,18 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
         cutByLimit > 0
           ? `${cutByLimit} further row(s) on this chain were cut by limit=${limit}`
           : '';
+      // L-14: kept a SEPARATE note, never folded into `cutNote`. The two existing causes differ
+      // because one can be widened by asking for more and the other cannot; the vendor cap is a
+      // third kind that no argument of this route can widen. Folding it into `cutByLimit` would
+      // tell the caller to retry with a bigger `limit` — advice that cannot work.
+      const vendorNote = vendorPageFull
+        ? `the vendor returned a FULL page of ${vendorRows.length} row(s) (cap ${VENDOR_PAGE_SIZE}) for q=${chain.nativeSymbol ?? chain.slug}, so rows beyond it were never sent and no argument of this route can request them (${otherChainRows} slot(s) of that page held OTHER chains)`
+        : '';
       return {
         pools,
         truncated: {
-          pairs: malformedCount > 0 || cutByLimit > 0,
-          reason: [dropNote, cutNote].filter(Boolean).join('; '),
+          pairs: malformedCount > 0 || cutByLimit > 0 || vendorPageFull,
+          reason: [dropNote, cutNote, vendorNote].filter(Boolean).join('; '),
         },
       };
     },

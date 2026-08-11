@@ -1,4 +1,5 @@
 import { num, nonEmpty } from '../case-lib.mjs';
+import { endpointContextIntegrity } from './shared/endpoint-context.mjs';
 
 /** The invariant this capability exists to make checkable: a consumer must be able to tell a GAP
  * from a real zero without guessing. If it ever stops holding, every "how did X change" answer
@@ -39,6 +40,7 @@ export default {
     if (r?.change !== null && num(r?.change?.toUsd) === null) {
       problems.push('change is present but carries no finite toUsd');
     }
+    problems.push(...endpointContextIntegrity(r?.change, 'chain.tvl.history', r?.series?.length));
     // A 30-day window on a live chain that answers at all should not be empty: an empty series with
     // a clean gap count is exactly the shape a unit change produces (L-5).
     if (Array.isArray(r?.series) && r.series.length === 0) {

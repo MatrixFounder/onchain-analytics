@@ -1,5 +1,6 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
+import { WindowChangeSchema } from './window-change.js';
 import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import {
@@ -52,17 +53,7 @@ export const ProtocolTvlHistoryOutputSchema = z
       .int()
       .nonnegative()
       .describe('`points + gapDays === window.days` always — including when deployed is false.'),
-    change: z
-      .object({
-        fromTs: z.number().int(),
-        toTs: z.number().int(),
-        fromUsd: z.number().nonnegative(),
-        toUsd: z.number().nonnegative(),
-        absUsd: z.number(),
-        pct: z.number().nullable(),
-      })
-      .strict()
-      .nullable(),
+    change: WindowChangeSchema,
     truncated: z.object({ series: z.boolean(), reason: z.string() }).strict(),
     source: z.string(),
     fetchedAt: z.number().int(),
