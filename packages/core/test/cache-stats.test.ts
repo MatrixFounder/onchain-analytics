@@ -16,11 +16,11 @@ describe('cache stats (R-15)', () => {
     recordCacheAccess('coingecko', 'token.price', 'miss');
     recordCacheAccess('coingecko', 'token.price', 'hit', 12);
     recordCacheAccess('coingecko', 'token.price', 'hit', 34);
-    recordCacheAccess('dexscreener', 'pairs.new', 'miss');
+    recordCacheAccess('dexscreener', 'pairs.active', 'miss');
 
     expect(getCacheStats()).toEqual({
       'token.price': { hit: 2, miss: 1 },
-      'pairs.new': { hit: 0, miss: 1 },
+      'pairs.active': { hit: 0, miss: 1 },
     });
   });
 

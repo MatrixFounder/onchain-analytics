@@ -24,7 +24,7 @@ two-level cache + credit budget guard → 19 workflow-oriented tools your agent 
   - [onchain_ping](#onchain_ping)
   - [onchain_get_token](#onchain_get_token)
   - [onchain_wallet_balances](#onchain_wallet_balances)
-  - [onchain_new_pairs](#onchain_new_pairs)
+  - [onchain_active_pairs](#onchain_active_pairs)
   - [onchain_protocol_tvl](#onchain_protocol_tvl)
   - [onchain_list_chains](#onchain_list_chains)
   - [onchain_chain_tvl](#onchain_chain_tvl)
@@ -184,7 +184,7 @@ Cost is in Nansen credits. Free tools cost nothing and need no key.
 | `onchain_ping`                  | —              | —     | no               |
 | `onchain_get_token`             | free           | 60s   | no               |
 | `onchain_wallet_balances`       | free           | 60s   | no               |
-| `onchain_new_pairs`             | free           | 30s   | no               |
+| `onchain_active_pairs`          | free           | 30s   | no               |
 | `onchain_protocol_tvl`          | free           | 300s  | no               |
 | `onchain_list_chains`           | free           | —     | no               |
 | `onchain_chain_tvl`             | free           | 300s  | no               |
@@ -247,7 +247,7 @@ Input:
 { "chain": "ethereum", "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" }
 ```
 
-### onchain_new_pairs
+### onchain_active_pairs
 
 Recently active DEX trading pairs (DexScreener-backed). `limit` is optional.
 
@@ -697,7 +697,7 @@ does not invalidate your cache.
 
 | Capability          | TTL   | Why                                        |
 | ------------------- | ----- | ------------------------------------------ |
-| `pairs.new`         | 30s   | freshness is the whole point               |
+| `pairs.active`      | 30s   | freshness is the whole point               |
 | `token.price`       | 60s   | moves continuously                         |
 | `wallet.balances.*` | 60s   | moves continuously                         |
 | `protocol.tvl`      | 300s  | slow-moving aggregate                      |

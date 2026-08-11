@@ -3,7 +3,7 @@ import { ChainSchema } from './chain.js';
 
 /**
  * Canonical `Pool` entity (ARCHITECTURE.md §3.2/§4.1) — a DEX trading pair, the shape returned by
- * `onchain_new_pairs` (M1 MCP tool, implemented in `packages/mcp-server`, not this package).
+ * `onchain_active_pairs` (M1 MCP tool, implemented in `packages/mcp-server`, not this package).
  */
 export const PoolSchema = z
   .object({

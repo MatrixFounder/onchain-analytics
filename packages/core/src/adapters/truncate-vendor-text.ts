@@ -4,7 +4,7 @@
  * Token names, symbols and DEX pair labels are chosen by whoever deployed the contract, and every
  * one of them ends up verbatim in the model's context. On a permissionless DEX that is an
  * attacker-controlled channel, not merely a data-quality question — and TASK-006 widened
- * `token.price`/`pairs.new` from two chains to 458, where the long tail is exactly where creating
+ * `token.price`/`pairs.active` from two chains to 458, where the long tail is exactly where creating
  * an adversarial token name is cheapest.
  *
  * **Truncation, not rejection** — the same conclusion `nansen/normalize.ts` reached in cycle 2 and

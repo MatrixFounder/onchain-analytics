@@ -43,7 +43,7 @@ export interface ChainInfo {
   /** Every other accepted spelling, including the perpetual legacy `ethereum`/`solana` (R-59a).
    * Globally unique: an alias may not collide with any OTHER chain's slug or alias. */
   readonly aliases: readonly string[];
-  /** GAS-token symbol (`BERA`, `XDAI`) — consumed by `pairs.new` (R-57a) and by
+  /** GAS-token symbol (`BERA`, `XDAI`) — consumed by `pairs.active` (R-57a) and by
    * `wallet.balances.native` to label the balance, instead of a hardcoded map. **The gas token, not
    * the chain's listed/governance token** (vdd-multi cycle 5, M-1): `arbitrum` is `ETH`, not `ARB`.
    * `null` ⇒ we do not know it, and any capability that needs it is honestly uncovered. */

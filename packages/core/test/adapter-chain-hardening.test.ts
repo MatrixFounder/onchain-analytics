@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRpcEvmAdapter } from '../src/adapters/rpc-evm/index.js';
 import { createCoingeckoAdapter } from '../src/adapters/coingecko/index.js';
-import { createDexscreenerAdapter } from '../src/adapters/dexscreener/index.js';
+import { createDexscreenerAdapter, type PoolPage } from '../src/adapters/dexscreener/index.js';
 import { createDefillamaAdapter } from '../src/adapters/defillama/index.js';
 import { createDuneAdapter } from '../src/adapters/dune/index.js';
 import { loadChainRegistry } from '../src/chain/registry.js';
 import type { Token } from '../src/types/token.js';
-import type { Pool } from '../src/types/pool.js';
 import type { Wallet } from '../src/types/wallet.js';
 
 /**
@@ -157,7 +156,7 @@ describe('M-6 — vendor-authored text is truncated, not rejected', () => {
 
   it('dexscreener: an adversarial pair symbol is bounded too', () => {
     const adapter = createDexscreenerAdapter({ chains: CHAINS });
-    const pools = adapter.normalize('pairs.new', {
+    const pools = adapter.normalize('pairs.active', {
       chain: CHAINS.resolve('ethereum'),
       limit: 5,
       raw: {
@@ -171,10 +170,10 @@ describe('M-6 — vendor-authored text is truncated, not rejected', () => {
           },
         ],
       },
-    }) as Pool[];
+    }) as PoolPage;
 
-    expect(pools).toHaveLength(1);
-    expect(pools[0]!.baseTokenSymbol.length).toBe(64);
+    expect(pools.pools).toHaveLength(1);
+    expect(pools.pools[0]!.baseTokenSymbol.length).toBe(64);
   });
 });
 
@@ -187,7 +186,7 @@ describe('L-1 — dexscreener diagnostics name the chain, not [object Object]', 
     });
     try {
       const adapter = createDexscreenerAdapter({ chains: CHAINS });
-      adapter.normalize('pairs.new', {
+      adapter.normalize('pairs.active', {
         chain: CHAINS.resolve('ethereum'),
         limit: 5,
         raw: {

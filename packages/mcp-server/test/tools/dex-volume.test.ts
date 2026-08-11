@@ -96,7 +96,7 @@ describe('onchain_dex_volume', () => {
 
     // Defaults materialize before `args`, so both derive the same `argsHash`. Left to the adapter,
     // these would be two cache entries and two downloads for one logical question — the defect
-    // `onchain_new_pairs` fixed for `limit`.
+    // `onchain_active_pairs` fixed for `limit`.
     expect(implicit.ok && implicit.cache.status).toBe('miss');
     expect(explicit.ok && explicit.cache.status).toBe('hit');
     expect(calls).toHaveLength(1);
@@ -177,17 +177,23 @@ describe('onchain_dex_volume — schemas (R-69a)', () => {
       chain: 'ethereum',
       name: 'Ethereum',
       window: { fromMs: 0, toMs: 86_400_000, days: 2 },
-      series: [{ ts: 0, volumeUsd: 1 }],
+      // Q-7: `partial` and `asOfTs` are REQUIRED, not optional. A consumer that has to check
+      // whether the field is present before trusting it is back to guessing, which is the state
+      // this fix removed.
+      series: [{ ts: 0, volumeUsd: 1, partial: false }],
       points: 1,
       gapDays: 0,
-      totals: { h24: null, d7: null, d30: null, d1y: null, allTime: null },
+      totals: { h24: null, d7: null, d30: null, d1y: null, allTime: null, asOfTs: null },
       truncated: { series: false, reason: '' },
       source: 'defillama',
       fetchedAt: 0,
     };
     expect(DexVolumeOutputSchema.safeParse(base).success).toBe(true);
     expect(
-      DexVolumeOutputSchema.safeParse({ ...base, series: [{ ts: 0, volumeUsd: -1 }] }).success,
+      DexVolumeOutputSchema.safeParse({
+        ...base,
+        series: [{ ts: 0, volumeUsd: -1, partial: false }],
+      }).success,
     ).toBe(false);
   });
 

@@ -400,3 +400,70 @@ describe('TC-UNIT-12 — registry errors come back through the shared wrapper', 
     expect(outcome.reason).toBe((error as Error).message);
   });
 });
+
+// =================================================================================================
+// Q-9 — the root provenance cannot contradict the points beneath it
+// =================================================================================================
+
+describe('Q-9 — a merged response reports every provenance it carries, not the cache provider', () => {
+  it('names BOTH provenances, including `derived`, on the response that used to name one', async () => {
+    // The exact probe payload from the finding: half the answer is `platform-explorer`, half is our
+    // own ledger labelled `derived`, and the root said `platform-explorer` — confidently, about
+    // data it had not sourced.
+    const { ctx } = stubRegistry({
+      result: [
+        snapshot('shielded_pool_shield_amount', TS, '0'),
+        snapshot('shielded_pool_balance_credits', TS, '52855975395379', 'derived'),
+      ],
+      sources: ['platform-explorer', 'pg-history'],
+    });
+
+    const outcome = await dashPlatformHistoryHandler(input({ series: 'shielded_pool' }), ctx);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value.sources).toStrictEqual(['derived', 'platform-explorer']);
+    // `derived` survives, rather than being collapsed into the adapter that carried it. Losing it
+    // hides a healed metric, which is the failure L-2 was filed to prevent — and it is why this is
+    // derived from the POINTS and not from `CapabilityResolution.sources`, which would have said
+    // `pg-history` here and contradicted the payload a second time.
+    expect(outcome.value.sources).toContain('derived');
+    expect(outcome.value.sources).not.toContain('pg-history');
+  });
+
+  it('agrees with the points BY CONSTRUCTION, on every response', async () => {
+    const { ctx } = stubRegistry({
+      result: [
+        snapshot('identities_total', TS),
+        snapshot('documents_total', TS, '17586', 'pg-history'),
+        snapshot('data_contracts_total', TS, '59', 'derived'),
+      ],
+      sources: ['platform-explorer', 'pg-history'],
+    });
+
+    const outcome = await dashPlatformHistoryHandler(input({ series: 'platform_metrics' }), ctx);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // The invariant, asserted as a relation rather than as a literal: a literal would pass while
+    // the field was computed from something else that happened to match today.
+    const inPoints = [
+      ...new Set(outcome.value.groups.flatMap((g) => g.points.map((p) => p.source))),
+    ].sort();
+    expect(outcome.value.sources).toStrictEqual(inPoints);
+  });
+
+  it('reports a single-source response as a one-element set, never as a bare string', async () => {
+    // The shape stays uniform: a consumer never has to branch on whether this tool merged.
+    const { ctx } = stubRegistry({
+      result: [snapshot('shielded_pool_shield_amount', TS, '5')],
+      sources: ['platform-explorer'],
+    });
+
+    const outcome = await dashPlatformHistoryHandler(input({ series: 'shielded_pool' }), ctx);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value.sources).toStrictEqual(['platform-explorer']);
+  });
+});

@@ -99,7 +99,7 @@
 - **Адаптеры (free):** CoinGecko (через офиц. MCP/REST), DexScreener (keyless), DeFiLlama (free), Dune Query API (free 2,500cr/мес).
 - *(2026-07-20)* **Адаптер `dash-platform` + `platform-explorer`** (оба free/keyless) — capability `privacy.shielded_pool` + Platform-метрики (identities/contracts/documents/credits); **читает** данные pre-M0 снапшоттера (поглощение отменено 2026-07-25 — снапшоттер остаётся на n8n). Первое доказательство «горячей заменяемости» (принцип 4): DAPI primary ⇄ platform-explorer fallback, пока shielded-эндпоинты «not yet available on public nodes». Данные: [raw/providers-addendum-2026-07-20.json](raw/providers-addendum-2026-07-20.json). ZecHub-ингест остаётся отдельным скриптом до M3 (нужен только калибровке порогов); канонические типы M1 расширяются типом `Snapshot` (D5).
 - Двухуровневый кеш SQLite+LRU + TTL по типам (D6).
-- **MCP-tools:** `onchain_get_token`, `onchain_wallet_balances`, `onchain_new_pairs`, `onchain_protocol_tvl`.
+- **MCP-tools:** `onchain_get_token`, `onchain_wallet_balances`, `onchain_active_pairs`, `onchain_protocol_tvl`.
 - Контрактные тесты адаптеров на записанных фикстурах (D11).
 
 **Exit-критерии:** все 4 tools работают на ≥2 сетях; cache-hit виден в метриках; 0 трат; golden-тесты нормализации зелёные.
@@ -276,7 +276,7 @@ graph LR
 | `onchain_ping` | — | бесплатно, без сети |
 | `onchain_get_token` | `token.price` | бесплатно |
 | `onchain_wallet_balances` | `wallet.balances.native` | бесплатно |
-| `onchain_new_pairs` | `pairs.new` | бесплатно |
+| `onchain_active_pairs` | `pairs.active` | бесплатно |
 | `onchain_protocol_tvl` | `protocol.tvl` | бесплатно |
 | `onchain_list_chains` | — | бесплатно, без сети |
 | `onchain_chain_tvl` | `chain.tvl` | бесплатно |

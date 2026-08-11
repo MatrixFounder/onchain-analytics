@@ -29,7 +29,7 @@ import { contractViolationReason } from './contract-violation.js';
  *
  * **A free route, so no `budgetStore`.** Unlike `entity-label`/`smart-money-flows`/`token-risk`,
  * this route is `['blockscout']` alone at `costOf: 0`, so there is no `_meta.budget` to report —
- * matching `protocol-tvl`/`chain-tvl`/`new-pairs`, the other free tools.
+ * matching `protocol-tvl`/`chain-tvl`/`active-pairs`, the other free tools.
  */
 const SUPPORTED_CHAIN = ChainInputSchema;
 
@@ -71,7 +71,7 @@ export type TokenHoldersInput = z.infer<typeof TokenHoldersInputSchema>;
 /**
  * Output contract — the canonical `TokenHolders` itself, not a wrapper around it.
  *
- * `entity-label` and `new-pairs` wrap because THEIR canonical types are array ELEMENTS
+ * `entity-label` and `active-pairs` wrap because THEIR canonical types are array ELEMENTS
  * (`EntityLabelSchema`, `PairSchema`) that need a response envelope built around them.
  * `TokenHoldersSchema` is already the whole-response shape — it carries `chain`, `tokenAddress`,
  * `source` and `fetchedAt` — so wrapping it again would add a layer whose only content is a second

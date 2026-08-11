@@ -47,9 +47,9 @@ const MAX_ADDRESS_LENGTH = 64;
  *    those two structural checks, just also independently `.max()`-rejected.
  *
  * `exhaustive` defaults to `false` via zod's own `.default(false)` (not a value materialized in
- * the handler, unlike `new-pairs.ts`'s `limit`) — this keeps the CACHE-KEY args always carrying an
+ * the handler, unlike `active-pairs.ts`'s `limit`) — this keeps the CACHE-KEY args always carrying an
  * explicit `exhaustive` boolean regardless of whether the caller passed it, avoiding the exact
- * "omitted vs. explicit-default" cache-key split `new-pairs.ts`'s own post-M1 polish fix 1
+ * "omitted vs. explicit-default" cache-key split `active-pairs.ts`'s own post-M1 polish fix 1
  * document ed (developer-guidelines §1.6 implementation choice).
  */
 export const EntityLabelInputSchema = z
@@ -93,7 +93,7 @@ export type EntityLabelInput = z.infer<typeof EntityLabelInputSchema>;
 
 /**
  * Output shape copied literally from interfaces.md §5.1.2: `{ chain, entities: EntityLabel[],
- * source, fetchedAt }` — mirrors `new-pairs.ts`'s own `NewPairsOutputSchema` wrapper precedent (a
+ * source, fetchedAt }` — mirrors `active-pairs.ts`'s own `ActivePairsOutputSchema` wrapper precedent (a
  * tool-contract-level shape wrapping a canonical array-element type, `EntityLabelSchema`).
  */
 export const EntityLabelOutputSchema = z
@@ -138,7 +138,7 @@ export type EntityLabelOutcome =
  * `normalizeAddress`-before-cache-key convention as `get-token.ts`'s `address`).
  *
  * Output is validated exactly ONCE, as part of the single `EntityLabelOutputSchema.safeParse(...)`
- * below (its `entities` field is `z.array(EntityLabelSchema)`) — mirrors `new-pairs.ts`'s own
+ * below (its `entities` field is `z.array(EntityLabelSchema)`) — mirrors `active-pairs.ts`'s own
  * de-duplicated-validation precedent (adversarial cycle 1 fix I). `safeParse`, never `parse` — see
  * `smart-money-flows.ts`'s own `smartMoneyFlowsHandler` docstring for the full rationale.
  *

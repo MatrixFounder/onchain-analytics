@@ -60,6 +60,43 @@ export default {
     if (r?.truncated?.series === true) {
       problems.push(`truncated: ${r.truncated.reason || 'no reason given'}`);
     }
+    // Q-7 — the h24/series alignment, checked LIVE, which is the only place it can be checked:
+    // the offset is a property of the vendor's aggregate, so our fixtures can only prove we
+    // reported it correctly on the day they were recorded.
+    if (Array.isArray(r?.series) && points > 0) {
+      const partials = r.series.filter((p) => p?.partial === true);
+      // At most one day can be in progress. Two would mean the day bucketing broke.
+      if (partials.length > 1) {
+        problems.push(
+          `${partials.length} points marked partial — at most one day can be in progress`,
+        );
+      }
+      // A partial point that is not the last one means the series is not in ascending order, or a
+      // stale document is being served as current.
+      if (partials.length === 1 && r.series[r.series.length - 1]?.partial !== true) {
+        problems.push(
+          'a partial point that is not the newest — series order or freshness is wrong',
+        );
+      }
+      const asOf = num(r?.totals?.asOfTs);
+      if (asOf !== null) {
+        // The claim `asOfTs` makes must hold in the payload that makes it: h24 must equal the
+        // point at that timestamp. This is what would catch the vendor changing what `total24h`
+        // aggregates — the drift Q-7 refused to hardcode around.
+        const at = r.series.find((p) => p?.ts === asOf);
+        if (!at) {
+          problems.push(`totals.asOfTs ${asOf} names a day that is not in the series`);
+        } else if (num(at.volumeUsd) !== num(totals.h24)) {
+          problems.push(
+            `totals.h24 ${totals.h24} does not equal the series point at asOfTs (${at.volumeUsd})`,
+          );
+        } else if (at.partial === true) {
+          problems.push(
+            'totals.asOfTs points at the PARTIAL day — h24 is a complete-day aggregate',
+          );
+        }
+      }
+    }
     return problems;
   },
 };

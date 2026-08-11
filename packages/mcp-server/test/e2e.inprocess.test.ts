@@ -28,7 +28,7 @@ import {
 import { loadEnv } from '../src/env.js';
 import { createServer } from '../src/server.js';
 import { EntityLabelOutputSchema } from '../src/tools/entity-label.js';
-import { NewPairsOutputSchema } from '../src/tools/new-pairs.js';
+import { ActivePairsOutputSchema } from '../src/tools/active-pairs.js';
 import { ProtocolTvlOutputSchema } from '../src/tools/protocol-tvl.js';
 
 /**
@@ -301,12 +301,12 @@ describe('4 new MCP tools — in-process E2E (InMemoryTransport, fixture-backed 
   );
 
   it.each([['ethereum'], ['solana']])(
-    'onchain_new_pairs — %s: structuredContent matches the {chain,pairs,source,fetchedAt} contract, _meta.cache miss→hit',
+    'onchain_active_pairs — %s: structuredContent matches the {chain,pairs,source,fetchedAt} contract, _meta.cache miss→hit',
     async (chain) => {
-      const { first, second } = await callToolTwice('onchain_new_pairs', { chain });
+      const { first, second } = await callToolTwice('onchain_active_pairs', { chain });
 
       expect(first.isError).not.toBe(true);
-      const parsed = NewPairsOutputSchema.parse(first.structuredContent);
+      const parsed = ActivePairsOutputSchema.parse(first.structuredContent);
       expect(parsed.chain).toBe(chain);
       expect(parsed.pairs.length).toBeGreaterThan(0);
       for (const pair of parsed.pairs) {
@@ -317,11 +317,11 @@ describe('4 new MCP tools — in-process E2E (InMemoryTransport, fixture-backed 
       expect(meta1).toMatchObject({
         status: 'miss',
         provider: 'dexscreener',
-        capability: 'pairs.new',
+        capability: 'pairs.active',
       });
 
       expect(second.isError).not.toBe(true);
-      NewPairsOutputSchema.parse(second.structuredContent);
+      ActivePairsOutputSchema.parse(second.structuredContent);
       const meta2 = cacheMetaOf(second);
       expect(meta2.status).toBe('hit');
       expect(typeof meta2.ageMs).toBe('number');

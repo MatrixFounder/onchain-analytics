@@ -23,7 +23,7 @@ DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализаци�
   - [onchain_ping](#onchain_ping)
   - [onchain_get_token](#onchain_get_token)
   - [onchain_wallet_balances](#onchain_wallet_balances)
-  - [onchain_new_pairs](#onchain_new_pairs)
+  - [onchain_active_pairs](#onchain_active_pairs)
   - [onchain_protocol_tvl](#onchain_protocol_tvl)
   - [onchain_list_chains](#onchain_list_chains)
   - [onchain_chain_tvl](#onchain_chain_tvl)
@@ -184,7 +184,7 @@ SSRF-allowlist.
 | `onchain_ping`                  | —              | —     | нет              |
 | `onchain_get_token`             | бесплатно      | 60с   | нет              |
 | `onchain_wallet_balances`       | бесплатно      | 60с   | нет              |
-| `onchain_new_pairs`             | бесплатно      | 30с   | нет              |
+| `onchain_active_pairs`          | бесплатно      | 30с   | нет              |
 | `onchain_protocol_tvl`          | бесплатно      | 300с  | нет              |
 | `onchain_list_chains`           | бесплатно      | —     | нет              |
 | `onchain_chain_tvl`             | бесплатно      | 300с  | нет              |
@@ -247,7 +247,7 @@ SSRF-allowlist.
 { "chain": "ethereum", "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" }
 ```
 
-### onchain_new_pairs
+### onchain_active_pairs
 
 Недавно активные торговые пары DEX (на DexScreener). `limit` опционален.
 
@@ -689,7 +689,7 @@ node scripts/verify-provenance.mjs --update
 
 | Способность         | TTL   | Почему так                                   |
 | ------------------- | ----- | -------------------------------------------- |
-| `pairs.new`         | 30с   | свежесть — весь смысл                        |
+| `pairs.active`      | 30с   | свежесть — весь смысл                        |
 | `token.price`       | 60с   | движется непрерывно                          |
 | `wallet.balances.*` | 60с   | движется непрерывно                          |
 | `protocol.tvl`      | 300с  | медленный агрегат                            |

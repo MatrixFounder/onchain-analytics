@@ -92,7 +92,7 @@ const SUBJECTS: Subject[] = [
   {
     id: 'dexscreener',
     create: (deps) => createDexscreenerAdapter(deps),
-    capability: 'pairs.new',
+    capability: 'pairs.active',
     args: { chain: 'ethereum' },
   },
   // `defillama` used to sit here on `protocol.tvl`, "the one path with no shared document". L-7

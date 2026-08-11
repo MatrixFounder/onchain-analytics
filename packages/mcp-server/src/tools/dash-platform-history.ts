@@ -115,7 +115,37 @@ export const DashPlatformHistoryOutputSchema = z
      * diagnostics about missing participants. */
     window: z.object({ fromMs: z.number().int(), toMs: z.number().int() }).strict().optional(),
     truncated: z.object({ series: z.boolean(), reason: z.string() }).strict(),
-    source: z.string(),
+    /**
+     * Q-9 — the DATA provenance of this response, and the reason it is a set and not a scalar.
+     *
+     * The scalar `source` this replaces held `outcome.cache.provider` — WHICH CACHE ENTRY served
+     * the call. On every other tool in this server that coincides with the data provenance, because
+     * one adapter answers. This is the one tool where a single answer cannot be right: a
+     * `shielded_pool` response carries `platform-explorer` points beside `derived` ones, and the
+     * root said `platform-explorer` — confidently, and about half the payload.
+     *
+     * Derived from `groups[].points[].source`, which Q-9's own `Do-not` names as the correct field
+     * and the one a consumer should be steered toward. Deriving it there rather than forwarding
+     * `CapabilityResolution.sources` is deliberate: the registry tracks ADAPTER IDS
+     * (`platform-explorer`, `pg-history`) while the points carry PROVENANCE LABELS
+     * (`platform-explorer`, `derived`), and `derived` is a distinct registered provenance that
+     * hides a healed metric if it is collapsed into the vendor's name (DB-SCHEMA §1.6/§1.8, L-2).
+     * Forwarding the adapter ids would have replaced one contradiction with another.
+     *
+     * By construction this can never disagree with the points beneath it.
+     *
+     * The cache provenance did not disappear — it was already published, correctly named, in
+     * `_meta.cache` (`provider` / `perSourceCache`). The scalar was a second copy of it wearing a
+     * name that means something else on every sibling tool.
+     */
+    sources: z
+      .array(z.string())
+      .describe(
+        'Every distinct provenance present in this response, sorted — e.g. ["derived", ' +
+          '"platform-explorer"]. `derived` means the engine computed the value exactly from other ' +
+          'measured fields and is not the vendor asserting it. For which SOURCE served each point, ' +
+          'read points[].source; for which CACHE answered, read _meta.cache.',
+      ),
     fetchedAt: z.number().int(),
   })
   .strict();
@@ -243,7 +273,11 @@ export async function dashPlatformHistoryHandler(
     ...(outcome.missingSources !== undefined ? { missingSources: outcome.missingSources } : {}),
     ...(window !== undefined ? { window } : {}),
     truncated,
-    source: outcome.cache.provider,
+    // Q-9: derived from the points, so it cannot contradict them. Sorted for a stable contract —
+    // the order adapters happen to be walked in is not information a consumer should depend on.
+    sources: [
+      ...new Set(groups.flatMap((group) => group.points.map((point) => point.source))),
+    ].sort(),
     fetchedAt: Date.now(),
   };
 

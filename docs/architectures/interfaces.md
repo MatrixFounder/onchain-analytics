@@ -29,8 +29,8 @@ the two refusal shapes, backward compatibility — is in §5.1.3.
 // onchain_wallet_balances — { chain: ChainInput, address: string (.max(64)) }
 // Capability: wallet.balances.native
 // → Wallet (§4.1, balances: Balance[] — only assetType:'native' in M1)
-// onchain_new_pairs — { chain: ChainInput, limit?: number }
-// Capability: pairs.new
+// onchain_active_pairs — { chain: ChainInput, limit?: number }
+// Capability: pairs.active
 // → { chain, pairs: Pool[], source, fetchedAt }
 // (the limit default is materialized BEFORE args are built: an omitted limit and an explicit
 // limit:10 would otherwise derive different args hashes for one logical request, duplicating the
@@ -436,7 +436,7 @@ chain: ChainInputSchema, // §3.2 — accepts slug | alias | caip2, resolves to 
   ```
   capability 'smart-money.flows' is not available on chain 'berachain'.
   Available on: arbitrum, avalanche, base, bnb, ethereum, … (+11 more).
-  Available on 'berachain' instead: chain.tvl, token.price, token.metadata, pairs.new.
+  Available on 'berachain' instead: chain.tvl, token.price, token.metadata, pairs.active.
   ```
 
   Both lists are computed from the coverage matrix (§4.2.3), so they cannot drift from actual

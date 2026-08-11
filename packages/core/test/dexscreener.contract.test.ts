@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { createDexscreenerAdapter, loadChainRegistry } from '../src/index.js';
-import type { Pool } from '../src/index.js';
+import type { PoolPage } from '../src/adapters/dexscreener/index.js';
 
 // Golden fixture-based normalization tests (R-6, D11) — no network: fixtures were recorded ONCE
 // via the manual fixture-recording dev script under packages/core/scripts/ (out of CI, R-22) and
@@ -81,10 +81,13 @@ describe('dexscreener adapter (contract, R-6)', () => {
       .slice(0, fixture.limit)
       .map((pair) => expectedPool('ethereum', pair));
 
-    const result = adapter.normalize('pairs.new', resolved(fixture));
+    const result = adapter.normalize('pairs.active', resolved(fixture)) as PoolPage;
 
     expect(expected.length).toBeGreaterThan(0);
-    expect(result).toEqual(expected);
+    expect(result.pools).toEqual(expected);
+    // Q-10: the fixture page is not cut and carries no malformed row, so the caller must be told
+    // the page IS the whole answer. An always-true `truncated` would be as useless as no field.
+    expect(result.truncated).toEqual({ pairs: false, reason: '' });
   });
 
   it('normalizes the solana search fixture into canonical Pool[], scoped to solana only', () => {
@@ -94,24 +97,35 @@ describe('dexscreener adapter (contract, R-6)', () => {
       .slice(0, fixture.limit)
       .map((pair) => expectedPool('solana', pair));
 
-    const result = adapter.normalize('pool.info', resolved(fixture));
+    const result = adapter.normalize('pool.info', resolved(fixture)) as PoolPage;
 
     expect(expected.length).toBeGreaterThan(0);
-    expect(result).toEqual(expected);
+    expect(result.pools).toEqual(expected);
+    // Q-10, found by the field the moment it existed: this recorded fixture has MORE solana rows
+    // than `limit` allows, so the page has always been a cut one — and until now nothing in the
+    // response said so. The assertion is written against the vendor page rather than as a literal,
+    // so re-recording the fixture cannot make it silently wrong.
+    const cut =
+      fixture.raw.pairs.filter((pair) => pair.chainId === 'solana').length - expected.length;
+    expect(cut).toBeGreaterThan(0);
+    expect(result.truncated).toEqual({
+      pairs: true,
+      reason: `${cut} further row(s) on this chain were cut by limit=${fixture.limit}`,
+    });
   });
 
   // CHANGED EXPECTATION (task 006-5, R-54): the `chains` literal is gone — coverage is the
   // matrix's job (§4.2.3).
-  it('capabilities() declares pairs.new and pool.info without a chain list', () => {
+  it('capabilities() declares pairs.active and pool.info without a chain list', () => {
     const caps = adapter.capabilities();
-    expect(caps.map((c) => c.id).sort()).toEqual(['pairs.new', 'pool.info']);
+    expect(caps.map((c) => c.id).sort()).toEqual(['pairs.active', 'pool.info']);
     for (const cap of caps) {
       expect(cap.chains).toBeUndefined();
     }
   });
 
   it('costOf() is free (0 credits) and isAvailable() is always ok (keyless)', () => {
-    expect(adapter.costOf('pairs.new', {})).toEqual({ credits: 0 });
+    expect(adapter.costOf('pairs.active', {})).toEqual({ credits: 0 });
     expect(adapter.isAvailable?.()).toEqual({ ok: true });
   });
 
@@ -127,7 +141,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
       now: () => FIXED_NOW,
     });
 
-    const result = await testAdapter.fetch('pairs.new', { chain: 'ethereum' });
+    const result = await testAdapter.fetch('pairs.active', { chain: 'ethereum' });
 
     expect(calls).toEqual(['https://api.dexscreener.com/latest/dex/search?q=ETH']);
     expect(result).toEqual({ chain: CHAINS.resolve('ethereum'), limit: 10, raw: fixture.raw });
@@ -156,18 +170,51 @@ describe('dexscreener adapter (contract, R-6)', () => {
         ],
       };
 
-      const result = adapter.normalize('pairs.new', {
+      const result = adapter.normalize('pairs.active', {
         chain: CHAINS.resolve('ethereum'),
         limit: 10,
         raw,
-      }) as Pool[];
+      }) as PoolPage;
 
-      expect(result).toHaveLength(1);
-      expect(result[0]!.pairAddress).toBe('0xgood');
+      expect(result.pools).toHaveLength(1);
+      expect(result.pools[0]!.pairAddress).toBe('0xgood');
       expect(stderrSpy).toHaveBeenCalledWith(
         expect.stringContaining('skipped 1 malformed pair(s) of 2'),
       );
+      // Q-10, the whole point of the record: the operator's channel AND the caller's must both
+      // carry the drop. Asserting only the stderr line is what left the caller blind for a month.
+      expect(result.truncated.pairs).toBe(true);
+      expect(result.truncated.reason).toContain('1 of 2');
+      expect(result.truncated.reason).toContain('dropped');
       stderrSpy.mockRestore();
+    });
+
+    it('reports a page cut by `limit` separately from a dropped row (Q-10)', () => {
+      // The two causes are NOT interchangeable to a consumer: rows cut by `limit` come back if you
+      // ask for more, dropped rows never do. A single boolean would collapse them; the reason must
+      // keep them apart, and this is the case that proves it does.
+      const raw = {
+        schemaVersion: '1.0.0',
+        pairs: [0, 1, 2].map((i) => ({
+          chainId: 'ethereum',
+          dexId: 'uniswap',
+          pairAddress: `0x${i}`,
+          baseToken: { symbol: 'WETH' },
+          quoteToken: { symbol: 'USDC' },
+        })),
+      };
+
+      const result = adapter.normalize('pairs.active', {
+        chain: CHAINS.resolve('ethereum'),
+        limit: 2,
+        raw,
+      }) as PoolPage;
+
+      expect(result.pools).toHaveLength(2);
+      expect(result.truncated.pairs).toBe(true);
+      expect(result.truncated.reason).toContain('cut by limit=2');
+      // …and says nothing about dropped rows, because none were dropped.
+      expect(result.truncated.reason).not.toContain('dropped');
     });
 
     it('throws when every candidate pair in the batch is malformed (never a silent empty result)', () => {
@@ -178,7 +225,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
       };
 
       expect(() =>
-        adapter.normalize('pairs.new', { chain: CHAINS.resolve('ethereum'), limit: 10, raw }),
+        adapter.normalize('pairs.active', { chain: CHAINS.resolve('ethereum'), limit: 10, raw }),
       ).toThrow(/all 1 candidate pair\(s\).*were malformed/);
       stderrSpy.mockRestore();
     });

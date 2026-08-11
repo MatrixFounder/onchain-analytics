@@ -10,7 +10,7 @@ import { protocolTvlHistoryToolSpec } from './protocol-tvl-history.js';
 import { entityLabelToolSpec } from './entity-label.js';
 import { getTokenToolSpec } from './get-token.js';
 import { listChainsToolSpec } from './list-chains.js';
-import { newPairsToolSpec } from './new-pairs.js';
+import { activePairsToolSpec } from './active-pairs.js';
 import { pingToolSpec } from './ping.js';
 import { protocolTvlToolSpec } from './protocol-tvl.js';
 import type { ToolSpec } from './registry.js';
@@ -44,7 +44,7 @@ export const toolSpecs: readonly ToolSpec[] = [
   pingToolSpec,
   getTokenToolSpec,
   walletBalancesToolSpec,
-  newPairsToolSpec,
+  activePairsToolSpec,
   protocolTvlToolSpec,
   listChainsToolSpec,
   chainTvlToolSpec,

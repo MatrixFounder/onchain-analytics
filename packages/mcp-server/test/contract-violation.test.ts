@@ -115,6 +115,7 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       'The set of tools that validate a provider result changed. Add the new one here; if a tool ' +
         'stopped validating, say why rather than letting the gate check one fewer.',
     ).toStrictEqual([
+      'active-pairs.ts',
       'chain-supply.ts',
       // WI-51 — the two network-activity tools.
       'chain-transactions.ts',
@@ -129,7 +130,6 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       'gas-price.ts',
       'get-token.ts',
       'list-protocols.ts',
-      'new-pairs.ts',
       'protocol-tvl-history.ts',
       'protocol-tvl.ts',
       'smart-money-flows.ts',

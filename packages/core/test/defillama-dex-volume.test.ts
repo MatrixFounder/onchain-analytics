@@ -890,3 +890,67 @@ describe('normalize failures are negative-cached; fetch failures are not (existi
     );
   });
 });
+
+/**
+ * Q-7 — the totals and the series are offset by a day, and the payload now says so.
+ *
+ * The trap, measured live 2026-08-11 on ethereum/base/solana and present in this very fixture:
+ * `total24h` equals the PENULTIMATE chart point, because the last point is the current, still
+ * accumulating UTC day. Summing `h24` with the series double-counts a day; comparing `h24` against
+ * `series[last]` reports a 35–56 % jump that is only a finished day beside a partial one.
+ */
+describe('Q-7 — the h24/series offset is stated in the payload, not left to folklore', () => {
+  /** An adapter whose clock sits INSIDE the fixture's last day — the real-world position. */
+  async function resolveAtClock(nowMs: number): Promise<DexVolumeResult> {
+    const adapter = createDefillamaAdapter({
+      fetchImpl: async () => new Response(JSON.stringify(ETHEREUM_DOC), { status: 200 }),
+      now: () => nowMs,
+      throttle: isolatedThrottle(nowMs),
+      chains: CHAINS,
+    });
+    const raw = await adapter.fetch('dex.volume.history', { chain: 'ethereum' });
+    return adapter.normalize('dex.volume.history', raw) as DexVolumeResult;
+  }
+
+  // Mid-afternoon of the fixture's last day: that day is under way and not finished.
+  const INSIDE_LAST_DAY = FIXTURE_LAST_TS_MS + 16 * 60 * 60 * 1000;
+
+  it('marks ONLY the current UTC day partial, and keeps the point', async () => {
+    const result = await resolveAtClock(INSIDE_LAST_DAY);
+
+    const partials = result.series.filter((p) => p.partial);
+    expect(partials).toHaveLength(1);
+    expect(partials[0]!.ts).toBe(FIXTURE_LAST_TS_MS);
+    // Kept, never dropped (Q-7's own Do-not): removing it would silently shorten every window by
+    // one and take away the intraday read.
+    expect(result.series[result.series.length - 1]!.ts).toBe(FIXTURE_LAST_TS_MS);
+    expect(result.points + result.gapDays).toBe(result.window.days);
+  });
+
+  it('aligns totals.asOfTs to the last COMPLETE day — the point h24 actually equals', async () => {
+    const result = await resolveAtClock(INSIDE_LAST_DAY);
+
+    const complete = result.series.filter((p) => !p.partial);
+    const lastComplete = complete[complete.length - 1]!;
+    expect(result.totals.asOfTs).toBe(lastComplete.ts);
+    // The claim the field exists to make, asserted rather than described: h24 IS that day, and is
+    // NOT the last point.
+    expect(result.totals.h24).toBe(lastComplete.volumeUsd);
+    expect(result.totals.h24).not.toBe(result.series[result.series.length - 1]!.volumeUsd);
+  });
+
+  it('reports asOfTs: null rather than a guess when the alignment cannot be verified', async () => {
+    // The clock the rest of this file uses — a full day past the fixture's last point. Then NO
+    // point is partial, the last point is the last complete day, and h24 does not equal it. The
+    // honest answer is "I cannot confirm what period h24 covers", not a plausible timestamp.
+    //
+    // This is the guard that keeps the field from becoming a new confident wrong answer: it would
+    // have been trivial to hardcode "penultimate point" and be right on every fixture we have and
+    // wrong the day the vendor changes the aggregate.
+    const result = await resolveAtClock(FIXED_NOW);
+
+    expect(result.series.some((p) => p.partial)).toBe(false);
+    expect(result.totals.h24).not.toBeNull();
+    expect(result.totals.asOfTs).toBeNull();
+  });
+});

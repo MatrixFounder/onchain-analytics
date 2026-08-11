@@ -344,10 +344,10 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
   it('treats an adapter with no isAvailable() method as always available', async () => {
     const adapter = makeAdapter({ id: 'dexscreener' });
     expect(adapter.isAvailable).toBeUndefined();
-    const routes: CapabilityRoute[] = [{ capability: 'pairs.new', adapterIds: ['dexscreener'] }];
+    const routes: CapabilityRoute[] = [{ capability: 'pairs.active', adapterIds: ['dexscreener'] }];
     const registry = new CapabilityRegistry(routes, new Map([['dexscreener', adapter]]));
 
-    const resolution = await registry.resolve('pairs.new', CHAIN, {});
+    const resolution = await registry.resolve('pairs.active', CHAIN, {});
 
     expect(resolution.source).toBe('dexscreener');
   });

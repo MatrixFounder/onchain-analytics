@@ -25,7 +25,7 @@
 
 #### Entity: `Pool`
 
-- **Description:** a DEX trading pair — consumed by `onchain_new_pairs`.
+- **Description:** a DEX trading pair — consumed by `onchain_active_pairs`.
 - **Key attributes:** `id`, `chain`, `dexId`, `baseTokenSymbol`/`quoteTokenSymbol`, `pairAddress`,
   `createdAt?`, `liquidityUsd?`, `volume24hUsd?`, `source`, `fetchedAt`.
 
@@ -136,7 +136,7 @@ signalPercentile?, lastTriggerOn?}` (`TGMIndicator`), where `score` is qualitati
 | `name`           | `string`                                                    | Display name (`Berachain`).                                                                                                                                                                |
 | `family`         | `'evm' \| 'svm' \| 'move' \| 'cosmos' \| 'utxo' \| 'other'` | Determines **address validation** (R-55) and whether `rpc-evm` can serve the chain.                                                                                                        |
 | `aliases`        | `string[]`                                                  | Every other accepted spelling, including the legacy `ethereum`/`solana` (R-59a) and vendor ids. Globally unique.                                                                           |
-| `nativeSymbol`   | `string \| null`                                            | Symbol of the **gas** token (`BERA`, `XDAI`) — consumed by `pairs.new` (R-57a) and `wallet.balances.native` instead of a hardcode.                                                         |
+| `nativeSymbol`   | `string \| null`                                            | Symbol of the **gas** token (`BERA`, `XDAI`) — consumed by `pairs.active` (R-57a) and `wallet.balances.native` instead of a hardcode.                                                      |
 | `nativeDecimals` | `number \| null`                                            | Decimals of that same gas token.                                                                                                                                                           |
 | `vendors`        | `Record<vendorId, string \| null>`                          | **Naming only:** what this chain is called at each vendor. `defillama`→`"Berachain"`, `coingecko`→`"berachain"`, `dexscreener`→`"berachain"`. `null` = the vendor does not have the chain. |
 | `rpcHosts`       | `string[] \| null`                                          | The curated SSRF allowlist for this chain (R-56a). `null` = `wallet.balances.native` is honestly uncovered, see §7.2.                                                                      |

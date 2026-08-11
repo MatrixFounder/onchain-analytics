@@ -8,7 +8,7 @@ import type { PolicyDescriptor } from './policy.js';
  * capability applies to; omitted means the capability isn't chain-scoped.
  */
 export interface CapabilityDescriptor {
-  id: string; // e.g. 'token.price' | 'wallet.balances.native' | 'pairs.new' | ...
+  id: string; // e.g. 'token.price' | 'wallet.balances.native' | 'pairs.active' | ...
   chains?: Chain[];
 }
 

@@ -72,6 +72,30 @@ interface DexscreenerSearchResponse {
   pairs?: DexscreenerPair[];
 }
 
+/**
+ * What `normalize()` hands back — a PAGE of pools, not a bare array (Q-10).
+ *
+ * It used to return `Pool[]`, and the count of rows this adapter threw away went only to
+ * `process.stderr`. On the stdio transport stderr is the ONLY place a diagnostic may go (stdout is
+ * the JSON-RPC wire), so the caller could not see it at all: `{chain: 'ethereum', limit: 5}`
+ * returning two pairs was indistinguishable from "this chain has two matching pools" and from
+ * "three rows were discarded". That is L-2's shape — a health signal computed correctly with no
+ * reader — and it is why the wrapper exists.
+ *
+ * The stderr line STAYS. It is the operator's channel; this adds the caller's. Q-10's fix path is
+ * explicit that the point is adding a reader, not moving the signal.
+ */
+export interface PoolPage {
+  pools: Pool[];
+  /**
+   * `pairs: true` when this page is not the whole answer — because rows were dropped, or because
+   * the vendor page was cut to `limit`, or both. `reason` names which and with what counts; it is
+   * the empty string when nothing was lost, mirroring the `truncated.series` idiom the DeFiLlama
+   * series shaper already established.
+   */
+  truncated: { pairs: boolean; reason: string };
+}
+
 function extractFetchArgs(
   args: Record<string, unknown>,
   chains: ChainRegistry,
@@ -89,7 +113,7 @@ function extractFetchArgs(
 }
 
 /**
- * DexScreener adapter (ARCHITECTURE.md §3.2/§5.3, R-6): `pairs.new` + `pool.info`, both backed by
+ * DexScreener adapter (ARCHITECTURE.md §3.2/§5.3, R-6): `pairs.active` + `pool.info`, both backed by
  * the same search-based HTTP step (dexscreener has no tool consumer for `pool.info` yet in M1 —
  * cheap to declare the capability now regardless, per architecture review cycle 1).
  */
@@ -107,7 +131,13 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
     // native symbol; without one there is no query to make.
     chainSupport: (chain: ChainInfo): boolean =>
       chain.vendors['dexscreener'] != null && chain.nativeSymbol != null,
-    capabilities: () => [{ id: 'pairs.new' }, { id: 'pool.info' }],
+    // Q-8: `pairs.active`, renamed from the id that claimed recency. The vendor route is
+    // `GET /latest/dex/search`, which is a RELEVANCE search with no recency semantics — measured
+    // 2026-08-11, the freshest row in a page was 155 days old, `pairCreatedAt` was absent on 6 of
+    // 30 rows, and the route returned the byte-identical page for `sort=`, `sortBy=` and `rankBy=`
+    // (it ignores unknown parameters). So no amount of over-fetching turns this into a new-pairs
+    // feed, and a capability id claiming otherwise is the same wrong answer as the tool name was.
+    capabilities: () => [{ id: 'pairs.active' }, { id: 'pool.info' }],
     costOf: () => ({ credits: 0 }),
     fetch: async (
       _cap: string,
@@ -129,15 +159,19 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
       const raw: unknown = await response.json();
       return { chain, limit, raw };
     },
-    normalize: (_cap: string, rawResult: unknown): Pool[] => {
+    normalize: (_cap: string, rawResult: unknown): PoolPage => {
       const { chain, limit, raw } = rawResult as DexscreenerFetchResult;
       const body = raw as DexscreenerSearchResponse;
-      const candidates = (body.pairs ?? [])
-        .filter((pair) => pair.chainId === (chain.vendors['dexscreener'] ?? chain.slug))
-        .slice(0, limit);
+      const onThisChain = (body.pairs ?? []).filter(
+        (pair) => pair.chainId === (chain.vendors['dexscreener'] ?? chain.slug),
+      );
+      const candidates = onThisChain.slice(0, limit);
+      // Q-10: counted BEFORE the slice, because "the vendor had more and we cut it" is one of the
+      // two ways this page can be short, and it is invisible afterwards.
+      const cutByLimit = onThisChain.length - candidates.length;
 
       // Adversarial cycle 1, fix G — explicit degradation instead of an all-or-nothing throw:
-      // one malformed pair in an otherwise-good batch used to fail the ENTIRE onchain_new_pairs
+      // one malformed pair in an otherwise-good batch used to fail the ENTIRE onchain_active_pairs
       // call. Each candidate is validated independently (a manual type-narrowing guard, since the
       // wire fields are `unknown`, followed by `PoolSchema.safeParse` as the canonical contract
       // check); a malformed one is DROPPED, not thrown, and counted. Only if EVERY candidate in
@@ -199,7 +233,25 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
         );
       }
 
-      return pools;
+      // Q-10: the same two facts the stderr line above reports, now on the channel the CALLER can
+      // read. Both causes are named separately because they mean different things to a consumer: a
+      // page cut by `limit` can be widened by asking for more, whereas dropped rows cannot be
+      // recovered by any argument and say something about the vendor's payload.
+      const dropNote =
+        malformedCount > 0
+          ? `${malformedCount} of ${candidates.length} vendor row(s) failed validation and were dropped`
+          : '';
+      const cutNote =
+        cutByLimit > 0
+          ? `${cutByLimit} further row(s) on this chain were cut by limit=${limit}`
+          : '';
+      return {
+        pools,
+        truncated: {
+          pairs: malformedCount > 0 || cutByLimit > 0,
+          reason: [dropNote, cutNote].filter(Boolean).join('; '),
+        },
+      };
     },
     isAvailable: () => ({ ok: true }),
   };

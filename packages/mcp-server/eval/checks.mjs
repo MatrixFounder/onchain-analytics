@@ -71,7 +71,7 @@ export const checks = Object.fromEntries(
  * check below spans two sources or two axes, so it belongs to no single case.
  *
  * (An earlier design chained dexscreener's token address into coingecko; the live payload settled
- * it — `new_pairs` returns baseTokenSymbol, never a contract address, so that chain does not exist
+ * it — `active_pairs` returns baseTokenSymbol, never a contract address, so that chain does not exist
  * and claiming to test it would have been fiction. These are the combinations the data supports.)
  */
 export const crossChecks = {

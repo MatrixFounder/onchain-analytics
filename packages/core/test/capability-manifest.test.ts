@@ -149,7 +149,7 @@ const TTL_SECONDS_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
   'token.price': 60,
   'token.metadata': 3600,
   'wallet.balances.native': 60,
-  'pairs.new': 30,
+  'pairs.active': 30,
   'protocol.tvl': 300,
   'chain.tvl': 300,
   'dex.volume.history': 3600,

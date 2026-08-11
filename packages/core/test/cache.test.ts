@@ -40,7 +40,7 @@ describe('ttlFor (R-13/R-14: TTL by capability, ARCHITECTURE.md §3.2 table)', (
     ['token.price', 60],
     ['token.metadata', 3600],
     ['wallet.balances.native', 60],
-    ['pairs.new', 30],
+    ['pairs.active', 30],
     ['protocol.tvl', 300],
     ['privacy.shielded_pool', 3600],
     ['platform.identities', 3600],

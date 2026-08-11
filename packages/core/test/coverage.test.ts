@@ -345,8 +345,8 @@ describe('coverage on the real providers.config (task 006-5)', () => {
     expect(real.isCovered('token.price', realChains.resolve('berachain'))).toBe(true);
   });
 
-  it('[R-57, Should] pairs.new reaches at least one chain outside ethereum/solana', () => {
-    const covered = real.chainsFor('pairs.new').map((c) => c.slug);
+  it('[R-57, Should] pairs.active reaches at least one chain outside ethereum/solana', () => {
+    const covered = real.chainsFor('pairs.active').map((c) => c.slug);
     expect(covered).toContain('ethereum');
     expect(covered).toContain('solana');
     expect(covered.some((slug) => slug !== 'ethereum' && slug !== 'solana')).toBe(true);

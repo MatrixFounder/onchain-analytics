@@ -56,7 +56,7 @@ publishing the merged history — see §3/§11.
 - **M0** — pnpm monorepo, TypeScript strict, `onchain_ping` over stdio, CI gate.
 - **M1** — the read layer: canonical zod types, Adapter + Capability Registry, nine free adapters,
   the two-level cache (D6), SSRF gate, per-provider rate limit, and four tools
-  (`onchain_get_token`, `onchain_wallet_balances`, `onchain_new_pairs`, `onchain_protocol_tvl`).
+  (`onchain_get_token`, `onchain_wallet_balances`, `onchain_active_pairs`, `onchain_protocol_tvl`).
   `dash-platform` ships as an interface + fixture contract (live gRPC transport is backlog) and
   `platform-explorer` carries all real Dash traffic; `dune` is an interface/config stub.
 - **M2** — the first paid slice: the tenth adapter `nansen` over REST `api.nansen.ai`, three paid

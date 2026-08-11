@@ -2,7 +2,7 @@
   "$comment": [
     "Probe inputs for the live eval, as DATA — adding a chain here is a config edit, never a code change.",
     "Only the FREE (keyless) capability surface is covered: chain.tvl, protocol.tvl, token.price/metadata,",
-    "pairs.new, wallet.balances.native. Nansen-backed tools (entity.labels, smart-money.flows, token.risk)",
+    "pairs.active, wallet.balances.native. Nansen-backed tools (entity.labels, smart-money.flows, token.risk)",
     "are excluded on purpose — they spend credits.",
     "",
     "A field left absent means 'no probe curated' → that case is reported as `no-probe`, never as a failure.",
@@ -13,8 +13,8 @@
     "symbol/decimals — NOT balance > 0 — because zero is a legitimate answer and asserting otherwise would",
     "make the eval fail on a correct response.",
     "",
-    "token: a curated contract per chain. An earlier design discovered the address live from pairs.new",
-    "instead; the real payload settled it — new_pairs returns baseTokenSymbol and never a contract address,",
+    "token: a curated contract per chain. An earlier design discovered the address live from pairs.active",
+    "instead; the real payload settled it — active_pairs returns baseTokenSymbol and never a contract address,",
     "so that chain does not exist. Cross-provider agreement is checked a different way (see checks.mjs",
     "crossChecks): registry-vs-provider, chain echo, and registry nativeSymbol vs what the RPC reports.",
     "",
@@ -99,7 +99,7 @@
     },
     "berachain": {
       "family": "evm",
-      "why": "serves pairs.new/pool.info WITHOUT the Nansen capabilities — a profile ethereum/solana hide",
+      "why": "serves pairs.active/pool.info WITHOUT the Nansen capabilities — a profile ethereum/solana hide",
       "wallet": "0x0000000000000000000000000000000000000000",
       "protocolSlug": "kodiak",
       "token": "0x6969696969696969696969696969696969696969",
@@ -107,7 +107,7 @@
     },
     "gnosis": {
       "family": "evm",
-      "why": "wallet balances but no pairs.new and no paid capabilities — the plain long-tail EVM profile",
+      "why": "wallet balances but no pairs.active and no paid capabilities — the plain long-tail EVM profile",
       "token": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
       "tokenNote": "WXDAI",
       "wallet": "0x0000000000000000000000000000000000000000",

@@ -138,7 +138,7 @@ onchain-analytics/
 │     │     ├─ ping.ts                    # unchanged since M0 (R-20)
 │     │     ├─ get-token.ts               # M1
 │     │     ├─ wallet-balances.ts         # M1
-│     │     ├─ new-pairs.ts               # M1
+│     │     ├─ active-pairs.ts               # M1
 │     │     ├─ protocol-tvl.ts            # M1
 │     │     ├─ smart-money-flows.ts       # M2, paid
 │     │     ├─ entity-label.ts            # M2, paid

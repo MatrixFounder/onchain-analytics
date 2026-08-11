@@ -27,8 +27,8 @@ import type { AdapterRegistration, CapabilityRoute } from './adapters/types.js';
 export const routes: CapabilityRoute[] = [
   { capability: 'token.price', adapterIds: ['coingecko'] },
   { capability: 'token.metadata', adapterIds: ['coingecko'] },
-  { capability: 'pairs.new', adapterIds: ['dexscreener'] },
-  // R-6 Must requires both pairs.new and pool.info — pool.info has no tool consumer yet in M1
+  { capability: 'pairs.active', adapterIds: ['dexscreener'] },
+  // R-6 Must requires both pairs.active and pool.info — pool.info has no tool consumer yet in M1
   // (cheap to declare now; major fix from architecture review cycle 1):
   { capability: 'pool.info', adapterIds: ['dexscreener'] },
   { capability: 'protocol.tvl', adapterIds: ['defillama'] },

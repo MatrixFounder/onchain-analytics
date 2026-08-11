@@ -17,9 +17,9 @@
       "capability": "wallet.balances.native"
     },
     {
-      "name": "onchain_new_pairs",
-      "title": "Recent DEX pairs",
-      "capability": "pairs.new"
+      "name": "onchain_active_pairs",
+      "title": "Active DEX pairs",
+      "capability": "pairs.active"
     },
     {
       "name": "onchain_protocol_tvl",

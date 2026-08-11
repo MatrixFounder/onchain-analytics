@@ -113,7 +113,7 @@ time. The
 TVL threshold is the criterion because the top 50 chains cover 99.1% of all TVL (measured, TASK §0)
 — curating dozens of hosts rather than thousands gives practically complete coverage of real demand.
 Every other chain gets `rpcHosts: null` and stays fully functional for the keyless capabilities
-(`chain.tvl`, `token.price`, `token.metadata`, `pairs.new`), which need no RPC.
+(`chain.tvl`, `token.price`, `token.metadata`, `pairs.active`), which need no RPC.
 
 **Curated chains (task 006-8, verified 2026-07-26).** 19 of 458: `ethereum`, `solana` (carried over
 from M1 unchanged) plus `arbitrum`, `avalanche`, `base`, `bsc`, `cronos`, `flare`, `gnosis`, `ink`,

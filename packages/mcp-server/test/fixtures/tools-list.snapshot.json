@@ -221,9 +221,9 @@
     }
   },
   {
-    "name": "onchain_new_pairs",
-    "title": "Recent DEX pairs",
-    "description": "Recently active DEX trading pairs on a chain. Call onchain_list_chains({capability:\"pairs.new\"}) to see where it is served (DexScreener-backed).",
+    "name": "onchain_active_pairs",
+    "title": "Active DEX pairs",
+    "description": "ACTIVE DEX trading pairs on a chain, ranked by the vendor's own relevance — NOT newly created ones. The underlying route is a search index with no recency semantics: measured, the freshest pair in a page was 155 days old and many rows are over a year old. This engine cannot answer \"what launched recently\" on any chain — say the question is unserved rather than presenting these as new listings. `createdAt` is per-pair and may be absent. Read `truncated` before concluding a chain is thin: a short page can mean rows were dropped. Call onchain_list_chains({capability:\"pairs.active\"}) to see where it is served (DexScreener-backed).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -316,6 +316,24 @@
             "additionalProperties": false
           }
         },
+        "truncated": {
+          "type": "object",
+          "properties": {
+            "pairs": {
+              "type": "boolean",
+              "description": "True when this page is not the whole answer — rows failed validation and were dropped, or the vendor had more rows on this chain than `limit` allowed, or both."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Which of the two happened, with counts. Empty string when nothing was lost. Dropped rows cannot be recovered by any argument; rows cut by `limit` can."
+            }
+          },
+          "required": [
+            "pairs",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
         "source": {
           "type": "string"
         },
@@ -328,6 +346,7 @@
       "required": [
         "chain",
         "pairs",
+        "truncated",
         "source",
         "fetchedAt"
       ],
@@ -646,7 +665,7 @@
   {
     "name": "onchain_dex_volume",
     "title": "DEX volume of a chain",
-    "description": "Daily DEX trading volume of a CHAIN, from DeFiLlama — free and keyless. Returns the daily series in the requested window plus the vendor 24h/7d/30d/1y/all-time totals. Set includeSeries:false for the totals alone. This is volume TRADED, not value locked — use onchain_chain_tvl for TVL. Served on fewer chains than TVL is: call onchain_list_chains with capability \"dex.volume.history\" to see where.",
+    "description": "Daily DEX trading volume of a CHAIN, from DeFiLlama — free and keyless. Returns the daily series in the requested window plus the vendor 24h/7d/30d/1y/all-time totals. Set includeSeries:false for the totals alone. This is volume TRADED, not value locked — use onchain_chain_tvl for TVL. THE TOTALS AND THE SERIES ARE OFFSET BY A DAY: totals.h24 is the last COMPLETE day (see totals.asOfTs) while the last series point is today and carries partial:true. Never add h24 to a sum over series, and never compare h24 against the last point — both readings are wrong by one day. Served on fewer chains than TVL is: call onchain_list_chains with capability \"dex.volume.history\" to see where.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -720,11 +739,16 @@
               "volumeUsd": {
                 "type": "number",
                 "minimum": 0
+              },
+              "partial": {
+                "type": "boolean",
+                "description": "Q-7: true for the CURRENT UTC day, which is still accumulating. Such a point is not comparable with the finished days beside it — drop it before computing a trend, keep it for an intraday read. It is never dropped for you: removing it would silently shorten every window by one."
               }
             },
             "required": [
               "ts",
-              "volumeUsd"
+              "volumeUsd",
+              "partial"
             ],
             "additionalProperties": false
           }
@@ -791,6 +815,19 @@
                   "type": "null"
                 }
               ]
+            },
+            "asOfTs": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Q-7: the day `h24` covers, epoch-ms UTC. Measured, `h24` is the last COMPLETE day — NOT the last series point, which is today and partial. Never add `h24` to a sum over `series` (double-counts a day) and never compare it against the last point (a 35-56% phantom jump). Null means the alignment could NOT be verified against this response — treat `h24` as unaligned, not as absent."
             }
           },
           "required": [
@@ -798,7 +835,8 @@
             "d7",
             "d30",
             "d1y",
-            "allTime"
+            "allTime",
+            "asOfTs"
           ],
           "additionalProperties": false
         },
@@ -2428,8 +2466,12 @@
           ],
           "additionalProperties": false
         },
-        "source": {
-          "type": "string"
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Every distinct provenance present in this response, sorted — e.g. [\"derived\", \"platform-explorer\"]. `derived` means the engine computed the value exactly from other measured fields and is not the vendor asserting it. For which SOURCE served each point, read points[].source; for which CACHE answered, read _meta.cache."
         },
         "fetchedAt": {
           "type": "integer",
@@ -2442,7 +2484,7 @@
         "series",
         "groups",
         "truncated",
-        "source",
+        "sources",
         "fetchedAt"
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",

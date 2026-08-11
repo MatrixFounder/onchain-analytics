@@ -228,7 +228,7 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
   // TIER ~15 s (OD-2) — one free adapter, one attempt, `DEFAULT_TIMEOUT_MS = 15_000`.
   //
   // **SCOPE OF THIS BANNER — the EIGHT capabilities declared between it and the next `=====`
-  // banner, by name:** `token.price`, `token.metadata`, `pairs.new`, `pool.info`, `protocol.tvl`,
+  // banner, by name:** `token.price`, `token.metadata`, `pairs.active`, `pool.info`, `protocol.tvl`,
   // `chain.tvl`, `dex.volume.history`, `wallet.balances.native`. It covers no row outside that run
   // — `chain.supply` in particular belongs to the E-HTTP5 block below, not to this one. **And it is
   // not the enforcement record for any of them:** each of the 20 rows carries its OWN
@@ -274,7 +274,7 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // **ENFORCED TODAY** — same adapter and same call path as `token.price` (WI-37).
     deadlineMs: 15_000,
   },
-  'pairs.new': {
+  'pairs.active': {
     // AUDIT: hypothesis `set`, CONFIRMED. `dexscreener/index.ts:125` — `normalize(): Pool[]`, a
     // chain-filtered, `limit`-sliced batch with no ordering imposed (no sort anywhere in the
     // method), so it is a collection and not a `ts`-ordered run.
@@ -293,11 +293,11 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     shape: 'set',
     // Carried from `cache/ttl.ts`, with its rationale: "`pool.info` shares its adapter (dexscreener)
     // and its liquidity/volume-style volatility with `protocol.tvl`, not the
-    // "new"-freshness-critical `pairs.new` — same 300s bucket."
+    // "new"-freshness-critical `pairs.active` — same 300s bucket."
     ttlSeconds: 300,
     // measured envelope: 90_000 (E-HTTP15 — `dexscreener`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
-    // **ENFORCED TODAY** — same adapter and same call path as `pairs.new` (WI-37).
+    // **ENFORCED TODAY** — same adapter and same call path as `pairs.active` (WI-37).
     deadlineMs: 15_000,
   },
   'protocol.tvl': {

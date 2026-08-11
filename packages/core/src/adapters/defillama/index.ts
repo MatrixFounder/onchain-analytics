@@ -5,7 +5,7 @@ import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { CapabilityNotCoveredOnChainError } from '../../chain/errors.js';
 import { DEFILLAMA_DEX_CHAINS } from './dex-chains.js';
 import { DEFILLAMA_CHAIN_ALIASES } from './chain-aliases.js';
-import { bucketDailyPoints, changeAcross, windowDailySeries } from './daily-series.js';
+import { bucketDailyPoints, changeAcross, windowDailySeries, DAY_MS } from './daily-series.js';
 import { ttlFor } from '../../cache/ttl.js';
 import { stringifyTruncated } from '../stringify-truncated.js';
 import { adapterRegistrations } from '../../providers.config.js';
@@ -109,9 +109,25 @@ export interface DexVolumeResult {
    * history and less when it does not (cycle 3, logic L-1). `days` shrinking below the requested
    * value is how a short history becomes visible instead of hiding as a phantom zero-gap answer. */
   window: { fromMs: number; toMs: number; days: number };
-  /** Daily points, `ts` in epoch-ms UTC (DB-SCHEMA §1.2 — the vendor sends unix SECONDS), bucketed
-   * to the day and unique per day. */
-  series: { ts: number; volumeUsd: number }[];
+  /**
+   * Daily points, `ts` in epoch-ms UTC (DB-SCHEMA §1.2 — the vendor sends unix SECONDS), bucketed
+   * to the day and unique per day.
+   *
+   * Q-7 — `partial` marks the point for the CURRENT UTC day, which is still accumulating and is
+   * therefore not comparable with the finished days beside it. It is a fact about the calendar,
+   * not a vendor claim: the day bucket either is today's or it is not.
+   *
+   * The point is kept, never dropped. Q-7's own `Do-not` is explicit that removing it would
+   * silently shorten every window by one and would take away the intraday read a caller may
+   * actually want — "drop the incomplete day" becomes a decision the consumer makes with the flag
+   * in hand, instead of folklore it has to know in advance.
+   *
+   * `partial` lives HERE and not in the shared `daily-series.ts` shaper on purpose: it is
+   * meaningful only for an ACCUMULATING quantity. `chain.tvl.history` and `protocol.tvl.history`
+   * use the same shaper and measure a point-in-time snapshot, where today's value is complete the
+   * moment it is taken — flagging it "partial" there would be a false warning.
+   */
+  series: { ts: number; volumeUsd: number; partial: boolean }[];
   points: number;
   /** Daily steps MISSING inside the covered window. Counted, never stitched — an interpolated point
    * is a number nobody measured. Invariant: `points + gapDays === window.days` whenever a series was
@@ -135,6 +151,25 @@ export interface DexVolumeResult {
     d30: number | null;
     d1y: number | null;
     allTime: number | null;
+    /**
+     * Q-7 — which day `h24` actually covers, so a consumer can align it against `series` without
+     * inferring anything.
+     *
+     * The trap this closes, measured 2026-08-11 on ethereum/base/solana: `h24` is NOT the last
+     * series point, it is the one before it, because the last point is the current, still
+     * accumulating UTC day. Both natural readings were therefore wrong — summing `h24` with a sum
+     * over `series` double-counts a day, and comparing `h24` against `series[last]` reports a
+     * 35–56 % "jump" that is only a finished day next to a partial one.
+     *
+     * **A VERIFIED alignment, never an assumed one, and the null is the point.** This is set only
+     * when the vendor's `h24` actually matches the last complete day's point in the returned
+     * series (within a rounding tolerance — solana differed by 4 units in 1.58e9). When it does
+     * not match, or the series was not requested, this is `null` — which says "we could not
+     * confirm what period `h24` covers, so do not assume", NOT "there are no totals". Asserting
+     * the offset as a permanent rule would replace a documented offset with an undocumented one
+     * the day the vendor changes it, which is exactly what Q-7's own `Do-not` forbids.
+     */
+    asOfTs: number | null;
   };
   /** Set when the returned series is not everything the vendor sent for the window — either a hard
    * cap cut it, or duplicate days were folded to one point each. Never set by ordinary windowing,
@@ -668,6 +703,27 @@ function normalizeDexVolume(
     fallbackNowMs: fetchedAt,
   });
 
+  // Q-7. `todayBucket` is the day the document was fetched in, floored to UTC midnight — the one
+  // day in the series that is still accumulating.
+  const todayBucket = Math.floor(fetchedAt / DAY_MS) * DAY_MS;
+  const h24 = optionalUsd(body.total24h, 'total24h', chain.slug);
+  // The LAST point that is not today's. `undefined` when the series is empty or holds only today.
+  const lastComplete = [...shaped.series].reverse().find((p) => p.ts !== todayBucket);
+  /**
+   * Verified, never assumed. `h24` is published as "the last 24 hours" and measured as "the last
+   * COMPLETE UTC day" — those coincide today, and this field asserts the coincidence only where it
+   * can be checked against the returned series. A relative tolerance covers the vendor's own
+   * rounding (solana: 4 units in 1.58e9, i.e. 2.5e-9); anything looser would start confirming an
+   * alignment that had genuinely drifted.
+   */
+  const h24AsOfTs =
+    h24 !== null &&
+    lastComplete !== undefined &&
+    lastComplete.valueUsd > 0 &&
+    Math.abs(h24 - lastComplete.valueUsd) / lastComplete.valueUsd < 1e-6
+      ? lastComplete.ts
+      : null;
+
   return {
     chain: chain.slug,
     name: chain.name,
@@ -675,15 +731,22 @@ function normalizeDexVolume(
     // `daily-series.ts` for the three defects each of them encodes. The invariant a caller can rely
     // on is `points + gapDays === window.days` whenever a series was requested.
     window: shaped.window,
-    series: shaped.series.map((p) => ({ ts: p.ts, volumeUsd: p.valueUsd })),
+    series: shaped.series.map((p) => ({
+      ts: p.ts,
+      volumeUsd: p.valueUsd,
+      // Q-7: today's bucket is still filling. Computed from the document's own fetch time, so a
+      // fixture replayed at a fixed clock gives a deterministic answer.
+      partial: p.ts === todayBucket,
+    })),
     points: shaped.points,
     gapDays: shaped.gapDays,
     totals: {
-      h24: optionalUsd(body.total24h, 'total24h', chain.slug),
+      h24,
       d7: optionalUsd(body.total7d, 'total7d', chain.slug),
       d30: optionalUsd(body.total30d, 'total30d', chain.slug),
       d1y: optionalUsd(body.total1y, 'total1y', chain.slug),
       allTime: optionalUsd(body.totalAllTime, 'totalAllTime', chain.slug),
+      asOfTs: h24AsOfTs,
     },
     truncated: shaped.truncated,
     source: 'defillama',

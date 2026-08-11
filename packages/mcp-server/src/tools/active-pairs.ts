@@ -24,7 +24,7 @@ import { contractViolationReason } from './contract-violation.js';
 const SUPPORTED_CHAIN = ChainInputSchema;
 
 /**
- * Input contract for `onchain_new_pairs` (ARCHITECTURE.md §5.1, R-18): `limit` is optional, a
+ * Input contract for `onchain_active_pairs` (ARCHITECTURE.md §5.1, R-18): `limit` is optional, a
  * positive integer when present — `dexscreener`'s own adapter already defaults an absent/
  * non-positive `limit` to `DEFAULT_LIMIT` (task 003-4), this schema just keeps a caller-supplied
  * value honest (never zero/negative) before it reaches the adapter.
@@ -37,13 +37,13 @@ const SUPPORTED_CHAIN = ChainInputSchema;
  * never return more rows; it could only enlarge the blast radius. */
 const MAX_LIMIT = 100;
 
-export const NewPairsInputSchema = z
+export const ActivePairsInputSchema = z
   .object({
     chain: SUPPORTED_CHAIN,
     limit: z.number().int().positive().max(MAX_LIMIT).optional(),
   })
   .strict();
-export type NewPairsInput = z.infer<typeof NewPairsInputSchema>;
+export type ActivePairsInput = z.infer<typeof ActivePairsInputSchema>;
 
 /**
  * Output shape copied literally from ARCHITECTURE.md §5.1: `{ chain, pairs: Pool[], source,
@@ -56,33 +56,59 @@ export type NewPairsInput = z.infer<typeof NewPairsInputSchema>;
  * `fetchedAt` fields, which describe when/how THAT entry's data was fetched (may be older, on a
  * cache hit).
  */
-export const NewPairsOutputSchema = z
+export const ActivePairsOutputSchema = z
   .object({
     chain: SUPPORTED_CHAIN,
     pairs: z.array(PoolSchema),
+    /**
+     * Q-10 — the answer to "why did I get fewer pairs than I asked for".
+     *
+     * Before this field, a short page was uninterpretable: the adapter dropped rows that failed
+     * validation, counted them, and wrote the count to `process.stderr`, which an MCP client cannot
+     * see. So `limit: 5` returning two pairs meant either "this chain has two matching pools" or
+     * "three rows were thrown away", with nothing in the payload to tell them apart. Its siblings
+     * `onchain_dex_volume` and `onchain_dash_platform_history` already carry this signal; this tool
+     * was the outlier.
+     */
+    truncated: z
+      .object({
+        pairs: z
+          .boolean()
+          .describe(
+            'True when this page is not the whole answer — rows failed validation and were ' +
+              'dropped, or the vendor had more rows on this chain than `limit` allowed, or both.',
+          ),
+        reason: z
+          .string()
+          .describe(
+            'Which of the two happened, with counts. Empty string when nothing was lost. Dropped ' +
+              'rows cannot be recovered by any argument; rows cut by `limit` can.',
+          ),
+      })
+      .strict(),
     source: z.string(),
     fetchedAt: z.number().int(),
   })
   .strict();
-export type NewPairsOutput = z.infer<typeof NewPairsOutputSchema>;
+export type ActivePairsOutput = z.infer<typeof ActivePairsOutputSchema>;
 
-export interface NewPairsContext {
+export interface ActivePairsContext {
   registry: CapabilityRegistry;
 }
 
-const CAPABILITY = 'pairs.new';
+const CAPABILITY = 'pairs.active';
 
 /** `dexscreener`'s own default when a caller omits `limit` (`packages/core/src/adapters/
  * dexscreener/index.ts`'s `DEFAULT_LIMIT`) — duplicated here rather than widening
  * `@onchain-intel/core`'s public export surface for one internal constant (developer-guidelines
- * §1.6). Kept in sync manually; `pairs.new`'s only registered adapter is `dexscreener`
+ * §1.6). Kept in sync manually; `pairs.active`'s only registered adapter is `dexscreener`
  * (`providers.config.ts`), so this literal is this tool's own canonical default too. **Post-M1
  * polish fix 1:** materializing it HERE, before `args` is built, is what fixes the cache-key split
- * below — see `newPairsHandler`'s own docstring. */
+ * below — see `activePairsHandler`'s own docstring. */
 const DEFAULT_LIMIT = 10;
 
-export type NewPairsOutcome =
-  | { ok: true; output: NewPairsOutput; cache: CacheMeta; timing?: TimingMeta }
+export type ActivePairsOutcome =
+  | { ok: true; output: ActivePairsOutput; cache: CacheMeta; timing?: TimingMeta }
   | { ok: false; reason: string };
 
 /**
@@ -97,10 +123,10 @@ export type NewPairsOutcome =
  * (and therefore the identical cache key) regardless of whether the caller passed the default
  * explicitly or omitted it.
  */
-export async function newPairsHandler(
-  input: NewPairsInput,
-  ctx: NewPairsContext,
-): Promise<NewPairsOutcome> {
+export async function activePairsHandler(
+  input: ActivePairsInput,
+  ctx: ActivePairsContext,
+): Promise<ActivePairsOutcome> {
   // TASK-006 (task 006-6, R-50/R-59): resolve the alias to its canonical slug HERE, before the
   // value reaches `args` and therefore before `deriveArgsHash` — otherwise `eth` and `ethereum`
   // would hash to two different cache entries for one logical request, which on a paid route is
@@ -115,16 +141,20 @@ export async function newPairsHandler(
   if (!outcome.ok) return outcome;
 
   // Adversarial cycle 1, fix I: `outcome.output` (the adapter's `Pool[]`) is validated exactly
-  // ONCE, as part of the single `NewPairsOutputSchema.parse(...)` below (its `pairs` field is
+  // ONCE, as part of the single `ActivePairsOutputSchema.parse(...)` below (its `pairs` field is
   // `z.array(PoolSchema)`) — this used to ALSO run a standalone `z.array(PoolSchema).parse(...)`
   // first, a redundant double-validation of the same data against the same schema.
   // `safeParse`, never `parse` (vdd-multi cycle 6, M): this handler declares
-  // `Promise<NewPairsOutcome>` and its six siblings all report a contract violation as
+  // `Promise<ActivePairsOutcome>` and its six siblings all report a contract violation as
   // `{ok:false, reason}`. A throw here escapes that contract and surfaces as a generic transport
   // error instead of this tool's own message — see `protocol-tvl.ts` for the same argument.
-  const parsed = NewPairsOutputSchema.safeParse({
+  // Q-10: the adapter now hands back a PAGE (`{pools, truncated}`), not a bare array — the counts
+  // it already computed had no way to reach the caller through an array.
+  const page = outcome.output as { pools?: unknown; truncated?: unknown };
+  const parsed = ActivePairsOutputSchema.safeParse({
     chain,
-    pairs: outcome.output,
+    pairs: page?.pools,
+    truncated: page?.truncated,
     source: outcome.cache.provider,
     fetchedAt: Date.now(),
   });
@@ -134,19 +164,23 @@ export async function newPairsHandler(
   return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }
 
-/** The `ToolSpec` for `onchain_new_pairs` — this name is declared here and nowhere else (R-18).
+/** The `ToolSpec` for `onchain_active_pairs` — this name is declared here and nowhere else (R-18).
  * Registration happens in `registry.ts`; see `get-token.ts`'s spec docstring for the shared
  * `isError`/`_meta.cache` wiring rationale. */
-export const newPairsToolSpec = defineTool({
-  name: 'onchain_new_pairs',
-  title: 'Recent DEX pairs',
+export const activePairsToolSpec = defineTool({
+  name: 'onchain_active_pairs',
+  title: 'Active DEX pairs',
   description:
-    'Recently active DEX trading pairs on a chain. Call ' +
-    'onchain_list_chains({capability:"pairs.new"}) to see where it is served ' +
-    '(DexScreener-backed).',
-  inputSchema: NewPairsInputSchema,
-  outputSchema: NewPairsOutputSchema,
+    "ACTIVE DEX trading pairs on a chain, ranked by the vendor's own relevance — NOT newly " +
+    'created ones. The underlying route is a search index with no recency semantics: measured, ' +
+    'the freshest pair in a page was 155 days old and many rows are over a year old. This engine ' +
+    'cannot answer "what launched recently" on any chain — say the question is unserved rather ' +
+    'than presenting these as new listings. `createdAt` is per-pair and may be absent. Read ' +
+    '`truncated` before concluding a chain is thin: a short page can mean rows were dropped. Call ' +
+    'onchain_list_chains({capability:"pairs.active"}) to see where it is served (DexScreener-backed).',
+  inputSchema: ActivePairsInputSchema,
+  outputSchema: ActivePairsOutputSchema,
   capability: CAPABILITY,
   needs: ['registry'],
-  handler: newPairsHandler,
+  handler: activePairsHandler,
 });

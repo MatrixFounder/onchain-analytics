@@ -88,7 +88,7 @@ export interface ResolveSuccess {
    * `attempted` above and `timing`/`TimingMeta` both already followed on this interface.
    *
    * **Strictly additive (R-175b).** None of the 11 existing tools on `resolveCapability()` can ever
-   * see these fields: their capabilities (`token.price`, `wallet.balances.native`, `pairs.new`,
+   * see these fields: their capabilities (`token.price`, `wallet.balances.native`, `pairs.active`,
    * `protocol.tvl`, `chain.tvl`, `chain.supply`, `dex.volume.history`, `token.holders`,
    * `entity.labels`, `smart-money.flows`, `token.risk`) are disjoint from the two capabilities
    * `capability-manifest.ts` declares `mergeable: true` (`privacy.shielded_pool.history`,
@@ -121,7 +121,7 @@ export type ResolveOutcome = ResolveSuccess | ResolveFailure;
 
 /**
  * Shared `registry.resolve()` wrapper for the 4 new M1 tools (`get-token`/`wallet-balances`/
- * `new-pairs`/`protocol-tvl`) — extracted because all 4 handlers need the byte-identical
+ * `active-pairs`/`protocol-tvl`) — extracted because all 4 handlers need the byte-identical
  * try/catch + `_meta.cache`-shape logic (DRY; developer-guidelines §1.6 "internal abstraction —
  * apply professional engineering judgment"; mirrors `packages/core`'s own precedent of sharing
  * near-identical small helpers across sibling files, e.g. `not-implemented-error.ts`/

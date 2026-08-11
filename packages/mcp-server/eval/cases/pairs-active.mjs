@@ -1,7 +1,7 @@
 import { nonEmpty } from '../case-lib.mjs';
 
 export default {
-  capability: 'pairs.new',
+  capability: 'pairs.active',
   args: (chain) => ({ chain, limit: 5 }),
   catches: 'DexScreener returning an empty page for a chain that demonstrably has DEX activity',
   check: (r) => {

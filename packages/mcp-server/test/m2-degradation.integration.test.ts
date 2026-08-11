@@ -26,7 +26,7 @@ import {
 import { loadEnv } from '../src/env.js';
 import { createServer } from '../src/server.js';
 import { PingOutputSchema } from '../src/tools/ping.js';
-import { NewPairsOutputSchema } from '../src/tools/new-pairs.js';
+import { ActivePairsOutputSchema } from '../src/tools/active-pairs.js';
 import { ProtocolTvlOutputSchema } from '../src/tools/protocol-tvl.js';
 
 /**
@@ -239,13 +239,13 @@ async function assertFiveM1PathsAnswerNormally(client: Client): Promise<void> {
   assertMissCacheMetaUnchanged(wallet, 'rpc-evm', 'wallet.balances.native');
 
   const pairs = (await client.callTool(
-    { name: 'onchain_new_pairs', arguments: { chain: 'ethereum' } },
+    { name: 'onchain_active_pairs', arguments: { chain: 'ethereum' } },
     undefined,
     { timeout: CALL_TIMEOUT_MS },
   )) as CallToolResult;
   expect(pairs.isError).not.toBe(true);
-  NewPairsOutputSchema.parse(pairs.structuredContent);
-  assertMissCacheMetaUnchanged(pairs, 'dexscreener', 'pairs.new');
+  ActivePairsOutputSchema.parse(pairs.structuredContent);
+  assertMissCacheMetaUnchanged(pairs, 'dexscreener', 'pairs.active');
 
   const tvl = (await client.callTool(
     { name: 'onchain_protocol_tvl', arguments: { chain: 'ethereum', protocolSlug: 'uniswap' } },

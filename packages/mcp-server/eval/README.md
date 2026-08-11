@@ -88,7 +88,7 @@ independent sources for the same fact:
   reports. POL-vs-MATIC style drift surfaces here first.
 
 An earlier design also chained DexScreener's token address into CoinGecko. The live payload settled
-it: `new_pairs` returns `baseTokenSymbol` and never a contract address, so that chain does not exist
+it: `active_pairs` returns `baseTokenSymbol` and never a contract address, so that chain does not exist
 and claiming to test it would have been fiction.
 
 ## Reference sources — the second opinion (TASK-009)
