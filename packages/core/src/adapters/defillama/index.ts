@@ -5,6 +5,7 @@ import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { CapabilityNotCoveredOnChainError } from '../../chain/errors.js';
 import { DEFILLAMA_DEX_CHAINS } from './dex-chains.js';
 import { DEFILLAMA_CHAIN_ALIASES } from './chain-aliases.js';
+import { MAX_VENDOR_NAME_LENGTH, truncateVendorText } from '../truncate-vendor-text.js';
 import { bucketDailyPoints, changeAcross, windowDailySeries, DAY_MS } from './daily-series.js';
 import { ttlFor } from '../../cache/ttl.js';
 import { stringifyTruncated } from '../stringify-truncated.js';
@@ -180,6 +181,78 @@ export interface DexVolumeResult {
   fetchedAt: number;
 }
 
+/** One row of the `/hacks` feed, as it arrives. Every field optional: measured fill rates run from
+ * 621/621 (`date`, `name`, `targetType`, `bridgeHack`) down to 29/621 (`returnedFunds`). */
+interface DefillamaHackRow {
+  date?: unknown;
+  name?: unknown;
+  amount?: unknown;
+  classification?: unknown;
+  technique?: unknown;
+  targetType?: unknown;
+  chain?: unknown;
+  bridgeHack?: unknown;
+  returnedFunds?: unknown;
+  defillamaId?: unknown;
+  parentProtocolId?: unknown;
+}
+
+/**
+ * `protocol.incidents` result (WI-52 option 1) — recorded security incidents for one protocol.
+ *
+ * **The empty list is the dangerous answer here, and every field below except `incidents` exists to
+ * keep it from being read as "this protocol is safe".** An absent record can mean four different
+ * things, and a consumer that cannot tell them apart is worse off than one that got an error:
+ *
+ * | what actually happened                    | how this result says it                    |
+ * | ----------------------------------------- | ------------------------------------------ |
+ * | the protocol is not in the vendor catalog | `resolved: false` (no claim is made at all) |
+ * | the feed is stale                         | `feedThroughTs` — the newest record it has |
+ * | the feed covers entities we cannot attribute | `unattributedRecords` — 264 of 621 name no protocol id |
+ * | genuinely nothing recorded                | `resolved: true`, empty list, fresh feed   |
+ *
+ * A failure to READ the feed is never one of these: it throws, exactly as the other normalizers on
+ * this adapter do, rather than degrading into an empty list the caller would read as good news.
+ */
+export interface ProtocolIncidentsResult {
+  /** The slug as asked for, canonical. */
+  protocol: string;
+  /**
+   * Whether the protocol was found in the vendor's catalog at all. `false` means NO STATEMENT was
+   * made about incidents — not that there are none. Kept separate from an empty list because the
+   * two are the answers to different questions, and collapsing them is how "we do not know" becomes
+   * "we checked and it is fine".
+   */
+  resolved: boolean;
+  incidents: {
+    /** Incident date, epoch-ms UTC (the vendor sends unix SECONDS). */
+    ts: number;
+    name: string;
+    amountUsd: number | null;
+    classification: string | null;
+    technique: string | null;
+    targetType: string | null;
+    /** Chains the vendor names, mapped to OUR slugs where the registry knows them. */
+    chains: string[];
+    bridgeHack: boolean;
+    returnedFundsUsd: number | null;
+    /** Whether the record named this protocol directly or its parent — so a caller can tell "this
+     * version was exploited" from "a sibling under the same parent was". */
+    matchedBy: 'protocol' | 'parent';
+  }[];
+  /** Summed `amountUsd` over the matched incidents; `null` when none of them stated an amount. */
+  totalAmountUsd: number | null;
+  /** The newest record in the WHOLE feed — how current any answer from it can possibly be. */
+  feedThroughTs: number;
+  /** Records in the feed, total. A sudden collapse here is a feed problem, not a quiet protocol. */
+  feedRecords: number;
+  /** Feed records naming no protocol id at all (CEX, bridge and individual incidents). They can
+   * never be attributed to a protocol by this route, so they bound what a null answer can mean. */
+  unattributedRecords: number;
+  source: string;
+  fetchedAt: number;
+}
+
 /**
  * `protocol.list` result (WI-49 option 1) — the POPULATION the engine could not enumerate.
  *
@@ -340,6 +413,9 @@ interface DefillamaFetchResult {
   protocolList?: { args: ProtocolListArgs; lite: unknown };
   /** `protocol.tvl.history` only. */
   protocolHistory?: ProtocolTvlHistoryArgs;
+  /** `protocol.incidents` only (WI-52) — the requested slug plus the incident feed, which is a
+   * SECOND shared body and so cannot travel in `raw` (that carries the protocol catalog). */
+  incidents?: { slug: string; hacks: unknown; hacksFetchedAt: number };
 }
 
 interface DefillamaTvlPoint {
@@ -372,6 +448,12 @@ interface DefillamaCatalogRow {
    * 200 and `/protocol/ether-fi` answers 400, so the `parent#<id>` suffix is an internal id and
    * this field is the slug (probe 2026-08-11; the two disagree on 256 of 2 147 rows). */
   parentProtocolSlug?: unknown;
+  /** The vendor's own row id (`"1599"`), and the key `/hacks` attributes an incident with. */
+  id?: unknown;
+  /** The parent's INTERNAL id (`"parent#aave"`), distinct from `parentProtocolSlug` (`"aave"`).
+   * Both are carried because they key different documents: the slug addresses `/protocol/<slug>`,
+   * this one is what `/hacks` puts in `parentProtocolId` (WI-52 — measured, 97 of 97 matched). */
+  parentProtocol?: unknown;
   /** Tokens the vendor SUBTRACTS when it totals this row into its parent, to undo double-counting.
    * Its presence is why a naive sum of children is not always the parent's own answer — measured
    * at +9.5 % on `ether.fi` (3.823 B summed vs the vendor's 3.491 B). */
@@ -379,6 +461,27 @@ interface DefillamaCatalogRow {
 }
 
 const CHAINS_URL = 'https://api.llama.fi/v2/chains';
+
+/**
+ * The security-incident feed (WI-52) — one shared document, same host, keyless, ~170 KiB.
+ *
+ * WI-52's own recommendation was "option 4 now, option 1 later, and in that order", because the
+ * three cheaper gaps (WI-49/50/51) were open and "there is nothing to lay this layer on". All three
+ * closed on 2026-08-11, so the stated precondition is met — and the cost estimate that put this at
+ * `L` was measured wrong in the same direction WI-49's was: it assumed a NEW CLASS OF PROVIDER, and
+ * the vendor already wired for TVL publishes the feed.
+ *
+ * Measured 2026-08-11: 621 records, 2016-06-17 → 2026-08-09 (2.5 days old, so it is maintained and
+ * not an archive), 219 in the last year, 99 in the last 90 days, $16.9 B total. The join to the
+ * catalog this adapter already downloads is exact — `defillamaId` ↔ `id` matched 353 of 357, and
+ * `parentProtocolId` ↔ `parentProtocol` matched 97 of 97.
+ *
+ * **This is NOT on-chain data, and WI-52 is explicit that mixing it with on-chain metrics without
+ * marking provenance and age violates the project's canon.** Hence its own capability rather than a
+ * field on `protocol.tvl`, and hence `feedThroughTs` in the result: a caller can see how current
+ * the feed itself is, instead of inheriting the freshness of the TVL beside it.
+ */
+const HACKS_URL = 'https://api.llama.fi/hacks';
 
 /**
  * The protocol catalog — ONE shared document that answers `protocol.tvl` for every slug, replacing
@@ -1179,6 +1282,131 @@ function normalizeProtocolTvlHistory(
   };
 }
 
+/**
+ * WI-52 — attach the incident feed to one protocol.
+ *
+ * Two joins, both measured 2026-08-11 rather than inferred: `defillamaId` ↔ the catalog row's `id`
+ * (353 of 357 records with an id matched) and `parentProtocolId` ↔ `parentProtocol` (97 of 97).
+ * The parent join is what makes "was Aave ever exploited" answerable when the incident is recorded
+ * against a specific version — and `matchedBy` keeps the two apart, because "this contract was
+ * drained" and "a sibling under the same parent was" are different answers to a risk question.
+ */
+function normalizeProtocolIncidents(
+  catalogRaw: unknown,
+  hacksRaw: unknown,
+  slug: string,
+  vendorChainToSlug: ReadonlyMap<string, string>,
+  fetchedAt: number,
+): ProtocolIncidentsResult {
+  if (!Array.isArray(catalogRaw)) {
+    throw new Error(
+      `defillama.normalize(protocol.incidents): ${PROTOCOLS_URL} did not return an array`,
+    );
+  }
+  // Refusing, not degrading. An unreadable feed rendered as `incidents: []` is the single most
+  // dangerous answer this capability can give — it reads as "nothing recorded" on a question whose
+  // whole point is finding out whether something was.
+  if (!Array.isArray(hacksRaw)) {
+    throw new Error(
+      `defillama.normalize(protocol.incidents): ${HACKS_URL} did not return an array — refusing ` +
+        'to report an empty incident list the vendor never asserted',
+    );
+  }
+  const rows = catalogRaw as DefillamaCatalogRow[];
+  const hacks = hacksRaw as DefillamaHackRow[];
+
+  const feedTimestamps = hacks
+    .map((h) => (typeof h.date === 'number' && Number.isFinite(h.date) ? h.date * 1000 : null))
+    .filter((t): t is number => t !== null);
+  const feedThroughTs = feedTimestamps.length > 0 ? Math.max(...feedTimestamps) : 0;
+  const unattributedRecords = hacks.filter(
+    (h) => (h.defillamaId ?? '') === '' && (h.parentProtocolId ?? '') === '',
+  ).length;
+
+  const resolution = resolveProtocol(rows, slug);
+  const empty = {
+    protocol: slug,
+    incidents: [],
+    totalAmountUsd: null,
+    feedThroughTs,
+    feedRecords: hacks.length,
+    unattributedRecords,
+    source: 'defillama',
+    fetchedAt,
+  } satisfies Omit<ProtocolIncidentsResult, 'resolved'>;
+  // `resolved: false` — no statement is made. Distinct from an empty list on a KNOWN protocol,
+  // which is a measurement.
+  if (resolution === null) return { ...empty, resolved: false };
+
+  const ids = new Set(
+    resolution.rows.map((r) => (typeof r.id === 'string' ? r.id : null)).filter(Boolean),
+  );
+  const parents = new Set(
+    resolution.rows
+      .map((r) => (typeof r.parentProtocol === 'string' ? r.parentProtocol : null))
+      .filter(Boolean),
+  );
+
+  const matched: ProtocolIncidentsResult['incidents'] = [];
+  for (const hack of hacks) {
+    const byProtocol = typeof hack.defillamaId === 'string' && ids.has(hack.defillamaId);
+    const byParent =
+      typeof hack.parentProtocolId === 'string' && parents.has(hack.parentProtocolId);
+    if (!byProtocol && !byParent) continue;
+    if (typeof hack.date !== 'number' || !Number.isFinite(hack.date)) continue;
+    const name = typeof hack.name === 'string' ? hack.name : null;
+    // A record we cannot name is a record a caller cannot act on; dropping it is safer than
+    // publishing an anonymous incident, and it cannot hide one — the counts above still show the
+    // feed size.
+    if (name === null) continue;
+
+    const vendorChains = Array.isArray(hack.chain)
+      ? hack.chain.filter((c): c is string => typeof c === 'string')
+      : [];
+    matched.push({
+      // The vendor sends unix SECONDS (DB-SCHEMA §1.2 — time is epoch-ms UTC everywhere here).
+      ts: hack.date * 1000,
+      name: truncateVendorText(name, MAX_VENDOR_NAME_LENGTH),
+      amountUsd:
+        typeof hack.amount === 'number' && Number.isFinite(hack.amount) ? hack.amount : null,
+      classification:
+        typeof hack.classification === 'string'
+          ? truncateVendorText(hack.classification, MAX_VENDOR_NAME_LENGTH)
+          : null,
+      technique:
+        typeof hack.technique === 'string'
+          ? truncateVendorText(hack.technique, MAX_VENDOR_NAME_LENGTH)
+          : null,
+      targetType:
+        typeof hack.targetType === 'string'
+          ? truncateVendorText(hack.targetType, MAX_VENDOR_NAME_LENGTH)
+          : null,
+      // Mapped through the SAME alias map every other capability uses (L-10). An unmapped vendor
+      // name is kept verbatim rather than dropped: the incident is real either way, and losing the
+      // chain would be a worse answer than an unfamiliar name.
+      chains: vendorChains.map((c) => vendorChainToSlug.get(c) ?? c),
+      bridgeHack: hack.bridgeHack === true,
+      returnedFundsUsd:
+        typeof hack.returnedFunds === 'number' && Number.isFinite(hack.returnedFunds)
+          ? hack.returnedFunds
+          : null,
+      matchedBy: byProtocol ? 'protocol' : 'parent',
+    });
+  }
+  // Newest first — a risk question is asked about the recent past far more often than the distant.
+  matched.sort((a, b) => b.ts - a.ts);
+
+  const amounts = matched.map((m) => m.amountUsd).filter((a): a is number => a !== null);
+  return {
+    ...empty,
+    resolved: true,
+    incidents: matched,
+    // `null`, never `0`, when nothing stated an amount: a zero would assert that the exploits cost
+    // nothing, which is a claim no record made.
+    totalAmountUsd: amounts.length > 0 ? amounts.reduce((sum, a) => sum + a, 0) : null,
+  };
+}
+
 function normalizeProtocolList(
   chain: ChainInfo,
   raw: unknown,
@@ -1844,6 +2072,36 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
     return { body: await awaitSharedDocument(body, deadlineAtMs, what), fetchedAt: entry.at };
   };
 
+  /** The incident feed, in its own single slot beside the catalog (WI-52). Same shape as
+   * `fetchProtocolsLite` — one document, one TTL, shared between concurrent callers. */
+  let hacksDocument: { at: number; body: Promise<unknown> } | null = null;
+  const HACKS_TTL_MS = ttlFor('protocol.incidents') * 1000;
+
+  const fetchHacks = async (
+    deadlineAtMs?: number,
+  ): Promise<{ body: unknown; fetchedAt: number }> => {
+    const what = 'defillama hacks feed';
+    const cached = hacksDocument;
+    if (cached && now() - cached.at < HACKS_TTL_MS) {
+      return {
+        body: await awaitSharedDocument(cached.body, deadlineAtMs, what),
+        fetchedAt: cached.at,
+      };
+    }
+    const body = (async (): Promise<unknown> => {
+      await throttle('defillama', RATE_LIMIT);
+      const response = await safeFetch(HACKS_URL, {}, HOSTS, fetchImpl);
+      if (!response.ok) throw new Error(`defillama: HTTP ${response.status} for ${HACKS_URL}`);
+      return (await response.json()) as unknown;
+    })();
+    const entry = { at: now(), body };
+    hacksDocument = entry;
+    body.catch(() => {
+      if (hacksDocument === entry) hacksDocument = null;
+    });
+    return { body: await awaitSharedDocument(body, deadlineAtMs, what), fetchedAt: entry.at };
+  };
+
   const fetchProtocolsCatalog = async (
     deadlineAtMs?: number,
   ): Promise<{ body: unknown; fetchedAt: number }> => {
@@ -1894,6 +2152,10 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
       { id: 'chain.tvl.history' },
       { id: 'protocol.list' },
       { id: 'protocol.tvl.history' },
+      // WI-52 — security incidents. NOT on-chain data, so it gets its own capability rather than a
+      // field on `protocol.tvl`: a different source, a different update cycle and a different
+      // staleness mode must not inherit the freshness of the TVL beside them.
+      { id: 'protocol.incidents' },
     ],
     // Zero for all three: this vendor is keyless and free on every endpoint we call. Unlike
     // `dune`'s `costOf: () => ({credits: 0})` — which is a sleeping fail-closed inversion on a
@@ -1931,6 +2193,29 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
           // must see the age of the DATA).
           fetchedAt: document.fetchedAt,
           dex: dexArgs,
+        };
+      }
+      if (cap === 'protocol.incidents') {
+        const rawSlug = args['protocolSlug'];
+        if (typeof rawSlug !== 'string' || rawSlug.length === 0) {
+          throw new Error(
+            `defillama.fetch(protocol.incidents): invalid args ${JSON.stringify(args)} ` +
+              '(expected {protocolSlug: string})',
+          );
+        }
+        const slug = rawSlug;
+        // Two shared documents, both awaited under the caller's ceiling, neither cancelled by it.
+        const [catalog, hacks] = await Promise.all([
+          fetchProtocolsCatalog(deadlineAtMs),
+          fetchHacks(deadlineAtMs),
+        ]);
+        return {
+          // `protocol.incidents` is protocol-scoped, not chain-scoped; the field is structural.
+          chain: chains.resolve('ethereum'),
+          raw: catalog.body,
+          // The OLDER of the two, so `fetchedAt` never claims a freshness the answer lacks.
+          fetchedAt: Math.min(catalog.fetchedAt, hacks.fetchedAt),
+          incidents: { slug, hacks: hacks.body, hacksFetchedAt: hacks.fetchedAt },
         };
       }
       if (cap === 'protocol.list') {
@@ -2038,9 +2323,19 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
       | DexVolumeResult
       | ChainTvlHistoryResult
       | ProtocolListResult
-      | ProtocolTvlHistoryResult => {
-      const { chain, raw, fetchedAt, dex, protocol, chainHistory, protocolList, protocolHistory } =
-        rawResult as DefillamaFetchResult;
+      | ProtocolTvlHistoryResult
+      | ProtocolIncidentsResult => {
+      const {
+        chain,
+        raw,
+        fetchedAt,
+        dex,
+        protocol,
+        chainHistory,
+        protocolList,
+        protocolHistory,
+        incidents,
+      } = rawResult as DefillamaFetchResult;
       if (cap === 'dex.volume.history') {
         if (!dex) {
           throw new Error(
@@ -2048,6 +2343,20 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
           );
         }
         return normalizeDexVolume(chain, raw, dex, fetchedAt ?? now());
+      }
+      if (cap === 'protocol.incidents') {
+        if (!incidents) {
+          throw new Error(
+            'defillama.normalize(protocol.incidents): fetch result carries no validated args',
+          );
+        }
+        return normalizeProtocolIncidents(
+          raw,
+          incidents.hacks,
+          incidents.slug,
+          vendorChainToSlug,
+          fetchedAt ?? now(),
+        );
       }
       if (cap === 'protocol.list') {
         if (!protocolList) {

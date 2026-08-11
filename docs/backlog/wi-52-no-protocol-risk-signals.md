@@ -1,7 +1,7 @@
 ---
 id: WI-52
 type: work-item
-status: open
+status: done
 opened_at: 2026-08-10
 slug: wi-52-no-protocol-risk-signals
 effort: L

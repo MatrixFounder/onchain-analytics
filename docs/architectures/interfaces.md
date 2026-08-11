@@ -2,14 +2,14 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. External API — 19 MCP tools
+### 5.1. External API — 20 MCP tools
 
 `onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
 Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), one free
 DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
 BTC-supply tool with TASK-009 (§5.1.5).
 
-**The `chain` parameter, stated once.** Seventeen of the nineteen tools take a chain, and every one of them
+**The `chain` parameter, stated once.** Seventeen of the twenty tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
 resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
 `ethereum` and `solana` are aliases and stay valid indefinitely. What a tool can actually serve is
@@ -117,7 +117,7 @@ reserved.
 
 `tokenAddress`/`query` reuse the same `.max()` bounds and the same
 `superRefine`/`isValidAddress` idiom as `onchain_get_token` above — reused, not reinvented.
-`onchain_entity_label` has the only compound `superRefine` of the nineteen tools: **at least one** of
+`onchain_entity_label` has the only compound `superRefine` of the twenty tools: **at least one** of
 `query`/`tokenAddress` is required (otherwise there is nothing to search for), and `tokenAddress`
 is mandatory when `exhaustive: true`.
 
@@ -185,7 +185,7 @@ entered (a traversal fact, tier-free — the registry never classifies paidness)
 it to `budgetMeta()`, which reports the paid adapter among them. Under-reporting is the expensive
 direction: an agent that believes a call was free repeats it (R-41). The WIRE shape is unchanged;
 `attempted` never reaches a client. `tier` itself is NEVER added to this object, or to `_meta`
-anywhere else, on any of the 19 tools (R-152) — the internal cost-tier classification is our unit
+anywhere else, on any of the 20 tools (R-152) — the internal cost-tier classification is our unit
 economics, not part of the client's contract (ADR-002 D8, ADR-003 D4).
 
 #### 5.1.3 The two registry-backed tools (TASK-006) — free
@@ -300,6 +300,22 @@ truncated and narrow the filter, instead of concluding there are only 50 chains.
 // Capability: chain.transactions
 // NOT SERVED: active addresses. No wired provider publishes an activity-scoped address count;
 // the cumulative-since-genesis one that exists is a different statistic (WI-51's named residual).
+//
+// onchain_protocol_incidents — recorded security incidents for one protocol (WI-52), DeFiLlama
+// { protocolSlug: string }
+// → { protocol, resolved,           // resolved:false = the slug is UNKNOWN, not "none found"
+//     incidents: [{ ts, name, amountUsd, classification, technique, targetType,
+//                   chains, bridgeHack, returnedFundsUsd,
+//                   matchedBy }],   // 'protocol' | 'parent' — a sibling exploit is a different claim
+//     totalAmountUsd,               // null, never 0, when no record stated an amount
+//     feedThroughTs,                // the feed's OWN newest record — how current an empty list is
+//     feedRecords, unattributedRecords,  // incidents naming no protocol at all (CEX/bridge/person)
+//     source, fetchedAt }
+// Capability: protocol.incidents
+// EDITORIAL, NOT ON-CHAIN: written up after the fact, so it carries its own age rather than
+// inheriting the freshness of a TVL number beside it (WI-52's provenance requirement).
+// NOT SERVED: developer activity (repositories, commits) and funding (investors, rounds) — the
+// other two thirds of WI-52, which need a provider class this engine has not wired.
 ```
 
 **Why the vendor's aggregates are passed through instead of recomputed (R-67, OQ-1).** `total24h`

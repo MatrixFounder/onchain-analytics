@@ -149,6 +149,23 @@ function startServer() {
 // `aborted due to timeout` is the adapter's own deadline firing on a slow-but-healthy endpoint —
 // retriable for the same reason a 429 is: it says nothing about whether the data is correct.
 const RETRIABLE = /HTTP (429|5\d\d)|rate.?limit|ETIMEDOUT|ECONNRESET|abort|timed? ?out/i;
+
+/**
+ * RF-9 — the subset of `RETRIABLE` that actually means "the provider refused to serve us".
+ *
+ * These two conditions are worth RETRYING for the same reason and mean COMPLETELY different things
+ * once the retries are spent, and the eval used to collapse them. A 429 is the provider declining:
+ * nothing was measured, so `rate-limited` is honest and keeping it out of the failure count is
+ * right. A transport timeout after three attempts is the endpoint failing to answer at all — a
+ * measurement, and a bad one.
+ *
+ * Collapsing them cost three things on L-12, all at once. The row read `⏳ rate-limited` for a
+ * Blockscout timeout; the report advised raising `ONCHAIN_EVAL_CG_THROTTLE_MS`, a CoinGecko knob
+ * that cannot affect it; and — the one that mattered — because `rate-limited` is not in the gate's
+ * `FAILING` set, the row could not be ACKNOWLEDGED. An open vendor failure was unnameable in the
+ * file that exists to name open vendor failures.
+ */
+const THROTTLED = /HTTP (429|503)|rate.?limit/i;
 const RETRY_BACKOFF_MS = [4000, 12000];
 
 async function callToolOnce(server, name, args) {
@@ -182,7 +199,9 @@ async function callTool(server, name, args) {
     await sleep(backoff);
     outcome = await callToolOnce(server, name, args);
   }
-  if (outcome.verdict === 'error' && RETRIABLE.test(outcome.problems.join(' '))) {
+  // RF-9: `THROTTLED`, not `RETRIABLE` — see that constant. A timeout that survived three
+  // attempts stays an `error`, which is both the truth and what makes it acknowledgeable.
+  if (outcome.verdict === 'error' && THROTTLED.test(outcome.problems.join(' '))) {
     return { ...outcome, verdict: 'rate-limited' };
   }
   return outcome;
@@ -440,7 +459,8 @@ function report(results, stderrLines, references = {}) {
   const throttled = results.filter((r) => r.verdict === 'rate-limited');
   if (throttled.length) {
     console.log(
-      '\n  Not tested — provider rate-limited us (raise ONCHAIN_EVAL_CG_THROTTLE_MS or rerun):',
+      '\n  Not tested — the provider declined to serve us (HTTP 429/503). Rerun, or slow this ' +
+        'provider down; ONCHAIN_EVAL_CG_THROTTLE_MS is the CoinGecko knob and affects nothing else:',
     );
     for (const t of throttled) console.log(`   ⏳ ${t.chain}/${t.capability}`);
   }

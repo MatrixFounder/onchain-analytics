@@ -1,7 +1,7 @@
 ---
 id: RF-9
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-08-11
 category: workflow-docs
 severity: SEV-3

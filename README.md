@@ -2,7 +2,7 @@
 
 An on-chain analytics engine exposed as an **MCP server**: provider adapters (CoinGecko,
 DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → normalization into one canonical schema →
-two-level cache + credit budget guard → 19 workflow-oriented tools your agent can call.
+two-level cache + credit budget guard → 20 workflow-oriented tools your agent can call.
 
 **Русская версия:** [README.ru.md](README.ru.md)
 
@@ -47,7 +47,7 @@ two-level cache + credit budget guard → 19 workflow-oriented tools your agent 
 
 ## What you get
 
-**19 MCP tools.** One liveness check, one chain-registry tool, eight free/keyless data tools,
+**20 MCP tools.** One liveness check, one chain-registry tool, eight free/keyless data tools,
 and three paid Nansen-backed alpha tools.
 
 **Two chains:** `ethereum` and `solana`. Every tool takes an explicit `chain`.
@@ -149,7 +149,7 @@ Restart Claude Code, then confirm the tools appear:
 /mcp
 ```
 
-You should see **19 tools** under `onchain-intel`.
+You should see **20 tools** under `onchain-intel`.
 
 ---
 
@@ -194,6 +194,7 @@ Cost is in Nansen credits. Free tools cost nothing and need no key.
 | `onchain_protocol_tvl_history`  | free           | 3600s | no               |
 | `onchain_gas_price`             | free           | 30s   | no*              |
 | `onchain_chain_transactions`    | free           | 600s  | no*              |
+| `onchain_protocol_incidents`    | free           | 3600s | no               |
 | `onchain_token_holders`         | free           | 3600s | no               |
 | `onchain_chain_supply`          | free           | 600s  | no               |
 | `onchain_smart_money_flows`     | **10 cr**      | 300s  | `NANSEN_API_KEY` |
@@ -760,7 +761,7 @@ resets the cache — and also the usage ledger, so the daily cap starts from zer
 
 ```
 packages/core/          engine: adapters, canonical types, cache, budget guard
-packages/mcp-server/    MCP server: 19 tools, env validation, stdio transport
+packages/mcp-server/    MCP server: 20 tools, env validation, stdio transport
 docs/                   architecture, ADR, roadmap, issue ledger
 n8n-workflows/          exported snapshotter workflows (separate always-on system)
 ```

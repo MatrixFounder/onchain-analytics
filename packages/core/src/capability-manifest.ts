@@ -92,7 +92,7 @@
  *   an adapter in the population by whether it imports a transport module at all, so the day a live
  *   gRPC transport lands for `dash-platform` (ARCHITECTURE.md §11) it enters the population and the
  *   five rows it routes go red until it reads the deadline. It is not an id list somebody maintains.
- * - **25 of 25 capabilities are therefore actually bounded by their row below.** The three added
+ * - **26 of 26 capabilities are therefore actually bounded by their row below.** The three added
  *   earlier on 2026-08-11 (`chain.tvl.history`, `protocol.list`, `protocol.tvl.history`) enter on the
  *   same two `defillama` mechanisms already described: the first two are served from SHARED
  *   documents, so the ceiling bounds the caller's wait, and the third is the one per-call route left
@@ -100,6 +100,8 @@
  *   day (WI-51's `gas.price` and `chain.transactions`) enter on the strongest form of all: neither
  *   has a shared-document path, so on every leg — `rpc-evm`'s endpoint loop and `blockscout`'s
  *   single request — the ceiling can abort work in flight rather than only refuse to start it.
+ *   WI-52's `protocol.incidents` (2026-08-12) returns to the shared-document form: two documents,
+ *   both awaited under the ceiling, neither download cancelled by it.
  *
  * **How this section read before WI-37, and why the distinction was worth writing down.** Until
  * 2026-08-05 the figures were 2 of 12 and 4 of 20: `blockscout` (012-8) and `nansen` (012-9) were the
@@ -412,6 +414,26 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // (ENFORCEMENT above). Note the ceiling
     // does NOT follow the adapter's own faster timeout down: the tier is a property of the
     // capability, and `blockscout`'s 5 s is a property of one vendor.
+    deadlineMs: 15_000,
+  },
+  'protocol.incidents': {
+    // A collection with no time dimension of ours — the incidents recorded for one protocol. `set`,
+    // by the same reading that classified `protocol.list`.
+    shape: 'set',
+    /**
+     * 3600 s, and deliberately the SLOWEST clock among the protocol capabilities.
+     *
+     * This feed is editorial, not on-chain: measured 2026-08-11 its newest record was 2.5 days old,
+     * and an incident is written up hours-to-days after it happens. A shorter TTL cannot buy a
+     * fresher answer — it can only buy a second download of a document that changes a few times a
+     * month. The result carries `feedThroughTs` so a caller reads the FEED's age rather than
+     * inferring freshness from ours, which is the distinction WI-52 required for non-on-chain data.
+     */
+    ttlSeconds: 3600,
+    // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
+    // ceiling (OD-2), not a measurement.
+    // **ENFORCED TODAY** — shared-document path, both documents (WI-37): the ceiling bounds this
+    // caller's wait and does not abort a download another caller is awaiting.
     deadlineMs: 15_000,
   },
   'gas.price': {

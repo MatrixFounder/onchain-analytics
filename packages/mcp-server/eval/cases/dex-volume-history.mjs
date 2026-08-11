@@ -80,15 +80,29 @@ export default {
       }
       const asOf = num(r?.totals?.asOfTs);
       if (asOf !== null) {
-        // The claim `asOfTs` makes must hold in the payload that makes it: h24 must equal the
+        // The claim `asOfTs` makes must hold in the payload that makes it: h24 must match the
         // point at that timestamp. This is what would catch the vendor changing what `total24h`
         // aggregates — the drift Q-7 refused to hardcode around.
+        //
+        // **The SAME relative tolerance the adapter used to set the field, and this check was
+        // wrong before it had one.** Exact equality flagged `solana` on the first live run:
+        // 1581973855.56 against 1581973852.06, a 2.2e-9 difference that is the vendor rounding two
+        // aggregates of one day. The adapter deliberately allows it (Q-7 measured exactly this on
+        // solana); a gate stricter than the contract it verifies reports a violation the contract
+        // permits, which trains a reader to ignore the row.
         const at = r.series.find((p) => p?.ts === asOf);
+        const point = at ? num(at.volumeUsd) : null;
+        const h24 = num(totals.h24);
         if (!at) {
           problems.push(`totals.asOfTs ${asOf} names a day that is not in the series`);
-        } else if (num(at.volumeUsd) !== num(totals.h24)) {
+        } else if (
+          point === null ||
+          h24 === null ||
+          point <= 0 ||
+          Math.abs(h24 - point) / point >= 1e-6
+        ) {
           problems.push(
-            `totals.h24 ${totals.h24} does not equal the series point at asOfTs (${at.volumeUsd})`,
+            `totals.h24 ${totals.h24} does not match the series point at asOfTs (${at.volumeUsd})`,
           );
         } else if (at.partial === true) {
           problems.push(

@@ -2,7 +2,7 @@
 
 Движок ончейн-аналитики, выставленный наружу как **MCP-сервер**: адаптеры провайдеров (CoinGecko,
 DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализация в единую каноническую схему →
-двухуровневый кеш + бюджет-гард по кредитам → 19 инструментов, которые вызывает ваш агент.
+двухуровневый кеш + бюджет-гард по кредитам → 20 инструментов, которые вызывает ваш агент.
 
 **English version:** [README.md](README.md)
 
@@ -46,7 +46,7 @@ DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → нормализаци�
 
 ## Что это даёт
 
-**19 MCP-инструментов.** Одна проверка живости, один инструмент реестра сетей, восемь бесплатных
+**20 MCP-инструментов.** Одна проверка живости, один инструмент реестра сетей, восемь бесплатных
 инструментов данных и три платных alpha-инструмента на Nansen.
 
 **Две сети:** `ethereum` и `solana`. Каждый инструмент принимает `chain` явно.
@@ -149,7 +149,7 @@ SSRF-allowlist.
 /mcp
 ```
 
-Под `onchain-intel` должно быть **19 инструментов**.
+Под `onchain-intel` должно быть **20 инструментов**.
 
 ---
 
@@ -194,6 +194,7 @@ SSRF-allowlist.
 | `onchain_protocol_tvl_history`  | бесплатно      | 3600с | нет              |
 | `onchain_gas_price`             | бесплатно      | 30с   | нет*             |
 | `onchain_chain_transactions`    | бесплатно      | 600с  | нет*             |
+| `onchain_protocol_incidents`    | бесплатно      | 3600с | нет              |
 | `onchain_token_holders`         | бесплатно      | 3600с | нет              |
 | `onchain_chain_supply`          | бесплатно      | 600с  | нет              |
 | `onchain_smart_money_flows`     | **10 кр**      | 300с  | `NANSEN_API_KEY` |
@@ -753,7 +754,7 @@ Claude Code.
 
 ```
 packages/core/          движок: адаптеры, канонические типы, кеш, бюджет-гард
-packages/mcp-server/    MCP-сервер: 19 инструментов, валидация env, транспорт stdio
+packages/mcp-server/    MCP-сервер: 20 инструментов, валидация env, транспорт stdio
 docs/                   архитектура, ADR, roadmap, реестр issue
 n8n-workflows/          выгруженные workflow снапшоттера (отдельная always-on система)
 ```

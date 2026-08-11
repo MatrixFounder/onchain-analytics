@@ -81,5 +81,5 @@ limits: changing a provider's priority or adding a host to the allowlist edits o
    key degrade explicitly (UC-1 alt, R-24).
 5. Attach to Claude Code as a local stdio MCP server, unchanged since M0
    (`node packages/mcp-server/dist/index.js` or `tsx packages/mcp-server/src/index.ts`).
-6. Call any of the 19 tools → a canonical response; a repeat call with the same normalized
+6. Call any of the 20 tools → a canonical response; a repeat call with the same normalized
    arguments within the TTL → `_meta.cache.status === 'hit'` (UC-3, ROADMAP exit criterion).

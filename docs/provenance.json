@@ -53,6 +53,10 @@
       "sha256": "41bdc7b50d05b7fb2d25a0ca76bd2fc1b6c09da9e90eef191caafcbba8365a67",
       "note": "TASK-007 task 007-4 — live-recorded vendor response (trimmed to 120 daily points, protocols[] dropped). The gapless-92-point acceptance test rests on it; a silent edit would be indistinguishable from the vendor changing its answer."
     },
+    "packages/core/test/fixtures/defillama/hacks-and-catalog.json": {
+      "sha256": "a1c83935d64284c82205457dbe4f82b4cafba7b0ce4acfbcc80fbea8662e1d67",
+      "note": "WI-52 — verbatim rows from the live keyless GET https://api.llama.fi/hacks and GET https://api.llama.fi/protocols, captured 2026-08-12. Pinned because the contract tests read the join keys and the four-way \"no incidents\" distinction straight out of it: an edit here would silently change what the measured 353/357 and 97/97 join rates in hacks-and-catalog.evidence.md refer to."
+    },
     "packages/core/test/fixtures/nansen/account.free.json": {
       "sha256": "c31e0ae2f9c801f343f7c7199875c71c8200cc2214133c5921cd12eccf38bb77",
       "note": "Live-recorded vendor response (task 005-7). Editing it re-writes the evidence a paid, live-verified assertion rests on."

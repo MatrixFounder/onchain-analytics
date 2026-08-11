@@ -5,6 +5,7 @@ import { dexVolumeToolSpec } from './dex-volume.js';
 import { chainTvlHistoryToolSpec } from './chain-tvl-history.js';
 import { listProtocolsToolSpec } from './list-protocols.js';
 import { gasPriceToolSpec } from './gas-price.js';
+import { protocolIncidentsToolSpec } from './protocol-incidents.js';
 import { chainTransactionsToolSpec } from './chain-transactions.js';
 import { protocolTvlHistoryToolSpec } from './protocol-tvl-history.js';
 import { entityLabelToolSpec } from './entity-label.js';
@@ -54,6 +55,10 @@ export const toolSpecs: readonly ToolSpec[] = [
   // WI-51 — network activity. Two tools rather than one `onchain_chain_activity`: they have
   // different clocks (30 s vs 600 s TTL) and different provider sets, and merging them would make
   // a gas query pay for a transactions fetch it did not ask for.
+  // WI-52 option 1 — the security-incident layer. Its own tool, never a field on
+  // `onchain_protocol_tvl`: editorial data with a different update cycle must not inherit the
+  // freshness of an on-chain metric standing beside it.
+  protocolIncidentsToolSpec,
   gasPriceToolSpec,
   chainTransactionsToolSpec,
   protocolTvlHistoryToolSpec,

@@ -43,6 +43,13 @@ export const routes: CapabilityRoute[] = [
   { capability: 'chain.tvl.history', adapterIds: ['defillama'] },
   { capability: 'protocol.list', adapterIds: ['defillama'] },
   { capability: 'protocol.tvl.history', adapterIds: ['defillama'] },
+  // WI-52 option 1 — recorded security incidents, from the SAME vendor already wired for TVL.
+  // One adapter, and unlike `gas.price` that is not a gap waiting to be filled: a second incident
+  // feed would be a second EDITORIAL source, and two editorial sources disagreeing about whether
+  // an exploit happened is a question this engine has no way to adjudicate. WI-52's remaining two
+  // thirds (developer activity, funding rounds) stay unserved and are named as such in the tool
+  // description — option 4's honesty requirement, which landing option 1 does not discharge.
+  { capability: 'protocol.incidents', adapterIds: ['defillama'] },
   { capability: 'wallet.balances.native', adapterIds: ['rpc-evm'] },
   { capability: 'wallet.balances.native', adapterIds: ['rpc-solana'] },
   // WI-51 — network activity. Two adapters on `gas.price`, and the order is the decision:

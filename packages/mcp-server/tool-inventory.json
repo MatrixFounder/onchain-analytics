@@ -52,6 +52,11 @@
       "capability": "protocol.list"
     },
     {
+      "name": "onchain_protocol_incidents",
+      "title": "Protocol security incidents",
+      "capability": "protocol.incidents"
+    },
+    {
       "name": "onchain_gas_price",
       "title": "Gas price",
       "capability": "gas.price"

@@ -47,7 +47,7 @@ are **Accepted** in ADR-001; this document does not revisit them, it makes them 
 **What the engine is today** — twelve provider adapters behind one hot-swappable interface (eleven
 of them serving something; `dune` is a config stub), a chain registry of 458 networks, a two-level
 cache, an SSRF gate and per-provider rate limiting, a credit budget guard on the single paid
-provider, and nineteen workflow-oriented MCP tools served over local stdio. **T-013 (designed, not
+provider, and twenty workflow-oriented MCP tools served over local stdio. **T-013 (designed, not
 yet built)** adds a compiled multi-source merge to two `series` capabilities and a 14th tool
 publishing the merged history — see §3/§11.
 
@@ -173,7 +173,7 @@ field, and `CapabilityResolution` gains three optional, merge-only fields.
 
 ## 5. Interfaces
 
-Contracts for all nineteen MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
+Contracts for all twenty MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
 `ChainInputSchema` contract shared by every chain-accepting tool, the public API of
 `packages/core`, and the provider integration table that is the source of the per-adapter SSRF
 allowlist, including T-013's `onchain_dash_platform_history`. **Plus the three free tools added
@@ -186,6 +186,12 @@ activity tools: `onchain_gas_price` — served by a NODE where one is curated an
 otherwise, so the capability does not die with one vendor's auth decision (L-6) — and
 `onchain_chain_transactions`. Active addresses remain unserved and are named as such in that tool's
 own description rather than being answered with the cumulative all-time count that looks like them.**
+
+**WI-52 — the risk layer, partially:** `onchain_protocol_incidents` attaches DeFiLlama's recorded
+security incidents to a protocol. It is EDITORIAL data, not on-chain, so it carries its own age
+(`feedThroughTs`) instead of inheriting a TVL number's freshness, and it distinguishes four
+different meanings of "no incidents" so an empty list can never be read as "safe". Developer
+activity and funding rounds stay unserved and are named in the tool's description.**
 → [architectures/interfaces.md](architectures/interfaces.md)
 
 ## 6. Technology stack

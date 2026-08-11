@@ -60,8 +60,9 @@ defect in the gate rather than as evidence.
    weaker evidence than it looks.
 2. **The gate misreports it.** The eval classified this as `⏳ rate-limited` and advised "raise
    ONCHAIN_EVAL_CG_THROTTLE_MS or rerun" — a CoinGecko knob that cannot affect a Blockscout timeout.
-   Filed separately as [RF-9](rf-9-the-eval-reports-a-transport-timeout-as-rate-limited-and-names-an-unrelated-knob.md);
-   noted here because it is why the row was easy to dismiss.
+   Filed separately as [RF-9](rf-9-the-eval-reports-a-transport-timeout-as-rate-limited-and-names-an-unrelated-knob.md)
+   and **fixed 2026-08-12**: a timeout is no longer reported as `rate-limited`, which also made this
+   row acknowledgeable for the first time. Noted here because it is why the row was easy to dismiss.
 
 **Reproduction.**
 
@@ -82,6 +83,24 @@ cd packages/mcp-server && ONCHAIN_EVAL_CHAINS=base node eval/run.mjs
 **Workaround.** For top-holder data on a Nansen-served chain, `onchain_smart_money_flows` carries a
 `topHolders` array (10 credits, paid); `onchain_token_risk` carries `totalHolders` (6 credits). On
 `base` specifically there is no free workaround while the facade is this slow.
+
+**Re-measured 2026-08-12 (24 hours later, 15 s ceiling, valid key). It has NOT recovered, and the
+shape held exactly.**
+
+```
+ethereum  200 3.09s          control — /api/v2/stats, same host + key: 0.77s
+gnosis    200 1.12s
+base      no answer in 15s
+arbitrum  no answer in 15s
+polygon   no answer in 15s
+```
+
+Fix-path item 1 said "if base recovers, this closes itself". It did not: the same three chains are
+still unusable a day later, while the control endpoint on the same host with the same key answers in
+under a second. So the latency is still the holders ENDPOINT's, not the facade's and not ours, and
+the acknowledgement stays. Ethereum's 3.09 s is comfortably inside the 5 s hop ceiling on this
+sample and does not retire the "marginal, not healthy" reading — the 5.14 / 6.67 / 7.33 s samples
+that produced it were cold-entry costs, and a warm sample cannot disprove a cold one.
 
 **Fix path.** Nothing to fix in our code — the ceiling is doing its job. Two decisions belong to the
 owner, and both need a measurement first rather than a guess:

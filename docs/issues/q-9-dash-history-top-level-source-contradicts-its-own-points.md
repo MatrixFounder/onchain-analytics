@@ -1,7 +1,7 @@
 ---
 id: Q-9
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-08-10
 category: quality
 severity: SEV-4

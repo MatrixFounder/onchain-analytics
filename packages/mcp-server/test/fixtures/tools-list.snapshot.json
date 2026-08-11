@@ -1278,6 +1278,190 @@
     }
   },
   {
+    "name": "onchain_protocol_incidents",
+    "title": "Protocol security incidents",
+    "description": "Recorded security incidents (hacks, exploits, rugpulls) for one protocol, from the DeFiLlama incident feed. THIS IS EDITORIAL DATA, NOT ON-CHAIN: it is written up after the fact, so read feedThroughTs before drawing conclusions, and NEVER read an empty list as \"this protocol is safe\" — check `resolved` first, and note that unattributedRecords incidents in the feed name no protocol at all. Two further risk signals this engine does NOT serve and cannot be substituted for: DEVELOPER ACTIVITY (repository/commit history) and FUNDING (investors, rounds). If asked about those, say they are unavailable rather than answering from your own knowledge.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocolSlug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "DeFiLlama protocol slug, e.g. \"aave-v3\" or the parent \"aave\". A parent slug also surfaces incidents recorded against its versions — see each incident's matchedBy."
+        }
+      },
+      "required": [
+        "protocolSlug"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "string"
+        },
+        "resolved": {
+          "type": "boolean",
+          "description": "False means the slug was NOT found in the vendor catalog, so NO statement is made about incidents — this is not \"none found\". Check the slug with onchain_list_protocols."
+        },
+        "incidents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ts": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "When the incident happened, epoch-ms UTC."
+              },
+              "name": {
+                "type": "string"
+              },
+              "amountUsd": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Funds lost, when the record states one."
+              },
+              "classification": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "technique": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "targetType": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "chains": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "bridgeHack": {
+                "type": "boolean"
+              },
+              "returnedFundsUsd": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "matchedBy": {
+                "type": "string",
+                "enum": [
+                  "protocol",
+                  "parent"
+                ],
+                "description": "\"protocol\" — the record names this exact protocol. \"parent\" — it names a sibling under the same parent. Both are real risk signals and they are NOT the same claim."
+              }
+            },
+            "required": [
+              "ts",
+              "name",
+              "amountUsd",
+              "classification",
+              "technique",
+              "targetType",
+              "chains",
+              "bridgeHack",
+              "returnedFundsUsd",
+              "matchedBy"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "totalAmountUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sum of the stated amounts. Null when no matched incident stated one — not zero."
+        },
+        "feedThroughTs": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "description": "Newest record in the WHOLE feed, epoch-ms UTC. This bounds how current any answer here can be: an incident from yesterday may simply not be written up yet."
+        },
+        "feedRecords": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "description": "Records in the feed, total."
+        },
+        "unattributedRecords": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "description": "Feed records naming no protocol id at all — exchange, bridge and individual incidents that can never be attributed to a protocol by this route. An empty result does not rule these out."
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "protocol",
+        "resolved",
+        "incidents",
+        "totalAmountUsd",
+        "feedThroughTs",
+        "feedRecords",
+        "unattributedRecords",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
     "name": "onchain_gas_price",
     "title": "Gas price",
     "description": "Current cost of one gas unit on an EVM chain, read from a node where one is approved and from the Blockscout indexer otherwise. Compare chains by gasPriceGwei ONLY together with nativeSymbol — the tokens differ. Call onchain_list_chains({capability: \"gas.price\"}) to discover which chains are served.",

@@ -52,6 +52,7 @@ const WORDS: Record<string, number> = {
   seventeen: 17,
   eighteen: 18,
   nineteen: 19,
+  twenty: 20,
   девять: 9,
   десять: 10,
   одиннадцать: 11,
@@ -63,6 +64,7 @@ const WORDS: Record<string, number> = {
   семнадцать: 17,
   восемнадцать: 18,
   девятнадцать: 19,
+  двадцать: 20,
 };
 
 /** `"twelve"` / `"12"` → 12. */
@@ -278,7 +280,10 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       {
         file: 'packages/mcp-server/.AGENTS.md',
         from: /\*\*The \w+ tools today:\*\*/,
-        to: /— in publication order/,
+        // Moved with the sentence on 2026-08-12: the list is in REGISTRATION order and now
+        // says so. The anchor is literal on purpose — a stale one silently checks nothing, which
+        // is why this gate fails loudly on a reword instead of quietly passing.
+        to: /— in REGISTRATION order/,
         extract: backticked,
       },
       {

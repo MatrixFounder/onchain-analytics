@@ -130,6 +130,7 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       'gas-price.ts',
       'get-token.ts',
       'list-protocols.ts',
+      'protocol-incidents.ts',
       'protocol-tvl-history.ts',
       'protocol-tvl.ts',
       'smart-money-flows.ts',

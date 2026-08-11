@@ -64,10 +64,10 @@ describe('TC-UNIT-02 — no manifest entry for a capability nothing routes', () 
     expect(orphans).toStrictEqual([]);
   });
 
-  it('covers exactly the 25 routed capabilities, named', () => {
+  it('covers exactly the 26 routed capabilities, named', () => {
     // Named, not counted: two tables of the same SIZE that disagree on one key would pass a count.
     expect(Object.keys(capabilityManifests).sort()).toStrictEqual(routedCapabilities);
-    expect(routedCapabilities).toHaveLength(25);
+    expect(routedCapabilities).toHaveLength(26);
   });
 });
 
@@ -174,11 +174,14 @@ const TTL_SECONDS_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
   // `transactions_today` did not move across 45 s in which `total_blocks` advanced by 10.
   'gas.price': 30,
   'chain.transactions': 600,
+  // WI-52 — editorial, not on-chain: the newest record was 2.5 days old when measured, so a
+  // shorter window cannot buy a fresher answer, only a second download.
+  'protocol.incidents': 3600,
 };
 
 describe('TC-UNIT-05 — every `ttlSeconds` is byte-identical to the pre-move table', () => {
-  it('pins all 25, so a TTL edit disguised as a migration fails here', () => {
-    expect(Object.keys(TTL_SECONDS_BEFORE_THE_MOVE)).toHaveLength(25);
+  it('pins all 26, so a TTL edit disguised as a migration fails here', () => {
+    expect(Object.keys(TTL_SECONDS_BEFORE_THE_MOVE)).toHaveLength(26);
     expect(
       Object.fromEntries(
         Object.entries(capabilityManifests).map(([capability, m]) => [capability, m.ttlSeconds]),
@@ -656,9 +659,9 @@ function scannedFieldCount(source: string): number {
 }
 
 describe('TC-UNIT-08 — every deadline number carries a two-number derivation record (R-149)', () => {
-  it('the real table: 25 numbers scanned, every one with both numbers beside it', () => {
+  it('the real table: 26 numbers scanned, every one with both numbers beside it', () => {
     // Sign of work FIRST: a scan that matched nothing would report "no defects" identically.
-    expect(scannedFieldCount(manifestSource)).toBe(28); // 25 deadlineMs + 3 paidLegMs
+    expect(scannedFieldCount(manifestSource)).toBe(29); // 26 deadlineMs + 3 paidLegMs
     expect(
       derivationRecordDefects(manifestSource),
       'R-149: the comment beside a deadline is where the NEXT edit copies its reasoning from. It ' +
@@ -1102,7 +1105,7 @@ describe('TC-F5-GATE — every manifest row states its own enforcement, and the 
   const enforced = enforcedCapabilities(aware, spendsTime);
 
   it('the scan found the real table and the real adapters — otherwise everything below is vacuous', () => {
-    expect(blocks.size).toBe(25);
+    expect(blocks.size).toBe(26);
     expect([...blocks.keys()].sort()).toStrictEqual(
       [...new Set(routes.map((r) => r.capability))].sort(),
     );
