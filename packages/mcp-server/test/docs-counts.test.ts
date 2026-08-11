@@ -51,6 +51,7 @@ const WORDS: Record<string, number> = {
   sixteen: 16,
   seventeen: 17,
   eighteen: 18,
+  nineteen: 19,
   девять: 9,
   десять: 10,
   одиннадцать: 11,
@@ -61,6 +62,7 @@ const WORDS: Record<string, number> = {
   шестнадцать: 16,
   семнадцать: 17,
   восемнадцать: 18,
+  девятнадцать: 19,
 };
 
 /** `"twelve"` / `"12"` → 12. */

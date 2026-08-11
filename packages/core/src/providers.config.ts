@@ -45,6 +45,24 @@ export const routes: CapabilityRoute[] = [
   { capability: 'protocol.tvl.history', adapterIds: ['defillama'] },
   { capability: 'wallet.balances.native', adapterIds: ['rpc-evm'] },
   { capability: 'wallet.balances.native', adapterIds: ['rpc-solana'] },
+  // WI-51 — network activity. Two adapters on `gas.price`, and the order is the decision:
+  //
+  // `rpc-evm` FIRST. It reads the chain itself (`tier: 'free'`, `trust: 'authoritative'`), needs no
+  // key, and answers in exact wei. It covers the 18 EVM chains a human has curated an RPC host for.
+  // `blockscout` SECOND, for the wider set (53 chains) at the cost of a PRO key and rounded Gwei
+  // floats — with tiers and a vendor measurement stamp the node cannot give.
+  //
+  // That there are two at all is L-6's lesson applied rather than restated: `token.holders` was a
+  // single-adapter capability, so the day its one vendor closed keyless access it was advertised on
+  // ~30 chains and served on none. Building the next capability on the SAME vendor alone would have
+  // re-earned that failure at the next auth change.
+  //
+  // `chain.transactions` has ONE adapter and that is not an oversight: a node can answer "what does
+  // gas cost" from consensus state, but "how many transactions per day" is an indexer's aggregate
+  // and no `eth_*` method returns it. A second source here would have to be a second indexer, which
+  // is a budget decision (WI-51 option 3), not a wiring one.
+  { capability: 'gas.price', adapterIds: ['rpc-evm', 'blockscout'] },
+  { capability: 'chain.transactions', adapterIds: ['blockscout'] },
   {
     capability: 'privacy.shielded_pool',
     adapterIds: ['dash-platform', 'platform-explorer'],

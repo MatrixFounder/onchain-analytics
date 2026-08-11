@@ -32,10 +32,21 @@ const bySlug = (slug: string) => {
 };
 
 describe('blockscout adapter (contract, R-73)', () => {
-  it('declares both capabilities and charges nothing for them', () => {
-    expect(adapter.capabilities()).toEqual([{ id: 'token.holders' }, { id: 'entity.labels' }]);
-    expect(adapter.costOf('token.holders', {})).toEqual({ credits: 0 });
-    expect(adapter.costOf('entity.labels', {})).toEqual({ credits: 0 });
+  it('declares its four capabilities and charges nothing for them', () => {
+    // WI-51 added the last two, and both are projections of ONE `/api/v2/stats` document — listed
+    // separately because the registry caches per capability and their clocks differ by 20×
+    // (30 s vs 600 s, see the manifest: gas re-stamps every minute, the daily aggregate does not).
+    expect(adapter.capabilities()).toEqual([
+      { id: 'token.holders' },
+      { id: 'entity.labels' },
+      { id: 'gas.price' },
+      { id: 'chain.transactions' },
+    ]);
+    for (const cap of ['token.holders', 'entity.labels', 'gas.price', 'chain.transactions']) {
+      // `tier: 'free'` means no money at the vendor, never "unmetered" — the PRO key meters
+      // credits (ADR-002 D8, and `assertMergeParticipantsAreFree`'s own note).
+      expect(adapter.costOf(cap, {}), cap).toEqual({ credits: 0 });
+    }
   });
 
   it('declines BY NAME without a key — the grace period ended, and an advertisement is not a capability', () => {

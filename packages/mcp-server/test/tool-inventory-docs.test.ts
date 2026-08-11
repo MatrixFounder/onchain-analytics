@@ -111,10 +111,12 @@ const EXCLUDED_FILES = new Map([
       'every result row carries a `tool` field, so a single-chain run already names ten. Listed ' +
       'rather than gitignored: this walk reads the filesystem and never consults git',
   ],
-  [
-    'docs/architectures/version-history.md',
-    'a log of what past versions said; rewriting it to match today would be worse than no gate',
-  ],
+  // `version-history.md` was here while it named enough tools to read as an inventory (11 of 17,
+  // over the then-threshold of 11). WI-51's two tools moved the threshold to 12 without adding a
+  // single name to that file, so the entry stopped excluding anything — removed for the reason the
+  // rule at the top of this map gives, and NOT because the file changed. Its stated reason ("a log
+  // of what past versions said; rewriting it to match today would be worse than no gate") remains
+  // true and is why the entry should be restored the moment the count crosses back.
 ]);
 
 /** Whole directories and slots that are snapshots of finished (or in-flight) work. */

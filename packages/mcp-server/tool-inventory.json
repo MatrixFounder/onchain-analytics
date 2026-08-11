@@ -52,6 +52,16 @@
       "capability": "protocol.list"
     },
     {
+      "name": "onchain_gas_price",
+      "title": "Gas price",
+      "capability": "gas.price"
+    },
+    {
+      "name": "onchain_chain_transactions",
+      "title": "Chain transaction activity",
+      "capability": "chain.transactions"
+    },
+    {
       "name": "onchain_protocol_tvl_history",
       "title": "Protocol TVL history",
       "capability": "protocol.tvl.history"

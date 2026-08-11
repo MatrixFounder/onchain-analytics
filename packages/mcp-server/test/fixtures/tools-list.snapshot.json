@@ -1240,6 +1240,247 @@
     }
   },
   {
+    "name": "onchain_gas_price",
+    "title": "Gas price",
+    "description": "Current cost of one gas unit on an EVM chain, read from a node where one is approved and from the Blockscout indexer otherwise. Compare chains by gasPriceGwei ONLY together with nativeSymbol — the tokens differ. Call onchain_list_chains({capability: \"gas.price\"}) to discover which chains are served.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "gasPriceWei": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Exact price of one gas unit in wei, as a decimal string. Non-null only when the answer came from a node (source \"rpc-evm\"); an indexer publishes rounded Gwei and cannot state this. A string because on-chain integers must not pass through a JS number."
+        },
+        "gasPriceGwei": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The same price in Gwei, lossy and for comparison. Derived from gasPriceWei on the node path; the vendor's own \"average\" tier on the indexer path. Null means the source published no gas price at all for this chain — NOT that gas is free."
+        },
+        "tiers": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "slowGwei": {
+                  "type": "number"
+                },
+                "averageGwei": {
+                  "type": "number"
+                },
+                "fastGwei": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "slowGwei",
+                "averageGwei",
+                "fastGwei"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Slow/average/fast estimates in Gwei, when the source publishes them. Null on the node path, where one suggested price is all that exists — three copies of it would be a confidence interval nobody measured."
+        },
+        "nativeSymbol": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The chain's gas token. Read it before comparing chains: \"386 Gwei\" on polygon is POL and \"0.3 Gwei\" on ethereum is ETH, so the raw numbers are not comparable."
+        },
+        "measuredAt": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When the SOURCE says it measured, epoch-ms UTC — not when this server fetched. Non-null only on the indexer path, which stamps it (and re-stamps roughly every minute). Null from a node, whose answer is for the head of the chain as of the request."
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "gasPriceWei",
+        "gasPriceGwei",
+        "tiers",
+        "nativeSymbol",
+        "measuredAt",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_chain_transactions",
+    "title": "Chain transaction activity",
+    "description": "How much a chain is used: daily and cumulative transaction counts, block totals, mean block time and current network utilization, from the Blockscout indexer. ACTIVE ADDRESSES ARE NOT SERVED by this engine — no wired provider publishes an activity-scoped address count, and the cumulative all-time count that exists is a different statistic. Do not substitute DEX volume or transaction counts for it; say the metric is unavailable. Call onchain_list_chains to discover valid chain values.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "transactionsPerDay": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The vendor's DAILY transaction aggregate. Do NOT read it as a running count of the current day and do NOT difference two readings to get a rate: measured, it does not advance between block-by-block updates — it is recomputed periodically. Null means the source published no figure."
+        },
+        "totalTransactions": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Cumulative transactions since genesis."
+        },
+        "totalBlocks": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Cumulative blocks since genesis."
+        },
+        "averageBlockTimeMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Mean block interval in milliseconds, as the source computes it."
+        },
+        "networkUtilizationPct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Percent of block gas capacity in use. The one field here scoped to NOW rather than to all time, so it is the honest answer to \"how busy is this chain right now\"."
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "transactionsPerDay",
+        "totalTransactions",
+        "totalBlocks",
+        "averageBlockTimeMs",
+        "networkUtilizationPct",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
     "name": "onchain_protocol_tvl_history",
     "title": "Protocol TVL history",
     "description": "How ONE protocol's TVL on ONE chain changed over time, with a ready-made `change` across the window. Free and keyless (DeFiLlama). Use onchain_list_protocols to rank many protocols by growth — that is a shared cheap document, while this route downloads the protocol's full history and refuses the few that are too large (mostly exchange trackers, not protocols). Use onchain_list_chains to find the `chain` value.",

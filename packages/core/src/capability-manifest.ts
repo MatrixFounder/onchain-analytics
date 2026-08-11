@@ -92,11 +92,14 @@
  *   an adapter in the population by whether it imports a transport module at all, so the day a live
  *   gRPC transport lands for `dash-platform` (ARCHITECTURE.md §11) it enters the population and the
  *   five rows it routes go red until it reads the deadline. It is not an id list somebody maintains.
- * - **23 of 23 capabilities are therefore actually bounded by their row below.** The three added
- *   on 2026-08-11 (`chain.tvl.history`, `protocol.list`, `protocol.tvl.history`) enter on the same
- *   two `defillama` mechanisms already described: the first two are served from SHARED documents, so
- *   the ceiling bounds the caller's wait, and the third is the one per-call route left in this
- *   adapter, so it reaches `throttle()` and `safeFetch` directly.
+ * - **25 of 25 capabilities are therefore actually bounded by their row below.** The three added
+ *   earlier on 2026-08-11 (`chain.tvl.history`, `protocol.list`, `protocol.tvl.history`) enter on the
+ *   same two `defillama` mechanisms already described: the first two are served from SHARED
+ *   documents, so the ceiling bounds the caller's wait, and the third is the one per-call route left
+ *   in this adapter, so it reaches `throttle()` and `safeFetch` directly. The two added later that
+ *   day (WI-51's `gas.price` and `chain.transactions`) enter on the strongest form of all: neither
+ *   has a shared-document path, so on every leg — `rpc-evm`'s endpoint loop and `blockscout`'s
+ *   single request — the ceiling can abort work in flight rather than only refuse to start it.
  *
  * **How this section read before WI-37, and why the distinction was worth writing down.** Until
  * 2026-08-05 the figures were 2 of 12 and 4 of 20: `blockscout` (012-8) and `nansen` (012-9) were the
@@ -409,6 +412,50 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // (ENFORCEMENT above). Note the ceiling
     // does NOT follow the adapter's own faster timeout down: the tier is a property of the
     // capability, and `blockscout`'s 5 s is a property of one vendor.
+    deadlineMs: 15_000,
+  },
+  'gas.price': {
+    // One reading of one number for one chain — `point`, by the same reading that classified
+    // `chain.tvl`.
+    shape: 'point',
+    /**
+     * 30 s, and this is the shortest TTL in the manifest on purpose.
+     *
+     * Gas is the most perishable number the engine serves: `blockscout` re-stamps
+     * `gas_price_updated_at` roughly every minute (measured — two probes 45 s apart carried
+     * different stamps), and a node's answer changes every block. Serving a five-minute-old gas
+     * price to "should I transact now" is not a stale cache, it is a wrong answer.
+     *
+     * It is NOT shorter than that, because 30 s is already inside the vendor's own refresh interval:
+     * below it the cache buys a second identical request and nothing else — the same reasoning
+     * `chain.supply` uses to sit at 600 s against Bitcoin's block interval, applied to a much faster
+     * clock. The PRO key's credit quota is the other bound: a 1 s TTL turns one impatient
+     * conversation into hundreds of upstream calls.
+     */
+    ttlSeconds: 30,
+    // measured envelope: 50_000 on the `blockscout` leg (E-HTTP5 — one attempt: 30_000 + 4 × 5_000);
+    // the `rpc-evm` leg walks that chain's curated endpoints with `safeFetch`'s 15 s default per hop.
+    // applied: 15_000 — owner ceiling (OD-2), not a measurement.
+    // **ENFORCED TODAY** on BOTH legs: `rpc-evm` forwards it to `throttle()` and to every hop of
+    // `callRpc`'s endpoint loop (WI-37), and `blockscout` forwards it to `throttle()` and
+    // `safeFetch`. Neither leg has a shared-document path, so cancellation is real, not advisory.
+    deadlineMs: 15_000,
+  },
+  'chain.transactions': {
+    // One reading of a small fixed set of counters for one chain.
+    shape: 'point',
+    /**
+     * 600 s, twenty times `gas.price`'s, from the SAME document.
+     *
+     * Not an inconsistency — a measurement. `transactions_today` did not move across 45 s in which
+     * `total_blocks` advanced by 10 and the gas stamp changed twice: it is a periodically
+     * recomputed daily aggregate, so a shorter TTL cannot buy a fresher number, it can only buy a
+     * second identical request. The two capabilities read one endpoint and have different clocks
+     * because the FIELDS have different clocks, which is exactly what per-capability TTL is for.
+     */
+    ttlSeconds: 600,
+    // measured envelope: 50_000 (E-HTTP5 — `blockscout`, one attempt: 30_000 + 4 × 5_000).
+    // applied: 15_000 — owner ceiling (OD-2), not a measurement; cuts 35_000. **ENFORCED TODAY**.
     deadlineMs: 15_000,
   },
   'chain.supply': {

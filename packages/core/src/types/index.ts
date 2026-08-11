@@ -21,3 +21,6 @@ export { TokenHoldersSchema, type TokenHolders } from './token-holders.js';
 // the type, not in a later one: the rule at the top of this file only holds if the barrel is
 // complete, and TASK-008 already paid for discovering that the hard way.
 export { ChainSupplySchema, type ChainSupply } from './chain-supply.js';
+// WI-51 — network activity: what gas costs, and how much the chain is used.
+export { GasPriceSchema, type GasPrice } from './chain-activity.js';
+export { ChainTransactionsSchema, type ChainTransactions } from './chain-activity.js';

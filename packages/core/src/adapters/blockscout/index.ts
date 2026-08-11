@@ -5,6 +5,12 @@ import { throttle as productionThrottle, type Throttle } from '../../net/rate-li
 import { isPassThroughTransportError, safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
 import { EntityLabelSchema, type EntityLabel } from '../../types/entity-label.js';
+import {
+  ChainTransactionsSchema,
+  GasPriceSchema,
+  type ChainTransactions,
+  type GasPrice,
+} from '../../types/chain-activity.js';
 import { TokenHoldersSchema, type TokenHolders } from '../../types/token-holders.js';
 import { MAX_VENDOR_NAME_LENGTH, truncateVendorText } from '../truncate-vendor-text.js';
 import type { ProviderAdapter } from '../types.js';
@@ -226,7 +232,23 @@ interface LabelsFetchResult {
   body: SanitizedBlockscoutBody;
 }
 
-type BlockscoutFetchResult = HoldersFetchResult | LabelsFetchResult;
+/**
+ * WI-51: `gas.price` and `chain.transactions` both read ONE document — `/api/v2/stats`.
+ *
+ * Kept as a single result kind rather than two, because the two capabilities differ only in which
+ * fields they project. The registry still caches them separately (its key is
+ * `(provider, capability, argsHash)`), which is the correct behaviour and not an accident worth
+ * optimising away: the document is ~1 KB and costs one upstream endpoint, unlike `get_address_info`
+ * whose three-way fan-out is what `WEIGHT_ADDRESS_INFO` exists for.
+ */
+interface StatsFetchResult {
+  kind: 'stats';
+  chain: string;
+  nativeSymbol: string | null;
+  body: SanitizedBlockscoutBody;
+}
+
+type BlockscoutFetchResult = HoldersFetchResult | LabelsFetchResult | StatsFetchResult;
 
 /**
  * The header the facade reads the PRO key from — the vendor's own name for it, measured.
@@ -451,7 +473,13 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
   return {
     id: 'blockscout',
     chainSupport: servesChain,
-    capabilities: () => [{ id: 'token.holders' }, { id: 'entity.labels' }],
+    capabilities: () => [
+      { id: 'token.holders' },
+      { id: 'entity.labels' },
+      // WI-51 — both projected from `/api/v2/stats`, see `StatsFetchResult`.
+      { id: 'gas.price' },
+      { id: 'chain.transactions' },
+    ],
     // Free tier: no Nansen-style credit accounting. The vendor's own quota is bounded by the
     // per-adapter throttle and the capability TTL cache (PLAN §3).
     costOf: () => ({ credits: 0 }),
@@ -571,11 +599,40 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
         return { kind: 'labels', chain: chain.slug, address, body };
       }
 
+      if (cap === 'gas.price' || cap === 'chain.transactions') {
+        // WI-51. `endpoint_path` is a CONSTANT here — no caller-supplied segment reaches it, so the
+        // path-traversal reasoning that guards the holders route (M-10) has nothing to guard. The
+        // only variable is `chain_id`, which `evmChainId()` above already proved is an integer.
+        const body = await request(
+          FACADE_HOST,
+          '/v1/direct_api_call',
+          { chain_id: String(chainId), endpoint_path: '/api/v2/stats' },
+          1,
+          deadlineAtMs,
+        );
+        return {
+          kind: 'stats',
+          chain: chain.slug,
+          // Read from OUR registry, never from the vendor: this is the label that stops "386 Gwei"
+          // on polygon from being read as ETH, and the registry is where a human curated it.
+          nativeSymbol: chain.nativeSymbol,
+          body,
+        };
+      }
+
       throw new Error(`blockscout: unsupported capability ${cap}`);
     },
 
-    normalize: (cap: string, raw: unknown): TokenHolders | EntityLabel[] => {
-      if (cap !== 'token.holders' && cap !== 'entity.labels') {
+    normalize: (
+      cap: string,
+      raw: unknown,
+    ): TokenHolders | EntityLabel[] | GasPrice | ChainTransactions => {
+      if (
+        cap !== 'token.holders' &&
+        cap !== 'entity.labels' &&
+        cap !== 'gas.price' &&
+        cap !== 'chain.transactions'
+      ) {
         throw new Error(`blockscout.normalize: unsupported capability ${cap}`);
       }
       // L-7: guard the cast. `raw as BlockscoutFetchResult` on a non-object produced a bare
@@ -591,6 +648,12 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
       }
       if (cap === 'entity.labels' && result.kind === 'labels') {
         return normalizeLabels(result, now());
+      }
+      if (cap === 'gas.price' && result.kind === 'stats') {
+        return normalizeGasPrice(result, now());
+      }
+      if (cap === 'chain.transactions' && result.kind === 'stats') {
+        return normalizeChainTransactions(result, now());
       }
       // L-7: the old message said "unsupported capability token.holders" for a capability this
       // adapter DOES support. The actual fault is a capability/payload mismatch; say that.
@@ -631,6 +694,107 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
       return { ok: true };
     },
   };
+}
+
+/**
+ * The `data` container of a stats response, or a refusal.
+ *
+ * Same rule `normalizeHolders` applies one level up and for the same reason: a facade that proxies a
+ * REST call can render an upstream error as HTTP 200, and answering "gas price: unknown" from a body
+ * we failed to read states a fact the vendor never gave us. Refusing sends the registry to the next
+ * adapter, which on `gas.price` is a real node.
+ */
+function statsContainer(result: StatsFetchResult, cap: string): Record<string, unknown> {
+  const plain = asPlain(result.body);
+  if (plain === null || typeof plain !== 'object') {
+    throw new Error(`blockscout.normalize(${cap}): response body is not an object`);
+  }
+  const container = readObject(plain, 'data');
+  if (container === undefined) {
+    throw new Error(`blockscout.normalize(${cap}): response carries no \`data\` object`);
+  }
+  return container;
+}
+
+/**
+ * A finite non-negative number the vendor actually stated, or `null`.
+ *
+ * `null` is returned for absent, non-numeric AND non-finite input — never 0. The distinction is the
+ * whole point: polygon's keyless `/api/v2/stats` publishes `gas_prices.average: null` (measured
+ * 2026-08-11 before the key was wired), and a 0 there reads as "gas is free on polygon", which is
+ * both false and actionable in the expensive direction.
+ */
+function finiteOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function normalizeGasPrice(result: StatsFetchResult, fetchedAt: number): GasPrice {
+  const data = statsContainer(result, 'gas.price');
+  const prices = readObject(data, 'gas_prices');
+  const slow = finiteOrNull(prices?.['slow']);
+  const average = finiteOrNull(prices?.['average']);
+  const fast = finiteOrNull(prices?.['fast']);
+
+  // All three or none. A partial tier set is not a cheaper answer, it is a shape a consumer has to
+  // branch on to use at all — and `gasPriceGwei` below already carries the single-number answer.
+  const tiers =
+    slow !== null && average !== null && fast !== null
+      ? { slowGwei: slow, averageGwei: average, fastGwei: fast }
+      : null;
+
+  // The vendor's own measurement stamp, when it parses. An unparseable date is null rather than
+  // `NaN` or "now": claiming our fetch time as the vendor's measurement time would make a stale
+  // price look fresh, which is the one lie this field exists to prevent.
+  const stampedAt = data['gas_price_updated_at'];
+  let measuredAt: number | null = null;
+  if (typeof stampedAt === 'string') {
+    const parsed = Date.parse(stampedAt);
+    if (Number.isFinite(parsed)) measuredAt = parsed;
+  }
+
+  return GasPriceSchema.parse({
+    chain: result.chain,
+    // An indexer publishes rounded Gwei floats and no wei at all. Multiplying 0.31 by 1e9 and
+    // presenting the product as exact wei would dress a rounded number up as a measured one.
+    gasPriceWei: null,
+    gasPriceGwei: average,
+    tiers,
+    nativeSymbol: result.nativeSymbol,
+    measuredAt,
+    source: 'blockscout',
+    fetchedAt,
+  });
+}
+
+/** A non-negative safe integer the vendor stated, or `null` — never 0 by default (see `finiteOrNull`). */
+function intOrNull(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
+  // The counters arrive as numbers today; a vendor that switches to strings should still be read
+  // rather than silently zeroed, and `total_transactions` (3.67e9) is well inside the safe range.
+  if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeChainTransactions(
+  result: StatsFetchResult,
+  fetchedAt: number,
+): ChainTransactions {
+  const data = statsContainer(result, 'chain.transactions');
+  return ChainTransactionsSchema.parse({
+    chain: result.chain,
+    transactionsPerDay: intOrNull(data['transactions_today']),
+    totalTransactions: intOrNull(data['total_transactions']),
+    totalBlocks: intOrNull(data['total_blocks']),
+    averageBlockTimeMs: finiteOrNull(data['average_block_time']),
+    networkUtilizationPct: finiteOrNull(data['network_utilization_percentage']),
+    // `total_addresses` is READ BY NOBODY here, deliberately — it is cumulative since genesis, and
+    // WI-51 asked for ACTIVE addresses. See `ChainTransactionsSchema`'s docstring.
+    source: 'blockscout',
+    fetchedAt,
+  });
 }
 
 function readObject(source: unknown, key: string): Record<string, unknown> | undefined {

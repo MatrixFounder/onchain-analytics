@@ -409,7 +409,7 @@ describe('the architecture TTL table is complete and matches the code (WI-28)', 
 
   it('states a TTL for EVERY routed capability', () => {
     const rows = architectureRows();
-    expect(rows.length).toBe(18); // the exact row count of §3.2's table, not a floor
+    expect(rows.length).toBe(20); // the exact row count of §3.2's table, not a floor
     const documented = new Set(rows.flatMap((row) => row.covered));
     const missing = [...new Set(routes.map((r) => r.capability))].filter(
       (capability) => !documented.has(capability),
@@ -617,7 +617,7 @@ describe('the architecture deadline table states the numbers the manifest applie
     // an eighth row, or a non-data line the parser starts treating as one, becomes visible here
     // instead of being quietly checked or quietly ignored.
     expect(deadlineRows(markdown, routed).length).toBe(7); // the exact row count, not a floor
-    expect(routed).toHaveLength(23);
+    expect(routed).toHaveLength(25);
 
     expect(
       deadlineDefects(markdown, routed, capabilityManifests),

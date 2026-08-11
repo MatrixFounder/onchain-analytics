@@ -1,7 +1,7 @@
 ---
 id: WI-51
 type: work-item
-status: open
+status: done
 opened_at: 2026-08-10
 slug: wi-51-no-chain-activity-capabilities
 effort: L

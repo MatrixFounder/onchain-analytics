@@ -1,7 +1,7 @@
 ---
 id: L-6
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-08-10
 category: logic
 severity: SEV-2

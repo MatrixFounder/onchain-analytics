@@ -4,6 +4,8 @@ import { dashPlatformHistoryToolSpec } from './dash-platform-history.js';
 import { dexVolumeToolSpec } from './dex-volume.js';
 import { chainTvlHistoryToolSpec } from './chain-tvl-history.js';
 import { listProtocolsToolSpec } from './list-protocols.js';
+import { gasPriceToolSpec } from './gas-price.js';
+import { chainTransactionsToolSpec } from './chain-transactions.js';
 import { protocolTvlHistoryToolSpec } from './protocol-tvl-history.js';
 import { entityLabelToolSpec } from './entity-label.js';
 import { getTokenToolSpec } from './get-token.js';
@@ -49,6 +51,11 @@ export const toolSpecs: readonly ToolSpec[] = [
   dexVolumeToolSpec,
   chainTvlHistoryToolSpec,
   listProtocolsToolSpec,
+  // WI-51 — network activity. Two tools rather than one `onchain_chain_activity`: they have
+  // different clocks (30 s vs 600 s TTL) and different provider sets, and merging them would make
+  // a gas query pay for a transactions fetch it did not ask for.
+  gasPriceToolSpec,
+  chainTransactionsToolSpec,
   protocolTvlHistoryToolSpec,
   tokenHoldersToolSpec,
   chainSupplyToolSpec,

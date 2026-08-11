@@ -205,10 +205,15 @@ const TTL_FOR_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
   'smart-money.flows': 300,
   'token.risk': 1800,
   'entity.labels': 3600,
+  // WI-51 — the two network-activity rows. 30 s is the shortest TTL in the table and 600 s is
+  // twenty times it, off ONE document: the fields have different clocks (gas re-stamps about every
+  // minute; the daily transaction aggregate did not move across 45 s of new blocks).
+  'gas.price': 30,
+  'chain.transactions': 600,
 };
 
 describe('TC-UNIT-01 — the move changed no TTL: `ttlFor()` answers exactly as before', () => {
-  it('covers all 23 routed capabilities, so no row escaped the comparison', () => {
+  it('covers all 25 routed capabilities, so no row escaped the comparison', () => {
     expect(Object.keys(TTL_FOR_BEFORE_THE_MOVE).sort()).toStrictEqual(routedCapabilities);
   });
 
@@ -229,7 +234,7 @@ describe('TC-UNIT-02 — `DEFAULT_TTL_SECONDS` survives, for the input it is act
     expect(ttlFor('capability.which.nothing.routes')).toBe(300);
   });
 
-  it('is unreachable for the 23 routed capabilities — enumerated, not asserted in general', () => {
+  it('is unreachable for the 25 routed capabilities — enumerated, not asserted in general', () => {
     // R-138d wants this stated by enumeration. What makes it a property rather than a coincidence is
     // `CapabilityRegistry`'s construction-time manifest check (012-4), which this cannot observe;
     // `capability-manifest.test.ts`'s TC-INT-02 is where that half is tested.

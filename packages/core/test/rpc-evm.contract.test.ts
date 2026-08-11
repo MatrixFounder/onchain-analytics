@@ -65,8 +65,11 @@ describe('rpc-evm adapter (contract, R-16/R-17 backend, OQ-1)', () => {
   // CHANGED EXPECTATION (vdd-multi cycle 6, M-7): the `chains: ['ethereum']` literal was false by
   // 17 chains after TASK-006 — `servesChain()` owns that answer now. See `dune.test.ts` for the
   // full rationale.
-  it('capabilities() declares wallet.balances.native without re-declaring a chain set', () => {
-    expect(adapter.capabilities()).toEqual([{ id: 'wallet.balances.native' }]);
+  it('capabilities() declares both, without re-declaring a chain set', () => {
+    // WI-51 added `gas.price` on the same keyless transport and the same curated hosts. It is here
+    // rather than only on `blockscout` because a capability with one adapter dies with that
+    // vendor's auth decision — which is L-6, verbatim.
+    expect(adapter.capabilities()).toEqual([{ id: 'wallet.balances.native' }, { id: 'gas.price' }]);
   });
 
   it('costOf() is free (0 credits) and isAvailable() is always ok (keyless JSON-RPC)', () => {

@@ -116,6 +116,8 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
         'stopped validating, say why rather than letting the gate check one fewer.',
     ).toStrictEqual([
       'chain-supply.ts',
+      // WI-51 — the two network-activity tools.
+      'chain-transactions.ts',
       'chain-tvl-history.ts',
       'chain-tvl.ts',
       // T-013 task 013-7. In the list BEFORE it is registered: this gate reads `src/tools` with
@@ -124,6 +126,7 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       'dash-platform-history.ts',
       'dex-volume.ts',
       'entity-label.ts',
+      'gas-price.ts',
       'get-token.ts',
       'list-protocols.ts',
       'new-pairs.ts',

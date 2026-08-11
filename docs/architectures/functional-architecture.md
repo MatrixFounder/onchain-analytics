@@ -134,6 +134,11 @@
     need to know a slug before asking), `onchain_chain_tvl_history` and
     `onchain_protocol_tvl_history` (daily TVL runs with the same `window`/`gapDays`/`truncated`
     contract `onchain_dex_volume` publishes, produced by the same shaper).
+  - WI-51, network activity: `onchain_gas_price` (routed `rpc-evm` → `blockscout`, so a node answers
+    where one is curated and the indexer covers the rest — two adapters on purpose, because L-6 was a
+    single-adapter capability that died with its vendor's auth change) and
+    `onchain_chain_transactions` (Blockscout stats). Active addresses are NOT served: no wired
+    provider publishes an activity-scoped address count.
 - `dash-platform` and `platform-explorer` register capabilities in the Capability Registry and are
   covered by contract tests, but neither gets a tool of its own — the Platform privacy rules (M3)
   are the first real consumer.
@@ -168,7 +173,7 @@ flowchart LR
     CACHE["Cache: lru-cache + SQLite DATA_DIR (D6)<br/>+ budget guard: usage ledger, daily ceiling (M2)"]
     PGHIST["pg-history adapter (optional, R-12)<br/>inside the Registry, not beside it"]
     SCHED["croner + job log — local/embedded profile only<br/>on a dedicated server the schedule lives in n8n (D8)"]
-    MCP["MCP server @onchain-intel/mcp-server — 17 tools<br/>ping · get_token · wallet_balances · new_pairs · protocol_tvl<br/>list_chains · chain_tvl · dex_volume · token_holders · chain_supply<br/>smart_money_flows · entity_label · token_risk · dash_platform_history<br/>chain_tvl_history · list_protocols · protocol_tvl_history"]
+    MCP["MCP server @onchain-intel/mcp-server — 19 tools<br/>ping · get_token · wallet_balances · new_pairs · protocol_tvl<br/>list_chains · chain_tvl · dex_volume · token_holders · chain_supply<br/>smart_money_flows · entity_label · token_risk · dash_platform_history<br/>chain_tvl_history · list_protocols · protocol_tvl_history<br/>gas_price · chain_transactions"]
   end
 
   subgraph N8N["Autonomous loop — n8n + Supabase Postgres, dev VM<br/>snapshotter now; rule scheduling + alerts at M3"]

@@ -24,31 +24,5 @@
     "`issue` MUST reference a record that exists in docs/KNOWN_ISSUES.md. An acknowledgement without",
     "a filed issue is just silence with extra steps."
   ],
-  "acknowledged": {
-    "ethereum/token.holders": {
-      "issue": "L-6",
-      "since": "2026-08-10",
-      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
-    },
-    "base/token.holders": {
-      "issue": "L-6",
-      "since": "2026-08-10",
-      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
-    },
-    "arbitrum/token.holders": {
-      "issue": "L-6",
-      "since": "2026-08-10",
-      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
-    },
-    "polygon/token.holders": {
-      "issue": "L-6",
-      "since": "2026-08-10",
-      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
-    },
-    "gnosis/token.holders": {
-      "issue": "L-6",
-      "since": "2026-08-10",
-      "note": "blockscout: HTTP 403 from mcp.blockscout.com"
-    }
-  }
+  "acknowledged": {}
 }

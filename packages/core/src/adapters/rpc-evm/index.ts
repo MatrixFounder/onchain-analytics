@@ -4,6 +4,7 @@ import { loadChainRegistry } from '../../chain/registry.js';
 import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
 import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
+import { GasPriceSchema, type GasPrice } from '../../types/chain-activity.js';
 import { WalletSchema, type Wallet } from '../../types/wallet.js';
 import type { Chain } from '../../types/chain.js';
 import type { ProviderAdapter } from '../types.js';
@@ -64,10 +65,38 @@ interface RpcEvmFetchResult {
   raw: unknown;
 }
 
+/**
+ * WI-51's hand-off shape — `gas.price` needs a chain and a gas token, and no address at all.
+ *
+ * A separate interface rather than making `address` optional on the one above: `normalize()`
+ * discriminates on the CAPABILITY it is already given, so nothing has to carry a `kind` tag, and the
+ * balance path's shape is left byte-for-byte as it was. A field that is required for one capability
+ * and meaningless for another is the shape that eventually gets read on the wrong path.
+ */
+interface RpcEvmGasFetchResult {
+  chain: Chain;
+  nativeSymbol: string;
+  raw: unknown;
+}
+
 interface JsonRpcResponse {
   result?: unknown;
   error?: { code?: unknown; message?: unknown };
 }
+
+/**
+ * A hex quantity with at least one digit — `eth_gasPrice`'s answer, guarded exactly as
+ * `HEX_BALANCE_RE` guards `eth_getBalance`'s, and for the same reason (`BigInt('0x')` throws a raw
+ * `SyntaxError` instead of this adapter's own message).
+ */
+const HEX_QUANTITY_RE = /^0x[0-9a-fA-F]+$/;
+
+/**
+ * Wei per Gwei. Named rather than inlined as `1e9` because the two are not interchangeable here:
+ * the division is deliberately done in floating point AFTER the exact value is preserved as a
+ * string, and a reader has to be able to see which side of that line each constant is on.
+ */
+const WEI_PER_GWEI = 1_000_000_000;
 
 /** Strict hex-wei guard (adversarial cycle 1, fix E) — requires at least one hex digit after the
  * `0x` prefix. The PREVIOUS check (`typeof === 'string' && startsWith('0x')`) accepted the bare
@@ -134,6 +163,83 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
   const chains = deps.chains ?? loadChainRegistry();
   const throttle = deps.throttle ?? productionThrottle;
 
+  /**
+   * The one transport path both capabilities use: throttle, then walk THIS chain's curated
+   * endpoints until one answers.
+   *
+   * Extracted for WI-51 rather than copied. Every non-obvious rule below is one a review already
+   * paid for once — the no-fallback-to-registration-hosts rule (M-3), the hostname-only error text
+   * (security L-2), the deadline break that does not burn the endpoint list (WI-37) — and a second
+   * hand-written copy would hold none of them by construction. `servesChain()`'s own docstring names
+   * the failure mode: two conditions that must agree, maintained in two places.
+   */
+  async function callRpc(
+    chain: ChainInfo,
+    body: string,
+    deadlineAtMs?: number,
+  ): Promise<JsonRpcResponse> {
+    await throttle('rpc-evm', RATE_LIMIT, 1, deadlineAtMs);
+
+    // TASK-006 (task 006-8, R-56): endpoints and the SSRF allowlist BOTH come from this chain's
+    // curated `rpcHosts` row — per chain, never merged. The allowlist handed to `safeFetch` is
+    // exactly the hosts a human approved for THIS chain, so one chain's endpoint can never be
+    // used to reach another's (security.md §7.2.1).
+    //
+    // **No fallback to the registration hosts** (vdd-multi cycle 5, M-3). The previous
+    // `chainHosts.length > 0 ? … : HOSTS` had a comment asserting the else-branch was
+    // unreachable — and it was reachable, via `rpcHosts: []`, which passed both `chainSupport()`
+    // (`!== null`) and the load schema. That branch sent a `bsc` balance query to ETHEREUM's
+    // endpoints and cached the answer under `bsc`. The empty case is now rejected at load
+    // (`.min(1)`), and this code carries no silent way to serve the wrong chain: if the list were
+    // somehow empty, the loop below has nothing to try and throws.
+    const chainHosts = [...(chain.rpcHosts ?? [])];
+    const allowlist = chainHosts.map(hostOf);
+
+    let lastError: unknown;
+    for (const endpoint of chainHosts) {
+      try {
+        const response = await safeFetch(
+          endpoint,
+          { method: 'POST', headers: { 'content-type': 'application/json' }, body },
+          allowlist,
+          fetchImpl,
+          // Spread conditionally so a call without a deadline builds the same options object
+          // this loop built before WI-37.
+          { ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }) },
+        );
+        if (!response.ok) {
+          // `hostOf`, not the full URL (vdd-multi cycle 6, security L-2): `rpcHosts` is a
+          // full-URL column and this message reaches the model via `tried[].reason`. A curated
+          // endpoint could one day carry a key in its path or query.
+          //
+          // What actually holds the line is one layer further back: `isApprovableRpcUrl` refuses
+          // such an entry when the registry LOADS (adversarial cycle 3). This narrowing stays
+          // regardless — it is cheap, and it also covers the query, which the load-time rule
+          // does not.
+          throw new Error(`rpc-evm: HTTP ${response.status} for ${hostOf(endpoint)}`);
+        }
+        const raw = (await response.json()) as JsonRpcResponse;
+        if (raw.error) {
+          throw new Error(
+            `rpc-evm: JSON-RPC error from ${hostOf(endpoint)}: ${stringifyTruncated(raw.error)}`,
+          );
+        }
+        return raw;
+      } catch (error) {
+        // Try the next endpoint in the primary->fallback chain before giving up entirely.
+        lastError = error;
+        // …EXCEPT when our own time is up (WI-37). The fallback loop exists because ONE endpoint
+        // can be down while another answers; a spent deadline is not a fact about an endpoint, it
+        // is true of every remaining one. Continuing would burn the list on `safeFetch` entry
+        // checks and report the LAST endpoint's failure for a condition that had nothing to do
+        // with it.
+        if (error instanceof DeadlineExceededError) break;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`rpc-evm: all endpoints failed for chain ${chain.slug}`);
+  }
   return {
     id: 'rpc-evm',
     // TASK-006 (R-54/R-56b): any EVM chain, but ONLY if the registry carries a curated RPC host
@@ -143,14 +249,45 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
     // known gas token is part of the same condition.
     chainSupport: servesChain,
     // No `chains` literal — `servesChain` owns that answer (vdd-multi cycle 6, M-7).
-    capabilities: () => [{ id: 'wallet.balances.native' }],
+    capabilities: () => [
+      { id: 'wallet.balances.native' },
+      // WI-51 — `eth_gasPrice`, the same keyless transport on the same curated hosts. This is the
+      // reason `gas.price` does not die with one vendor's auth decision: L-6 was a capability with
+      // exactly one adapter, and building the next one the same way would have re-earned it.
+      { id: 'gas.price' },
+    ],
     costOf: () => ({ credits: 0 }),
     fetch: async (
-      _cap: string,
+      cap: string,
       args: Record<string, unknown>,
       /** WI-37 — forwarded to the limiter and to EVERY hop of the endpoint fallback loop below. */
       deadlineAtMs?: number,
-    ): Promise<RpcEvmFetchResult> => {
+    ): Promise<RpcEvmFetchResult | RpcEvmGasFetchResult> => {
+      // WI-51: `gas.price` is chain-scoped and takes no address, so it cannot go through
+      // `extractFetchArgs` — that guard requires one. It gets the same three-part coverage test
+      // (`servesChain`) by hand, because the alternative is a capability whose accepted args and
+      // whose advertised coverage are decided in two places. That divergence is H-1's mechanism,
+      // named in `servesChain`'s own docstring.
+      const isGas = cap === 'gas.price';
+      if (isGas) {
+        const rawChain = args['chain'];
+        const gasChain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+        if (!gasChain || !servesChain(gasChain)) {
+          throw new Error(
+            `rpc-evm.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <an evm chain with a curated RPC host and a known native currency>})`,
+          );
+        }
+        const gasBody = JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_gasPrice',
+          params: [],
+        });
+        const raw = await callRpc(gasChain, gasBody, deadlineAtMs);
+        // Non-null by `servesChain()`, exactly as the balance path asserts it.
+        return { chain: gasChain.slug, nativeSymbol: gasChain.nativeSymbol as string, raw };
+      }
+
       const { chain, address } = extractFetchArgs(args, chains);
       // Defensive re-normalization (003-4 reviewer note, applied here too): the caller is expected
       // to have already normalized the address, but the adapter's own HTTP step doesn't trust that.
@@ -162,82 +299,45 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
         params: [normalizedAddress, 'latest'],
       });
 
-      await throttle('rpc-evm', RATE_LIMIT, 1, deadlineAtMs);
-
-      // TASK-006 (task 006-8, R-56): endpoints and the SSRF allowlist BOTH come from this chain's
-      // curated `rpcHosts` row — per chain, never merged. The allowlist handed to `safeFetch` is
-      // exactly the hosts a human approved for THIS chain, so one chain's endpoint can never be
-      // used to reach another's (security.md §7.2.1).
-      //
-      // **No fallback to the registration hosts** (vdd-multi cycle 5, M-3). The previous
-      // `chainHosts.length > 0 ? … : HOSTS` had a comment asserting the else-branch was
-      // unreachable — and it was reachable, via `rpcHosts: []`, which passed both `chainSupport()`
-      // (`!== null`) and the load schema. That branch sent a `bsc` balance query to ETHEREUM's
-      // endpoints and cached the answer under `bsc`. The empty case is now rejected at load
-      // (`.min(1)`), and this code no longer carries a silent way to serve the wrong chain: if the
-      // list were somehow empty, the loop below simply has nothing to try and throws.
-      const chainHosts = [...(chain.rpcHosts ?? [])];
-      const allowlist = chainHosts.map(hostOf);
-      const endpoints = chainHosts;
-
-      let lastError: unknown;
-      for (const endpoint of endpoints) {
-        try {
-          const response = await safeFetch(
-            endpoint,
-            { method: 'POST', headers: { 'content-type': 'application/json' }, body },
-            allowlist,
-            fetchImpl,
-            // Spread conditionally so a call without a deadline builds the same options object
-            // this loop built before WI-37.
-            { ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }) },
-          );
-          if (!response.ok) {
-            // `hostOf`, not the full URL (vdd-multi cycle 6, security L-2): `rpcHosts` is a
-            // full-URL column and this message reaches the model via `tried[].reason`. A curated
-            // endpoint could one day carry a key in its path or query.
-            //
-            // This used to add "`safeFetch`'s own errors already name only the hostname for exactly
-            // this reason", which was false (adversarial cycle 1): `redactUrl` strips the QUERY and
-            // keeps `origin + pathname`, so a key-in-path endpoint would have leaked through
-            // `SafeFetchTimeoutError`/`DeadlineExceededError` — errors this loop rethrows untouched,
-            // where the wrapping above cannot help. What actually holds the line is one layer
-            // further back: `isApprovableRpcUrl` refuses such an entry when the registry LOADS
-            // (cycle 3). This narrowing stays regardless — it is cheap, and it also covers the
-            // query, which the load-time rule does not.
-            throw new Error(`rpc-evm: HTTP ${response.status} for ${hostOf(endpoint)}`);
-          }
-          const raw = (await response.json()) as JsonRpcResponse;
-          if (raw.error) {
-            throw new Error(
-              `rpc-evm: JSON-RPC error from ${hostOf(endpoint)}: ${stringifyTruncated(raw.error)}`,
-            );
-          }
-          return {
-            chain: chain.slug,
-            address: normalizedAddress,
-            // Non-null by `servesChain()`, which `extractFetchArgs` enforced above.
-            nativeSymbol: chain.nativeSymbol as string,
-            nativeDecimals: chain.nativeDecimals as number,
-            raw,
-          };
-        } catch (error) {
-          // Try the next endpoint in the primary->fallback chain before giving up entirely.
-          lastError = error;
-          // …EXCEPT when our own time is up (WI-37). The fallback loop exists because ONE endpoint
-          // can be down while another answers; a spent deadline is not a fact about an endpoint, it
-          // is true of every remaining one. Continuing would burn the list on `safeFetch` entry
-          // checks and report the LAST endpoint's failure for a condition that had nothing to do
-          // with it. (The distinction is the limiter's `DeadlineExceededError` vs
-          // `DeadlineWouldExceedError` one layer down, applied to endpoints instead of providers.)
-          if (error instanceof DeadlineExceededError) break;
-        }
-      }
-      throw lastError instanceof Error
-        ? lastError
-        : new Error(`rpc-evm: all endpoints failed for chain ${chain.slug}`);
+      const raw = await callRpc(chain, body, deadlineAtMs);
+      return {
+        chain: chain.slug,
+        address: normalizedAddress,
+        // Non-null by `servesChain()`, which `extractFetchArgs` enforced above.
+        nativeSymbol: chain.nativeSymbol as string,
+        nativeDecimals: chain.nativeDecimals as number,
+        raw,
+      };
     },
-    normalize: (_cap: string, rawResult: unknown): Wallet => {
+    normalize: (cap: string, rawResult: unknown): Wallet | GasPrice => {
+      if (cap === 'gas.price') {
+        const gas = rawResult as RpcEvmGasFetchResult;
+        const body = gas.raw as JsonRpcResponse;
+        if (typeof body.result !== 'string' || !HEX_QUANTITY_RE.test(body.result)) {
+          throw new Error(
+            `rpc-evm.normalize: invalid gas price hex in "result": ${stringifyTruncated(gas.raw)}`,
+          );
+        }
+        // Exact first, lossy second — DB-SCHEMA-CONCEPT §1.7's rule applied in that order on
+        // purpose. `BigInt` preserves the node's answer to the wei; the Gwei projection is computed
+        // FROM the exact value and is explicitly the disposable one. Doing it the other way round
+        // (parse to Number, stringify back) is how an exact figure quietly becomes an estimate.
+        const wei = BigInt(body.result);
+        return GasPriceSchema.parse({
+          chain: gas.chain,
+          gasPriceWei: wei.toString(10),
+          gasPriceGwei: Number(wei) / WEI_PER_GWEI,
+          // A node states ONE suggested price. Spreading it across slow/average/fast would
+          // manufacture a spread nobody measured — see `GasPriceSchema.tiers`.
+          tiers: null,
+          nativeSymbol: gas.nativeSymbol,
+          // A node stamps nothing: `eth_gasPrice` answers for the head of the chain as of the
+          // request, and there is no vendor measurement time distinct from our own fetch time.
+          measuredAt: null,
+          source: 'rpc-evm',
+          fetchedAt: now(),
+        });
+      }
       const { chain, address, nativeSymbol, nativeDecimals, raw } = rawResult as RpcEvmFetchResult;
       const body = raw as JsonRpcResponse;
       if (typeof body.result !== 'string' || !HEX_BALANCE_RE.test(body.result)) {

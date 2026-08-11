@@ -212,11 +212,15 @@ describe('TC-INT-02 — privacy.shielded_pool.history merges: two different metr
 // TC-INT-03 / TC-INT-04 / TC-INT-05 — everything that must NOT change
 // =================================================================================================
 
-describe('TC-INT-03 — the six other multi-adapter routes get neither eligibility nor activation', () => {
-  /** The six, named rather than computed, so that a route SILENTLY acquiring a second adapter does
-   * not silently join the set this case vouches for. */
+describe('TC-INT-03 — the seven other multi-adapter routes get neither eligibility nor activation', () => {
+  /** The seven, named rather than computed, so that a route SILENTLY acquiring a second adapter does
+   * not silently join the set this case vouches for. WI-51 added `gas.price` deliberately: a second
+   * adapter there is the point (L-6's lesson), and it is NOT merge-eligible — a node's exact wei and
+   * an indexer's rounded Gwei are two answers to one question, and merging them would have to pick
+   * one or invent a third. */
   const OTHER_MULTI_ADAPTER = [
     'entity.labels',
+    'gas.price',
     'privacy.shielded_pool',
     'platform.identities',
     'platform.contracts',
@@ -224,7 +228,7 @@ describe('TC-INT-03 — the six other multi-adapter routes get neither eligibili
     'platform.credits',
   ] as const;
 
-  it('finds exactly six other multi-adapter routes, and none of them carries merge', () => {
+  it('finds exactly seven other multi-adapter routes, and none of them carries merge', () => {
     const multi = routes.filter((route) => route.adapterIds.length > 1);
     const merged = multi.filter((route) => route.merge === true).map((route) => route.capability);
     const notMerged = multi
@@ -273,7 +277,8 @@ describe('TC-INT-05 — the single-adapter capabilities are untouched', () => {
     const single = routes.filter((route) => route.adapterIds.length === 1);
     expect(single.every((route) => route.merge === undefined)).toBe(true);
     // Named as a count so that ADDING a single-adapter route is a decision someone makes here,
-    // rather than something this case absorbs silently. 21 routes, 2 merged, 6 other multi-adapter.
-    expect(single).toHaveLength(routes.length - 8);
+    // rather than something this case absorbs silently. 26 routes, 2 merged, 7 other multi-adapter
+    // (WI-51 added `gas.price` with two adapters and `chain.transactions` with one).
+    expect(single).toHaveLength(routes.length - 9);
   });
 });

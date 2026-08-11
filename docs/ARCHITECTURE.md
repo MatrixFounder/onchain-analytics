@@ -47,7 +47,7 @@ are **Accepted** in ADR-001; this document does not revisit them, it makes them 
 **What the engine is today** — twelve provider adapters behind one hot-swappable interface (eleven
 of them serving something; `dune` is a config stub), a chain registry of 458 networks, a two-level
 cache, an SSRF gate and per-provider rate limiting, a credit budget guard on the single paid
-provider, and seventeen workflow-oriented MCP tools served over local stdio. **T-013 (designed, not
+provider, and nineteen workflow-oriented MCP tools served over local stdio. **T-013 (designed, not
 yet built)** adds a compiled multi-source merge to two `series` capabilities and a 14th tool
 publishing the merged history — see §3/§11.
 
@@ -173,7 +173,7 @@ field, and `CapabilityResolution` gains three optional, merge-only fields.
 
 ## 5. Interfaces
 
-Contracts for all seventeen MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
+Contracts for all nineteen MCP tools (input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`), the
 `ChainInputSchema` contract shared by every chain-accepting tool, the public API of
 `packages/core`, and the provider integration table that is the source of the per-adapter SSRF
 allowlist, including T-013's `onchain_dash_platform_history`. **Plus the three free tools added
@@ -181,7 +181,11 @@ allowlist, including T-013's `onchain_dash_platform_history`. **Plus the three f
 protocol POPULATION on a chain, ranked by TVL or by 1d/7d/30d growth, so a protocol question no
 longer has to start from a slug the caller already knows — and `onchain_chain_tvl_history` /
 `onchain_protocol_tvl_history`, daily TVL runs carrying the same `window`/`gapDays`/`truncated`
-contract `onchain_dex_volume` publishes, produced by the same shaper.**
+contract `onchain_dex_volume` publishes, produced by the same shaper.** **Plus WI-51's two network-
+activity tools: `onchain_gas_price` — served by a NODE where one is curated and by Blockscout
+otherwise, so the capability does not die with one vendor's auth decision (L-6) — and
+`onchain_chain_transactions`. Active addresses remain unserved and are named as such in that tool's
+own description rather than being answered with the cumulative all-time count that looks like them.**
 → [architectures/interfaces.md](architectures/interfaces.md)
 
 ## 6. Technology stack
