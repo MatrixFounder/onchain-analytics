@@ -100,7 +100,7 @@
  *   day (WI-51's `gas.price` and `chain.transactions`) enter on the strongest form of all: neither
  *   has a shared-document path, so on every leg — `rpc-evm`'s endpoint loop and `blockscout`'s
  *   single request — the ceiling can abort work in flight rather than only refuse to start it.
- *   WI-52's `protocol.incidents` (2026-08-12) returns to the shared-document form: two documents,
+ *   WI-52's `protocol.incidents` (2026-08-11) returns to the shared-document form: two documents,
  *   both awaited under the ceiling, neither download cancelled by it.
  *
  * **How this section read before WI-37, and why the distinction was worth writing down.** Until

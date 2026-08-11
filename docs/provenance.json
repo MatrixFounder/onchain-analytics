@@ -17,9 +17,17 @@
       "sha256": "5ad2cec7578816e5d936c37c6907ee91687ee5b71ac0f0bc6ae89a230cda534d",
       "note": "Live keyless probe of GET /v1/direct_api_call (USDC holders, chain 1, 2026-07-28). Fixture source for the token.holders contract test, and the evidence that holder rows carry vendor free text in metadata.tags."
     },
+    "docs/onchain-analytics/raw/blockscout-instance-config-2026-08-11.json": {
+      "sha256": "985d737cc4e74effea812b7cf50f08560a4015fc4fa3a6352fb03821eb034a56",
+      "note": "L-12 — live keyless GET https://api.blockscout.com/api/json/config (2026-08-11). The VENDOR document behind the per-chain instance list in the issue: 100 chains under two disagreeing fields, `chains[id]` (what the PRO facade proxies to) and `chains_metadata[id].explorers[].hostedBy` (who actually runs the instance). The 26/24 first-party/third-party split and the 7 chains where the two fields name different explorers are read off it, and reading the wrong field silently routes Gnosis and Scroll at Etherscan-family hosts that do not speak /api/v2. Pinned because an egress decision over 24 third-party domains rests on which field was read."
+    },
     "docs/onchain-analytics/raw/blockscout-labeled-2026-07-28.json": {
       "sha256": "dbc126a08d9b227ef5ca852024e08618c5a5096c8a94d47ce9643442a3c4c944",
       "note": "Live keyless probe of GET /v1/get_address_info (Binance Hot Wallet, chain 1, 2026-07-28). The address WITH labels: proves they live at data.metadata.tags[], not basic_info.metadata/name, both of which are null even here."
+    },
+    "docs/onchain-analytics/raw/blockscout-per-instance-probe-2026-08-11.json": {
+      "sha256": "d2ca140bcf8532d2de64f294db7a10fbf26f988972b20b24f7dab35fe0e2bcc8",
+      "note": "L-12 — OUR measurement of the instances the config file above names (2026-08-11): a keyless /api/v2/stats probe of all 50 hosts, and the decisive one, token.holders on five chains through the public instance against the same path through the PRO facade. Both routes fail and succeed together, and a warm instance made the facade fast on arbitrum seconds later — so the two share a backend index and the per-instance route is not an escape from the latency. That is what refutes the issue's fix-path item 2; re-recording it silently would turn a refutation back into an open option."
     },
     "docs/onchain-analytics/raw/btc-crosscheck-plaintext-2026-07-29.json": {
       "sha256": "c0589d9a0122668e46887468da9ccae26fe1c79653b93419516333d616b97872",
@@ -55,7 +63,7 @@
     },
     "packages/core/test/fixtures/defillama/hacks-and-catalog.json": {
       "sha256": "a1c83935d64284c82205457dbe4f82b4cafba7b0ce4acfbcc80fbea8662e1d67",
-      "note": "WI-52 — verbatim rows from the live keyless GET https://api.llama.fi/hacks and GET https://api.llama.fi/protocols, captured 2026-08-12. Pinned because the contract tests read the join keys and the four-way \"no incidents\" distinction straight out of it: an edit here would silently change what the measured 353/357 and 97/97 join rates in hacks-and-catalog.evidence.md refer to."
+      "note": "WI-52 — verbatim rows from the live keyless GET https://api.llama.fi/hacks and GET https://api.llama.fi/protocols, captured 2026-08-11. Pinned because the contract tests read the join keys and the four-way \"no incidents\" distinction straight out of it: an edit here would silently change what the measured 353/357 and 97/97 join rates in hacks-and-catalog.evidence.md refer to."
     },
     "packages/core/test/fixtures/nansen/account.free.json": {
       "sha256": "c31e0ae2f9c801f343f7c7199875c71c8200cc2214133c5921cd12eccf38bb77",

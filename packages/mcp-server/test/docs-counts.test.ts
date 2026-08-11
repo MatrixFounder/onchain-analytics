@@ -280,7 +280,7 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       {
         file: 'packages/mcp-server/.AGENTS.md',
         from: /\*\*The \w+ tools today:\*\*/,
-        // Moved with the sentence on 2026-08-12: the list is in REGISTRATION order and now
+        // Moved with the sentence on 2026-08-11: the list is in REGISTRATION order and now
         // says so. The anchor is literal on purpose — a stale one silently checks nothing, which
         // is why this gate fails loudly on a reword instead of quietly passing.
         to: /— in REGISTRATION order/,

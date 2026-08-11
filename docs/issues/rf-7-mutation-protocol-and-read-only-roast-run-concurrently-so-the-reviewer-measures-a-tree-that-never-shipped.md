@@ -2,8 +2,10 @@
 id: RF-7
 type: defect
 severity: SEV-3
-status: open
+status: fixed
 opened_at: 2026-08-06
+resolved_at: 2026-08-11
+resolved_by: 'agentic-development TASK 105 (v3.29.0), options 1+3'
 slug: rf-7-mutation-protocol-and-read-only-roast-run-concurrently-so-the-reviewer-measures-a-tree-that-never-shipped
 component: 'agentic-development: vdd-enhanced.md §4, skill-parallel-orchestration §2.4'
 source: 'vdd-03-develop Roast, задача 013-3 (T-013)'
@@ -75,3 +77,33 @@ HIGH на артефакт, а оркестратор потратил раун�
 **Related.** [WI-6](../backlog/wi-6-orchestrator-applied-fixes-need-their-own-review-pass.md) —
 тоже про то, что действия оркестратора не проходят ревью, но там предмет — **правки**, здесь —
 **временные мутации**, которые как раз откатываются и потому в диффе не видны вовсе.
+
+---
+
+> **Resolved 2026-08-11 — `agentic-development` TASK 105, released as v3.29.0.**
+> Operator selected **option 1** (ordering) and **option 3** (fingerprint). Both landed in
+> `skill-parallel-orchestration` **§2.4.1**, the new subsection of the contract this record names as
+> the site, and in 29 further places that read it.
+>
+> - **Freeze (option 1).** Orchestrator half, item 4: between the spawn of a round and the return of
+>   its last role, the caller writes nothing to the artifacts under review. Evidence mutations,
+>   applied fixes and reformats run before the spawn or after the last return.
+> - **Fingerprint (option 3).** Orchestrator half, item 5: a value over the artifacts under review,
+>   computed before the spawn, carried in the evidence block, recomputed at the round's return. The
+>   `git` form is
+>   `{ git rev-parse HEAD; git status --porcelain; git diff HEAD; } | shasum -a 256 | cut -c1-12`.
+>   A mismatch invalidates the round rather than annotating it.
+> - **One deviation from option 3 as filed, and why.** The record asks the critic to verify the
+>   fingerprint on entry and exit. A critic's `tools:` line carries no Bash, so it can compute
+>   nothing — handing it the hash command is the defect §2.4 already forbids, measured at a
+>   600-second turn. The obligation is split instead: the **role quotes** the value it was given,
+>   the **caller compares** before and after. The comparison is then anchored to what the role
+>   actually saw.
+> - **Acceptance.** `tests/test_frozen_tree_contract.py` (7 tests) pins the fingerprint line at all
+>   9 caller-side briefs, the quote instruction at all 20 role definitions, and enumerates the
+>   contract's carriers from disk so a site authored later fails rather than going uncovered. The
+>   record's "deliberate mid-round edit must be named" is the executed mutation: removing the line
+>   from one brief, handing `shasum` to `critic-security`, and adding an undeclared workflow each
+>   turn a different assertion red.
+> - **Option 2 (isolation in a worktree) was not built** — this record proposes it only if
+>   serialization becomes expensive, and that cost is not yet measured.

@@ -61,7 +61,7 @@ defect in the gate rather than as evidence.
 2. **The gate misreports it.** The eval classified this as `⏳ rate-limited` and advised "raise
    ONCHAIN_EVAL_CG_THROTTLE_MS or rerun" — a CoinGecko knob that cannot affect a Blockscout timeout.
    Filed separately as [RF-9](rf-9-the-eval-reports-a-transport-timeout-as-rate-limited-and-names-an-unrelated-knob.md)
-   and **fixed 2026-08-12**: a timeout is no longer reported as `rate-limited`, which also made this
+   and **fixed 2026-08-11**: a timeout is no longer reported as `rate-limited`, which also made this
    row acknowledgeable for the first time. Noted here because it is why the row was easy to dismiss.
 
 **Reproduction.**
@@ -84,8 +84,8 @@ cd packages/mcp-server && ONCHAIN_EVAL_CHAINS=base node eval/run.mjs
 `topHolders` array (10 credits, paid); `onchain_token_risk` carries `totalHolders` (6 credits). On
 `base` specifically there is no free workaround while the facade is this slow.
 
-**Re-measured 2026-08-12 (24 hours later, 15 s ceiling, valid key). It has NOT recovered, and the
-shape held exactly.**
+**Re-measured 2026-08-11, about four hours later (15 s ceiling, valid key). It had NOT recovered,
+and the shape held exactly.**
 
 ```
 ethereum  200 3.09s          control — /api/v2/stats, same host + key: 0.77s
@@ -95,24 +95,91 @@ arbitrum  no answer in 15s
 polygon   no answer in 15s
 ```
 
-Fix-path item 1 said "if base recovers, this closes itself". It did not: the same three chains are
-still unusable a day later, while the control endpoint on the same host with the same key answers in
-under a second. So the latency is still the holders ENDPOINT's, not the facade's and not ours, and
-the acknowledgement stays. Ethereum's 3.09 s is comfortably inside the 5 s hop ceiling on this
-sample and does not retire the "marginal, not healthy" reading — the 5.14 / 6.67 / 7.33 s samples
-that produced it were cold-entry costs, and a warm sample cannot disprove a cold one.
+Fix-path item 1 said "if base recovers, this closes itself". It had not: the same three chains were
+still unusable, while the control endpoint on the same host with the same key answers in under a
+second. So the latency is the holders ENDPOINT's, not the facade's and not ours, and the
+acknowledgement stays. Ethereum's 3.09 s is comfortably inside the 5 s hop ceiling on this sample
+and does not retire the "marginal, not healthy" reading — the 5.14 / 6.67 / 7.33 s samples that
+produced it were cold-entry costs, and a warm sample cannot disprove a cold one.
 
-**Fix path.** Nothing to fix in our code — the ceiling is doing its job. Two decisions belong to the
-owner, and both need a measurement first rather than a guess:
+**All three samples so far are from ONE day (2026-08-11), hours apart — not a multi-day series.**
+An earlier revision of this paragraph said "a day later" and it was wrong; the dates were corrected
+2026-08-11. Persistence of this failure across days is therefore still unmeasured, which is exactly
+what fix-path item 1 asks for.
 
-1. Re-measure periodically. If base recovers, this closes itself; if ethereum's own latency keeps
-   drifting toward 5 s, the hop ceiling is the number to revisit — and raising it is not free, since
-   `REQUEST_TIMEOUT_MS` exists to keep the free-first `entity.labels` walk from starving the paid
-   source behind it.
-2. Consider the per-chain public instances as a second adapter for this capability
-   (`base.blockscout.com` answered keyless in earlier probing). That is an egress decision — 50
-   hosts, 24 of them third-party domains — and is recorded here only so the option is not
-   rediscovered from scratch.
+## Per-chain public instances measured, and they are not an escape (2026-08-11)
+
+Fix-path item 2 below proposed the keyless per-chain instances as a second adapter. **Measured, and
+refuted.** Evidence:
+[`blockscout-instance-config-2026-08-11.json`](../onchain-analytics/raw/blockscout-instance-config-2026-08-11.json)
+(the vendor document) and
+[`blockscout-per-instance-probe-2026-08-11.json`](../onchain-analytics/raw/blockscout-per-instance-probe-2026-08-11.json)
+(our measurement), both pinned in `docs/provenance.json`.
+
+**The route works — that was never the doubt.** All 50 instances answered a keyless
+`GET /api/v2/stats` with HTTP 200 in 312–1340 ms, including the 8 that Blockscout does not operate
+(Alchemy ×3, Gelato RaaS ×4, self-hosted ×1).
+
+**But holders is slow on the instance too, in the same places.** `GET /api/v2/tokens/<usdc>/holders`
+on the public instance, against the same path through the PRO facade, 15 s ceiling:
+
+```
+                per-instance (keyless)              facade (keyed)
+ethereum   cold 14.86s   → warm  0.96s  ok          2.32s  ok
+gnosis     cold  5.52s   → warm  0.60s  ok          1.24s  ok
+arbitrum   cold TIMEOUT  → warm  1.82s  ok          2.05s  ok
+base       cold TIMEOUT  → warm TIMEOUT  --         TIMEOUT --
+polygon    cold TIMEOUT  → warm TIMEOUT  --         TIMEOUT --
+```
+
+The two routes fail and succeed **together** on all five chains, with the same cold-entry shape. And
+the warm state is **shared**: in the same run, arbitrum answered the facade in 2.05 s immediately
+after the per-instance call had warmed it, having timed out on the facade in the earlier sample. So
+the facade and the public instance read one backend index, and the latency belongs to Blockscout's
+per-chain holders index — not to the facade, not to auth, and not to us. A second adapter would buy
+the same two timeouts from a different hostname.
+
+**What the option would have cost, recorded so the arithmetic is not redone.** The host list itself
+is not copied here — it lives in `statsProbe.rows` of the probe evidence, one row per chain, because
+a hand-kept copy of a vendor list is the drift this project keeps generating out of its code. Of our
+53 covered mainnets, 50 have an instance and 3 have none at all (Shimmer EVM 148, EDU Chain 41923,
+ICB Network 73115 — chains the facade serves and a per-instance adapter could not). The 50 split 26 on
+`*.blockscout.com` and **24 on third-party domains** (24 distinct registrable domains), 8 of which
+are operated by someone other than Blockscout. That is the SSRF allowlist this would have to grow
+into, for a route the vendor has already moved to its "API Archive" with an announced (unenforced)
+sunset of 2026-07-01.
+
+**And the host list has an L-10 trap in it.** The vendor publishes the instance twice and the two
+fields disagree on 7 of the 50 chains — `chains[id]` (what the facade proxies to) against
+`chains_metadata[id].explorers[]` (who runs it):
+
+| chain | `chains[id]` | `explorers[]` |
+| --- | --- | --- |
+| 100 Gnosis | gnosisscan.io | gnosis.blockscout.com |
+| 177 HashKey | hsk.blockscout.com | hashkey.blockscout.com |
+| 484 BlockSurety | camp.cloud.blockscout.com | blocksurety.net |
+| 2288 Moca Chain | scan.mocachain.org | mocachain.blockscout.com |
+| 2366 KiteAI | www.kitescan.ai | kitescan.ai |
+| 7000 ZetaChain | zetascan.com | zetachain.blockscout.com |
+| 534352 Scroll | scrollscan.com | scroll.blockscout.com |
+
+Taking the first field routes Gnosis and Scroll at Etherscan-family explorers with a different API
+and their own keys, and yields 27 third-party hosts instead of 24. Two vocabularies for one thing,
+one of them silently wrong — the same shape as L-10, and the reason the count above is derived from
+evidence rather than written down as a number.
+
+**Fix path.** Nothing to fix in our code — the ceiling is doing its job. One decision is left with
+the owner, and it needs a measurement first rather than a guess:
+
+1. Re-measure periodically, **and on a different day** — every sample so far is from 2026-08-11. If
+   base recovers, this closes itself; if ethereum's own latency keeps drifting toward 5 s, the hop
+   ceiling is the number to revisit — and raising it is not free, since `REQUEST_TIMEOUT_MS` exists
+   to keep the free-first `entity.labels` walk from starving the paid source behind it.
+2. ~~Consider the per-chain public instances as a second adapter for this capability.~~ **CLOSED
+   2026-08-11 by measurement** — see the section above. The instances answer, but not for holders on
+   the chains that matter: base and polygon time out on the public instance exactly as they do on
+   the facade, because the two share one backend index. The option would have cost 24 third-party
+   domains of egress on a route the vendor has archived, and bought nothing.
 
 Until then this is **acknowledged in `eval/acknowledged.json`**, so it stays named on every run
 without blocking unrelated work — the project's own rule for a gate failure with no fix of ours.

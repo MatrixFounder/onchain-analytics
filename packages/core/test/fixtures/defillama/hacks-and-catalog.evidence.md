@@ -1,6 +1,6 @@
 # `hacks-and-catalog.json` — evidence
 
-- captured: 2026-08-12
+- captured: 2026-08-11
 - sources: `GET https://api.llama.fi/hacks` and `GET https://api.llama.fi/protocols`, both keyless
 - issue: [WI-52](../../../../../docs/backlog/wi-52-no-protocol-risk-signals.md)
 
@@ -17,27 +17,27 @@ reads; no value is rewritten.
 
 ## The joins, measured on the FULL documents (not on this slice)
 
-| join | matched |
-| --- | --- |
-| `hack.defillamaId` → `protocol.id` | 353 of 357 records that carry an id (99%) |
-| `hack.parentProtocolId` → `protocol.parentProtocol` | 97 of 97 (100%) |
+| join                                                | matched                                   |
+| --------------------------------------------------- | ----------------------------------------- |
+| `hack.defillamaId` → `protocol.id`                  | 353 of 357 records that carry an id (99%) |
+| `hack.parentProtocolId` → `protocol.parentProtocol` | 97 of 97 (100%)                           |
 
 Neither key was inferred. `cmcId`-style guessing is not available here and was not attempted: the
 vendor publishes both identifiers on both documents, and they were compared directly.
 
 ## Feed shape, at capture time
 
-| fact | value |
-| --- | --- |
-| records | 621 |
-| date range | 2016-06-17 → 2026-08-09 |
-| age of the newest record | 2.5 days |
-| records in the last 365 days | 219 |
-| records in the last 90 days | 99 |
-| records with `defillamaId` | 357 of 621 |
-| records with **no** protocol id | 264 of 621 |
-| distinct protocols affected | 299 |
-| total stated loss | $16.9 B |
+| fact                            | value                   |
+| ------------------------------- | ----------------------- |
+| records                         | 621                     |
+| date range                      | 2016-06-17 → 2026-08-09 |
+| age of the newest record        | 2.5 days                |
+| records in the last 365 days    | 219                     |
+| records in the last 90 days     | 99                      |
+| records with `defillamaId`      | 357 of 621              |
+| records with **no** protocol id | 264 of 621              |
+| distinct protocols affected     | 299                     |
+| total stated loss               | $16.9 B                 |
 
 Field fill rates ran from 621/621 (`date`, `name`, `targetType`, `bridgeHack`) down to 29/621
 (`returnedFunds`) — which is why every field but `date`/`name` is nullable in the canonical shape.

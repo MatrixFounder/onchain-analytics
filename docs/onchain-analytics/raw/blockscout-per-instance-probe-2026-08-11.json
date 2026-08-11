@@ -1,0 +1,595 @@
+{
+  "$comment": [
+    "L-12 — measurements taken 2026-08-11 (17:0x-17:1x MSK) to answer whether the per-chain public",
+    "Blockscout instances are a usable second route for token.holders (the issue's fix-path item 2).",
+    "Companion to blockscout-instance-config-2026-08-11.json, which is the VENDOR document this",
+    "host list was derived from; this file is OUR measurement of it. Both are pinned in",
+    "docs/provenance.json because the issue's conclusion rests on them.",
+    "",
+    "instanceHosts[]: one row per mainnet chain id our adapter covers (chains.ts, 53 ids), with the",
+    "instance host taken from chains_metadata[id].explorers[] — NOT from chains[id]. The two vendor",
+    "fields disagree on 7 chains and the disagreement is not cosmetic: chains[100] is gnosisscan.io,",
+    "an Etherscan-family explorer with a different API and its own key, while explorers[] gives",
+    "gnosis.blockscout.com. Reading the wrong field yields 27 third-party hosts instead of 24 and",
+    "two hosts that do not speak /api/v2 at all. Same class as L-10.",
+    "",
+    "statsProbe: one keyless GET https://<host>/api/v2/stats per host, 8s ceiling, sequential.",
+    "holdersProbe: GET /api/v2/tokens/<usdc>/holders on the instance (keyless) against the same",
+    "path through the PRO facade (keyed), 15s ceiling, cold then warm. This is the decisive one."
+  ],
+  "capturedAt": "2026-08-11",
+  "chainsCovered": 53,
+  "chainsWithAnInstance": 50,
+  "chainsWithNoInstance": [
+    {
+      "chain_id": 148,
+      "name": "Shimmer EVM Mainnet"
+    },
+    {
+      "chain_id": 41923,
+      "name": "EDU Chain"
+    },
+    {
+      "chain_id": 73115,
+      "name": "ICB Network"
+    }
+  ],
+  "hostSplit": {
+    "onBlockscoutCom": 26,
+    "onOtherDomains": 24,
+    "distinctRegistrableDomains": 24
+  },
+  "hostedBySplit": {
+    "blockscout": 42,
+    "gelato-raas": 4,
+    "alchemy": 3,
+    "self": 1
+  },
+  "configUrlVsExplorersDisagreement": [
+    {
+      "chain_id": 100,
+      "chainsField": "gnosisscan.io",
+      "explorersField": "gnosis.blockscout.com"
+    },
+    {
+      "chain_id": 177,
+      "chainsField": "hsk.blockscout.com",
+      "explorersField": "hashkey.blockscout.com"
+    },
+    {
+      "chain_id": 484,
+      "chainsField": "camp.cloud.blockscout.com",
+      "explorersField": "blocksurety.net"
+    },
+    {
+      "chain_id": 2288,
+      "chainsField": "scan.mocachain.org",
+      "explorersField": "mocachain.blockscout.com"
+    },
+    {
+      "chain_id": 2366,
+      "chainsField": "www.kitescan.ai",
+      "explorersField": "kitescan.ai"
+    },
+    {
+      "chain_id": 7000,
+      "chainsField": "zetascan.com",
+      "explorersField": "zetachain.blockscout.com"
+    },
+    {
+      "chain_id": 534352,
+      "chainsField": "scrollscan.com",
+      "explorersField": "scroll.blockscout.com"
+    }
+  ],
+  "statsProbe": {
+    "request": "GET https://<host>/api/v2/stats, no auth header, 8s ceiling",
+    "answered": 50,
+    "of": 50,
+    "latencyMsRange": [
+      312,
+      1340
+    ],
+    "rows": [
+      {
+        "chain_id": 1,
+        "name": "Ethereum",
+        "host": "eth.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 390
+      },
+      {
+        "chain_id": 10,
+        "name": "OP Mainnet",
+        "host": "explorer.optimism.io",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 359
+      },
+      {
+        "chain_id": 30,
+        "name": "Rootstock",
+        "host": "rootstock.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 349
+      },
+      {
+        "chain_id": 61,
+        "name": "Ethereum Classic",
+        "host": "etc.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 312
+      },
+      {
+        "chain_id": 100,
+        "name": "Gnosis",
+        "host": "gnosis.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 623
+      },
+      {
+        "chain_id": 109,
+        "name": "Shibarium",
+        "host": "shibariumscan.io",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 398
+      },
+      {
+        "chain_id": 122,
+        "name": "Fuse",
+        "host": "explorer.fuse.io",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 481
+      },
+      {
+        "chain_id": 130,
+        "name": "Unichain",
+        "host": "unichain.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 369
+      },
+      {
+        "chain_id": 137,
+        "name": "Polygon PoS",
+        "host": "polygon.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 1340
+      },
+      {
+        "chain_id": 177,
+        "name": "HashKey",
+        "host": "hashkey.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 762
+      },
+      {
+        "chain_id": 239,
+        "name": "TAC Mainnet",
+        "host": "explorer.tac.build",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 437
+      },
+      {
+        "chain_id": 314,
+        "name": "Filecoin Virtual Machine",
+        "host": "filecoin.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 387
+      },
+      {
+        "chain_id": 324,
+        "name": "ZKsync Era",
+        "host": "zksync.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 333
+      },
+      {
+        "chain_id": 360,
+        "name": "Shape",
+        "host": "shapescan.xyz",
+        "hostedBy": "alchemy",
+        "status": 200,
+        "ms": 422
+      },
+      {
+        "chain_id": 480,
+        "name": "World Chain",
+        "host": "worldchain-mainnet.explorer.alchemy.com",
+        "hostedBy": "alchemy",
+        "status": 200,
+        "ms": 399
+      },
+      {
+        "chain_id": 484,
+        "name": "BlockSurety",
+        "host": "blocksurety.net",
+        "hostedBy": "self",
+        "status": 200,
+        "ms": 333
+      },
+      {
+        "chain_id": 488,
+        "name": "BXN",
+        "host": "blackfortscan.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 430
+      },
+      {
+        "chain_id": 592,
+        "name": "Astar",
+        "host": "astar.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 419
+      },
+      {
+        "chain_id": 698,
+        "name": "Matchain",
+        "host": "matchscan.io",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 429
+      },
+      {
+        "chain_id": 714,
+        "name": "Eden",
+        "host": "eden.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 373
+      },
+      {
+        "chain_id": 747,
+        "name": "Flow Mainnet",
+        "host": "evm.flow.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 398
+      },
+      {
+        "chain_id": 869,
+        "name": "World Mobile",
+        "host": "explorer.worldmobile.io",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 402
+      },
+      {
+        "chain_id": 1135,
+        "name": "Lisk ",
+        "host": "blockscout.lisk.com",
+        "hostedBy": "gelato-raas",
+        "status": 200,
+        "ms": 524
+      },
+      {
+        "chain_id": 1514,
+        "name": "DATA Network",
+        "host": "www.datanetscan.io",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 979
+      },
+      {
+        "chain_id": 1729,
+        "name": "Reya",
+        "host": "explorer.reya.network",
+        "hostedBy": "gelato-raas",
+        "status": 200,
+        "ms": 457
+      },
+      {
+        "chain_id": 1829,
+        "name": "Playnance Playblock",
+        "host": "explorer.playblock.io",
+        "hostedBy": "gelato-raas",
+        "status": 200,
+        "ms": 456
+      },
+      {
+        "chain_id": 1868,
+        "name": "Soneium",
+        "host": "soneium.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 375
+      },
+      {
+        "chain_id": 1890,
+        "name": "LightLink Phoenix Mainnet",
+        "host": "phoenix.lightlink.io",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 481
+      },
+      {
+        "chain_id": 2288,
+        "name": "Moca Chain",
+        "host": "mocachain.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 766
+      },
+      {
+        "chain_id": 2366,
+        "name": "KiteAI Mainnet",
+        "host": "kitescan.ai",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 856
+      },
+      {
+        "chain_id": 4326,
+        "name": "MegaETH",
+        "host": "megaeth.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 379
+      },
+      {
+        "chain_id": 4663,
+        "name": "Robinhood Chain",
+        "host": "robinhoodchain.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 445
+      },
+      {
+        "chain_id": 6497,
+        "name": "Awaji",
+        "host": "awaji.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 393
+      },
+      {
+        "chain_id": 7000,
+        "name": "ZetaChain",
+        "host": "zetachain.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 784
+      },
+      {
+        "chain_id": 8021,
+        "name": "Numine",
+        "host": "numine.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 486
+      },
+      {
+        "chain_id": 8453,
+        "name": "Base",
+        "host": "base.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 486
+      },
+      {
+        "chain_id": 8822,
+        "name": "IOTA EVM",
+        "host": "explorer.evm.iota.org",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 453
+      },
+      {
+        "chain_id": 13371,
+        "name": "Immutable zkEVM",
+        "host": "explorer.immutable.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 429
+      },
+      {
+        "chain_id": 32769,
+        "name": "Zilliqa 2 Mainnet",
+        "host": "zilliqa.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 343
+      },
+      {
+        "chain_id": 34443,
+        "name": "Mode",
+        "host": "explorer.mode.network",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 584
+      },
+      {
+        "chain_id": 42161,
+        "name": "Arbitrum One Nitro",
+        "host": "arbitrum.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 337
+      },
+      {
+        "chain_id": 42170,
+        "name": "Arbitrum Nova",
+        "host": "arbitrum-nova.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 350
+      },
+      {
+        "chain_id": 42220,
+        "name": "Celo",
+        "host": "celo.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 383
+      },
+      {
+        "chain_id": 42793,
+        "name": "Etherlink",
+        "host": "explorer.etherlink.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 388
+      },
+      {
+        "chain_id": 57073,
+        "name": "Ink",
+        "host": "explorer.inkonchain.com",
+        "hostedBy": "gelato-raas",
+        "status": 200,
+        "ms": 366
+      },
+      {
+        "chain_id": 102030,
+        "name": "Creditcoin",
+        "host": "creditcoin.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 378
+      },
+      {
+        "chain_id": 534352,
+        "name": "Scroll",
+        "host": "scroll.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 734
+      },
+      {
+        "chain_id": 612055,
+        "name": "Cross Mainnet",
+        "host": "www.crossscan.io",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 434
+      },
+      {
+        "chain_id": 685689,
+        "name": "Gensyn",
+        "host": "gensyn-mainnet.explorer.alchemy.com",
+        "hostedBy": "alchemy",
+        "status": 200,
+        "ms": 560
+      },
+      {
+        "chain_id": 245022934,
+        "name": "Neon",
+        "host": "neon.blockscout.com",
+        "hostedBy": "blockscout",
+        "status": 200,
+        "ms": 370
+      }
+    ]
+  },
+  "holdersProbe": {
+    "request": {
+      "instance": "GET https://<host>/api/v2/tokens/<usdc>/holders, no auth header",
+      "facade": "GET https://mcp.blockscout.com/v1/direct_api_call?chain_id=<id>&endpoint_path=/api/v2/tokens/<usdc>/holders, Blockscout-MCP-Pro-Api-Key header",
+      "ceilingMs": 15000
+    },
+    "runs": [
+      {
+        "label": "run 1 — instances only, no facade call made",
+        "rows": [
+          {
+            "chain": "ethereum",
+            "host": "eth.blockscout.com",
+            "instanceCold": "TIMEOUT 15008ms",
+            "instanceWarm": "200 2278ms items=50"
+          },
+          {
+            "chain": "base",
+            "host": "base.blockscout.com",
+            "instanceCold": "TIMEOUT 15003ms",
+            "instanceWarm": "TIMEOUT 15002ms"
+          },
+          {
+            "chain": "arbitrum",
+            "host": "arbitrum.blockscout.com",
+            "instanceCold": "TIMEOUT 15004ms",
+            "instanceWarm": "200 10016ms items=50"
+          },
+          {
+            "chain": "polygon",
+            "host": "polygon.blockscout.com",
+            "instanceCold": "TIMEOUT 15003ms",
+            "instanceWarm": "TIMEOUT 15004ms"
+          },
+          {
+            "chain": "gnosis",
+            "host": "gnosis.blockscout.com",
+            "instanceCold": "200 2141ms items=50",
+            "instanceWarm": "200 387ms items=50"
+          }
+        ]
+      },
+      {
+        "label": "run 2 — same script minutes later, with the facade control",
+        "rows": [
+          {
+            "chain": "ethereum",
+            "host": "eth.blockscout.com",
+            "instanceCold": "200 14863ms items=50",
+            "instanceWarm": "200 959ms items=50",
+            "facade": "200 2320ms"
+          },
+          {
+            "chain": "base",
+            "host": "base.blockscout.com",
+            "instanceCold": "TIMEOUT 15002ms",
+            "instanceWarm": "TIMEOUT 15002ms",
+            "facade": "TIMEOUT 15006ms"
+          },
+          {
+            "chain": "arbitrum",
+            "host": "arbitrum.blockscout.com",
+            "instanceCold": "TIMEOUT 15004ms",
+            "instanceWarm": "200 1824ms items=50",
+            "facade": "200 2048ms"
+          },
+          {
+            "chain": "polygon",
+            "host": "polygon.blockscout.com",
+            "instanceCold": "TIMEOUT 15003ms",
+            "instanceWarm": "TIMEOUT 15002ms",
+            "facade": "TIMEOUT 15003ms"
+          },
+          {
+            "chain": "gnosis",
+            "host": "gnosis.blockscout.com",
+            "instanceCold": "200 5524ms items=50",
+            "instanceWarm": "200 600ms items=50",
+            "facade": "200 1243ms"
+          }
+        ]
+      }
+    ],
+    "tokens": {
+      "ethereum": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "arbitrum": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "polygon": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "gnosis": "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83"
+    },
+    "reading": [
+      "The two routes fail and succeed TOGETHER on all five chains: base and polygon answer neither",
+      "route inside 15s; ethereum, arbitrum and gnosis cost seconds cold and about a second warm on",
+      "both. In run 2 arbitrum answered the facade in 2048ms right after the instance had warmed it,",
+      "having timed out on the facade in the previous session's sample — so the warm state is SHARED.",
+      "Conclusion: the latency belongs to Blockscout's per-chain holders index, not to the PRO",
+      "facade, and the per-instance route is not an escape from it. L-12 fix-path item 2 is refuted."
+    ]
+  }
+}

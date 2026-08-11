@@ -27,12 +27,12 @@
   "acknowledged": {
     "base/token.holders": {
       "issue": "L-12",
-      "since": "2026-08-12",
-      "why": "Blockscout's holders endpoint does not answer for base within our 5s hop ceiling. Re-measured 2026-08-12 at a 15s ceiling: still no answer, while /api/v2/stats on the same host with the same key returns in 0.77s. Vendor-side latency on this ENDPOINT; the ceiling is doing its job and raising it is forbidden by the issue's own Do-not."
+      "since": "2026-08-11",
+      "why": "Blockscout's holders endpoint does not answer for base within our 5s hop ceiling. Re-measured 2026-08-11 at a 15s ceiling: still no answer, while /api/v2/stats on the same host with the same key returns in 0.77s. Vendor-side latency on this ENDPOINT; the ceiling is doing its job and raising it is forbidden by the issue's own Do-not. There is also no second route to switch to: measured the same day, the keyless public instance base.blockscout.com times out on the same request, and a warm instance makes the facade fast on arbitrum seconds later — one backend index behind both."
     },
     "polygon/token.holders": {
       "issue": "L-12",
-      "since": "2026-08-12",
+      "since": "2026-08-11",
       "why": "Same endpoint, same measurement (arbitrum is in the same class but is not in the eval chain set). Named here rather than hidden: this row became acknowledgeable only when RF-9 stopped reporting a transport timeout as `rate-limited`, which had kept an open vendor failure out of the failure set entirely."
     }
   }
