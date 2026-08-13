@@ -40,6 +40,10 @@
 # a fresh clone could still resolve — which these, resolving into ~/ExternalTools, cannot.
 /.n8n-skills
 
+# Agent scratch: register scans, reference dumps and diffs produced while authoring artifacts.
+# The artifacts they check are versioned; these are the working notes behind them.
+/.agent/tmp
+
 # OS / editor cruft
 .DS_Store
 *.swp

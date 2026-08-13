@@ -9,6 +9,10 @@ Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§
 DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
 BTC-supply tool with TASK-009 (§5.1.5).
 
+**One further tool is designed and not registered.** `onchain_pool_info` resolves `pool.info`, and
+its contract is §5.1.7 (T-014, R-21.1). Every present-tense count in this section states the
+registered inventory, and none of them moves until that tool lands.
+
 **The `chain` parameter, stated once.** Seventeen of the twenty tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
 resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
@@ -169,11 +173,20 @@ Two consequences a client must design around:
 The read does **not** go through `CapabilityRegistry.resolve()`'s return type as a CREDIT figure:
 that type is shared by all twelve adapters and must not grow a budget field for the sake of one paid
 provider. The three tool handlers instead read `budgetStore.getUsage(<paid id>,
-dayBucketMs(Date.now()))` with a **separate** SQLite SELECT after `registry.resolve()` has returned —
-purely for display, never part of the gate decision (which has already happened inside
+dayBucketMs(Date.now()))` in a **separate** query after `registry.resolve()` has returned — purely
+for display, never part of the gate decision (which has already happened inside
 `nansen.fetch()`, §3.2). `BudgetStore` is injected into those three handlers the same way `registry`
 is. Both degradation paths — no injected store, or a store that throws — resolve to `undefined`:
 visibility must never turn an otherwise successful call into an error.
+
+**This read names no storage engine.** `BudgetStore` has one implementation per storage axis —
+`SqliteBudgetStore` or `PgBudgetStore` (`system-architecture.md` §3.4.8). Its methods already return
+promises (`packages/core/src/cache/budget-store.ts:63`, `checkAndReserve(`), so the handler above is
+unchanged by the axis the profile selects.
+
+**T-014 adds a second condition and keeps this one.** `_meta.budget` reaches only a principal whose
+role is `admin` (R-6.1). The rule that governs every `_meta` field, present and future, is stated
+once in §5.4.4.
 
 **Which paid id (T-012 012-3, corrected by adversarial cycle 2's F-4).** 012-3 replaced the
 hardcoded `getUsage('nansen')` with a reading keyed on the ANSWERING provider
@@ -418,7 +431,9 @@ the reviewed data file rather than being computed at run time; and a reference s
 answer yields `no-probe`, **never** a provider failure — an eval that scores its own missing test
 data as a vendor defect is lying, and a report that cries wolf stops being read.
 
-**The `chain` parameter contract (R-50), shared by all eleven chain-taking tools:**
+**The `chain` parameter contract (R-50), shared by all seventeen chain-taking tools** — eleven at
+TASK-006, re-measured 2026-08-13: of the 20 tool modules under `packages/mcp-server/src/tools/`,
+17 import `ChainInputSchema` (the directory holds 26 files; 6 are shared helpers, not tools)**:**
 
 ```ts
 // One shared import; zero chain literals anywhere in mcp-server:
@@ -471,7 +486,7 @@ aliases, not as a transitional mode. Response shapes do not change: tools still 
 tool's answer groups by `metric`, never a flat point array.** Modelled on `onchain_dex_volume`
 (§5.1.4) for the input/window idiom, but the OUTPUT shape is grouped, not flat, because the merged
 `series` can legitimately carry more than one metric under one capability name (§4.2.3-adjacent
-finding, `docs/TASK.md` §1.3): `privacy.shielded_pool.history`'s two adapters write two DIFFERENT
+finding, `docs/tasks/task-013-series-merge-and-history-tool.md` §1.3): `privacy.shielded_pool.history`'s two adapters write two DIFFERENT
 metrics (`platform-explorer` → `shielded_pool_shield_amount`, an inflow; `pg-history` → the n8n
 snapshotter's `shielded_pool_balance_credits`, a balance) under the same capability name, so a flat
 array would silently read as one series when it is two. `platform.metrics.history` is the case the
@@ -591,6 +606,233 @@ Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built d
   by UC-12/UC-19/UC-21's compositions (a genuinely unreachable `pg-history`), never by a policy
   exclusion — R-171(e)'s field exists for both causes, but only one is reachable in shipped scope.
 
+**The counts inside §5.1.6 describe the tree T-013 was built on, not today's** (R-23.6). They name
+13 tools and 11 capability-bearing ones. Measured 2026-08-12: `toolSpecs` holds 20 entries and
+`Object.keys(capabilityManifests)` returns 26. The historical text stands unchanged; the current
+numbers stand beside it.
+
+#### 5.1.7 The pool tool (T-014, R-21.1) — DESIGNED, not registered
+
+`onchain_pool_info` takes one pool address and one chain. It answers with the addresses of the two
+tokens in that pool and the pool's reserves. It also answers with the pool's fee tier wherever that
+tier is derivable, under the rule stated below.
+
+**The gate this section satisfies is AC-29** — no manifest capability is left unresolved by every
+registered tool. Its comparison is stated below, under "AC-29's gate".
+
+**Why this tool exists.** `pool.info` is declared in the manifest and no registered tool resolves it
+(L-15, `docs/issues/l-15-pool-info-is-advertised-by-the-capability-manifest-and-no-tool-serves-it.md`).
+Owner decision `OQ-T014-F` selects variant 1: ship the tool.
+
+**The capability and its route both exist already, verified 2026-08-13.** The manifest declares the
+row (`packages/core/src/capability-manifest.ts:291`, `'pool.info': {`) and the routing table sends it
+to one adapter (`packages/core/src/providers.config.ts:33`,
+`{ capability: 'pool.info', adapterIds: ['dexscreener'] },`). The adapter declares it too
+(`packages/core/src/adapters/dexscreener/index.ts:155`,
+`capabilities: () => [{ id: 'pairs.active' }, { id: 'pool.info' }],`). This task adds a tool over an
+existing route, not a route.
+
+**Why the token ADDRESSES are the point.** WI-56's first link is symbol → contract address, and no
+registered tool serves it. `onchain_active_pairs` returns `pairAddress` and both token SYMBOLS,
+never a token address (`packages/core/src/types/pool.ts:15`,
+`baseTokenSymbol: z.string().max(64),`).
+
+```jsonc
+// onchain_pool_info — ONE pool, by address: its two token addresses, its reserves, and its fee
+// tier where derivable. DexScreener-backed, keyless, 0 credits. DESIGNED, not registered.
+// { chain: ChainInput, pairAddress: string (.max(64)) }
+// → {
+//     chain,              // OUR canonical slug, never the vendor's chainId
+//     resolved: boolean,  // false = this vendor knows no pool at that address on that chain
+//     pool: Pool | null,  // null exactly when resolved is false
+//     source: "dexscreener", fetchedAt
+//   }
+// The answer is the canonical `Pool` (§4.1), which T-014 grows by six OPTIONAL fields:
+//   baseTokenAddress, quoteTokenAddress   // what WI-56 needs
+//   reserveBase, reserveQuote             // token units, lossy — see below
+//   feeTierBps                            // derived by eth_call; absent where not derivable
+//   versionLabel                          // the vendor's "v2" | "v3" | "v4" | "CLMM" — NOT a fee
+```
+
+**The block above carries no capability anchor.** The anchor's gate refuses one naming a capability
+that no registered tool serves (`packages/mcp-server/test/docs-counts.test.ts:485`,
+`const stale = [...documented.values()]`). The anchor lands in the commit that registers the
+`ToolSpec` — the rule §5.1.6 states for the merged-series tool.
+
+**Naming the tool here obliges one companion edit.** `PLANNED_TOOL_NAMES`
+(`packages/mcp-server/test/tool-inventory-docs.test.ts:141`,
+`const PLANNED_TOOL_NAMES = new Map([`) must gain `onchain_pool_info` with the milestone that adds
+it. Measured 2026-08-13: without that entry the R-126 gate reports this document as naming a tool
+that does not exist. The entry leaves the map in the commit that registers the `ToolSpec` — the rule
+its T-013 entry already states.
+
+**Input validation reuses the shipped idiom.** `chain: ChainInputSchema`,
+`pairAddress: z.string().min(1).max(64)`, `.strict()`, and `isValidAddress` inside `superRefine` —
+the shape `WalletBalancesInputSchema` already carries above.
+
+**What the vendor publishes, measured 2026-08-13.** Probe:
+`GET https://api.dexscreener.com/latest/dex/pairs/{chainId}/{pairAddress}`, keyless, HTTP 200.
+
+- On the L-15 pool `0x2608B7c8Eb17e22CB95b7cD6f872993cf33a4CA1` (`berachain`) the response named
+  `baseToken.address` `0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58` (osBGT) and `quoteToken.address`
+  `0x118D2cEeE9785eaf70C15Cd74CD84c9f8c3EeC9a` (sWBERA).
+- Reserves arrive as `liquidity.base` and `liquidity.quote`, beside `liquidity.usd`.
+- The body carries no fee field. Its 16 keys: `chainId`, `dexId`, `url`, `pairAddress`, `labels`,
+  `baseToken`, `quoteToken`, `priceNative`, `priceUsd`, `txns`, `volume`, `priceChange`,
+  `liquidity`, `fdv`, `marketCap`, `pairCreatedAt`.
+- A 17th key, `info`, is optional and absent from that pool. It carries images and social links, and
+  it appears on 12 of the 60 rows of the two search fixtures.
+- An address with no pool on that chain answers HTTP 200 with `"pairs":null`.
+- An unknown chain segment answers HTTP 400 with an HTML body.
+
+**The unknown-pool case is carried by `resolved: false`, and `pool` is `null` there.**
+
+**Why.** The vendor answers HTTP 200 with `pairs: null` ⇒ an empty `Pool` rendered as success would
+read as a pool holding no tokens and no liquidity, which is the L-10 failure class.
+
+**Reserves are lossy, and the contract says so.** `liquidity.base` and `liquidity.quote` are JSON
+numbers the vendor has already rounded. `reserveBase`/`reserveQuote` are `number | null` and play
+the projection role `emissionBtc` plays beside `emissionRaw` (§5.1.5). An exact base-unit reading
+needs an on-chain call, which this tool does not make.
+
+**The fee tier is an OPTIONAL field with a declared derivation.** Owner decision, 2026-08-13,
+closing `OQ-T014-IF-3`. The rule: `feeTierBps` is populated where the derivation answers, absent
+where it does not, and never guessed.
+
+**The vendor publishes no fee.** Measured 2026-08-13: no fee field in the single-pool response
+above, and none in the repo's own search fixtures — 60 rows across
+`packages/core/test/fixtures/dexscreener/ethereum.json` and `solana.json`. `labels` carries the AMM
+version, not a fee.
+
+**The derivation is one `eth_call` of `fee()`, selector `0xddca3f43`.** Measured 2026-08-13 on three
+Kodiak V3 pools on `berachain`: 3000, 3000 and 500 — 0.3%, 0.3% and 0.05%.
+
+**A pool without that method answers with a typed refusal.**
+`0xEc5853504219Ef7754bf3d828A5fC92EAB883B08` (beraswap, V2-style) answered `execution reverted`,
+measured the same day.
+
+**Why.** A revert is distinguishable from a returned tier ⇒ "this pool declares no fee tier" never
+reaches the caller as a number.
+
+**The derivation costs two things, both named.**
+
+1. `eth_call` becomes a third method on `rpc-evm`. The adapter calls `eth_gasPrice`
+   (`packages/core/src/adapters/rpc-evm/index.ts:283`, `method: 'eth_gasPrice',`) and
+   `eth_getBalance` (`packages/core/src/adapters/rpc-evm/index.ts:298`,
+   `method: 'eth_getBalance',`) today, and no third method.
+2. The chain needs a curated `rpcHosts` entry. That column is populated only through human review
+   and a commit (`docs/architectures/security.md` §7.2.1 rule 1, R-56a).
+
+**Where the field is absent, per chain of the tool's three.**
+
+- `berachain` — absent. The chain carries no curated host
+  (`packages/core/src/chain/registry.data.json:5433`, `"rpcHosts": null,`), measured 2026-08-13.
+- `solana` — absent. `pool.info` is declared there, and `fee()` is an EVM ABI method: the chain's
+  family is `svm` (`packages/core/src/chain/registry.data.json:9596`, `"family": "svm",`).
+- `ethereum` — populated where the pool declares `fee()`. The chain carries two curated hosts
+  (`packages/core/src/chain/registry.data.json:22`, `"rpcHosts": [`).
+
+**R-21.1's fee-tier clause is satisfied by the derivation, not by the optional marker.**
+
+**Why.** An optional field with no declared derivation is absent on every route ⇒ the clause would
+pass with nothing measured, which is the L-10 failure class.
+
+**What the adapter does not produce today.** Five changes, each with the coordinate that must move.
+
+1. `fetch` ignores which capability it serves (`packages/core/src/adapters/dexscreener/index.ts:158`,
+   `_cap: string,`). It gains a branch for `pool.info`.
+2. The only URL it builds is the relevance search
+   (`packages/core/src/adapters/dexscreener/index.ts:165`, `/latest/dex/search?q=`). The `pool.info`
+   branch builds the single-pool path instead.
+3. `extractFetchArgs` reads `chain` and `limit`, and no address
+   (`packages/core/src/adapters/dexscreener/index.ts:114`, `function extractFetchArgs(`). Unbranched,
+   a call carrying `pairAddress` answers with a relevance page.
+4. The DTO projects neither token addresses nor per-side liquidity
+   (`packages/core/src/adapters/dexscreener/index.ts:79`, `baseToken?: { symbol?: unknown };`).
+5. `PoolSchema` is `.strict()` and declares none of the six fields
+   (`packages/core/src/types/pool.ts:8`, `export const PoolSchema = z`).
+
+**The SSRF allowlist needs no edit.** The new path is on the host the row already declares
+(`packages/core/src/providers.config.ts:224`, `hosts: ['api.dexscreener.com'],`), and `safeFetch`
+checks the host, not the path (§5.3).
+
+**The fee derivation adds no host either.** Its `eth_call` goes to the requested chain's own
+`rpcHosts`, which `rpc-evm` already reaches for its two present methods.
+
+**The vendor sends the addresses on the search route too.** Measured on the repo's fixtures:
+`baseToken.address` and `quoteToken.address` are present on 60 of 60 rows. The adapter therefore
+projects the new fields on both of its routes, and `onchain_active_pairs` starts answering with
+token addresses — WI-56's first link, at no extra call.
+
+**`shape` moves with the route.** The manifest classifies `pool.info` as `shape: 'set'` because both
+capabilities share one `normalize()` (`packages/core/src/capability-manifest.ts:291`,
+`'pool.info': {`). The address route answers with one pool, so the row becomes `shape: 'point'` and
+its AUDIT comment is rewritten rather than left contradicting the code. The registry treats `point`
+as unmergeable (`packages/core/src/adapters/registry.ts:581`, `manifest.shape !== 'point' &&`).
+
+**Coverage is three chains, and the coverage matrix is what says so.** `dexscreener` answers only
+where the registry holds an observed vendor chain id — `ethereum`, `berachain`, `solana`, 3 of 458
+chains, measured 2026-08-13 over `packages/core/src/chain/registry.data.json`
+(`"dexscreener": "ethereum",` at line 19). Any other chain is refused by §4.2.3's uncovered-pair
+message, never by the input schema.
+
+**Cache and deadline come from the existing manifest row, unchanged.**
+`packages/core/src/capability-manifest.ts:299` (`ttlSeconds: 300,`) and `:303`
+(`deadlineMs: 15_000,`). Token addresses do not move; the 300 s window bounds the reserve figures
+beside them.
+
+**The registering commit changes the frozen `tools/list` snapshot (AC-2, second arm).** Two entries
+move: the new tool is appended, and `onchain_active_pairs`'s `outputSchema` gains the six optional
+fields, because it embeds the same type (`packages/mcp-server/src/tools/active-pairs.ts:62`,
+`pairs: z.array(PoolSchema),`). All six fields are optional, and no existing field changes meaning.
+
+**Why the commit message must state it.** AC-2 accepts a snapshot edit only when the commit carries
+its justification ⇒ a regenerated snapshot with no stated reason is indistinguishable from RISK-3's
+unannounced per-principal tool filtering.
+
+**The rest of the registering commit is already enumerated in code.** `INVENTORY_CHANNELS`
+(`packages/mcp-server/test/inventory-channels.ts:36`,
+`export const INVENTORY_CHANNELS: readonly InventoryChannel[] = [`) lists eight gates a new tool
+must satisfy, measured rather than recalled.
+
+- the frozen snapshot
+- the generated tool inventory
+- the seven documents that must name the tool
+- the capability anchor, plus every present-tense count
+- the eval case
+- the `ToolSpec` capability field
+- the eval capability map
+- the post-build smoke check
+
+**AC-29's gate — what it compares.** Input: the keys of `capabilityManifests` and the union of
+`capability` and `servedCapabilities` over `toolSpecs`. Postcondition: every manifest key is served
+by a registered tool, or named in a declared list with a reason. Both inputs are modules of this
+repository, so the gate needs no network and runs in the existing `pnpm test` step.
+
+**Seven manifest keys are served by no tool today** (measured 2026-08-13, 26 keys against 20 tools):
+`pool.info`, `token.metadata`, `privacy.shielded_pool`, `platform.identities`, `platform.documents`,
+`platform.contracts`, `platform.credits`.
+
+R-21.1 removes one of the seven. R-21.3 covers the other six: each gets a tool or a declared row
+before the gate can pass.
+
+**Why a declared list rather than a smaller manifest.** `token.metadata` is deliberately routed for
+a future metadata-only consumer (§5.1) ⇒ deleting the row would lose a decision, while an
+undeclared gap is indistinguishable from an oversight.
+
+**The declaration mechanism already exists and covers two of the seven.**
+`packages/mcp-server/eval/capabilities.mjs:85` (`export const CAPABILITY_KNOWN_GAPS = new Map([`)
+names `token.metadata` and `pool.info` with a reason each. The gate reads that map rather than
+opening a second list.
+
+**The registering commit deletes the `pool.info` row of that map.** Its reason reads
+`declared by the registry, served by no MCP tool at all`, and a registered tool falsifies it.
+
+**The replacement is a case file, not an edit to a list.** The capability axis is derived from
+`packages/mcp-server/eval/cases/` (`packages/mcp-server/eval/capabilities.mjs:69`,
+`export const CAPABILITY_TOOLS = CAPABILITY_CASES.map((c) => ({`), so the eval obligation is one new
+file under that directory (RF-5).
+
 ### 5.2. Internal interfaces
 
 ```ts
@@ -661,8 +903,13 @@ export function createServer(deps: {
 `registry` defaults to the single real build from `providers.config.ts` + `adapterRegistrations`
 (constructed once in `index.ts` and passed into `createServer`); tests pass their own implementation
 of the same public `resolve()` contract, assembled from fixtures, rather than mocking transport or
-network globally. `budgetStore` follows the same rule — the real `SqliteBudgetStore` by default
-(§3.2), an in-memory/fixture implementation of the same interface in tests.
+network globally. `budgetStore` follows the same rule — the real store by default (§3.2), an
+in-memory/fixture implementation of the same interface in tests.
+
+**T-014 chooses that default by storage axis, not by literal class.** `main()` builds
+`SqliteBudgetStore` on the SQLite axis and `PgBudgetStore` on the Postgres axis
+(`system-architecture.md` §3.4.8). The parameter's type is `BudgetStore`, so `createServer` keeps
+its signature (§5.4.1).
 
 ### 5.3. Integrations with external systems
 
@@ -683,3 +930,417 @@ Each row is the source of the `hosts` SSRF allowlist for **its own** adapter (§
 `dash-platform` register `hosts`/DSN configuration but make no outbound calls. `nansen` is the tenth
 row and the only paid, budget-gated adapter in the registry; `NANSEN_API_KEY` obeys the same secret
 contract as the five M1 keys (§7.2).
+
+**The verified outbound address is not pinned for the connect** (AC-22 as reformulated by the owner,
+2026-08-12). The host is checked against the row's list before the request, and the connect resolves
+the name again. Node's built-in `fetch` exposes no DNS hook, so nothing in this design holds the
+address that was checked.
+
+**Why the residual is ACCEPTED for T-014.** Every host above is curated, and TLS certificate name
+validation bounds what a changed answer can reach ⇒ closing the window would need a new dependency
+or a rewritten transport.
+
+The original requirement is filed as WI-60
+(`docs/backlog/wi-60-verified-outbound-address-is-not-pinned-for-the-connect.md`). Its trigger is
+the first non-curated outbound host, not a date.
+
+### 5.4. T-014 — the wire contract of the network deployment profile
+
+> **T-014 is DESIGNED, not built, as of 2026-08-12.** Every repository coordinate below points at
+> code that exists today. Every SDK option name and status code was read from the installed
+> `@modelcontextprotocol/sdk@1.29.0`, not recalled.
+
+**Scope.** No registered tool loses or redefines a field it has today.
+
+T-014 changes the twenty-tool surface in exactly two ways:
+
+- it adds a twenty-first tool, `onchain_pool_info` (§5.1.7, R-21.1);
+- it adds six optional fields to `Pool`, which `onchain_active_pairs` embeds (§5.1.7).
+
+The rest of this section changes the transport that carries the tools, the checks placed in front of
+it, and the visibility rule over `_meta`.
+
+**An earlier revision of this paragraph read "the twenty tool contracts of §5.1 do not change".**
+That sentence was written before `OQ-T014-F` selected variant 1, and BLOCKING-1 of the round-1
+review recorded it as contradicting R-21.1.
+
+**The frozen `tools/list` snapshot therefore changes, and the commit states why** (AC-2, §5.1.7).
+
+**Two things called "profile", kept apart by name.** A **deployment profile** names one combination
+of transport and store, and a process runs exactly one. An **access profile** is the settings entity
+a token references (§4.5.3), and a process holds many.
+
+**Transport and storage are two independent axes** (owner decision 2026-08-12). Three combinations
+carry a name: `local` is stdio over SQLite, `network` is HTTP over Postgres, and `network-sqlite` is
+HTTP over SQLite. `ONCHAIN_PROFILE` selects one (`docs/architectures/deployment.md` §10.1.1, `:81`,
+`The combination is selected by`). The component each axis builds is
+`system-architecture.md` §3.4.8.
+
+**Why `network-sqlite` is named rather than improvised.** It exercises this section's transport
+without a Postgres instance.
+
+#### 5.4.1. One endpoint, one session header (R-1, R-12)
+
+The engine serves Streamable HTTP at one path, `/mcp`, beside stdio.
+
+- `POST /mcp` carries a JSON-RPC message.
+- `GET /mcp` opens the server-initiated SSE stream.
+- `DELETE /mcp` ends the session.
+- Any other method answers HTTP 405 with `Allow: GET, POST, DELETE`
+  (`@modelcontextprotocol/sdk@1.29.0`, `dist/esm/server/webStandardStreamableHttp.js` line 353,
+  `handleUnsupportedRequest() {` — verified 2026-08-13; the package resolves under
+  `packages/mcp-server/node_modules/` in this pnpm workspace, so the coordinate is SDK-relative and
+  not repo-relative).
+
+The session identity travels in the `Mcp-Session-Id` header, lowercase on the wire
+(`…/webStandardStreamableHttp.js` line 234 `headers['mcp-session-id'] = this.sessionId`). The server
+mints it on initialization; the client echoes it on every later request.
+
+One `StreamableHTTPServerTransport` and one `McpServer` exist per session, over process-level
+dependencies (owner decision 2026-08-12; the dependency set is §3.2's).
+
+The transport is chosen once, in `packages/mcp-server/src/index.ts:166`
+(`await server.connect(new StdioServerTransport());`). `createServer`
+(`packages/mcp-server/src/server.ts:66`) keeps its signature (§5.2).
+
+**Why the factory signature can stay unchanged.** The principal is a per-request fact, not a
+per-process one. It arrives on the tool callback's `extra.authInfo`
+(`@modelcontextprotocol/sdk@1.29.0` `shared/protocol.js` line 349 `authInfo: extra?.authInfo`), which
+the factory never sees.
+
+**Declared transport options.** Each is an option of `StreamableHTTPServerTransportOptions`
+(`…/webStandardStreamableHttp.d.ts` lines 48-96).
+
+| Option                         | Declared value                                   | Requirement           |
+| :----------------------------- | :----------------------------------------------- | :-------------------- |
+| `sessionIdGenerator`           | a function returning a fresh id                  | R-2.3 — stateful mode |
+| `allowedHosts`                 | the list validated from `.env`                   | R-12.1, AC-34         |
+| `allowedOrigins`               | the list validated from `.env`, empty by default | R-12.2, R-12.5, AC-35 |
+| `enableDnsRebindingProtection` | `true`                                           | R-12.3, AC-37         |
+| `onsessioninitialized`         | records the session in the process map           | R-2.3                 |
+| `onsessionclosed`              | drops the map entry and its `McpServer`          | R-2.4, R-24.2, RISK-6 |
+| `enableJsonResponse`           | unset — answers stream as SSE                    | see the note below    |
+| `eventStore`                   | unset — no stream resumption in T-014            | see the note below    |
+
+**Why answers stream instead of returning one JSON body.** A paid composite can lawfully occupy
+330 000 ms (§5.4.5). A POST that emits no bytes for that long is dropped by intermediaries.
+
+**Why no `eventStore`.** Resumption is not in T-014's scope. Consequence, stated rather than
+implied: a dropped stream is retried by the client as a new server-side request, and it gets its
+own `request_trace` row (§4.5.7).
+
+**`allowedOrigins` is an admission check, not a CORS policy.** The SDK emits no `Access-Control-*`
+header at all — measured 2026-08-12: zero files under `@modelcontextprotocol/sdk@1.29.0` `dist/`
+contain that string. AC-35 therefore holds by abstention, and this process adds no CORS middleware.
+
+**The engine terminates no TLS and holds no certificate (R-12.6).** A reverse proxy owns that.
+`EnvSchema` (`packages/mcp-server/src/env.ts:46`) declares no certificate or key path; §10 owns the
+test that asserts the absence (AC-36).
+
+#### 5.4.2. The order of checks on an incoming request (R-3, R-12, R-24)
+
+Steps 1 to 3 run in this process's own request listener, before `transport.handleRequest`.
+
+1. **Perimeter.** `Host` and `Origin` are compared with the declared lists. Postcondition: an
+   off-perimeter request has caused no token-store read.
+2. **Authentication.** The bearer from `Authorization` is hashed and looked up (§4.5.4).
+   Postcondition: a request without a valid token has reached neither `CapabilityRegistry` nor the
+   cache (R-3.2, R-3.4, AC-3).
+3. **Session admission.** An existing `Mcp-Session-Id` selects its instance; a new session is
+   created only if the ceiling allows. Postcondition: live sessions never exceed the declared
+   ceiling (R-24.1).
+4. **Transport.** `transport.handleRequest(req, res)` applies the SDK's own header, session and
+   content-type checks.
+5. **Tool layer.** The registered callback resolves the capability (§5.2).
+
+**Why the perimeter is checked before the token.** A request from outside the declared perimeter
+must not cause a read of the token store.
+
+**Why one value is read twice rather than written twice.** The transport re-checks the perimeter
+inside `handleRequest` (`…/webStandardStreamableHttp.js` line 144
+`const validationError = this.validateRequestHeaders(req);`). Both readers take the single value
+validated from `.env` (R-29.3). Two copies of a list drift; two readers of one value cannot.
+
+#### 5.4.3. Failure representation — two levels (R-26)
+
+| Class                                            | Level          | Wire form                                   | Reaches a tool |
+| :----------------------------------------------- | :------------- | :------------------------------------------ | :------------- |
+| authentication: absent, invalid or revoked token | protocol       | HTTP 401 + `WWW-Authenticate: Bearer`       | no             |
+| perimeter: `Host` or `Origin` refused            | protocol       | HTTP 403, JSON-RPC `-32000`                 | no             |
+| session ceiling reached                          | protocol       | HTTP 503 + `Retry-After`, JSON-RPC `-32000` | no             |
+| unknown or expired `Mcp-Session-Id`              | protocol       | HTTP 404, JSON-RPC `-32001`                 | no             |
+| unsupported HTTP method                          | protocol       | HTTP 405 + `Allow`                          | no             |
+| saturated shared limiter                         | tool execution | `{ isError: true, content: [...] }`         | yes            |
+| exhausted credit budget                          | tool execution | `{ isError: true, content: [...] }`         | yes            |
+| unavailable capability                           | tool execution | `{ isError: true, content: [...] }`         | yes            |
+| call deadline expired                            | tool execution | `{ isError: true, content: [...] }`         | yes            |
+
+Rows 2, 4 and 5 are produced by the SDK (`…/webStandardStreamableHttp.js` line 118 and `:127`, `:604`,
+`:353`). Rows 1 and 3 are produced by this process's listener.
+
+**The tool-execution form is MCP-prescribed and already implemented.** `toCallToolResult` renders
+every unsuccessful outcome as `{ isError: true, content: [{ type: 'text', text: reason }] }`
+(`packages/mcp-server/src/tools/registry.ts:205`
+`return { isError: true, content: [{ type: 'text', text: outcome.reason }] };`). `defineTool`
+(`packages/mcp-server/src/tools/registry.ts:258`, `export function defineTool<`) is the only
+registration path, and it wraps every handler in that renderer
+(`packages/mcp-server/src/tools/registry.ts:289`,
+`toCallToolResult(await definition.handler(`). The form therefore covers all 20 tools.
+
+**A tool-execution failure must not be rendered with `isError: false`** (AC-33). The violation shows
+on a handler that returns `ok: true` carrying a refusal message as its output.
+
+**The session-ceiling refusal answers 503, not 429.** Rejected alternative: 429 states that this
+caller called too often, while the measured cause is shared process capacity across all principals.
+`Retry-After` is what makes the refusal actionable, and AC-30 requires an announced class rather
+than a timeout.
+
+**A protocol-level refusal leaves no `request_trace` row.** `request_trace.principal_id` is
+`NOT NULL` (§4.5.7), and a request refused at step 1 or 2 has no principal.
+
+**Protocol-level refusals are observable in the stored channel instead** (§4.5.8):
+`auth.rejected`, `perimeter.rejected`, `session.limit_reached`, `session.evicted`.
+
+**Why the stored channel and not stderr.** On this transport no client and no client's operator
+reads the process stderr (R-19.2, R-32.1).
+
+**A withheld refusal carries the `diagnostics.id` of its own row** (R-31.1a, AC-50; owner decision
+2026-08-13, closing `OQ-T014-SEC-2` — §7.5.6, §4.5.8). The client rendering names no route, no
+provider, no cost and no budget state; the identifier is what lets an operator recover the text
+that was withheld.
+
+| Refusal                            | Produced by     | Where the identifier travels                | Event         |
+| :--------------------------------- | :-------------- | :------------------------------------------ | :------------ |
+| authentication (401)               | this listener   | JSON-RPC error body, `error.data.event`     | `auth.rejected` |
+| perimeter (403)                    | this listener   | JSON-RPC error body, `error.data.event`     | `perimeter.rejected` |
+| session ceiling (503)              | this listener   | JSON-RPC error body, `error.data.event`     | `session.limit_reached` |
+| the four tool-execution classes    | `defineTool`    | the `content[0].text` the client renders    | `tool.refused` |
+
+**The 401 answers with a JSON-RPC error body as well as `WWW-Authenticate`.** Its `error.id` is
+`null`: the request body may be unparsed at that point, and JSON-RPC 2.0 licenses `null` for the
+case where the id cannot be determined.
+
+**The tool-execution identifier travels in the text, not in `_meta`.** `_meta` visibility is a
+function of the principal's role (§5.4.4), so an identifier placed there would be absent for the
+role that most needs to quote it. The text is the one field every client renders.
+
+**Rows 4 and 5 carry no identifier, and this is the rule holding rather than a gap in it.** An
+unknown `Mcp-Session-Id` and an unsupported HTTP method withhold nothing — there exists no operator
+rendering of them to recover. The identifier accompanies exactly those refusals whose full text was
+withheld. §4.5.8's vocabulary follows that boundary: it names an event for every row of the table
+above and none for rows 4 and 5. A test may therefore assert the absence there without asserting a
+defect.
+
+**The row is written before the response leaves the process** (§4.5.8). An identifier that resolves
+to nothing is a worse answer than no identifier, because it costs the operator a lookup to learn
+that.
+
+#### 5.4.4. `_meta` visibility is a function of the principal's role (R-6)
+
+**The rule.** Every `_meta` field carries exactly one visibility class. A `client` field goes to
+every principal. An `operator` field goes only to a principal whose role is `admin`.
+
+**The principal is declared in `system-architecture.md` §3.4.3, not here.** This section reads one
+of its fields, `role`, and restates none of them.
+
+Four properties make this a rule rather than a list of fields:
+
+1. The class is declared once, in a compiled table beside the `_meta` type declarations (§5.1.2).
+2. The projection runs in one place — `toCallToolResult`
+   (`packages/mcp-server/src/tools/registry.ts:201`
+   `function toCallToolResult<TOutput extends Record<string, unknown>>(`) — after the handler
+   returns and before the SDK sees the result.
+3. A field absent from the table is treated as `operator`. A field added later is therefore
+   withheld from clients until someone classifies it (R-6.4).
+4. The role is read from the request's principal. The principal is never itself a `_meta` field
+   (R-5.4).
+
+Classification today:
+
+| `_meta` field                                                       | Class                    | Requirement             |
+| :------------------------------------------------------------------ | :----------------------- | :---------------------- |
+| `cache.status`, `cache.ageMs`, `cache.capability`                   | client                   | R-6.3                   |
+| `cache.provider` — it names an adapter id                           | client, narrowed by profile | R-6.3; §5.4.4.1      |
+| `cache.perSource[]` — the merged shape of §5.1.6                    | client, narrowed by profile | R-6.3; §5.4.4.1      |
+| `timing.overrunMs`                                                  | client                   | R-16.4                  |
+| `budget.provider`, `budget.creditsUsedToday`                        | operator                 | R-6.1                   |
+| `tier`                                                              | declared on no transport | R-6.2, AC-7             |
+
+**A coalesced follower is not a third `cache.status`.** A singleflight follower records
+`served_from = 'coalesced'` in the request trace (§4.5.7, owner decision 2026-08-12, closing
+`OQ-T014-SA-1`). On the wire `_meta.cache.status` keeps its two values, and the follower reports
+`miss`.
+
+**Why.** The answer was produced by the coalesced call rather than read from a stored entry ⇒ `hit`
+would tell the caller an entry existed before its request arrived.
+
+**Why the third value stays off the wire.** A new `cache.status` value would redefine a field on all
+twenty registered tools. §5.4's scope permits two changes, and this is neither of them.
+
+**Why `timing.overrunMs` is a client field.** Only the caller can judge whether a late but complete
+answer is still useful (OQ-T012-6). Withholding the overrun would make late invisible again.
+
+**Why an unclassified field defaults to `operator`.** The two directions of error are not
+symmetric. A withheld field is a missing convenience; a leaked field is an operator fact in a
+client's context, and R-20 forbids that permanently.
+
+**The local stdio profile keeps today's behaviour.** Its principal holds the role `admin`, so
+`_meta.budget` is present (UC-3, AC-6).
+
+**What the rule does not reach.** It governs `_meta` only. `missingSources` (§5.1.6) is a field of
+`structuredContent`, so no `_meta` classification can carry it. The setting of §5.4.4.1 reaches both.
+
+##### 5.4.4.1. Route disclosure in a successful response is a profile setting
+
+**The decision.** Owner, 2026-08-13, closing `OQ-T014-IF-1`: route disclosure is a setting on the
+access profile. Rejected alternative: a fixed rule of the wire.
+
+Three fields name our adapters to a client in a SUCCESSFUL response:
+
+- `_meta.cache.provider` — the answering adapter id
+- `_meta.cache.perSource[]` — one entry per contributing adapter
+- `structuredContent.missingSources` (§5.1.6) — the adapters that did not contribute
+
+The setting decides whether those three fields are present. Their visibility class stays `client`.
+The setting narrows that class for one principal at a time.
+
+**Where the setting lives.** On the access profile the token references (R-13), beside
+`creditsBalance`, `rateLimit` and `toolAllowlist` (R-13.7). It is a property of neither the
+transport nor the role. Its field name is assigned with R-13.7's field list in `docs/TASK.md`.
+
+**The setting only removes fields from a response.** It never adds one, and it never widens a class.
+
+**Why that matters.** R-29.4 admits a setting into Postgres only when it acts on narrowing.
+
+**Phase 0 default: disclosure permitted.** The single self-issued token discloses the route, matching
+`ADR-003` D5's posture of all tools allowed and unlimited quota.
+
+**Why the field exists while its value is permissive.** `ADR-003` D5 argues that an absent field
+cannot be set to unlimited. The same argument holds for a field that cannot be set to withheld.
+
+**`tier` is not covered by this setting.** `ADR-002` D8 keeps `tier` off every response
+unconditionally (R-6.2, AC-7). No profile value re-enables it.
+
+**`_meta.budget` is not covered either.** It stays bound to role `admin` (R-6.1, AC-6).
+
+**Why a setting and not one rule for everybody.** The engine has two kinds of client with opposite
+needs. An operator debugging a merge reads which source answered. A paying third party must not read
+our supplier list from a successful response.
+
+#### 5.4.5. The deadline over the wire (R-16)
+
+**The wire parameter is a duration, and the server converts it.** A tool that accepts a deadline
+takes `deadlineMs`, a positive safe integer of milliseconds. The server computes the absolute
+moment from its own clock at admission.
+
+**Why a duration and not a moment.** `registry.resolve()`'s fourth parameter is an absolute moment
+(`packages/core/src/adapters/registry.ts:670` `requestedDeadlineAtMs?: number,`). Accepting a moment
+from the wire would let a remote clock's skew set our spending bound.
+
+**The caller may only narrow, and a widening value is refused rather than clamped.** A `deadlineMs`
+exceeding the capability's manifest number fails at the boundary (AC-12). Rejected alternative:
+clamping, which answers under a bound the caller is never told about.
+
+**Where the boundary is.** The tool's zod input schema validates the shape; `resolveCapability`
+(`packages/mcp-server/src/tools/resolve-capability.ts:139`) compares it with
+`capabilityManifests[capability].deadlineMs` and passes the fourth argument on. That function is the
+single place tools reach the registry, and today it calls `registry.resolve(capability, chain, args)`
+with three arguments (`resolve-capability.ts:146`).
+
+**The registry keeps its own narrowing as a backstop**
+(`packages/core/src/adapters/registry.ts:747`
+`const effectiveDeadlineAtMs = Math.min(nowMs + manifest.deadlineMs, requested ?? Infinity);`). Both
+readers read `capabilityManifests`, so the boundary and the backstop cannot disagree about the
+ceiling.
+
+**The server's response timeout is a different number from `deadlineMs`** (OQ-T012-6).
+
+- `deadlineMs` bounds what a call may SPEND. It does not bound the moment of delivery.
+- The response timeout bounds how long one HTTP response may stay open.
+- Derived bound: `deadlineMs` covers only the cancellable part of a call and `paidLegMs` is uncut
+  (`packages/core/src/capability-manifest.ts:146-151`). Worst case measured 2026-08-12 —
+  60 000 ms + 270 000 ms = 330 000 ms on `entity.labels`; applied: the response timeout must exceed
+  330 000 ms.
+- A response timeout below that bound cuts a call that was completing lawfully.
+- The value is a bootstrap setting in `.env` (R-29.2). §10 owns its name and declares it
+  `ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS` (`docs/architectures/deployment.md` §10.3, `:187`,
+  `ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS`). The name was read there 2026-08-13, not assumed here.
+- Its unset default, declared in that same row, is 360 000 ms. It clears the 330 000 ms bound
+  derived above.
+
+**An expired response timeout does not cancel the call.** A paid call the vendor accepted is run to
+completion (R-17), its result is cached, and `usage` records the spend. `request_trace` records the
+outcome (§4.5.7). The client sees a closed connection; its retry is a new server-side request and is
+served from the cache.
+
+#### 5.4.6. `shareable` — T-014 is its first reader (R-18)
+
+**Measured state, 2026-08-12.** The field is declared optional at
+`packages/core/src/capability-manifest.ts:149` (`shareable?: boolean;`). It carries a value on
+**none** of the manifest rows: `Object.keys(capabilityManifests).length` returns 26, and the count
+of rows where `shareable !== undefined` is 0. No code reads it.
+
+**T-014 makes the field required.** Each of the 26 rows carries an explicit value with its
+derivation recorded beside it (R-18.1). An omitted value is a compile error, never a default
+(R-18.3, AC-13).
+
+**Why an explicit value rather than an inferred default.** ADR-002 D3 names `true` as the default.
+An inferred default and a never-considered row are indistinguishable in the table, which is the
+L-10 failure class the data model states as canon (§4.5).
+
+**What the reader does.**
+
+- `shareable: true` — the answer is cached; any principal may be served from that entry.
+- `shareable: false` — the capability is neither read from nor written to the cache; every call
+  reaches the source.
+
+**Deviation.** ADR-003 D5 §5 states "`shareable: false` → кеш в пределах принципала либо не
+кешируется вовсе"; this document implements the second arm only. **Why.** The owner's decision of
+2026-08-12 keeps the principal out of the cache key (R-5.1, §4.5.10), which closes the first arm.
+ADR-003 D5 needs the annotation; §5.4.7 carries that as an obligation.
+
+**Nothing changes for any shipped capability.** All 26 rows describe public on-chain facts and take
+`true`. The first capability whose answer depends on the caller's identity is the first `false`.
+
+#### 5.4.7. Open questions and one obligation raised by this section
+
+**OQ-T014-IF-1 — closed by the owner, 2026-08-13.** The question was whether R-20.3's review of
+route composition reaches successful responses. Decision: route disclosure in a successful response
+becomes a setting on the access profile, permitted by default in phase 0. Rejected: a fixed rule of
+the wire — one fixed value serves the debugging operator or the paying third party, never both. The
+fields and the bounds of the setting are recorded in §5.4.4.1.
+
+**What the decision does not settle.** Route composition also appears in FAILURE diagnostics.
+`CapabilityUnavailableError` and `CapabilityDeadlineExceededError` each carry `tried[]`
+(`packages/core/src/adapters/registry.ts:31`, `readonly tried: CapabilityAttempt[];`), and R-20.3
+names `tried[]` beside `missingSources`. R-31 already governs those through its two renderings.
+
+- Success path — the access profile's route-disclosure setting decides (§5.4.4.1).
+- Refusal path — R-31.4 withholds adapter names and walk order from every client, always.
+
+**Neither rule reaches the other path.** A permissive profile does not put adapter names into a
+refusal. The refusal rule does not remove `_meta.cache.provider` from a successful response.
+
+**Acceptance.** AC-14 and AC-47 cover the refusal path and stay unchanged. AC-14 is a gate over
+refusal text, so it observes no successful response. The success path therefore needs a criterion of
+its own. Sentence for the Planning phase to lift: "A client whose access profile forbids route
+disclosure receives no `_meta.cache.provider`, no `_meta.cache.perSource[]` and no
+`structuredContent.missingSources` in a successful response." Its id is assigned in `docs/TASK.md`,
+whose T-014 list ends at AC-48.
+
+**OQ-T014-IF-2 — closed by the owner, 2026-08-12.** The question was whether an open SSE stream is
+terminated when its token is revoked. A revoked token is refused on the next request, which is what
+R-15.6 and AC-26 require. A `GET /mcp` stream opened earlier issues no request, so nothing on the
+revocation path reaches it, and the engine does not terminate it mid-stream.
+
+That stream ends on one of two later events: the client sends its next request and receives HTTP 401
+(§5.4.3), or the session is evicted for idleness (R-24.2). The residual — a stream that keeps
+receiving server-initiated messages between those two moments — is ACCEPTED and recorded here.
+
+**OQ-T014-IF-3 — closed by the owner, 2026-08-13**, in §5.1.7 where it was raised. The question was
+whether a fee tier no wired provider publishes satisfies R-21.1. `feeTierBps` stays in the contract
+as an optional field with a declared derivation: `eth_call` of `fee()`, selector `0xddca3f43`. It is
+populated where that call answers, absent where it does not, and never guessed.
+
+**Obligation.** ADR-003 D5's `shareable` sentence gets an annotation naming the arm this project
+took, in the style of ARCHITECTURE §1.2's annotation to ADR-001 D6 — not an ADR rewrite.

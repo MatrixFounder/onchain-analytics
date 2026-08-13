@@ -114,7 +114,7 @@
 
 **Component: MCP server (`@onchain-intel/mcp-server`) — NOW**
 
-- **Seventeen registered tools**, all zod in/out and registry-routed, declared once in
+- **Twenty registered tools**, all zod in/out and registry-routed, declared once in
   `packages/mcp-server/src/tools/tool-specs.ts` (ADR-002 D7):
   - `onchain_ping` — M0, contract unchanged (R-20).
   - M1 read layer: `onchain_get_token`, `onchain_wallet_balances`, `onchain_active_pairs`,
@@ -146,8 +146,9 @@
 - `dash-platform` and `platform-explorer` register capabilities in the Capability Registry and are
   covered by contract tests, but neither gets a tool of its own — the Platform privacy rules (M3)
   are the first real consumer.
-- **Not yet built:** `onchain_watch_add/list/remove` (M3, D3). The transport is local stdio;
-  Streamable HTTP is M6, behind the same transport abstraction (D3).
+- **Not yet built:** `onchain_watch_add/list/remove` (M3, D3). The transport is local stdio today;
+  Streamable HTTP is **T-014** (ADR-003 D1), added beside stdio behind the same transport
+  abstraction (D3). The earlier M6 attribution predates ADR-003 and no longer holds.
 
 **Related use cases (TASK-003, M1):** UC-1 (empty `.env`), UC-2 (four tools on two chains), UC-3
 (cache-hit metrics), UC-4 (hot swap DAPI→platform-explorer), UC-5 (contract tests with no network).

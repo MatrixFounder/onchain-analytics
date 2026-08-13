@@ -114,7 +114,7 @@
  * `docs/backlog/wi-37-call-deadline-declared-but-unenforced-on-ten-adapters.md` tracked the
  * behaviour until this commit closed it.
  *
- * **Every one of the 20 rows carries its own marker, and a test counts them.** The first version of
+ * **Every one of the 26 rows carries its own marker, and a test counts them.** The first version of
  * this section marked the tier BLOCKS and left 11 rows with no findable claim of their own — the
  * defect F-5 is about, one level down: an assertion true in one place and absent in the others,
  * reported as complete. `capability-manifest.test.ts`'s **TC-F5-GATE** requires exactly one marker
@@ -233,11 +233,11 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
   // banner, by name:** `token.price`, `token.metadata`, `pairs.active`, `pool.info`, `protocol.tvl`,
   // `chain.tvl`, `dex.volume.history`, `wallet.balances.native`. It covers no row outside that run
   // — `chain.supply` in particular belongs to the E-HTTP5 block below, not to this one. **And it is
-  // not the enforcement record for any of them:** each of the 20 rows carries its OWN
+  // not the enforcement record for any of them:** each of the 26 rows carries its OWN
   // `**ENFORCED TODAY**` / `**DECLARED, not enforced today**` marker, because a reader greps one
   // capability or reads one row in a diff, and a claim that lives only in a banner is invisible
   // there (adversarial cycle 2 review of F-5 — the first version of this section marked the block
-  // and left 11 of the 20 rows with nothing findable in them). `capability-manifest.test.ts`'s
+  // and left 11 rows with nothing findable in them). `capability-manifest.test.ts`'s
   // TC-F5-GATE enforces one marker per row and checks each against the adapter sources.
   //
   // All eight are ENFORCED TODAY (see the ENFORCEMENT section above; measured 2026-08-05). An

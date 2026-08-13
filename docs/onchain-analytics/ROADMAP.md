@@ -217,7 +217,7 @@
 
 **Цель:** прод-готовность под нагрузку/мультиклиент.
 
-**Задачи:** Streamable-HTTP MCP за reverse-proxy; миграция кеша→Redis, состояния→Postgres, планировщика→BullMQ (по триггерам из ADR-001 §Revisit); стриминг-консьюмеры (Bitquery WS) вместо поллинга; обсервабилити (pino + OpenTelemetry, дашборд расходов кредитов); отдельный ADR по секретам (SOPS/secret-manager).
+**Задачи:** обратный прокси перед MCP *(сам транспорт Streamable HTTP забрал **T-014**, ADR-003 D1)*; миграция кеша→Redis, состояния→Postgres, планировщика→BullMQ (по триггерам из ADR-001 §Revisit); стриминг-консьюмеры (Bitquery WS) вместо поллинга; обсервабилити (pino + OpenTelemetry, дашборд расходов кредитов); отдельный ADR по секретам (SOPS/secret-manager).
 
 **Exit-критерии:** горизонтальное масштабирование MCP-сервера; SLA по latency; дашборд per-provider costs.
 

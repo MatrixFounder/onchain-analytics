@@ -142,6 +142,10 @@ const PLANNED_TOOL_NAMES = new Map([
   ['onchain_watch_add', 'M3 watchlists (ROADMAP §M3, ADR-001 D7)'],
   ['onchain_watch_list', 'M3 watchlists (ROADMAP §M3, ADR-001 D7)'],
   ['onchain_watch_remove', 'M3 watchlists (ROADMAP §M3, ADR-001 D7)'],
+  // T-014 (R-21.1, owner decision OQ-T014-F variant 1): the tool that closes L-15 by giving
+  // `pool.info` a consumer. DESIGNED in `docs/architectures/interfaces.md` §5.1.7, not yet
+  // registered. It is the precondition for WI-56 — resolving a token symbol to a contract address.
+  ['onchain_pool_info', 'T-014 pool.info consumer (TASK-014 R-21.1, closes L-15)'],
   // T-013 (ADR-002 D5/D6): the merged-series tool. DESIGNED in `docs/architectures/interfaces.md`
   // §5.1.6 and `docs/ARCHITECTURE.md`, not yet registered — which is exactly the state this Map
   // exists to express, and the state R-126's diagnostic points a reader at.

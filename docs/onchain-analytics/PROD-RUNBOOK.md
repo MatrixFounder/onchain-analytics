@@ -172,6 +172,56 @@ the target's current workflows.
   failure. At minimum confirm `ChatID` in `onchain-error-alert` → `Normalize Input` is not `0` —
   otherwise it stays silent exactly when it is needed.
 
+## Engine network profile — the first admin token  *(T-014; designed, not built)*
+
+The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are
+issued by an admin. The first admin is therefore seeded, not issued. **You generate the token; the
+database receives only its digest.** The plaintext reaches neither the repository nor any file.
+
+1. Generate a token on your own machine **in the form the server parses** (`security.md` §7.5.2):
+   `oi_` + an 8-character random label + `_` + a 43-character base64url secret. The secret covers 32
+   random bytes, well above the floor R-15.1 sets at 128 bits.
+   ```bash
+   b64url() { openssl rand -base64 "$1" | tr '+/' '-_' | tr -d '=\n'; }
+   TOKEN="oi_$(b64url 6 | cut -c1-8)_$(b64url 32)"
+   PREFIX="${TOKEN:0:11}"
+   echo "$TOKEN"          # copy it into your password manager NOW — it is shown once
+   echo "$PREFIX"         # this is what the database stores beside the digest
+   ```
+
+   **Why not a bare `openssl rand -base64 32`.** That output carries `+`, `/` and `=`, is 44
+   characters, and has no `oi_` label — so it is not the shape §7.5.2 defines, and its leading 11
+   characters are not the prefix the server would compute. A token minted that way seeds a row the
+   running server cannot match.
+2. Derive what the database stores. The digest is peppered with `ONCHAIN_TOKEN_HASH_SALT` from the
+   server's `.env` (a permanent secret, R-29.1), so the pepper must already be set on the host:
+   ```bash
+   printf '%s%s' "$ONCHAIN_TOKEN_HASH_SALT" "$TOKEN" | openssl dgst -sha256 -hex | awk '{print $2}'
+   ```
+3. Apply the seed migration with the digest and the prefix as parameters, never the token.
+   `api_tokens.prefix` is `NOT NULL` and `UNIQUE` and cannot be derived from the digest, so it
+   travels as its own parameter:
+   ```bash
+   ssh vm 'docker exec -i supabase-db psql -qU supabase_admin -d postgres -v ON_ERROR_STOP=1 \
+     -v ADMIN_TOKEN_SHA256="'"'"'<64-hex>'"'"'" -v ADMIN_TOKEN_PREFIX="'"'"'<11-chars>'"'"'" \
+     -v ADMIN_EMAIL="'"'"'you@example.com'"'"'"' \
+     < sql/migrations/0NN_seed_engine_admin.sql
+   ```
+4. Verify without revealing anything: one row, correct prefix, no plaintext column.
+   ```sql
+   SELECT prefix, role, status FROM onchain.api_tokens t JOIN onchain.users u ON u.id = t.user_id;
+   ```
+5. Start the server. It binds only after it finds at least one active token (§10.3.2 of
+   ARCHITECTURE).
+
+**Why the digest and not the token.** A token in a migration file is a token in git history. The
+seed takes the digest for the same reason the identity model stores one: the server compares
+digests and never needs the secret back. Rotation is re-running step 1 and issuing a new row; the
+old row is revoked, not edited.
+
+**If you lose the token.** There is no recovery — the digest is one-way. Seed a second admin by
+repeating steps 1–3 with a new email, then revoke the lost row.
+
 ## Close-out
 - Record the move (date, hosts, verify **`0/11/0`** — stale / metrics seen / orphans) — nothing
   silently (§6).

@@ -180,6 +180,22 @@
   the single source is exhausted. Approaching the credit ceiling emits one stderr line, on the same
   channel as the M1 cache metrics (§9.3), not a new notification channel; that closes the ROADMAP
   §M2 "budget alert" risk gate. Details — [system-architecture.md §3.2](system-architecture.md).
+- **T-014 adds a second LEVEL of refusal, one that never reaches a tool (R-26).** A protocol-level
+  refusal is expressed by a transport status or by a JSON-RPC error. Its classes are authentication,
+  perimeter, the session ceiling, and an unknown or expired `Mcp-Session-Id`. The wire form of each
+  class is tabulated once, in [interfaces.md §5.4.3](interfaces.md), and is not restated here.
+
+  Tool-execution refusal is the other level, and T-014 leaves its shape unchanged:
+  `{ isError: true, content: [...] }`. That shape is what MCP prescribes, and
+  `packages/mcp-server/src/tools/registry.ts:205`
+  (`return { isError: true, content: [{ type: 'text', text: outcome.reason }] };`) renders it for
+  every registered tool.
+
+  A protocol-level refusal leaves no `request_trace` row. It is observable in the `diagnostics`
+  stored channel instead ([data-model.md §4.5.8](data-model.md)).
+
+  **Why.** This section is where a reader looks up the failure taxonomy. A class documented only in
+  `interfaces.md` is not found here.
 
 ### 9.2. Backup
 

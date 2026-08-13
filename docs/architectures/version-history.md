@@ -2,6 +2,28 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
+- 2026-08-12, **v4.11** — T-014 `http-transport-auth-perimeter-profiles-shared-limiter`:
+  **design phase, ahead of code.** Five sections written against TASK-014 (32 requirements, 49
+  acceptance criteria): §4.5 adds eight persistent tables (identity, the shared vendor limiter, the
+  per-request trace T-015 charges from, operational records); §7.5 designs the project's FIRST
+  inbound trust boundary — until now §7 covered only the outbound side; §3.4 adds transport
+  selection, the session manager, principal threading and the shared limiter, plus the storage axis
+  and its per-dialect atomicity; §5.4 defines the wire contract and §5.1.7 the tool that closes
+  L-15; §10 replaces "dev only, local" with deployment profiles and a settings classification.
+  **T-013 is recorded as SHIPPED 2026-08-10** in the same pass, closing a milestone of documentary
+  debt: the index claimed 20 manifest rows where there are 26, promised "a 14th tool" at 20 live,
+  and three documents still called Streamable HTTP M6 content.
+  **Three standing constraints of §1.2 were narrowed in scope, not removed** — cache in Postgres,
+  writes to the snapshotter's tables, cron inside the server — each because its original
+  justification named the local stdio process, and each verified against that justification by the
+  architecture review. **Review: BLOCKING on the first round** (2 BLOCKING, 7 MAJOR, 5 MINOR;
+  `docs/reviews/architecture-t014-review.md`) — R-21 was absent while one section asserted the tool
+  set does not change, and the network profile had DDL for a cache and budget layer no component
+  read, with the money gate's atomicity still stated as SQLite's. Both fixed in the second pass.
+  Owner decisions taken during the phase closed nine of ten questions the design raised; the
+  original AC-22 proved unmeetable without pinning the outbound address, so it was reformulated to
+  what is designed and the requirement filed as WI-60 against a trigger rather than a date.
+
 - 2026-08-05, **v4.10** — T-013 `series-merge-and-history-tool`: **design phase, ahead of code.**
   Recorded here so the index's version pointer resolves; every claim below is DECIDED, not built, and
   no source file has moved as of this entry.
