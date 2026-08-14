@@ -1,6 +1,7 @@
 # Задача 014.14: `ctx.principal` в `ToolContext` `[STUB]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 
 <!-- contract:goal -->
@@ -25,12 +26,15 @@
 ### Изменения в существующих файлах
 
 **Файл `packages/mcp-server/src/tools/registry.ts`:**
+
 - Добавить ключ `principal` в `ToolContext`
 
 **Файл `packages/mcp-server/src/server.ts`:**
+
 - Добавить `principals?: PrincipalResolver` в `CreateServerDeps`
 
 **Файл `packages/mcp-server/src/tools/tool-specs.ts`:**
+
 - Пересмотреть объявления `needs` на присутствие принципала
 
 ### Форма принципала
@@ -48,13 +52,13 @@ export interface Principal {
 }
 ```
 
-| Поле | Значение | Пусто |
-| :--- | :--- | :--- |
-| `principalId` | `api_tokens.id`, либо `local` на транспорте `stdio` | нет |
-| `userId` | `users.id`; пусто на `stdio` | да |
-| `role` | `admin` или `user`; решает видимость `_meta.budget` (R-15.3) | нет |
-| `accessProfileId` | профиль доступа, в рамках которого работает токен (R-13.1) | да |
-| `transport` | `stdio` или `http`; пишется в `request_trace.transport` (R-27.1) | нет |
+| Поле              | Значение                                                         | Пусто |
+| :---------------- | :--------------------------------------------------------------- | :---- |
+| `principalId`     | `api_tokens.id`, либо `local` на транспорте `stdio`              | нет   |
+| `userId`          | `users.id`; пусто на `stdio`                                     | да    |
+| `role`            | `admin` или `user`; решает видимость `_meta.budget` (R-15.3)     | нет   |
+| `accessProfileId` | профиль доступа, в рамках которого работает токен (R-13.1)       | да    |
+| `transport`       | `stdio` или `http`; пишется в `request_trace.transport` (R-27.1) | нет   |
 
 **Why поле названо `principalId`, а не `id`.** Значение пишется в колонку того же имени —
 `request_trace.principal_id TEXT NOT NULL` (`data-model.md` §4.5.7). Одно имя на всю границу
@@ -112,8 +116,7 @@ export type PrincipalResolver = (authInfo: AuthInfo | undefined) => Principal;
 `project()` (`packages/mcp-server/src/tools/registry.ts:186`) сужает контекст по списку `needs`.
 Ключ `principal` подчиняется тому же правилу: тул, не объявивший его, получает объект без ключа.
 
-Сегодня `toolSpecs` содержит 20 записей. Задача 014-32 добавляет `onchain_pool_info`, после чего их
-21. Тест обходит реестр, число тулов в нём не зашито.
+Сегодня `toolSpecs` содержит 20 записей. Задача 014-32 добавляет `onchain_pool_info`, после чего их 21. Тест обходит реестр, число тулов в нём не зашито.
 
 **Why счёт не зашит.** Зашитое число даёт зелёный тест на реестре, из которого тул выпал, и красный
 тест на каждом добавлении тула. Обход реестра снимает оба случая.
@@ -123,6 +126,7 @@ export type PrincipalResolver = (authInfo: AuthInfo | undefined) => Principal;
 ## Тест-кейсы
 
 ### Модульные тесты
+
 1. **TC-UNIT-01:** константа принципала `stdio` несёт пять объявленных значений
    - Входные данные: экспортированная константа
    - Ожидаемый результат: `principalId = 'local'`, `userId = null`, `role = 'admin'`,
@@ -144,12 +148,14 @@ export type PrincipalResolver = (authInfo: AuthInfo | undefined) => Principal;
    - Ожидаемый результат: `pnpm typecheck` зелёный; снятие директивы делает его красным
 
 ### Регрессионные тесты
+
 - Снимок `tools/list` не изменился: принципал не является аргументом тула
 - `pnpm typecheck`, `pnpm test`
 
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] Тип `Principal` объявлен пятью полями по `system-architecture.md` §3.4.3
 - [ ] Файл `packages/mcp-server/src/auth/principal.ts` создан
 - [ ] Константа принципала `stdio` совпадает со значением, объявленным в архитектуре

@@ -1,6 +1,7 @@
 # Задача 014.29: форма записи следа запроса `[STUB]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 
 <!-- contract:goal -->
@@ -20,6 +21,7 @@
 ### Изменения в существующих файлах
 
 **Файл `packages/mcp-server/src/engine/request-trace-store.ts`:**
+
 - Объявить форму записи по `data-model.md` §4.5.7 и метод `append`
 
 **Why пакет `mcp-server`.** `security.md` §7.5.1 держит SQL, называющий таблицы личности, в этом
@@ -30,32 +32,32 @@
 
 Двадцать четыре колонки, из них одиннадцать объявлены `NOT NULL`.
 
-| Колонка | Тип | Пусто | Смысл |
-| :--- | :--- | :--- | :--- |
-| `id` | TEXT | нет | ULID; объявлен `TEXT PRIMARY KEY NOT NULL` (§4.5.2a) |
-| `received_at` | INTEGER | нет | время допуска, epoch-ms UTC (R-27.5) |
-| `completed_at` | INTEGER | нет | время завершения, epoch-ms UTC |
-| `principal_id` | TEXT | нет | `api_tokens.id`, либо `local` в локальном профиле |
-| `user_id` | TEXT | да | `users.id`; пусто в локальном профиле |
-| `access_profile_id` | TEXT | да | профиль доступа токена |
-| `client_request_id` | TEXT | нет | значение клиента, иначе ULID, выпущенный сервером |
-| `session_id` | TEXT | да | метка сессии транспорта |
-| `transport` | TEXT | нет | `stdio` или `http` |
-| `tool` | TEXT | нет | имя тула |
-| `capability` | TEXT | да | пусто, когда способность не резолвилась |
-| `args_hash` | TEXT | да | то же значение, что несёт `cache_entries` |
-| `outcome` | TEXT | нет | `answer`, `refusal` или `partial_deadline` |
-| `refusal_class` | TEXT | да | имя класса ошибки, только при `outcome='refusal'` |
-| `served_from` | TEXT | нет | `cache`, `coalesced`, `vendor` или `none` |
-| `cache_age_ms` | INTEGER | да | возраст записи кеша |
-| `vendor_provider` | TEXT | да | `REFERENCES providers(id)` |
-| `vendor_credits` | INTEGER | да | вклад запроса в `usage`; пусто при `served_from='coalesced'` |
-| `vendor_calls` | INTEGER | да | вклад в `usage_window.calls_made`; пусто при `coalesced` |
-| `vendor_day` | INTEGER | да | координата `usage(provider, day)` |
-| `vendor_window_start` | INTEGER | да | координата `usage_window(provider, window_start)` |
-| `escalated_to_paid` | INTEGER | нет | `0` или `1`, умолчание `0` (R-28.2) |
-| `tried_json` | TEXT | да | пройденный порядок адаптеров, JSON как TEXT |
-| `created_at` | INTEGER | нет | epoch-ms UTC |
+| Колонка               | Тип     | Пусто | Смысл                                                        |
+| :-------------------- | :------ | :---- | :----------------------------------------------------------- |
+| `id`                  | TEXT    | нет   | ULID; объявлен `TEXT PRIMARY KEY NOT NULL` (§4.5.2a)         |
+| `received_at`         | INTEGER | нет   | время допуска, epoch-ms UTC (R-27.5)                         |
+| `completed_at`        | INTEGER | нет   | время завершения, epoch-ms UTC                               |
+| `principal_id`        | TEXT    | нет   | `api_tokens.id`, либо `local` в локальном профиле            |
+| `user_id`             | TEXT    | да    | `users.id`; пусто в локальном профиле                        |
+| `access_profile_id`   | TEXT    | да    | профиль доступа токена                                       |
+| `client_request_id`   | TEXT    | нет   | значение клиента, иначе ULID, выпущенный сервером            |
+| `session_id`          | TEXT    | да    | метка сессии транспорта                                      |
+| `transport`           | TEXT    | нет   | `stdio` или `http`                                           |
+| `tool`                | TEXT    | нет   | имя тула                                                     |
+| `capability`          | TEXT    | да    | пусто, когда способность не резолвилась                      |
+| `args_hash`           | TEXT    | да    | то же значение, что несёт `cache_entries`                    |
+| `outcome`             | TEXT    | нет   | `answer`, `refusal` или `partial_deadline`                   |
+| `refusal_class`       | TEXT    | да    | имя класса ошибки, только при `outcome='refusal'`            |
+| `served_from`         | TEXT    | нет   | `cache`, `coalesced`, `vendor` или `none`                    |
+| `cache_age_ms`        | INTEGER | да    | возраст записи кеша                                          |
+| `vendor_provider`     | TEXT    | да    | `REFERENCES providers(id)`                                   |
+| `vendor_credits`      | INTEGER | да    | вклад запроса в `usage`; пусто при `served_from='coalesced'` |
+| `vendor_calls`        | INTEGER | да    | вклад в `usage_window.calls_made`; пусто при `coalesced`     |
+| `vendor_day`          | INTEGER | да    | координата `usage(provider, day)`                            |
+| `vendor_window_start` | INTEGER | да    | координата `usage_window(provider, window_start)`            |
+| `escalated_to_paid`   | INTEGER | нет   | `0` или `1`, умолчание `0` (R-28.2)                          |
+| `tried_json`          | TEXT    | да    | пройденный порядок адаптеров, JSON как TEXT                  |
+| `created_at`          | INTEGER | нет   | epoch-ms UTC                                                 |
 
 **Why `id` несёт слово `NOT NULL` рядом с `PRIMARY KEY`.** SQLite допускает `NULL` в колонке
 `TEXT PRIMARY KEY`, Postgres — нет (`data-model.md` §4.5.2a). Один и тот же DDL без этого слова даёт
@@ -81,11 +83,11 @@
 Пять вендорских колонок вместо одной ссылки: `vendor_provider`, `vendor_credits`, `vendor_calls`,
 `vendor_day`, `vendor_window_start`.
 
-| Что адресуется | Колонки |
-| :--- | :--- |
-| корзина `usage(provider, day)` | `vendor_provider` + `vendor_day` |
+| Что адресуется                                 | Колонки                                   |
+| :--------------------------------------------- | :---------------------------------------- |
+| корзина `usage(provider, day)`                 | `vendor_provider` + `vendor_day`          |
 | корзина `usage_window(provider, window_start)` | `vendor_provider` + `vendor_window_start` |
-| вклад этого запроса | `vendor_credits`, `vendor_calls` |
+| вклад этого запроса                            | `vendor_credits`, `vendor_calls`          |
 
 **Why координата, а не ссылка на строку.** `usage` ключуется `(provider, day)`, `usage_window` —
 `(provider, window_start)`. Обе величины — счётчики по окнам, и построчной записи, на которую можно
@@ -93,12 +95,12 @@
 
 ### `served_from` имеет четыре значения
 
-| Значение | Когда записывается |
-| :--- | :--- |
-| `cache` | ответ прочитан из кеша |
+| Значение    | Когда записывается                                   |
+| :---------- | :--------------------------------------------------- |
+| `cache`     | ответ прочитан из кеша                               |
 | `coalesced` | запрос ждал чужого незавершённого вендорского вызова |
-| `vendor` | запрос был ведущим и сам ходил к вендору |
-| `none` | ни кеш, ни вендор запрос не обслуживали |
+| `vendor`    | запрос был ведущим и сам ходил к вендору             |
+| `none`      | ни кеш, ни вендор запрос не обслуживали              |
 
 Четвёртое значение — `coalesced`, решение владельца 2026-08-13, закрывающее `OQ-T014-SA-1`.
 
@@ -135,12 +137,14 @@
 ### Ограничения и индексы
 
 Ограничения:
+
 - `CHECK (outcome IN ('answer','refusal','partial_deadline'))`
 - `CHECK (served_from IN ('cache','coalesced','vendor','none'))`
 - `CHECK ((outcome = 'refusal') = (refusal_class IS NOT NULL))`
 - `CHECK (escalated_to_paid IN (0,1))`
 
 Индексы:
+
 - `idx_request_trace_principal (principal_id, received_at)` — периодный запрос T-015 по принципалу
 - `idx_request_trace_received (received_at)` — удержание
 - `idx_request_trace_spend (vendor_provider, vendor_day)` — сверка с `usage`
@@ -180,6 +184,7 @@ T-014 списания не делает. След нужен T-015, и без �
 ## Тест-кейсы
 
 ### Модульные тесты
+
 1. **TC-UNIT-01:** объявленная форма несёт 24 колонки, и 11 из них объявлены `NOT NULL` на обеих
    осях хранилища
    - Входные данные: объявление формы, `PRAGMA table_info(request_trace)` на файловой базе SQLite и
@@ -203,11 +208,13 @@ T-014 списания не делает. След нужен T-015, и без �
 9. **TC-UNIT-09:** `escalated_to_paid` без явного значения записывается как `0`
 
 ### Регрессионные тесты
+
 - `pnpm typecheck`, `pnpm test`
 
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] Форма записи объявлена 24 колонками по `data-model.md` §4.5.7
 - [ ] Одиннадцать колонок объявлены `NOT NULL` на обеих осях, включая `id` и три компонента ключа
       дедупликации

@@ -10,11 +10,11 @@ transport and one store, one per process (`docs/TASK.md:21-24`, `` `Профил
 **Transport and store are two independent axes** (owner decision, 2026-08-12). Three combinations
 carry a name; `system-architecture.md` §3.4.8 owns the names.
 
-| Profile | Transport | Store | Inbound boundary |
-| :--- | :--- | :--- | :--- |
-| `local` | stdio | SQLite in `DATA_DIR` | none |
-| `network` | Streamable HTTP | Postgres, schema `onchain` | §7.5 in full |
-| `network-sqlite` | Streamable HTTP | SQLite in `DATA_DIR` | §7.5 in full |
+| Profile          | Transport       | Store                      | Inbound boundary |
+| :--------------- | :-------------- | :------------------------- | :--------------- |
+| `local`          | stdio           | SQLite in `DATA_DIR`       | none             |
+| `network`        | Streamable HTTP | Postgres, schema `onchain` | §7.5 in full     |
+| `network-sqlite` | Streamable HTTP | SQLite in `DATA_DIR`       | §7.5 in full     |
 
 **The trust boundary follows the transport axis, never the store.** `network-sqlite` authenticates
 every request exactly as `network` does.
@@ -284,10 +284,10 @@ review as "a bigger limit".
   **T-014 adds a second connection, and the two roles are not the same role.** The network profile
   opens one DSN per purpose (§10.3, §10.5).
 
-  | DSN | Reads | Writes |
-  | :--- | :--- | :--- |
-  | `ONCHAIN_PG_URL` | the snapshotter's tables in schema `onchain` | nothing |
-  | `ONCHAIN_STATE_PG_URL` | the engine's own tables in schema `onchain` | the engine's own tables in schema `onchain` |
+  | DSN                    | Reads                                        | Writes                                      |
+  | :--------------------- | :------------------------------------------- | :------------------------------------------ |
+  | `ONCHAIN_PG_URL`       | the snapshotter's tables in schema `onchain` | nothing                                     |
+  | `ONCHAIN_STATE_PG_URL` | the engine's own tables in schema `onchain`  | the engine's own tables in schema `onchain` |
 
   **The engine's tables live in schema `onchain`, beside the snapshotter's** (owner decision,
   2026-08-12, reversing the earlier answer to `OQ-T014-DEP-1`). `deployment.md` §10.5 lists the
@@ -439,7 +439,7 @@ non-secret value would be a weaker credential wearing the same table.
 where `pepper` is the token hashing salt R-29.1 keeps in `.env` permanently.
 
 **The column declaration carries the same expression** (`docs/architectures/data-model.md:1019`,
-`` sha256(pepper || presented), lowercase hex ``). No deviation is recorded here.
+`sha256(pepper || presented), lowercase hex`). No deviation is recorded here.
 
 **Why the agreement is recorded.** Review round 1 found this column commented as an unsalted
 `sha256` ⇒ the comment was corrected in §4.5.4, and no deviation from it remains.
@@ -456,12 +456,12 @@ for a match, so there is no string equality over a credential to time.
 **The verification decision** is taken in code, over the row the query returned, not in its `WHERE`
 clause (§4.5.4). Four states refuse, and each is a distinct `refusal_class`:
 
-| State | Observed on the row | Client sees |
-| :--- | :--- | :--- |
-| unknown token | no row | `401` |
-| revoked | `api_tokens.status = 'revoked'` | `401` |
-| expired | `api_tokens.expires_at <= now` | `401` |
-| suspended person | `users.status = 'suspended'` | `401` |
+| State            | Observed on the row             | Client sees |
+| :--------------- | :------------------------------ | :---------- |
+| unknown token    | no row                          | `401`       |
+| revoked          | `api_tokens.status = 'revoked'` | `401`       |
+| expired          | `api_tokens.expires_at <= now`  | `401`       |
+| suspended person | `users.status = 'suspended'`    | `401`       |
 
 **Why one status for four states.** The class is what an operator needs, and it is recorded in the
 `auth.rejected` diagnostics row (§4.5.8). A caller who does not hold a valid token learns nothing
@@ -556,10 +556,10 @@ access profile a token references. One mechanism, not two.
 (`packages/mcp-server/src/tools/registry.ts:207`, `const meta = {`):
 
 | `_meta` key | role `admin` | role `user` |
-| :--- | :--- | :--- |
-| `cache` | yes | yes |
-| `timing` | yes | yes |
-| `budget` | yes | no |
+| :---------- | :----------- | :---------- |
+| `cache`     | yes          | yes         |
+| `timing`    | yes          | yes         |
+| `budget`    | yes          | no          |
 
 **Why an allowlist and not a `budget`-shaped exception.** R-6.4 extends the rule to fields added
 later. A key absent from the table is invisible to role `user` until someone adds it there.
@@ -570,7 +570,7 @@ every tool's result (`packages/mcp-server/src/tools/registry.ts:205`,
 inherits the rule instead of restating it.
 
 **`tier` reaches no response** (R-6.2). It stays an `AdapterRegistration` field, `ToolSpec` declares
-none (`packages/mcp-server/src/tools/registry.ts:157`, `` **No `tier`, and no price.** ``), and AC-7
+none (`packages/mcp-server/src/tools/registry.ts:157`, ``**No `tier`, and no price.**``), and AC-7
 walks the tool registry rather than a hardcoded count.
 
 **Route disclosure on a SUCCESSFUL response is a per-token setting** (`OQ-T014-IF-1`, closed by the
@@ -615,13 +615,13 @@ The role and the access profile are two mechanisms answering two questions. `sys
 §3.4.9 designs where a profile's tool list is applied. This subsection states the split, the reading
 rule and the gate over it.
 
-| Question | Decided by | Applied in |
-| :--- | :--- | :--- |
-| which tools a session registers | the access profile, `toolAllowlist` | §3.4.9, at registration |
-| whether `_meta.budget` is present | the role | §7.5.3, `toCallToolResult` |
-| which rendering of a refusal is returned | the transport, not the role | §7.5.6 |
-| whether issuing and revoking are permitted | the role | §7.5.2 |
-| the credit ceiling and the rate limit | the access profile | T-015; phase 0 declares both unlimited |
+| Question                                   | Decided by                          | Applied in                             |
+| :----------------------------------------- | :---------------------------------- | :------------------------------------- |
+| which tools a session registers            | the access profile, `toolAllowlist` | §3.4.9, at registration                |
+| whether `_meta.budget` is present          | the role                            | §7.5.3, `toCallToolResult`             |
+| which rendering of a refusal is returned   | the transport, not the role         | §7.5.6                                 |
+| whether issuing and revoking are permitted | the role                            | §7.5.2                                 |
+| the credit ceiling and the rate limit      | the access profile                  | T-015; phase 0 declares both unlimited |
 
 **A role carries no number** (R-15.3b). A limit that differs by role is expressed by which profile
 the token references.
@@ -689,11 +689,11 @@ the value through the reader above, or through `EnvSchema` for a process setting
 `grep -RnE --include='*.ts' "process\.env" packages/core/src packages/mcp-server/src`: 20
 occurrences, of which 10 are in comments and 10 in code.
 
-| Form | Code sites | Example |
-| :--- | :--- | :--- |
-| `deps.env ?? process.env` | 8 | `packages/core/src/adapters/coingecko/index.ts:96`, `const env = deps.env ?? process.env;` |
-| a default parameter | 1 | `packages/core/src/cache/data-dir.ts:13`, `export function resolveDataDir(env: NodeJS.ProcessEnv = process.env): string {` |
-| the schema parse | 1 | `packages/mcp-server/src/env.ts:167`, `const result = EnvSchema.safeParse(raw ?? process.env);` |
+| Form                      | Code sites | Example                                                                                                                    |
+| :------------------------ | :--------- | :------------------------------------------------------------------------------------------------------------------------- |
+| `deps.env ?? process.env` | 8          | `packages/core/src/adapters/coingecko/index.ts:96`, `const env = deps.env ?? process.env;`                                 |
+| a default parameter       | 1          | `packages/core/src/cache/data-dir.ts:13`, `export function resolveDataDir(env: NodeJS.ProcessEnv = process.env): string {` |
+| the schema parse          | 1          | `packages/mcp-server/src/env.ts:167`, `const result = EnvSchema.safeParse(raw ?? process.env);`                            |
 
 **The rule is a property of the code, and R-13.3a makes it checkable.** Nine of the ten sites inject
 the environment and fall back to it; one is the schema parse itself.
@@ -727,14 +727,14 @@ does not exist yet.
 
 Six settings, and what each is measured against.
 
-| Requirement | Setting | Default |
-| :--- | :--- | :--- |
-| R-12.1 | `allowedHosts` | the bound address and port, no wildcard |
-| R-12.2 | `allowedOrigins` | empty — no browser origin is admitted |
-| R-12.3 | `enableDnsRebindingProtection` | `true` |
-| R-12.4 | bind address | `127.0.0.1` |
-| R-12.5 | CORS | absent |
-| R-12.6 | TLS | terminated at the proxy |
+| Requirement | Setting                        | Default                                 |
+| :---------- | :----------------------------- | :-------------------------------------- |
+| R-12.1      | `allowedHosts`                 | the bound address and port, no wildcard |
+| R-12.2      | `allowedOrigins`               | empty — no browser origin is admitted   |
+| R-12.3      | `enableDnsRebindingProtection` | `true`                                  |
+| R-12.4      | bind address                   | `127.0.0.1`                             |
+| R-12.5      | CORS                           | absent                                  |
+| R-12.6      | TLS                            | terminated at the proxy                 |
 
 **The SDK options are set, and a check of our own runs in front of them.** Three measurements make
 the second check load-bearing rather than defensive habit.
@@ -787,14 +787,14 @@ allowlist the calling adapter handed it (`packages/core/src/net/safe-fetch.ts:20
 
 **The allowlist has two sources, and only one of them is compiled.** Measured 2026-08-12.
 
-| Source | Supplied by | Entries |
-| :--- | :--- | :--- |
-| `AdapterRegistration.hosts` | `providers.config.ts`, compiled | 12 hostnames over 10 of the 12 registrations |
-| `chain.rpcHosts`, projected by `hostOf()` | the chain registry, at call time | 34 URLs over 19 chains |
+| Source                                    | Supplied by                      | Entries                                      |
+| :---------------------------------------- | :------------------------------- | :------------------------------------------- |
+| `AdapterRegistration.hosts`               | `providers.config.ts`, compiled  | 12 hostnames over 10 of the 12 registrations |
+| `chain.rpcHosts`, projected by `hostOf()` | the chain registry, at call time | 34 URLs over 19 chains                       |
 
 **Two registrations carry `hosts: []` and are not HTTP allowlists.** `dash-platform` has no live
 transport, and `pg-history` speaks the Postgres wire protocol
-(`packages/core/src/providers.config.ts:392`, `` not a hostname allowlist, so `hosts: []` is empty by nature ``).
+(`packages/core/src/providers.config.ts:392`, ``not a hostname allowlist, so `hosts: []` is empty by nature``).
 
 **No entry from either source carries a port today** (measured: 12 bare hostnames, and 0 of the 34
 `rpcHosts` URLs with an explicit port).
@@ -835,16 +835,16 @@ this paragraph exists so the behaviour is not "fixed" silently.
 **Two different mechanisms are both called DNS-rebinding protection, and they face opposite
 directions.** They are named apart here because neither substitutes for the other.
 
-| Name | Direction | Protects against | Where |
-| :--- | :--- | :--- | :--- |
-| `enableDnsRebindingProtection` | inbound | a browser tricked into addressing our loopback server | SDK transport option (§7.5.4) |
-| the outbound address check | outbound | a vendor hostname resolving into our network | `safeFetch` (below) |
+| Name                           | Direction | Protects against                                      | Where                         |
+| :----------------------------- | :-------- | :---------------------------------------------------- | :---------------------------- |
+| `enableDnsRebindingProtection` | inbound   | a browser tricked into addressing our loopback server | SDK transport option (§7.5.4) |
+| the outbound address check     | outbound  | a vendor hostname resolving into our network          | `safeFetch` (below)           |
 
 **Design (R-10.2): the outbound address check.** Before the hop, the hostname is resolved with
 `node:dns` and every returned address is classified. A loopback, private, link-local, unique-local,
 CGNAT or multicast address refuses the call with `SsrfBlockedError`, whose message carries the
 hostname only (`packages/core/src/net/safe-fetch.ts:6`,
-`` super(`host not in adapter allowlist: ${hostname}`); ``).
+``super(`host not in adapter allowlist: ${hostname}`);``).
 
 **The class is reused; its message is not.** `SsrfBlockedError`'s current text names the allowlist as
 the cause, which is a different refusal. The address check constructs it with its own text and keeps
@@ -892,7 +892,7 @@ ends the precondition, and WI-60 becomes a defect at that moment.
 
 **Design (R-10.3): the redirect limit gets a type.** `safeFetch` throws a plain `Error` on the
 redirect cap (`packages/core/src/net/safe-fetch.ts:678`,
-`` throw new Error(`safeFetch: exceeded ${MAX_REDIRECTS} redirects following ${redactUrl(url)}`); ``).
+``throw new Error(`safeFetch: exceeded ${MAX_REDIRECTS} redirects following ${redactUrl(url)}`);``).
 It becomes `SafeFetchRedirectLimitError`, redacting its URL at construction, and joins
 `PASS_THROUGH_TRANSPORT_ERRORS` (`:228`, `export const PASS_THROUGH_TRANSPORT_ERRORS = [`).
 
@@ -911,12 +911,12 @@ another's hosts (§7.3).
 **No tool input yields a host, a URL or an RPC endpoint (R-11).** Measured 2026-08-12 over
 `packages/mcp-server/test/fixtures/tools-list.snapshot.json` — the frozen `tools/list` contract:
 
-| Quantity | Value |
-| :--- | :--- |
-| tools | 20 |
-| input properties across all tools | 43 |
-| distinct property names | 14 |
-| properties naming a host, URL or endpoint | 0 |
+| Quantity                                  | Value |
+| :---------------------------------------- | :---- |
+| tools                                     | 20    |
+| input properties across all tools         | 43    |
+| distinct property names                   | 14    |
+| properties naming a host, URL or endpoint | 0     |
 
 The 14 names are `address`, `capability`, `chain`, `days`, `exhaustive`, `family`, `includeSeries`,
 `limit`, `minTvlUsd`, `protocolSlug`, `query`, `series`, `sortedBy`, `tokenAddress`.
@@ -943,20 +943,20 @@ to eval cases).
 `isError` text (`packages/mcp-server/src/tools/registry.ts:205`,
 `return { isError: true, content: [{ type: 'text', text: outcome.reason }] };`).
 
-| Coordinate | What the client is handed | Forbidden by |
-| :--- | :--- | :--- |
-| `packages/core/src/cache/budget-store.ts:346` | `` `budget exceeded for provider=${provider}: need ${cost}, used ${used}, ceiling ${ceiling}` `` | R-31.3 |
-| `packages/core/src/cache/budget-store.ts:377` | `` `velocity limit reached for provider=${provider}: need ${cost}, used ${windowUsed} ` `` | R-31.3 |
-| `packages/core/src/cache/budget-store.ts:395` | `` `call rate limit reached for provider=${provider}: ${windowCalls} of ` `` | R-31.3 |
-| `packages/core/src/adapters/nansen/budget-gate.ts:664` | `` ` — set NANSEN_DAILY_CREDIT_CAP to raise it, or ${DAILY_CAP_OFF} to disable it` `` | R-31.2 |
-| `packages/core/src/adapters/nansen/budget-gate.ts:612` | `` `NANSEN_MAX_CALLS_PER_MIN to raise it, or ${MAX_CALLS_OFF} to disable it. ` `` | R-31.2 |
-| `packages/core/src/adapters/nansen/budget-gate.ts:621` | `` `or set NANSEN_VELOCITY_CREDITS_PER_MIN to raise it, or ${VELOCITY_OFF} to disable it. ` `` | R-31.2 |
-| `packages/core/src/adapters/registry.ts:38` | `` `capability unavailable: ${details.capability} on ${details.chain} — tried: ${triedText}` `` | R-31.4 |
-| `packages/core/src/adapters/registry.ts:83` | `` `capability deadline exceeded: ${details.capability} on ${details.chain} — tried: ${triedText}` `` | R-31.4 |
-| `packages/core/src/net/rate-limit.ts:136` | `` super(`throttle: rejected for provider "${providerId}": ${reason}`); `` | R-31.4 |
+| Coordinate                                             | What the client is handed                                                                             | Forbidden by |
+| :----------------------------------------------------- | :---------------------------------------------------------------------------------------------------- | :----------- |
+| `packages/core/src/cache/budget-store.ts:346`          | `` `budget exceeded for provider=${provider}: need ${cost}, used ${used}, ceiling ${ceiling}` ``      | R-31.3       |
+| `packages/core/src/cache/budget-store.ts:377`          | `` `velocity limit reached for provider=${provider}: need ${cost}, used ${windowUsed} ` ``            | R-31.3       |
+| `packages/core/src/cache/budget-store.ts:395`          | `` `call rate limit reached for provider=${provider}: ${windowCalls} of ` ``                          | R-31.3       |
+| `packages/core/src/adapters/nansen/budget-gate.ts:664` | `` ` — set NANSEN_DAILY_CREDIT_CAP to raise it, or ${DAILY_CAP_OFF} to disable it` ``                 | R-31.2       |
+| `packages/core/src/adapters/nansen/budget-gate.ts:612` | `` `NANSEN_MAX_CALLS_PER_MIN to raise it, or ${MAX_CALLS_OFF} to disable it. ` ``                     | R-31.2       |
+| `packages/core/src/adapters/nansen/budget-gate.ts:621` | `` `or set NANSEN_VELOCITY_CREDITS_PER_MIN to raise it, or ${VELOCITY_OFF} to disable it. ` ``        | R-31.2       |
+| `packages/core/src/adapters/registry.ts:38`            | `` `capability unavailable: ${details.capability} on ${details.chain} — tried: ${triedText}` ``       | R-31.4       |
+| `packages/core/src/adapters/registry.ts:83`            | `` `capability deadline exceeded: ${details.capability} on ${details.chain} — tried: ${triedText}` `` | R-31.4       |
+| `packages/core/src/net/rate-limit.ts:136`              | ``super(`throttle: rejected for provider "${providerId}": ${reason}`);``                              | R-31.4       |
 
 **The table above is a sample, and says so.** `budget-store.ts` carries 8 strings interpolating
-`` provider=${provider} `` (measured 2026-08-12); 3 of them are listed. The 5 unlisted ones are the
+`provider=${provider}` (measured 2026-08-12); 3 of them are listed. The 5 unlisted ones are the
 fail-closed branches, and they name the provider and the ledger state the same way.
 
 **Why the sample is not enlarged into a list.** The design below builds client text from the refusal
@@ -985,12 +985,12 @@ including a vendor body an adapter embeds. A compiled template has no such depen
 
 **Which rendering each side receives** (`OQ-T014-SEC-2`, closed by the owner 2026-08-13).
 
-| Deployment profile | Principal | Rendering returned to the caller | Operator rendering is read in |
-| :--- | :--- | :--- | :--- |
-| `network`, `network-sqlite` | role `admin` | client | stderr and `diagnostics` |
-| `network`, `network-sqlite` | role `user` | client | stderr and `diagnostics` |
-| `network`, `network-sqlite` | no principal | client | stderr and `diagnostics` |
-| `local` | role `admin` | operator | stderr, read directly |
+| Deployment profile          | Principal    | Rendering returned to the caller | Operator rendering is read in |
+| :-------------------------- | :----------- | :------------------------------- | :---------------------------- |
+| `network`, `network-sqlite` | role `admin` | client                           | stderr and `diagnostics`      |
+| `network`, `network-sqlite` | role `user`  | client                           | stderr and `diagnostics`      |
+| `network`, `network-sqlite` | no principal | client                           | stderr and `diagnostics`      |
+| `local`                     | role `admin` | operator                         | stderr, read directly         |
 
 **The network rule is unconditional in the role.** No response over the network transport carries
 operator detail.
@@ -1067,12 +1067,12 @@ response still discloses our supplier list and walk order.
 
 **Four channels, and what each carries.**
 
-| Channel | Carries the token | Mechanism |
-| :--- | :--- | :--- |
-| `args_hash` | no | the hash input is `(capability, args)` only |
-| `_meta` | no | the role allowlist has no principal key (§7.5.3) |
-| stderr | no | diagnostics print the row id, never the principal (§4.5.8) |
-| the store | digest only | `sha256(pepper \|\| presented)` (§7.5.2) |
+| Channel     | Carries the token | Mechanism                                                  |
+| :---------- | :---------------- | :--------------------------------------------------------- |
+| `args_hash` | no                | the hash input is `(capability, args)` only                |
+| `_meta`     | no                | the role allowlist has no principal key (§7.5.3)           |
+| stderr      | no                | diagnostics print the row id, never the principal (§4.5.8) |
+| the store   | digest only       | `sha256(pepper \|\| presented)` (§7.5.2)                   |
 
 **`args_hash` is unchanged by T-014** (R-5.1). It is `deriveArgsHash(capability, args)`
 (`packages/core/src/net/args-hash.ts:44`,

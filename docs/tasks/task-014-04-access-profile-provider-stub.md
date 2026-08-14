@@ -1,6 +1,7 @@
 # Задача 014.04: `AccessProfileReader` — асинхронное чтение, умолчания в коде `[STUB]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 - UC-3 — оператор запускает локально
 
@@ -32,6 +33,7 @@
 ### Изменения в существующих файлах
 
 **Файл `packages/mcp-server/src/server.ts`, строка 74 — `for (const spec of toolSpecs) {`:**
+
 - При режиме `'list'` пропускать спецификацию, имени которой список профиля не несёт
 - При режиме `'all'` пересечение не вычислять и инвентарь не менять
 - Заголовок и описание оставить чтением из определения тула
@@ -78,15 +80,15 @@ export interface AccessProfileReader {
 
 Форма повторяет колонки `access_profiles` из `data-model.md` §4.5.3 поле в поле.
 
-| Поле | Значение | Колонка |
-| :--- | :--- | :--- |
-| `creditsMode` | `'unlimited'` \| `'metered'` | `credits_mode` |
-| `creditsBalanceRaw` | `string` \| `null` — точное значение строкой | `credits_balance_raw` |
-| `rateLimitMode` | `'unlimited'` \| `'metered'` | `rate_limit_mode` |
-| `rateLimitPerMin` | `number` \| `null` | `rate_limit_per_min` |
-| `toolAllowlistMode` | `'all'` \| `'list'` | `tool_allowlist_mode` |
-| `toolAllowlist` | `readonly string[]` \| `null` | `tool_allowlist_json` |
-| `routeDisclosureMode` | `'full'` \| `'none'` — умолчание `'full'` | `route_disclosure_mode` |
+| Поле                  | Значение                                     | Колонка                 |
+| :-------------------- | :------------------------------------------- | :---------------------- |
+| `creditsMode`         | `'unlimited'` \| `'metered'`                 | `credits_mode`          |
+| `creditsBalanceRaw`   | `string` \| `null` — точное значение строкой | `credits_balance_raw`   |
+| `rateLimitMode`       | `'unlimited'` \| `'metered'`                 | `rate_limit_mode`       |
+| `rateLimitPerMin`     | `number` \| `null`                           | `rate_limit_per_min`    |
+| `toolAllowlistMode`   | `'all'` \| `'list'`                          | `tool_allowlist_mode`   |
+| `toolAllowlist`       | `readonly string[]` \| `null`                | `tool_allowlist_json`   |
+| `routeDisclosureMode` | `'full'` \| `'none'` — умолчание `'full'`    | `route_disclosure_mode` |
 
 **Why режим рядом с каждым значением.** `null` со смыслом «безлимит» неотличим от профиля, который
 никогда не заводили. Это класс дефекта L-10: 43 сети из 458 отвечали уверенным «не развёрнут», и оба
@@ -134,11 +136,11 @@ export interface AccessProfileReader {
 
 Формы, которые проверка пропускает (замер 2026-08-13: 20 вхождений, 10 в комментариях, 10 в коде):
 
-| Форма | Мест в коде | Пример |
-| :--- | :--- | :--- |
-| `deps.env ?? process.env` | 8 | `packages/core/src/adapters/coingecko/index.ts:96` |
-| параметр по умолчанию | 1 | `packages/core/src/cache/data-dir.ts:13` |
-| разбор схемы | 1 | `packages/mcp-server/src/env.ts:167` |
+| Форма                     | Мест в коде | Пример                                             |
+| :------------------------ | :---------- | :------------------------------------------------- |
+| `deps.env ?? process.env` | 8           | `packages/core/src/adapters/coingecko/index.ts:96` |
+| параметр по умолчанию     | 1           | `packages/core/src/cache/data-dir.ts:13`           |
+| разбор схемы              | 1           | `packages/mcp-server/src/env.ts:167`               |
 
 **Why статическая проверка, а не ревью.** §7.3 называет ревью кода слабейшим из трёх контролей, а
 прямое чтение настройки — правка в одну строку.
@@ -184,12 +186,14 @@ export interface AccessProfileReader {
 ## Тест-кейсы
 
 ### Сквозные тесты
+
 1. **TC-E2E-01:** профиль с сужающим списком не добавляет тулов и не меняет их текстов
    - Входные данные: режим `'list'` и три имени из реестра
    - Ожидаемый результат: `tools/list` отдаёт три; заголовки и описания совпадают с прогоном без
      сужения посимвольно (AC-25)
 
 ### Модульные тесты
+
 1. **TC-UNIT-01:** два поставщика, один читатель
    - Входные данные: поставщик умолчаний и второй поставщик, отвечающий с задержкой
    - Ожидаемый результат: читатель не правится под второго (AC-38)
@@ -227,12 +231,14 @@ export interface AccessProfileReader {
     - Ожидаемый результат: проверка зелёная; чтение того же поля в третьем файле — красная
 
 ### Регрессионные тесты
+
 - Снимок `tools/list` остаётся без правок (AC-2)
 - Гейт зелёный на действующем дереве: 8 инъекций, 1 параметр по умолчанию, 1 разбор схемы
 
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] Форма профиля — семь полей, у каждого значения объявлен режим
 - [ ] AC-24 закрыт частично: `EnvSchema.parse({})` проходит; запрет запуска сетевого профиля без
       токена закрывает задача 014-12

@@ -1,6 +1,7 @@
 # Задача 014.36: восемь таблиц в `CACHE_DDL` `[LOGIC]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 - UC-3 — оператор запускает локально
 
@@ -28,6 +29,7 @@
 ### Изменения в существующих файлах
 
 **Файл `packages/core/src/cache/ddl.ts`:**
+
 - Добавить в `CACHE_DDL` восемь таблиц §4.5: `users`, `access_profiles`, `api_tokens`,
   `access_audit`, `provider_buckets`, `request_trace`, `diagnostics`, `retention_runs`
 - Объявить `provider_buckets` после `providers`, а `api_tokens` — после `users` и `access_profiles`
@@ -148,6 +150,7 @@ backfill (§4.4 пункт 1, постусловие).
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] Восемь таблиц объявлены в `CACHE_DDL` формой `CREATE TABLE IF NOT EXISTS`
 - [ ] Десять именованных индексов объявлены
 - [ ] Семь ULID-ключей объявлены `TEXT PRIMARY KEY NOT NULL` (§4.5.2a)

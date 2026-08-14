@@ -1,6 +1,7 @@
 # Задача 014.16: видимость `_meta` по роли и `route_disclosure_mode` `[LOGIC]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 
 <!-- contract:goal -->
@@ -20,6 +21,7 @@
 ### Изменения в существующих файлах
 
 **Файл `packages/mcp-server/src/tools/registry.ts`:**
+
 - Ввести одну функцию `metaFor(principal, parts)`, собирающую каждый объект `_meta`
 - Применить проекцию по роли в `toCallToolResult` (строка 201,
   `function toCallToolResult<TOutput extends Record<string, unknown>>(`), над объектом `const meta = {`
@@ -28,6 +30,7 @@
   значении `'none'`; чтение выполняется в том же `toCallToolResult`
 
 **Файл `packages/mcp-server/src/tools/budget-meta.ts`:**
+
 - `budgetMeta()` продолжает считать часть `budget` и не решает, кому она видна
 
 **Why проекция стоит в `toCallToolResult`, а не в `budgetMeta()`.** `security.md` §7.5.3: одна
@@ -44,14 +47,14 @@
 
 Классификация на сегодня, по `interfaces.md` §5.4.4:
 
-| Поле `_meta` | Класс | Требование |
-| :--- | :--- | :--- |
-| `cache.status`, `cache.ageMs`, `cache.capability` | client | R-6.3 |
-| `cache.provider` | client, сужается профилем | R-6.3; §5.4.4.1 |
-| `cache.perSource[]` | client, сужается профилем | R-6.3; §5.4.4.1 |
-| `timing.overrunMs` | client | R-16.4 |
-| `budget.provider`, `budget.creditsUsedToday` | operator | R-6.1 |
-| `tier` | не объявлен ни на одном транспорте | R-6.2, AC-7 |
+| Поле `_meta`                                      | Класс                              | Требование      |
+| :------------------------------------------------ | :--------------------------------- | :-------------- |
+| `cache.status`, `cache.ageMs`, `cache.capability` | client                             | R-6.3           |
+| `cache.provider`                                  | client, сужается профилем          | R-6.3; §5.4.4.1 |
+| `cache.perSource[]`                               | client, сужается профилем          | R-6.3; §5.4.4.1 |
+| `timing.overrunMs`                                | client                             | R-16.4          |
+| `budget.provider`, `budget.creditsUsedToday`      | operator                           | R-6.1           |
+| `tier`                                            | не объявлен ни на одном транспорте | R-6.2, AC-7     |
 
 ### Поле, отсутствующее в таблице, трактуется как `operator`
 
@@ -121,6 +124,7 @@ ceiling 100`; `capability unavailable: entity.labels on ethereum — tried: bloc
 ## Тест-кейсы
 
 ### Сквозные тесты
+
 1. **TC-E2E-01:** `_meta.budget` отсутствует у роли `user` и присутствует у роли `admin` (AC-6)
    - Входные данные: один и тот же вызов от двух принципалов
    - Ожидаемый результат: ключ `budget` есть только в ответе роли `admin`
@@ -130,6 +134,7 @@ ceiling 100`; `capability unavailable: entity.labels on ethereum — tried: bloc
    - Ожидаемый результат: при `'none'` трёх полей нет, при `'full'` есть (AC-49)
 
 ### Модульные тесты
+
 1. **TC-UNIT-01:** `tier` не встречается ни в одном ответе ни на одном транспорте
    - Входные данные: обход реестра тулов, счёт не зашит
    - Ожидаемый результат: ни одна форма ответа не объявляет поле `tier` (AC-7)
@@ -151,11 +156,13 @@ ceiling 100`; `capability unavailable: entity.labels on ethereum — tried: bloc
    - Ожидаемый результат: запрос отвергнут; значение `'full'` не подставлено (задача 014-04)
 
 ### Регрессионные тесты
+
 - Локальный профиль сохраняет прежний объём `_meta`: роль `admin`, умолчание `'full'`
 
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] AC-6: `_meta.budget` только у роли `admin`
 - [ ] AC-7: `tier` не выводится нигде
 - [ ] AC-14: отказ не несёт имён переменных окружения и остатка оператора

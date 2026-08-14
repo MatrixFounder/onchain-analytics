@@ -3021,7 +3021,7 @@ class. It is also the only module that names a storage engine (§3.4.8).
 2. `main()` assembles the process-level dependencies — one `CapabilityRegistry` over twelve
    adapters and one `CacheStore`, one `BudgetStore`, one `Throttle` over the limiter store.
    Postcondition: the set of dependencies is identical in every profile, and none is built twice.
-2a. `main()` reads the storage axis from the same profile value and picks each store's
+   2a. `main()` reads the storage axis from the same profile value and picks each store's
    implementation (§3.4.8). Postcondition: no module below `index.ts` learns which engine it holds.
 3. **Local profile:** `createServer(deps)` once, then `server.connect(new StdioServerTransport())`.
    Postcondition: no listener is opened and no token is read (R-1.3, `docs/TASK.md:451`).
@@ -3049,16 +3049,16 @@ must not require a listener (ADR-003 D1).
 2026-08-12 from `dist/esm/server/webStandardStreamableHttp.d.ts` and `.js`, and from
 `dist/esm/server/streamableHttp.d.ts` and `.js`):
 
-| Fact | Where it is declared | Consequence for T-014 |
-| :--- | :--- | :--- |
-| `sessionIdGenerator?: () => string` — absent means stateless mode | `WebStandardStreamableHTTPServerTransportOptions` | the network profile is **stateful**: it supplies a generator (R-2.3) |
-| `onsessioninitialized` / `onsessionclosed` callbacks | same interface | the session map is written from these two callbacks, not from request handling |
-| a request with an unknown session id is answered `404` | the class docstring, `Requests with invalid session IDs are rejected with 404 Not Found` | R-26.2's "invalid `sessionId`" class needs no code of ours |
-| a non-initialization request without a session id is answered `400` | same docstring | same |
-| a stateless transport throws when reused across requests | `webStandardStreamableHttp.js`, `Stateless transport cannot be reused across requests.` | stateless mode is not an option for a server that holds sessions |
-| `authInfo` reaches the tool callback from `req.auth` | `streamableHttp.js` line 131, `const authInfo = req.auth;` | §3.4.3's threading needs no wrapper of ours |
-| the Node class takes the **same** options object as the web-standard one | `streamableHttp.d.ts` line 20, `export type StreamableHTTPServerTransportOptions = WebStandardStreamableHTTPServerTransportOptions;` | every row above applies to the class §3.4.2 instantiates |
-| all three perimeter options are `@deprecated` | `webStandardStreamableHttp.d.ts` line 82, `:88`, `:94` | see the deviation below |
+| Fact                                                                     | Where it is declared                                                                                                                 | Consequence for T-014                                                          |
+| :----------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------- |
+| `sessionIdGenerator?: () => string` — absent means stateless mode        | `WebStandardStreamableHTTPServerTransportOptions`                                                                                    | the network profile is **stateful**: it supplies a generator (R-2.3)           |
+| `onsessioninitialized` / `onsessionclosed` callbacks                     | same interface                                                                                                                       | the session map is written from these two callbacks, not from request handling |
+| a request with an unknown session id is answered `404`                   | the class docstring, `Requests with invalid session IDs are rejected with 404 Not Found`                                             | R-26.2's "invalid `sessionId`" class needs no code of ours                     |
+| a non-initialization request without a session id is answered `400`      | same docstring                                                                                                                       | same                                                                           |
+| a stateless transport throws when reused across requests                 | `webStandardStreamableHttp.js`, `Stateless transport cannot be reused across requests.`                                              | stateless mode is not an option for a server that holds sessions               |
+| `authInfo` reaches the tool callback from `req.auth`                     | `streamableHttp.js` line 131, `const authInfo = req.auth;`                                                                           | §3.4.3's threading needs no wrapper of ours                                    |
+| the Node class takes the **same** options object as the web-standard one | `streamableHttp.d.ts` line 20, `export type StreamableHTTPServerTransportOptions = WebStandardStreamableHTTPServerTransportOptions;` | every row above applies to the class §3.4.2 instantiates                       |
+| all three perimeter options are `@deprecated`                            | `webStandardStreamableHttp.d.ts` line 82, `:88`, `:94`                                                                               | see the deviation below                                                        |
 
 `StreamableHTTPServerTransport` is the class the session manager instantiates, and it is a wrapper
 over the web-standard one (`streamableHttp.d.ts` line 4, `This is a thin wrapper around`). The two names
@@ -3092,16 +3092,16 @@ different causes without leaking either memory or a transport.
 **What is shared and what is per session.** The table below makes ADR-003 §"Проба принципала"
 concrete against the modules that exist today.
 
-| Object | Scope | Why |
-| :--- | :--- | :--- |
-| `CapabilityRegistry` + twelve adapters | process | one route table, one adapter set; R-2.2 |
-| `CacheStore` | process, inside the registry | a per-session cache would end the margin model (ADR-003 D4) |
-| `BudgetStore` | process | it is our ceiling at one vendor account, not a client's |
-| `Throttle` over the limiter store | process | R-7; the store makes it cross-process as well |
-| chain registry | process | 458 read-only rows, indexed once at load |
-| `McpServer` | **per session** | a second `connect` on one instance is refused (probe Q2) |
-| `StreamableHTTPServerTransport` | **per session** | it carries that session's id and its streams |
-| `Principal` | **per request** | a revoked token is refused on the next request (§3.4.3) |
+| Object                                 | Scope                        | Why                                                         |
+| :------------------------------------- | :--------------------------- | :---------------------------------------------------------- |
+| `CapabilityRegistry` + twelve adapters | process                      | one route table, one adapter set; R-2.2                     |
+| `CacheStore`                           | process, inside the registry | a per-session cache would end the margin model (ADR-003 D4) |
+| `BudgetStore`                          | process                      | it is our ceiling at one vendor account, not a client's     |
+| `Throttle` over the limiter store      | process                      | R-7; the store makes it cross-process as well               |
+| chain registry                         | process                      | 458 read-only rows, indexed once at load                    |
+| `McpServer`                            | **per session**              | a second `connect` on one instance is refused (probe Q2)    |
+| `StreamableHTTPServerTransport`        | **per session**              | it carries that session's id and its streams                |
+| `Principal`                            | **per request**              | a revoked token is refused on the next request (§3.4.3)     |
 
 **The per-session cost is one `McpServer` and one transport.** Everything a tool reads is a
 reference to a process-level object, so a session holds no copy of the registry, the cache or the
@@ -3289,12 +3289,12 @@ constant.
 assembles every `_meta` object, so R-6.4 — the rule reaching fields added later — holds by
 construction rather than by review.
 
-| `_meta` field | Who sees it | Source |
-| :--- | :--- | :--- |
-| `_meta.cache` (`status`, `ageMs`) | every principal | part of the commercial contract, ADR-003 D4 |
-| `_meta.budget` | role `admin` only | it reports **our** vendor spend, ADR-003 D2 |
-| `_meta.timing.overrunMs` | every principal | it is a fact about the caller's own request (R-16.4) |
-| `tier` | nobody, on any transport | never added to a response at all (R-6.2, AC-7) |
+| `_meta` field                     | Who sees it              | Source                                               |
+| :-------------------------------- | :----------------------- | :--------------------------------------------------- |
+| `_meta.cache` (`status`, `ageMs`) | every principal          | part of the commercial contract, ADR-003 D4          |
+| `_meta.budget`                    | role `admin` only        | it reports **our** vendor spend, ADR-003 D2          |
+| `_meta.timing.overrunMs`          | every principal          | it is a fact about the caller's own request (R-16.4) |
+| `tier`                            | nobody, on any transport | never added to a response at all (R-6.2, AC-7)       |
 
 **The principal never enters the cache key** (R-5.1). `deriveArgsHash(capability, args)` keeps its
 two inputs (`packages/core/src/net/args-hash.ts`), so two principals asking the same question hit
@@ -3387,6 +3387,7 @@ follow, and both are testable:
    **Consequence for `limiter.degraded` on the local profile.** Nothing supplies `emit` on stdio, so
    the event exists only where a reader for it does. R-19.2 scopes the stored channel to the network
    profile.
+
 4. The process stops calling the store for a cooldown before retrying — applied `60_000` ms,
    measured: none. Postcondition: a store outage is not paid for once per call by every caller.
 
@@ -3427,14 +3428,14 @@ numbers.
 Six claims elsewhere in this document were true of a one-session local process. Each is corrected
 in place; this table is the index of those corrections.
 
-| Claim | Where it was stated | What T-014 makes of it |
-| :--- | :--- | :--- |
-| singleflight coalesces one client's duplicate calls | §3.2, "Singleflight (R-39) is deliberately per-process" | it now coalesces two principals' identical calls; both pay |
-| refill + consume + decide is wholly synchronous | §3.2, `net/rate-limit.ts` code block | atomicity moves into one SQL statement (§3.4.4) |
-| single-process, in-memory rate limiter | [ARCHITECTURE.md](../ARCHITECTURE.md) §8 | corrected there 2026-08-12; §8 now names the store, the fallback bucket and the session ceiling |
-| `checkAndReserve` is atomic because `BEGIN IMMEDIATE` wraps a synchronous body | §3.2, "Cross-process contract" | the guarantee is restated per storage axis (§3.4.8) |
-| the hot and the persistent layer are written together | §3.2, `TwoLevelStore` promotion note | on Postgres, several hot layers stand over one table (§3.4.8) |
-| every cache access writes one stderr line | §3.2, "Hit/miss counters" | the line becomes level-gated (§3.4.10) |
+| Claim                                                                          | Where it was stated                                     | What T-014 makes of it                                                                          |
+| :----------------------------------------------------------------------------- | :------------------------------------------------------ | :---------------------------------------------------------------------------------------------- |
+| singleflight coalesces one client's duplicate calls                            | §3.2, "Singleflight (R-39) is deliberately per-process" | it now coalesces two principals' identical calls; both pay                                      |
+| refill + consume + decide is wholly synchronous                                | §3.2, `net/rate-limit.ts` code block                    | atomicity moves into one SQL statement (§3.4.4)                                                 |
+| single-process, in-memory rate limiter                                         | [ARCHITECTURE.md](../ARCHITECTURE.md) §8                | corrected there 2026-08-12; §8 now names the store, the fallback bucket and the session ceiling |
+| `checkAndReserve` is atomic because `BEGIN IMMEDIATE` wraps a synchronous body | §3.2, "Cross-process contract"                          | the guarantee is restated per storage axis (§3.4.8)                                             |
+| the hot and the persistent layer are written together                          | §3.2, `TwoLevelStore` promotion note                    | on Postgres, several hot layers stand over one table (§3.4.8)                                   |
+| every cache access writes one stderr line                                      | §3.2, "Hit/miss counters"                               | the line becomes level-gated (§3.4.10)                                                          |
 
 #### 3.4.6. Open questions raised by this section
 
@@ -3517,11 +3518,11 @@ flowchart TB
 or Streamable HTTP. Storage is SQLite or Postgres. A deployment profile is a named combination of
 the two.
 
-| Profile name | Transport | Storage | Purpose |
-| :--- | :--- | :--- | :--- |
-| `local` | stdio | SQLite in `DATA_DIR` | the shipped local mode (UC-3) |
-| `network` | Streamable HTTP | Postgres, schema `onchain` | the shipped server mode |
-| `network-sqlite` | Streamable HTTP | SQLite in `DATA_DIR` | debugging the transport without Postgres |
+| Profile name     | Transport       | Storage                    | Purpose                                  |
+| :--------------- | :-------------- | :------------------------- | :--------------------------------------- |
+| `local`          | stdio           | SQLite in `DATA_DIR`       | the shipped local mode (UC-3)            |
+| `network`        | Streamable HTTP | Postgres, schema `onchain` | the shipped server mode                  |
+| `network-sqlite` | Streamable HTTP | SQLite in `DATA_DIR`       | debugging the transport without Postgres |
 
 **Why the third combination exists.** The owner debugs HTTP on the development machine before
 `.mcp.json` is switched over. Requiring Postgres for that is a cost with no purpose.
@@ -3533,7 +3534,7 @@ the two.
 two roles and their table privileges. `security.md` §7.3 states which tables the read DSN may reach.
 
 **The three names are values of one key, and `deployment.md` §10.3 owns that key.** Its row lists
-all three (`docs/architectures/deployment.md:191`, `` | `ONCHAIN_PROFILE`                  | bootstrap | ``).
+all three (`docs/architectures/deployment.md:191`, ``| `ONCHAIN_PROFILE`                  | bootstrap |``).
 
 **Why a third profile name rather than a second key.** Two keys make the fourth combination —
 stdio over Postgres — settable, and this document designs no such mode.
@@ -3555,12 +3556,12 @@ closes `OQ-T014-DM-1` (`data-model.md` §4.5.11).
 
 **What the storage axis selects, component by component.**
 
-| Component | SQLite axis | Postgres axis | Interface it satisfies |
-| :--- | :--- | :--- | :--- |
-| `CacheStore` | `TwoLevelStore(SqliteCacheStore, LruHotLayer)` | `TwoLevelStore(PgCacheStore, LruHotLayer)` | `packages/core/src/adapters/cache-store.ts:25` |
-| `BudgetStore` | `SqliteBudgetStore` | `PgBudgetStore` | `packages/core/src/cache/budget-store.ts:46` |
-| `LimiterStore` | `SqliteLimiterStore` | `PgLimiterStore` | §3.4.4, `data-model.md` §4.5.6 |
-| identity, trace, diagnostics | `Sqlite*` writers | `Pg*` writers | `data-model.md` §4.5 |
+| Component                    | SQLite axis                                    | Postgres axis                              | Interface it satisfies                         |
+| :--------------------------- | :--------------------------------------------- | :----------------------------------------- | :--------------------------------------------- |
+| `CacheStore`                 | `TwoLevelStore(SqliteCacheStore, LruHotLayer)` | `TwoLevelStore(PgCacheStore, LruHotLayer)` | `packages/core/src/adapters/cache-store.ts:25` |
+| `BudgetStore`                | `SqliteBudgetStore`                            | `PgBudgetStore`                            | `packages/core/src/cache/budget-store.ts:46`   |
+| `LimiterStore`               | `SqliteLimiterStore`                           | `PgLimiterStore`                           | §3.4.4, `data-model.md` §4.5.6                 |
+| identity, trace, diagnostics | `Sqlite*` writers                              | `Pg*` writers                              | `data-model.md` §4.5                           |
 
 **Both existing interfaces are already asynchronous, so the Postgres axis adds implementations and
 changes no signature.** `CacheStore.get` returns `Promise<CacheGetResult | undefined>`
@@ -3693,12 +3694,12 @@ schema (`data-model.md` §4.4 item 2).
 
 **Failure behaviour differs per store, and each one is already decided elsewhere.**
 
-| Store | On a storage failure | Recorded where |
-| :--- | :--- | :--- |
-| `LimiterStore` | falls back to an in-process bucket at the declared ceiling | §3.4.4, R-7.7 |
-| `BudgetStore` | fails closed — the paid call does not proceed | §3.2, "Fail-closed, never fail-open" |
-| `CacheStore` read | treated as a miss | `packages/core/src/adapters/registry.ts:1165` |
-| `CacheStore` write | best-effort; the result is still returned | `packages/core/src/adapters/registry.ts:1242` |
+| Store              | On a storage failure                                       | Recorded where                                |
+| :----------------- | :--------------------------------------------------------- | :-------------------------------------------- |
+| `LimiterStore`     | falls back to an in-process bucket at the declared ceiling | §3.4.4, R-7.7                                 |
+| `BudgetStore`      | fails closed — the paid call does not proceed              | §3.2, "Fail-closed, never fail-open"          |
+| `CacheStore` read  | treated as a miss                                          | `packages/core/src/adapters/registry.ts:1165` |
+| `CacheStore` write | best-effort; the result is still returned                  | `packages/core/src/adapters/registry.ts:1242` |
 
 **When the failing store IS the diagnostics store, the event goes to stderr alone.** A
 `diagnostics` row written into the database that just refused a write would be lost, and the process
@@ -3775,19 +3776,19 @@ minus two matches inside comments — `packages/core/src/net/safe-fetch.ts:75` a
 **Why the two are named rather than only counted.** A re-measurement that returns 28 and finds no
 list of what to subtract reads as drift from 26, and the reader re-derives the subtraction by hand.
 
-| Site or group | Count | Volume characteristic | Fate on HTTP |
-| :--- | :--- | :--- | :--- |
-| `packages/core/src/cache/stats.ts:45` | 1 | one line per cache access, so at least one per request per client | level-gated, off by default |
-| `packages/core/src/adapters/registry.ts:821` and eight cache get/set/merge failure sites | 9 | one per store failure, merge failure or route-policy throw | container log |
-| `packages/core/src/pg/read-client.ts:392`, `:398`, `:435` | 3 | one per pool construction, idle-pool or query failure | container log |
-| `packages/core/src/adapters/nansen/budget-gate.ts:525`, `:685` | 2 | one per `/account` resync; one per threshold crossing per bucket | container log |
-| `packages/core/src/adapters/nansen/reconcile.ts:89`, `:108`, `:117` | 3 | one per degraded reconciliation | container log |
-| `packages/core/src/adapters/nansen/normalize.ts:260`, `:267` | 2 | one per response carrying dropped rows | container log |
-| `packages/core/src/adapters/nansen/index.ts:741` | 1 | one per ledger-write failure after a paid call | container log |
-| `packages/core/src/adapters/dexscreener/index.ts:248` | 1 | one per response carrying malformed pairs | container log |
-| `packages/core/src/adapters/blockscout/index.ts:937` | 1 | one per response carrying unusable holder rows | container log |
-| `packages/mcp-server/src/env.ts:158`, `:176` | 2 | at most one per process start | container log |
-| `packages/mcp-server/src/index.ts:172` | 1 | at most one per process, on a fatal error | container log |
+| Site or group                                                                            | Count | Volume characteristic                                             | Fate on HTTP                |
+| :--------------------------------------------------------------------------------------- | :---- | :---------------------------------------------------------------- | :-------------------------- |
+| `packages/core/src/cache/stats.ts:45`                                                    | 1     | one line per cache access, so at least one per request per client | level-gated, off by default |
+| `packages/core/src/adapters/registry.ts:821` and eight cache get/set/merge failure sites | 9     | one per store failure, merge failure or route-policy throw        | container log               |
+| `packages/core/src/pg/read-client.ts:392`, `:398`, `:435`                                | 3     | one per pool construction, idle-pool or query failure             | container log               |
+| `packages/core/src/adapters/nansen/budget-gate.ts:525`, `:685`                           | 2     | one per `/account` resync; one per threshold crossing per bucket  | container log               |
+| `packages/core/src/adapters/nansen/reconcile.ts:89`, `:108`, `:117`                      | 3     | one per degraded reconciliation                                   | container log               |
+| `packages/core/src/adapters/nansen/normalize.ts:260`, `:267`                             | 2     | one per response carrying dropped rows                            | container log               |
+| `packages/core/src/adapters/nansen/index.ts:741`                                         | 1     | one per ledger-write failure after a paid call                    | container log               |
+| `packages/core/src/adapters/dexscreener/index.ts:248`                                    | 1     | one per response carrying malformed pairs                         | container log               |
+| `packages/core/src/adapters/blockscout/index.ts:937`                                     | 1     | one per response carrying unusable holder rows                    | container log               |
+| `packages/mcp-server/src/env.ts:158`, `:176`                                             | 2     | at most one per process start                                     | container log               |
+| `packages/mcp-server/src/index.ts:172`                                                   | 1     | at most one per process, on a fatal error                         | container log               |
 
 **Twenty-five of the twenty-six keep stderr as their only channel** (R-32.1). On HTTP that stream is
 the container log, which the operator reads and the client does not.
@@ -3828,13 +3829,13 @@ description.
 `grep -RnE "^(export )?(const|let|var) .*= *new (Map|Set|WeakMap|LRUCache|Array)"` plus
 `grep -RnE "^(export )?let "`. Five bindings qualify.
 
-| Coordinate | What it holds | Consequence in the network profile |
-| :--- | :--- | :--- |
-| `packages/core/src/net/rate-limit.ts:409` — `export const throttle: Throttle = createThrottle();` | token buckets for ten adapters | the profile stops taking it; `index.ts` injects a store-backed throttle (§3.4.4) |
-| `packages/core/src/cache/stats.ts:13` — `const counters = new Map<string, CacheCounters>();` | hit and miss counts per capability | counts every principal's accesses together; bounded at one entry per capability |
-| `packages/mcp-server/src/tools/list-chains.ts:81` — `const capabilityCache = new WeakMap<CapabilityRegistry, Map<string, string[]>>();` | chain to capability memo | keyed on the registry instance, so it holds one entry for the one process-level registry |
-| `packages/core/src/chain/registry.ts:25` — `let shippedRegistry: ChainRegistry` | the parsed 458-row snapshot | written once, then read-only |
-| `packages/core/src/chain/address.ts:128` — `let legacyRegistry: ChainRegistry` | the same snapshot for the string arm | written once, then read-only |
+| Coordinate                                                                                                                              | What it holds                        | Consequence in the network profile                                                       |
+| :-------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------- | :--------------------------------------------------------------------------------------- |
+| `packages/core/src/net/rate-limit.ts:409` — `export const throttle: Throttle = createThrottle();`                                       | token buckets for ten adapters       | the profile stops taking it; `index.ts` injects a store-backed throttle (§3.4.4)         |
+| `packages/core/src/cache/stats.ts:13` — `const counters = new Map<string, CacheCounters>();`                                            | hit and miss counts per capability   | counts every principal's accesses together; bounded at one entry per capability          |
+| `packages/mcp-server/src/tools/list-chains.ts:81` — `const capabilityCache = new WeakMap<CapabilityRegistry, Map<string, string[]>>();` | chain to capability memo             | keyed on the registry instance, so it holds one entry for the one process-level registry |
+| `packages/core/src/chain/registry.ts:25` — `let shippedRegistry: ChainRegistry`                                                         | the parsed 458-row snapshot          | written once, then read-only                                                             |
+| `packages/core/src/chain/address.ts:128` — `let legacyRegistry: ChainRegistry`                                                          | the same snapshot for the string arm | written once, then read-only                                                             |
 
 **Only the first two are mutated on the request path.** The other three are written at most once per
 process.

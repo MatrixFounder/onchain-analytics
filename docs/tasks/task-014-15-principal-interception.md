@@ -1,6 +1,7 @@
 # Задача 014.15: перехват в обёртке `defineTool` `[LOGIC]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 
 <!-- contract:goal -->
@@ -21,14 +22,17 @@
 ### Изменения в существующих файлах
 
 **Файл `packages/mcp-server/src/tools/registry.ts`:**
+
 - Точка перехвата — обёртка `defineTool`, строка 289:
   `async (input) => toCallToolResult(await definition.handler(input, project(ctx, needs))),`
 - Обёртка отображает `extra.authInfo` в `Principal` и достраивает контекст до вызова `project()`
 
 **Файл `packages/mcp-server/src/server.ts`:**
+
 - Передать `deps.principals` в сборку контекста
 
 **Файл `packages/core/src/net/args-hash.ts`:**
+
 - Принципал в состав хеша не входит; состав ключа проверяется гейтом
 
 ### Точка перехвата и её замер
@@ -38,12 +42,12 @@
 
 Замер по репозиторию на 2026-08-13:
 
-| Величина | Значение |
-| :--- | :--- |
-| Файлов в `packages/mcp-server/src/tools/` | 26 |
-| Из них вызывают `resolveCapability` | 18 |
-| Файлов-обработчиков тулов | 20 |
-| Обработчиков, не вызывающих `resolveCapability` | 2 — `ping.ts`, `list-chains.ts` |
+| Величина                                                           | Значение                                            |
+| :----------------------------------------------------------------- | :-------------------------------------------------- |
+| Файлов в `packages/mcp-server/src/tools/`                          | 26                                                  |
+| Из них вызывают `resolveCapability`                                | 18                                                  |
+| Файлов-обработчиков тулов                                          | 20                                                  |
+| Обработчиков, не вызывающих `resolveCapability`                    | 2 — `ping.ts`, `list-chains.ts`                     |
 | Мест в `packages/mcp-server/src`, вызывающих `server.registerTool` | 1 — `packages/mcp-server/src/tools/registry.ts:281` |
 
 `packages/mcp-server/src/tools/registry.ts` импортирует из `resolve-capability.js` только типы
@@ -106,6 +110,7 @@
 ## Тест-кейсы
 
 ### Сквозные тесты
+
 1. **TC-E2E-01:** вызов без принципала не доходит до `resolve()` и до кеша
    - Входные данные: запрос без заголовка `Authorization`; счётчики на `CacheStore` и `fetchImpl`
    - Ожидаемый результат: оба счётчика — ноль (AC-19)
@@ -117,6 +122,7 @@
    - Ожидаемый результат: первый обслужен, второй отвергнут (AC-26)
 
 ### Модульные тесты
+
 1. **TC-UNIT-01:** `args_hash` не изменяется при смене принципала
    - Входные данные: два принципала, равные аргументы
    - Ожидаемый результат: хеши совпадают (AC-8)
@@ -135,12 +141,14 @@
    - Ожидаемый результат: `ctx.principal` присутствует в каждом вызове
 
 ### Регрессионные тесты
+
 - Попадания в кеш между двумя принципалами сохраняются: второй читает запись первого
 - Снимок `tools/list` не изменился
 
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] Перехват размещён в обёртке `defineTool` (`packages/mcp-server/src/tools/registry.ts:289`)
 - [ ] Гейт: `server.registerTool` вызывается в `packages/mcp-server/src` из одного места
 - [ ] AC-8: `args_hash` не зависит от принципала

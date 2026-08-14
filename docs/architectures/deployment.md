@@ -151,6 +151,7 @@ Three additions, none of them reaching a vendor and none of them needing a secre
 
    **The precedent is the gate of `security.md` §7.5.3a.** Its static check already takes both
    directories as input.
+
 2. Settings-classification gate (AC-44). Input: the properties of `EnvSchema` and the table of
    §10.3. Postcondition: every key carries exactly one class, and a key absent from the table
    fails the step.
@@ -375,57 +376,53 @@ fails when the precondition is moved after step 4.
    `information_schema.role_table_grants`, for the three reasons step 2a gives below.
 
 2a. **Measure the READ role before granting anything to it, and correct it if it over-reaches.**
-   The read role predates T-014, and this migration grants without revoking, so its existing
-   privileges decide the outcome. Ask the question that admits no third path:
-   ```sql
-   SELECT t.table_name,
-          has_table_privilege('<read-role>', 'onchain.' || t.table_name, 'SELECT') AS may_select
-     FROM information_schema.tables t
-    WHERE t.table_schema = 'onchain'
-    ORDER BY 2 DESC, 1;
-   SELECT defaclobjtype, defaclacl FROM pg_default_acl d
-     JOIN pg_namespace n ON n.oid = d.defaclnamespace WHERE n.nspname = 'onchain';
-   ```
-   Postcondition: `may_select` is true for `assets`, `metrics` and `snapshots`, and false for every
-   other table in the schema. Any true elsewhere is revoked before the profile starts, and
-   `pg_default_acl` carries no entry that would grant the read role a future engine table.
-   Postcondition: `SELECT * FROM onchain.api_tokens` over `ONCHAIN_PG_URL` is refused. **This last
-   one is the load-bearing check**; the two queries above are how an operator finds what to fix.
+The read role predates T-014, and this migration grants without revoking, so its existing
+privileges decide the outcome. Ask the question that admits no third path:
 
-   **Why `has_table_privilege` and not `information_schema.role_table_grants`.** The catalogue view
-   is blind to three paths:
+```sql
+SELECT t.table_name,
+       has_table_privilege('<read-role>', 'onchain.' || t.table_name, 'SELECT') AS may_select
+  FROM information_schema.tables t
+ WHERE t.table_schema = 'onchain'
+ ORDER BY 2 DESC, 1;
+SELECT defaclobjtype, defaclacl FROM pg_default_acl d
+  JOIN pg_namespace n ON n.oid = d.defaclnamespace WHERE n.nspname = 'onchain';
+```
 
-   - a grant to `PUBLIC`
-   - a privilege inherited through membership in a group role
-   - by the view's own definition, any grant whose roles are not enabled in the current session
+Postcondition: `may_select` is true for `assets`, `metrics` and `snapshots`, and false for every
+other table in the schema. Any true elsewhere is revoked before the profile starts, and
+`pg_default_acl` carries no entry that would grant the read role a future engine table.
+Postcondition: `SELECT * FROM onchain.api_tokens` over `ONCHAIN_PG_URL` is refused. **This last
+one is the load-bearing check**; the two queries above are how an operator finds what to fix.
 
-   An empty result from it therefore means "nothing found", not "nothing granted", and this project
-   has already paid for treating a confident empty answer as a safe one (L-10).
-   `has_table_privilege` answers the question that was actually asked.
+**Why `has_table_privilege` and not `information_schema.role_table_grants`.** The catalogue view
+is blind to three paths:
 
-   **Why a measurement and not only a grant.** Before T-014 the engine's tables were in another
-   namespace, so a schema-wide `SELECT` on `onchain` could not reach them. Sharing one schema
-   removed that separation, and what replaces it is the grant list — which this step is the only
-   place that verifies. `security.md` §7.3 carries the same rule for the operator.
-3. Write `.env` and `chmod 600` it: `ONCHAIN_PROFILE=network`, `ONCHAIN_STATE_PG_URL`,
-   `ONCHAIN_HTTP_BIND`, `ONCHAIN_HTTP_PORT`, `ONCHAIN_ALLOWED_HOSTS`, `ONCHAIN_ALLOWED_ORIGINS`,
-   `ONCHAIN_TOKEN_HASH_SALT`, plus the vendor keys the installation uses.
-4. Apply the admin seed migration, passing the token digest and the visible prefix as parameters
-   (§4.4 item 5, `security.md` §7.5.2). Postcondition: one `active` row in `onchain.api_tokens`, and
-   the plaintext token on no disk of this installation.
+- a grant to `PUBLIC`
+- a privilege inherited through membership in a group role
+- by the view's own definition, any grant whose roles are not enabled in the current session
 
-   **The prefix is a parameter of its own.** `api_tokens.prefix` is `NOT NULL` and `UNIQUE`
-   (`data-model.md` §4.5.4), and it cannot be derived from the digest.
-5. Start the process. Postcondition: it binds `ONCHAIN_HTTP_BIND` only, and with zero active tokens
-   it exits non-zero having bound nothing (§10.3.2).
-6. Put the reverse proxy in front of it for TLS and for any public address
-   (`ROADMAP.md:220` `обратный прокси перед MCP`). Postcondition: the engine holds no certificate.
-7. Install the `onchain-retention` workflow on the n8n instance, after the owner has approved that
-   installation explicitly (§10.6.1). Postcondition: one `onchain.retention_runs` row per job
-   per pass.
-8. Run the live gate: `pnpm --filter @onchain-intel/mcp-server gate --task T-014` (AC-15). It
-   covers the capability matrix over stdio plus the HTTP set — a rejected token, a rejected
-   perimeter, one end-to-end call, and one shared-limiter case across two sessions (R-22).
+An empty result from it therefore means "nothing found", not "nothing granted", and this project
+has already paid for treating a confident empty answer as a safe one (L-10).
+`has_table_privilege` answers the question that was actually asked.
+
+**Why a measurement and not only a grant.** Before T-014 the engine's tables were in another
+namespace, so a schema-wide `SELECT` on `onchain` could not reach them. Sharing one schema
+removed that separation, and what replaces it is the grant list — which this step is the only
+place that verifies. `security.md` §7.3 carries the same rule for the operator. 3. Write `.env` and `chmod 600` it: `ONCHAIN_PROFILE=network`, `ONCHAIN_STATE_PG_URL`,
+`ONCHAIN_HTTP_BIND`, `ONCHAIN_HTTP_PORT`, `ONCHAIN_ALLOWED_HOSTS`, `ONCHAIN_ALLOWED_ORIGINS`,
+`ONCHAIN_TOKEN_HASH_SALT`, plus the vendor keys the installation uses. 4. Apply the admin seed migration, passing the token digest and the visible prefix as parameters
+(§4.4 item 5, `security.md` §7.5.2). Postcondition: one `active` row in `onchain.api_tokens`, and
+the plaintext token on no disk of this installation.
+
+**The prefix is a parameter of its own.** `api_tokens.prefix` is `NOT NULL` and `UNIQUE`
+(`data-model.md` §4.5.4), and it cannot be derived from the digest. 5. Start the process. Postcondition: it binds `ONCHAIN_HTTP_BIND` only, and with zero active tokens
+it exits non-zero having bound nothing (§10.3.2). 6. Put the reverse proxy in front of it for TLS and for any public address
+(`ROADMAP.md:220` `обратный прокси перед MCP`). Postcondition: the engine holds no certificate. 7. Install the `onchain-retention` workflow on the n8n instance, after the owner has approved that
+installation explicitly (§10.6.1). Postcondition: one `onchain.retention_runs` row per job
+per pass. 8. Run the live gate: `pnpm --filter @onchain-intel/mcp-server gate --task T-014` (AC-15). It
+covers the capability matrix over stdio plus the HTTP set — a rejected token, a rejected
+perimeter, one end-to-end call, and one shared-limiter case across two sessions (R-22).
 
 **Step 4 replaces an interactive first-token step, and `OQ-T014-DM-3` is closed by it** (owner
 decision, `security.md` §7.5.2). The operator mints the token, computes the digest, and passes only

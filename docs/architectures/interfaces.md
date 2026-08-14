@@ -1109,12 +1109,12 @@ reads the process stderr (R-19.2, R-32.1).
 provider, no cost and no budget state; the identifier is what lets an operator recover the text
 that was withheld.
 
-| Refusal                            | Produced by     | Where the identifier travels                | Event         |
-| :--------------------------------- | :-------------- | :------------------------------------------ | :------------ |
-| authentication (401)               | this listener   | JSON-RPC error body, `error.data.event`     | `auth.rejected` |
-| perimeter (403)                    | this listener   | JSON-RPC error body, `error.data.event`     | `perimeter.rejected` |
-| session ceiling (503)              | this listener   | JSON-RPC error body, `error.data.event`     | `session.limit_reached` |
-| the four tool-execution classes    | `defineTool`    | the `content[0].text` the client renders    | `tool.refused` |
+| Refusal                         | Produced by   | Where the identifier travels             | Event                   |
+| :------------------------------ | :------------ | :--------------------------------------- | :---------------------- |
+| authentication (401)            | this listener | JSON-RPC error body, `error.data.event`  | `auth.rejected`         |
+| perimeter (403)                 | this listener | JSON-RPC error body, `error.data.event`  | `perimeter.rejected`    |
+| session ceiling (503)           | this listener | JSON-RPC error body, `error.data.event`  | `session.limit_reached` |
+| the four tool-execution classes | `defineTool`  | the `content[0].text` the client renders | `tool.refused`          |
 
 **The 401 answers with a JSON-RPC error body as well as `WWW-Authenticate`.** Its `error.id` is
 `null`: the request body may be unparsed at that point, and JSON-RPC 2.0 licenses `null` for the
@@ -1157,14 +1157,14 @@ Four properties make this a rule rather than a list of fields:
 
 Classification today:
 
-| `_meta` field                                                       | Class                    | Requirement             |
-| :------------------------------------------------------------------ | :----------------------- | :---------------------- |
-| `cache.status`, `cache.ageMs`, `cache.capability`                   | client                   | R-6.3                   |
-| `cache.provider` — it names an adapter id                           | client, narrowed by profile | R-6.3; §5.4.4.1      |
-| `cache.perSource[]` — the merged shape of §5.1.6                    | client, narrowed by profile | R-6.3; §5.4.4.1      |
-| `timing.overrunMs`                                                  | client                   | R-16.4                  |
-| `budget.provider`, `budget.creditsUsedToday`                        | operator                 | R-6.1                   |
-| `tier`                                                              | declared on no transport | R-6.2, AC-7             |
+| `_meta` field                                     | Class                       | Requirement     |
+| :------------------------------------------------ | :-------------------------- | :-------------- |
+| `cache.status`, `cache.ageMs`, `cache.capability` | client                      | R-6.3           |
+| `cache.provider` — it names an adapter id         | client, narrowed by profile | R-6.3; §5.4.4.1 |
+| `cache.perSource[]` — the merged shape of §5.1.6  | client, narrowed by profile | R-6.3; §5.4.4.1 |
+| `timing.overrunMs`                                | client                      | R-16.4          |
+| `budget.provider`, `budget.creditsUsedToday`      | operator                    | R-6.1           |
+| `tier`                                            | declared on no transport    | R-6.2, AC-7     |
 
 **A coalesced follower is not a third `cache.status`.** A singleflight follower records
 `served_from = 'coalesced'` in the request trace (§4.5.7, owner decision 2026-08-12, closing

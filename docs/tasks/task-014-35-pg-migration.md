@@ -1,6 +1,7 @@
 # Задача 014.35: Postgres-миграция — двенадцать таблиц, индексы, гранты, verify-гейт `[LOGIC]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 - UC-2 — две сессии делят вендорскую квоту
 
@@ -33,20 +34,20 @@
 Схемы файл не создаёт: `sql/migrations/001_init.sql:18` (`CREATE SCHEMA IF NOT EXISTS onchain;`) уже
 создал её, и dev VM держит её сегодня. Оператор `CREATE SCHEMA` здесь ничего не добавил бы (§4.4).
 
-| Таблица | Группа | Индексы сверх ключевых |
-| :--- | :--- | :--- |
-| `users` | §4.5, идентичность | нет |
-| `access_profiles` | §4.5, идентичность | нет |
-| `api_tokens` | §4.5, идентичность | `idx_api_tokens_user` |
-| `access_audit` | §4.5, идентичность | `idx_access_audit_actor`, `idx_access_audit_target`, `idx_access_audit_ts` |
-| `provider_buckets` | §4.5, лимитер | нет |
-| `request_trace` | §4.5, операционные | `idx_request_trace_principal`, `idx_request_trace_received`, `idx_request_trace_spend` |
-| `diagnostics` | §4.5, операционные | `idx_diagnostics_ts`, `idx_diagnostics_event_ts` |
-| `retention_runs` | §4.5, операционные | `idx_retention_runs_job` |
-| `providers` | §4.2.4, счётчики | нет |
-| `cache_entries` | §4.2.4, счётчики | нет |
-| `usage` | §4.2.4, счётчики | нет |
-| `usage_window` | §4.2.4, счётчики | нет |
+| Таблица            | Группа             | Индексы сверх ключевых                                                                 |
+| :----------------- | :----------------- | :------------------------------------------------------------------------------------- |
+| `users`            | §4.5, идентичность | нет                                                                                    |
+| `access_profiles`  | §4.5, идентичность | нет                                                                                    |
+| `api_tokens`       | §4.5, идентичность | `idx_api_tokens_user`                                                                  |
+| `access_audit`     | §4.5, идентичность | `idx_access_audit_actor`, `idx_access_audit_target`, `idx_access_audit_ts`             |
+| `provider_buckets` | §4.5, лимитер      | нет                                                                                    |
+| `request_trace`    | §4.5, операционные | `idx_request_trace_principal`, `idx_request_trace_received`, `idx_request_trace_spend` |
+| `diagnostics`      | §4.5, операционные | `idx_diagnostics_ts`, `idx_diagnostics_event_ts`                                       |
+| `retention_runs`   | §4.5, операционные | `idx_retention_runs_job`                                                               |
+| `providers`        | §4.2.4, счётчики   | нет                                                                                    |
+| `cache_entries`    | §4.2.4, счётчики   | нет                                                                                    |
+| `usage`            | §4.2.4, счётчики   | нет                                                                                    |
+| `usage_window`     | §4.2.4, счётчики   | нет                                                                                    |
 
 Колонки, ключи и ограничения `CHECK` берутся из §4.5.3–§4.5.9 и §4.2 без изменений. Карта типов для
 диалекта Postgres (§4.5.1): `TEXT` → `TEXT`, `INTEGER` → `BIGINT`, `REAL` → `DOUBLE PRECISION`.
@@ -84,10 +85,10 @@
 
 Оба имени ролей приходят параметрами `psql` (`deployment.md` §10.4.2 шаг 2):
 
-| Параметр | Значение | Кто задаёт |
-| :--- | :--- | :--- |
-| `STATE_ROLE` | имя роли хранилища состояния; §10.5.4 называет `onchain_engine_state` | владелец инсталляции |
-| `READ_ROLE` | имя read-роли инсталляции; `.env.example:118` показывает `readonly_user` | владелец инсталляции |
+| Параметр     | Значение                                                                 | Кто задаёт           |
+| :----------- | :----------------------------------------------------------------------- | :------------------- |
+| `STATE_ROLE` | имя роли хранилища состояния; §10.5.4 называет `onchain_engine_state`    | владелец инсталляции |
+| `READ_ROLE`  | имя read-роли инсталляции; `.env.example:118` показывает `readonly_user` | владелец инсталляции |
 
 Команда применения (§10.4.2 шаг 2):
 
@@ -344,6 +345,7 @@ select c.relkind::text||' '||n.nspname||'.'||c.relname from pg_class c join pg_n
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] Двенадцать таблиц созданы как `onchain.<name>`; в `public` не создано ничего (R-30.2)
 - [ ] Десять именованных индексов созданы
 - [ ] Миграция идемпотентна: второй прогон завершается без ошибки

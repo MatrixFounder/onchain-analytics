@@ -1,6 +1,7 @@
 # Задача 014.39: реализации хранилища на оси Postgres `[LOGIC]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 - UC-2 — две сессии делят вендорскую квоту
 
@@ -51,6 +52,7 @@
 ### Изменения в существующих файлах
 
 **Файл `packages/mcp-server/src/index.ts`:**
+
 - На оси Postgres строить Pg-реализации, на оси SQLite — действующие
 
 Миграция в эту задачу не входит. Двенадцать таблиц, их индексы и гранты двум ролям создаёт задача
@@ -62,12 +64,12 @@
 
 ### Что выбирает ось хранилища
 
-| Компонент | Ось SQLite | Ось Postgres | Интерфейс |
-| :--- | :--- | :--- | :--- |
-| `CacheStore` | `TwoLevelStore(SqliteCacheStore, LruHotLayer)` | `TwoLevelStore(PgCacheStore, LruHotLayer)` | `packages/core/src/adapters/cache-store.ts:25` |
-| `BudgetStore` | `SqliteBudgetStore` | `PgBudgetStore` | `packages/core/src/cache/budget-store.ts:46` |
-| `LimiterStore` | `SqliteLimiterStore` | `PgLimiterStore` | §3.4.4, `data-model.md` §4.5.6 |
-| личность, след, диагностика | писатели `Sqlite*` | писатели `Pg*` | `data-model.md` §4.5 |
+| Компонент                   | Ось SQLite                                     | Ось Postgres                               | Интерфейс                                      |
+| :-------------------------- | :--------------------------------------------- | :----------------------------------------- | :--------------------------------------------- |
+| `CacheStore`                | `TwoLevelStore(SqliteCacheStore, LruHotLayer)` | `TwoLevelStore(PgCacheStore, LruHotLayer)` | `packages/core/src/adapters/cache-store.ts:25` |
+| `BudgetStore`               | `SqliteBudgetStore`                            | `PgBudgetStore`                            | `packages/core/src/cache/budget-store.ts:46`   |
+| `LimiterStore`              | `SqliteLimiterStore`                           | `PgLimiterStore`                           | §3.4.4, `data-model.md` §4.5.6                 |
+| личность, след, диагностика | писатели `Sqlite*`                             | писатели `Pg*`                             | `data-model.md` §4.5                           |
 
 Последняя строка воспроизводит таблицу `system-architecture.md` §3.4.4 и называет ось, а не
 владельца. Писателей личности реализует задача 014-07, писателя следа — 014-30, писателя
@@ -162,12 +164,12 @@ inherits the same lock instead of racing it` (`data-model.md:589-590`). Отде
 
 Интерфейс объявляет пять методов, и выше описан один. `PgBudgetStore` реализует все пять.
 
-| Метод | Строка интерфейса | Реализация на оси Postgres |
-| :--- | :--- | :--- |
-| `recordDelta(provider, dayBucketMs, signedDelta, windowStartMs?): Promise<void>` | `budget-store.ts:80` | два безусловных upsert со знаковой дельтой, один `BEGIN` |
-| `getUsage(provider, dayBucketMs): Promise<number>` | `budget-store.ts:87` | `SELECT credits_used FROM onchain.usage`, ноль при отсутствии строки |
-| `getWindowUsage(provider, windowStartMs): Promise<number>` | `budget-store.ts:90` | `SELECT credits_used FROM onchain.usage_window`, ноль при отсутствии строки |
-| `getWindowCalls(provider, windowStartMs): Promise<number>` | `budget-store.ts:92` | `SELECT calls_made FROM onchain.usage_window`, ноль при отсутствии строки |
+| Метод                                                                            | Строка интерфейса    | Реализация на оси Postgres                                                  |
+| :------------------------------------------------------------------------------- | :------------------- | :-------------------------------------------------------------------------- |
+| `recordDelta(provider, dayBucketMs, signedDelta, windowStartMs?): Promise<void>` | `budget-store.ts:80` | два безусловных upsert со знаковой дельтой, один `BEGIN`                    |
+| `getUsage(provider, dayBucketMs): Promise<number>`                               | `budget-store.ts:87` | `SELECT credits_used FROM onchain.usage`, ноль при отсутствии строки        |
+| `getWindowUsage(provider, windowStartMs): Promise<number>`                       | `budget-store.ts:90` | `SELECT credits_used FROM onchain.usage_window`, ноль при отсутствии строки |
+| `getWindowCalls(provider, windowStartMs): Promise<number>`                       | `budget-store.ts:92` | `SELECT calls_made FROM onchain.usage_window`, ноль при отсутствии строки   |
 
 1. Ни один statement `recordDelta` не связывает потолок. Постусловие: возврат кредитов записывается
    всегда, включая отрицательную дельту.
@@ -236,11 +238,11 @@ Postgres не принадлежит этому процессу; единств
 
 ### Поведение при отказе хранилища
 
-| Хранилище | Поведение | Где решено |
-| :--- | :--- | :--- |
-| `LimiterStore` | внутрипроцессная корзина по объявленному потолку | §3.4.4, R-7.7, задача 014-19 |
-| `BudgetStore` | отказ закрытый: платный вызов не выполняется | §3.2, «Fail-closed, never fail-open» |
-| Чтение `CacheStore` | трактуется как промах | `packages/core/src/adapters/registry.ts:1165` |
+| Хранилище           | Поведение                                        | Где решено                                    |
+| :------------------ | :----------------------------------------------- | :-------------------------------------------- |
+| `LimiterStore`      | внутрипроцессная корзина по объявленному потолку | §3.4.4, R-7.7, задача 014-19                  |
+| `BudgetStore`       | отказ закрытый: платный вызов не выполняется     | §3.2, «Fail-closed, never fail-open»          |
+| Чтение `CacheStore` | трактуется как промах                            | `packages/core/src/adapters/registry.ts:1165` |
 | Запись `CacheStore` | по возможности; результат всё равно возвращается | `packages/core/src/adapters/registry.ts:1242` |
 
 Когда отказавшее хранилище — хранилище диагностики, событие уходит только в stderr.
@@ -253,6 +255,7 @@ Postgres не принадлежит этому процессу; единств
 ## Тест-кейсы
 
 ### Сквозные тесты
+
 1. **TC-E2E-01:** два процесса против одного Postgres не пробивают потолок
    - Входные данные: потолок 100 кредитов, два процесса `network` резервируют по 60 параллельно
    - Ожидаемый результат: одно резервирование проходит, второе отказано, `credits_used` = 60
@@ -275,6 +278,7 @@ Postgres не принадлежит этому процессу; единств
    - Ожидаемый результат: те же строки, что и при умолчании (AC-46)
 
 ### Модульные тесты
+
 1. **TC-UNIT-01:** `PgBudgetStore` не выполняет DDL при построении
    - Входные данные: соединение ролью без права `CREATE` в схеме `onchain`
    - Ожидаемый результат: построение проходит, двенадцать строк `providers` на месте
@@ -314,12 +318,14 @@ Postgres не принадлежит этому процессу; единств
     - Ожидаемый результат: `getUsage`, `getWindowUsage` и `getWindowCalls` возвращают 0
 
 ### Регрессионные тесты
+
 - Действующие тесты `SqliteCacheStore` и `SqliteBudgetStore` зелёные
 - `pnpm test`, `pnpm typecheck`, `pnpm build`; прогон сьюты не требует поднятой базы
 
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] Бюджет на оси Postgres: два процесса против одного Postgres не пробивают потолок кредитов
 - [ ] Бюджет на оси Postgres: `credits_used` переживает перезапуск процесса
 - [ ] `PgBudgetStore` реализует все пять методов интерфейса: `checkAndReserve`, `recordDelta`,

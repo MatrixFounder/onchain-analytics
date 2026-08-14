@@ -1,6 +1,7 @@
 # Задача 014.03: механизм доступа репозиториев и гейт явной квалификации схемы `[LOGIC]`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 
 <!-- contract:goal -->
@@ -41,6 +42,7 @@ identity tables therefore lives in `mcp-server` too». `deployment.md` §10.2.1 
 ### Изменения в существующих файлах
 
 **Файл `packages/core/src/pg/read-client.ts`:**
+
 - Пересмотреть запросы на явную квалификацию `onchain.`
 - Не полагаться на `search_path` как на условие корректности: строка 383,
   `options: '-c search_path=onchain'`
@@ -50,13 +52,13 @@ identity tables therefore lives in `mcp-server` too». `deployment.md` §10.2.1 
 Замена стабов в эту задачу не входит. Владельцы объявлены таблицей задачи 014-02, и каждый из них
 заменяет свой стаб реализацией поверх механизма доступа этой задачи.
 
-| Файл | Кто заменяет стаб |
-| :--- | :--- |
-| `packages/mcp-server/src/auth/user-store.ts` | 014-07 |
-| `packages/mcp-server/src/auth/token-store.ts` | 014-07 |
-| `packages/mcp-server/src/engine/request-trace-store.ts` | 014-30 |
-| `packages/mcp-server/src/engine/diagnostics-store.ts` | 014-27 |
-| `packages/mcp-server/src/auth/access-profile-store.ts` | табличный поставщик после T-014 |
+| Файл                                                    | Кто заменяет стаб               |
+| :------------------------------------------------------ | :------------------------------ |
+| `packages/mcp-server/src/auth/user-store.ts`            | 014-07                          |
+| `packages/mcp-server/src/auth/token-store.ts`           | 014-07                          |
+| `packages/mcp-server/src/engine/request-trace-store.ts` | 014-30                          |
+| `packages/mcp-server/src/engine/diagnostics-store.ts`   | 014-27                          |
+| `packages/mcp-server/src/auth/access-profile-store.ts`  | табличный поставщик после T-014 |
 
 **Why методы токена названы за одной задачей.** `issue`, `lookup`, `revoke` и `appendAudit` — предмет
 задачи 014-07 целиком. Вторая реализация тех же четырёх методов здесь разошлась бы с первой на первом
@@ -107,6 +109,7 @@ and `packages/mcp-server/src`». Под двумя схемами неквали
 ## Тест-кейсы
 
 ### Сквозные тесты
+
 1. **TC-E2E-01:** запрос возвращает те же строки при подменённом `search_path`
    - Входные данные: соединение с `search_path = pg_catalog`
    - Ожидаемый результат: те же строки, что при умолчании (AC-46)
@@ -116,6 +119,7 @@ and `packages/mcp-server/src`». Под двумя схемами неквали
      задачи 014-07, 014-27 и 014-30
 
 ### Модульные тесты
+
 1. **TC-UNIT-01:** неквалифицированная ссылка в `packages/core/src` останавливает гейт
    - Входные данные: временная правка запроса на `FROM snapshots` в файле `packages/core/src`
    - Ожидаемый результат: гейт завершается с ошибкой и называет файл и строку
@@ -134,11 +138,13 @@ and `packages/mcp-server/src`». Под двумя схемами неквали
    - Ожидаемый результат: её неквалифицированная ссылка отвергается без правки кода гейта
 
 ### Регрессионные тесты
+
 - `pnpm test`; сьюта не должна требовать поднятой базы
 
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] AC-46: подменённый `search_path` не меняет результат запроса
 - [ ] Вход гейта — `sql/migrations/*.sql`, `packages/core/src` и `packages/mcp-server/src`
 - [ ] Гейт останавливается на неквалифицированной ссылке в любом из двух пакетов

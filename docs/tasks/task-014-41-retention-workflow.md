@@ -1,6 +1,7 @@
 # Задача 014.41: воркфлоу `onchain-retention`
 
 ## Связь со сценариями
+
 - UC-1 — n8n вызывает способность по сети
 
 <!-- contract:goal -->
@@ -27,11 +28,11 @@
 
 ### Три задания
 
-| Задание | Цель | Действие | Окно по умолчанию |
-| :--- | :--- | :--- | :--- |
-| `diagnostics.purge` | `onchain.diagnostics` | удаляет строки старше окна | 90 дней; пол 90 дней, максимум — окно NORMALIZED |
+| Задание                  | Цель                    | Действие                                | Окно по умолчанию                                |
+| :----------------------- | :---------------------- | :-------------------------------------- | :----------------------------------------------- |
+| `diagnostics.purge`      | `onchain.diagnostics`   | удаляет строки старше окна              | 90 дней; пол 90 дней, максимум — окно NORMALIZED |
 | `request_trace.raw_null` | `onchain.request_trace` | ставит `tried_json` в NULL за окном RAW | 90 дней; пол 90 дней, максимум — окно NORMALIZED |
-| `request_trace.purge` | `onchain.request_trace` | удаляет строки за окном NORMALIZED | 365 дней; пол 365 дней, максимум 730 дней |
+| `request_trace.purge`    | `onchain.request_trace` | удаляет строки за окном NORMALIZED      | 365 дней; пол 365 дней, максимум 730 дней        |
 
 Имена заданий воспроизводят §10.6 дословно и попадают в колонку `job` таблицы `retention_runs`
 (`data-model.md` §4.5.9).
@@ -64,15 +65,15 @@
 
 ### Форма воркфлоу
 
-| Элемент | Значение |
-| :--- | :--- |
-| Триггер | Schedule, ежедневно |
-| Параметр-нода | Set-нода с тремя окнами §10.3.1, паттерн Normalize Input |
-| Креденшел | Postgres-креденшел state-роли `onchain_engine_state` (§10.5), не «Supabase DB» |
-| Писатели | по одной Postgres-ноде на задание, за каждой — вставка в `retention_runs` |
-| `errorWorkflow` | `onchain-error-alert` |
-| Экспорт | `./n8n-workflows/export.sh` → `n8n-workflows/exported/onchain-retention.json` |
-| Стикер | обязательная Overview-заметка (CLAUDE.n8n.md) |
+| Элемент         | Значение                                                                       |
+| :-------------- | :----------------------------------------------------------------------------- |
+| Триггер         | Schedule, ежедневно                                                            |
+| Параметр-нода   | Set-нода с тремя окнами §10.3.1, паттерн Normalize Input                       |
+| Креденшел       | Postgres-креденшел state-роли `onchain_engine_state` (§10.5), не «Supabase DB» |
+| Писатели        | по одной Postgres-ноде на задание, за каждой — вставка в `retention_runs`      |
+| `errorWorkflow` | `onchain-error-alert`                                                          |
+| Экспорт         | `./n8n-workflows/export.sh` → `n8n-workflows/exported/onchain-retention.json`  |
+| Стикер          | обязательная Overview-заметка (CLAUDE.n8n.md)                                  |
 
 **Why окна живут в параметр-ноде.** Один узел владеет контрактом конфигурации, и смена окна не
 правит ноду с запросом (CLAUDE.n8n.md, §10.6.1).
@@ -102,6 +103,7 @@
 ## Тест-кейсы
 
 ### Проверки воркфлоу
+
 1. **TC-WF-01:** валидация собранного воркфлоу
    - Входные данные: JSON воркфлоу, `validate_workflow`
    - Ожидаемый результат: ошибок нет; `connections` связывают триггер, параметр-ноду и три пары
@@ -133,12 +135,14 @@
      изменены
 
 ### Регрессионные проверки
+
 - `onchain-snapshotter`, `onchain-verify` и `onchain-error-alert` не изменены
 - `./n8n-workflows/export.sh` проходит и не сообщает о дубле активных имён
 
 <!-- contract:acceptance -->
 
 ## Критерии приёмки
+
 - [ ] Исполнитель — один воркфлоу n8n `onchain-retention`; серверный процесс планировщика не получил
 - [ ] Три задания под именами `diagnostics.purge`, `request_trace.raw_null`, `request_trace.purge`
 - [ ] Каждый прогон каждого задания пишет строку в `onchain.retention_runs`, включая прогон с нулём

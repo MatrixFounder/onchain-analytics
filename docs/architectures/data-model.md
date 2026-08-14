@@ -516,11 +516,11 @@ never reached because time ran out first.
 Storage and transport are independent axes (`deployment.md` §10.1.1). Storage decides the engine
 for these four tables; the transport does not.
 
-| Named profile | Where `providers`, `cache_entries`, `usage`, `usage_window` live |
-| :--- | :--- |
-| `local` | `DATA_DIR/cache.sqlite3` |
-| `network` | Postgres schema `onchain` |
-| `network-sqlite` | `DATA_DIR/cache.sqlite3` |
+| Named profile    | Where `providers`, `cache_entries`, `usage`, `usage_window` live |
+| :--------------- | :--------------------------------------------------------------- |
+| `local`          | `DATA_DIR/cache.sqlite3`                                         |
+| `network`        | Postgres schema `onchain`                                        |
+| `network-sqlite` | `DATA_DIR/cache.sqlite3`                                         |
 
 The four are declared from one canonical shape under the type map of §4.5.1. No column is added,
 dropped or renamed. The store components that read and write them are designed in
@@ -811,12 +811,12 @@ per schema in Postgres. A separate schema made this check redundant; a shared sc
 The migration creates twelve tables: the eight of §4.5 plus the four counterparts of §4.2.4. Named
 in full, so the comparison is checkable rather than asserted:
 
-| Group | Tables | Named indexes |
-| :--- | :--- | :--- |
-| §4.5 identity | `users`, `access_profiles`, `api_tokens`, `access_audit` | `idx_api_tokens_user`, `idx_access_audit_actor`, `idx_access_audit_target`, `idx_access_audit_ts` |
-| §4.5 limiter | `provider_buckets` | none |
-| §4.5 operational | `request_trace`, `diagnostics`, `retention_runs` | `idx_request_trace_principal`, `idx_request_trace_received`, `idx_request_trace_spend`, `idx_diagnostics_ts`, `idx_diagnostics_event_ts`, `idx_retention_runs_job` |
-| §4.2.4 counters | `providers`, `cache_entries`, `usage`, `usage_window` | none |
+| Group            | Tables                                                   | Named indexes                                                                                                                                                      |
+| :--------------- | :------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §4.5 identity    | `users`, `access_profiles`, `api_tokens`, `access_audit` | `idx_api_tokens_user`, `idx_access_audit_actor`, `idx_access_audit_target`, `idx_access_audit_ts`                                                                  |
+| §4.5 limiter     | `provider_buckets`                                       | none                                                                                                                                                               |
+| §4.5 operational | `request_trace`, `diagnostics`, `retention_runs`         | `idx_request_trace_principal`, `idx_request_trace_received`, `idx_request_trace_spend`, `idx_diagnostics_ts`, `idx_diagnostics_event_ts`, `idx_retention_runs_job` |
+| §4.2.4 counters  | `providers`, `cache_entries`, `usage`, `usage_window`    | none                                                                                                                                                               |
 
 **Result: no collision.** None of the twelve table names appears among the three present names, and
 none of the ten index names appears among the five present ones.
@@ -854,16 +854,16 @@ two tables below unwritable.
 Every table is declared in both dialects from one canonical shape. The storage axis picks the
 dialect: `DATA_DIR/cache.sqlite3` for SQLite, Postgres schema `onchain` for Postgres (§4.4).
 
-| Table | Written on stdio | Written on HTTP | Requirement |
-| :--- | :--- | :--- | :--- |
-| `users` | no — inert, see below | yes | R-15.3, R-15.4 |
-| `access_profiles` | no — inert | yes | R-13.1 |
-| `api_tokens` | no — inert | yes | R-15.1a, R-15.5 |
-| `access_audit` | no — inert | yes | R-15.7 |
-| `provider_buckets` | yes | yes | R-7 |
-| `request_trace` | yes | yes | R-27 |
-| `diagnostics` | yes | yes | R-32.2 |
-| `retention_runs` | yes | yes | R-32.3 |
+| Table              | Written on stdio      | Written on HTTP | Requirement     |
+| :----------------- | :-------------------- | :-------------- | :-------------- |
+| `users`            | no — inert, see below | yes             | R-15.3, R-15.4  |
+| `access_profiles`  | no — inert            | yes             | R-13.1          |
+| `api_tokens`       | no — inert            | yes             | R-15.1a, R-15.5 |
+| `access_audit`     | no — inert            | yes             | R-15.7          |
+| `provider_buckets` | yes                   | yes             | R-7             |
+| `request_trace`    | yes                   | yes             | R-27            |
+| `diagnostics`      | yes                   | yes             | R-32.2          |
+| `retention_runs`   | yes                   | yes             | R-32.3          |
 
 **Why the identity tables are declared in SQLite and left empty on stdio.** One DDL string and one
 store implementation serve both dialects. A test of revocation or of the append-only audit then runs
@@ -891,13 +891,13 @@ The reference is `/Users/sergey/dev-projects/n8n-lazy-loading-skills/sql/010_ide
 (`cvj.users` / `cvj.api_tokens` / `cvj.access_audit`). It is followed wherever the canon is silent.
 Five columns disagree with DB-SCHEMA-CONCEPT §1, and the canon wins in all five.
 
-| Reference | Here | Canon | Why the canon wins |
-| :--- | :--- | :--- | :--- |
-| `uuid DEFAULT gen_random_uuid()` | `TEXT` ULID, app-generated | §1.3 | the shape ships to two engines, so no server default can own the id |
-| `timestamptz DEFAULT now()` | `INTEGER` epoch-ms UTC | §1.2 | a DB time function in logic is forbidden; `BIGINT` in Postgres |
-| `token_hash bytea` | `TEXT`, lowercase sha256 hex | §1.1 | `bytea` is Postgres-specific; the digest is fixed-width either way |
-| `scopes text[]` | not carried — see §4.5.4 | §1.1 | a Postgres array type is forbidden in v0/v1 |
-| `id bigserial` (audit) | `TEXT` ULID | §1.3 | engine row-numbering is never relied on; a ULID also sorts by time |
+| Reference                        | Here                         | Canon | Why the canon wins                                                  |
+| :------------------------------- | :--------------------------- | :---- | :------------------------------------------------------------------ |
+| `uuid DEFAULT gen_random_uuid()` | `TEXT` ULID, app-generated   | §1.3  | the shape ships to two engines, so no server default can own the id |
+| `timestamptz DEFAULT now()`      | `INTEGER` epoch-ms UTC       | §1.2  | a DB time function in logic is forbidden; `BIGINT` in Postgres      |
+| `token_hash bytea`               | `TEXT`, lowercase sha256 hex | §1.1  | `bytea` is Postgres-specific; the digest is fixed-width either way  |
+| `scopes text[]`                  | not carried — see §4.5.4     | §1.1  | a Postgres array type is forbidden in v0/v1                         |
+| `id bigserial` (audit)           | `TEXT` ULID                  | §1.3  | engine row-numbering is never relied on; a ULID also sorts by time  |
 
 **Why the ULID amendment of DB-SCHEMA §1.3 does not apply here.** That amendment permits a
 server-generated `uuid` in a **unified Postgres profile**. This engine ships two persistence
@@ -1380,10 +1380,10 @@ passes are jobs that write to `retention_runs` (§4.5.9).
 An earlier revision of the column comment named only the failure case. There is a second, and it is
 on the success path.
 
-| Case | `outcome` | Example |
-| :--- | :--- | :--- |
-| the request failed before resolution | `refusal` | a saturated limiter refuses before a route is chosen |
-| the tool resolves no capability at all | `answer` | `onchain_ping`, `onchain_list_chains` |
+| Case                                   | `outcome` | Example                                              |
+| :------------------------------------- | :-------- | :--------------------------------------------------- |
+| the request failed before resolution   | `refusal` | a saturated limiter refuses before a route is chosen |
+| the tool resolves no capability at all | `answer`  | `onchain_ping`, `onchain_list_chains`                |
 
 **`outcome = 'partial_deadline'` does not mean a partial result.** `reliability.md` §9.1 (owner
 decision 2026-08-03, R-156) withdrew returning one: an expired deadline throws, and that row is a
@@ -1443,16 +1443,16 @@ a row whose `trace_id` matches nothing is a request that did not reach completio
 **The event vocabulary is closed and compiled**, like the capability manifest (§4.1) — a committed
 TypeScript literal, not a table.
 
-| `event` | Written when | Requirement |
-| :--- | :--- | :--- |
-| `auth.rejected` | a request presents no valid token | R-19.3 |
-| `perimeter.rejected` | `Host` or `Origin` fails the transport check | R-19.4 |
-| `session.limit_reached` | the session ceiling refuses a new session | R-24.3 |
-| `session.evicted` | an idle session is dropped | R-24.2 |
-| `limiter.degraded` | the shared limiter store failed and the process fell back | R-7.7 |
-| `source.escalated_to_paid` | a free source in a route yielded nothing and a paid one was called | R-28.1 |
-| `tool.refused` | a tool execution failed; `detail_json` holds the full text | R-31.1 |
-| `retention.cleanup` | a retention job finished | R-32.3 |
+| `event`                    | Written when                                                       | Requirement |
+| :------------------------- | :----------------------------------------------------------------- | :---------- |
+| `auth.rejected`            | a request presents no valid token                                  | R-19.3      |
+| `perimeter.rejected`       | `Host` or `Origin` fails the transport check                       | R-19.4      |
+| `session.limit_reached`    | the session ceiling refuses a new session                          | R-24.3      |
+| `session.evicted`          | an idle session is dropped                                         | R-24.2      |
+| `limiter.degraded`         | the shared limiter store failed and the process fell back          | R-7.7       |
+| `source.escalated_to_paid` | a free source in a route yielded nothing and a paid one was called | R-28.1      |
+| `tool.refused`             | a tool execution failed; `detail_json` holds the full text         | R-31.1      |
+| `retention.cleanup`        | a retention job finished                                           | R-32.3      |
 
 **Why the vocabulary is compiled rather than free text.** An event name invented at runtime makes
 AC-48's query impossible to write, and the same three reasons §4.2.1 gives for the chain registry
