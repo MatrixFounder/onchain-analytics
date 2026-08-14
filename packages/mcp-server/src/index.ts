@@ -25,6 +25,12 @@ import {
   type ProviderAdapter,
 } from '@onchain-intel/core';
 import { loadEnv, toProcessEnv, type Env } from './env.js';
+import {
+  SHIPPED_TRANSPORTS,
+  assertNetworkPreconditions,
+  assertTransportAvailable,
+  resolveProfile,
+} from './profile.js';
 import { createServer } from './server.js';
 
 // Task 012-2 (ADR-002 D8/D9, R-153/R-154) — every adapter registration must DECLARE its `tier` and
@@ -155,14 +161,43 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // T-014 (task 014-38) — the profile is resolved ONCE, before anything is constructed and long
+  // before anything is bound. It carries two axes: who reaches the process, and where its state
+  // lives. `createServer` does NOT receive it (R-1.2): a profile that reached a tool would let a
+  // handler behave differently per deployment, which no requirement asks for and no test covers.
+  const profile = resolveProfile(process.env);
+
+  // The network profile refuses to start rather than downgrading to the SQLite axis. A downgrade
+  // with no refusal would put this server's tokens, traces and spend ledger in a local file while
+  // every gate reported success — the L-10 defect. Nothing is bound until this resolves.
+  try {
+    await assertNetworkPreconditions(profile, process.env);
+  } catch (error) {
+    console.error(
+      `onchain-intel-mcp-server: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  }
+
   // M2 (task 005-6) — constructed ONCE, threaded into BOTH the `nansen` adapter's own gate
   // (`buildRegistry`) and `createServer`'s read-only `_meta.budget` visibility (see
   // `buildRegistry`'s own docstring above for why those are the SAME instance in production).
   const budgetStore = createBudgetStore();
   const registry = buildRegistry(env, budgetStore);
   const server = createServer({ env, version, registry, budgetStore });
-  // The only place a transport is chosen (D3) — stdio only in M0 (R-9); a future (M6)
-  // alternative HTTP-based transport would be attached here too, `createServer` stays unchanged.
+
+  // The only place a transport is chosen (D3). Task 014-09 attaches the Streamable HTTP transport
+  // for the `http` axis; until it lands, an `http` profile REFUSES rather than falling back to
+  // stdio. Falling back would hand the operator a process that answers — on the wrong transport,
+  // with no token check — while its configuration says otherwise.
+  try {
+    assertTransportAvailable(profile, SHIPPED_TRANSPORTS);
+  } catch (error) {
+    console.error(
+      `onchain-intel-mcp-server: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  }
   await server.connect(new StdioServerTransport());
 }
 
