@@ -235,6 +235,10 @@ export { LimiterOperatorNotImplementedError } from './pg/limiter-store.js';
 // read-only one, and they live in `mcp-server`.
 export {
   createStateClient,
+  // The twelve engine tables, exported because `mcp-server`'s access mechanism qualifies names from
+  // this list (task 014-03). One list, checked against the migration by a test in this package — a
+  // second copy in `mcp-server` would drift on the thirteenth table and read as "the gate passed".
+  STATE_TABLES,
   PgStateQueryTimeoutError,
   PgStateServerRejectedError,
   type StateClient,
