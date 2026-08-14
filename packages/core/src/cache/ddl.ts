@@ -114,6 +114,220 @@ CREATE TABLE IF NOT EXISTS usage_window (
   CHECK (credits_used >= 0),
   CHECK (calls_made >= 0)
 );
+
+-- ══ T-014 (task 014-36) — the eight engine tables of data-model.md §4.5 ══════════════════════════
+--
+-- §4.4 item 1: the SQLite axis is its own additive migration, one per storage engine, with no data
+-- moving between them. One declaration serves BOTH profiles that use this axis — \`local\` and
+-- \`network-sqlite\` — because the axis, not the transport, decides where state lives.
+--
+-- **Why identity tables are declared here at all, when stdio never fills them.** One DDL string and
+-- one store implementation serve both dialects (§4.5.1), so a test of token revocation or of the
+-- append-only audit log runs against SQLite — with no Postgres process in CI, which R-21 forbids
+-- reaching over the network for. Absent this declaration those tests would have no offline home.
+--
+-- **A token row written by an stdio process is inert.** The stdio transport requires no token and
+-- checks none, so an operator must not read such a row as protecting anything (§4.5.1).
+--
+-- **Why \`NOT NULL\` is spelled beside every \`TEXT PRIMARY KEY\`** (§4.5.2a): SQLite admits NULL in
+-- such a column and Postgres does not, so the identical declaration would yield a different
+-- constraint per axis — and a conformance test counting declared NOT NULL columns would find one
+-- fewer here than in migration 002 for the same table.
+
+CREATE TABLE IF NOT EXISTS users (
+  id           TEXT PRIMARY KEY NOT NULL,   -- ULID, app-generated (§1.3)
+  email        TEXT NOT NULL,               -- lower-cased by the writer: neither engine folds case
+  display_name TEXT,
+  role         TEXT NOT NULL,               -- 'admin' | 'user'   (R-15.3)
+  status       TEXT NOT NULL,               -- 'active' | 'suspended'
+  created_at   INTEGER NOT NULL,            -- epoch-ms UTC
+  updated_at   INTEGER NOT NULL,
+  UNIQUE (email),
+  CHECK (role IN ('admin','user')),
+  CHECK (status IN ('active','suspended'))
+);
+
+CREATE TABLE IF NOT EXISTS access_profiles (
+  id                    TEXT PRIMARY KEY NOT NULL,   -- ULID
+  name                  TEXT NOT NULL,
+  status                TEXT NOT NULL,               -- 'active' | 'retired'
+  credits_mode          TEXT NOT NULL,               -- 'unlimited' | 'metered'
+  credits_balance_raw   TEXT,                        -- exact value as a string (§1.7)
+  rate_limit_mode       TEXT NOT NULL,               -- 'unlimited' | 'metered'
+  rate_limit_per_min    INTEGER,
+  tool_allowlist_mode   TEXT NOT NULL,               -- 'all' | 'list'
+  tool_allowlist_json   TEXT,                        -- JSON array as TEXT (§1.4)
+  route_disclosure_mode TEXT NOT NULL DEFAULT 'full',-- 'full' | 'none'   (R-20.4)
+  created_at            INTEGER NOT NULL,
+  updated_at            INTEGER NOT NULL,
+  UNIQUE (name),
+  CHECK (status IN ('active','retired')),
+  CHECK (credits_mode IN ('unlimited','metered')),
+  CHECK (rate_limit_mode IN ('unlimited','metered')),
+  CHECK (tool_allowlist_mode IN ('all','list')),
+  CHECK (route_disclosure_mode IN ('full','none')),
+  -- A mode and its value are declared together: a NULL that means "unlimited" cannot be told apart
+  -- from a profile that was never provisioned — the L-10 class of defect (§7.5.3a).
+  CHECK ((credits_mode = 'metered') = (credits_balance_raw IS NOT NULL)),
+  CHECK ((rate_limit_mode = 'metered') = (rate_limit_per_min IS NOT NULL)),
+  CHECK ((tool_allowlist_mode = 'list') = (tool_allowlist_json IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id                TEXT PRIMARY KEY NOT NULL,   -- ULID
+  user_id           TEXT NOT NULL REFERENCES users(id),
+  access_profile_id TEXT NOT NULL REFERENCES access_profiles(id),
+  token_hash        TEXT NOT NULL,               -- sha256(pepper || presented), lowercase hex
+  prefix            TEXT NOT NULL,               -- identifies a token without disclosing it (R-15.2)
+  name              TEXT,
+  status            TEXT NOT NULL,               -- 'active' | 'revoked'
+  expires_at        INTEGER,                     -- epoch-ms UTC; NULL = no expiry
+  revoked_at        INTEGER,
+  created_at        INTEGER NOT NULL,
+  UNIQUE (token_hash),
+  UNIQUE (prefix),
+  CHECK (length(token_hash) = 64),
+  CHECK (length(prefix) >= 8),
+  CHECK (status IN ('active','revoked')),
+  CHECK ((status = 'revoked') = (revoked_at IS NOT NULL)),
+  CHECK (expires_at IS NULL OR expires_at > created_at)
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens (user_id);
+
+CREATE TABLE IF NOT EXISTS access_audit (
+  id            TEXT PRIMARY KEY NOT NULL,   -- ULID; time-sortable, so the log reads in order
+  ts            INTEGER NOT NULL,
+  actor_user_id TEXT REFERENCES users(id),
+  action        TEXT NOT NULL,
+  target_type   TEXT NOT NULL,
+  target_id     TEXT NOT NULL,
+  before_json   TEXT,                        -- carries neither a token value nor its digest
+  after_json    TEXT,
+  created_at    INTEGER NOT NULL,
+  CHECK (target_type IN ('user','api_token','access_profile'))
+);
+CREATE INDEX IF NOT EXISTS idx_access_audit_actor  ON access_audit (actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_access_audit_target ON access_audit (target_id);
+CREATE INDEX IF NOT EXISTS idx_access_audit_ts     ON access_audit (ts);
+
+-- Append-only guard (§4.5.5). Postgres uses a rule plus a trigger; SQLite has no rules, so both
+-- halves are BEFORE triggers. Removing the guard changes no column, which is what keeps the engine
+-- move mechanical.
+CREATE TRIGGER IF NOT EXISTS access_audit_no_update
+  BEFORE UPDATE ON access_audit
+BEGIN
+  SELECT RAISE(ABORT, 'access_audit is append-only (data-model.md 4.5.5)');
+END;
+CREATE TRIGGER IF NOT EXISTS access_audit_no_delete
+  BEFORE DELETE ON access_audit
+BEGIN
+  SELECT RAISE(ABORT, 'access_audit is append-only (data-model.md 4.5.5)');
+END;
+
+-- The limiter's cross-process state (R-7.1). \`providers\` is declared far above, and that order is
+-- a condition: without it every limiter write is a foreign-key refusal, and R-7.7 degrades the
+-- process to an in-process bucket permanently (§4.5.6).
+CREATE TABLE IF NOT EXISTS provider_buckets (
+  provider       TEXT NOT NULL REFERENCES providers(id),
+  scope_key      TEXT NOT NULL DEFAULT '',   -- '' = one bucket per provider (R-7.4)
+  tokens         REAL NOT NULL,              -- may be negative: the backlog the next caller waits out
+  last_refill_ms INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL,
+  PRIMARY KEY (provider, scope_key)
+);
+
+CREATE TABLE IF NOT EXISTS request_trace (
+  id                  TEXT PRIMARY KEY NOT NULL,   -- ULID
+  received_at         INTEGER NOT NULL,   -- pinned at admission (R-27.5)
+  completed_at        INTEGER NOT NULL,
+  principal_id        TEXT NOT NULL,      -- api_tokens.id, or 'local' in the local profile
+  user_id             TEXT,
+  access_profile_id   TEXT,
+  client_request_id   TEXT NOT NULL,
+  session_id          TEXT,
+  transport           TEXT NOT NULL,      -- 'stdio' | 'http'
+  tool                TEXT NOT NULL,
+  capability          TEXT,               -- NULL in the two cases §4.5.7a names
+  args_hash           TEXT,
+  outcome             TEXT NOT NULL,      -- 'answer' | 'refusal' | 'partial_deadline'
+  refusal_class       TEXT,
+  served_from         TEXT NOT NULL,      -- 'cache' | 'coalesced' | 'vendor' | 'none'
+  cache_age_ms        INTEGER,
+  vendor_provider     TEXT REFERENCES providers(id),
+  vendor_credits      INTEGER,            -- the vendor link is a COORDINATE, not a row reference:
+  vendor_calls        INTEGER,            -- usage and usage_window are bucketed counters, so there
+  vendor_day          INTEGER,            -- is no per-call row to point at (§4.5.7)
+  vendor_window_start INTEGER,
+  escalated_to_paid   INTEGER NOT NULL DEFAULT 0,  -- 0 | 1 (R-28.2)
+  tried_json          TEXT,               -- operator-side data; never the client rendering
+  created_at          INTEGER NOT NULL,
+  -- Every component is NOT NULL on purpose: a NULL would switch the dedup off entirely (§4.5.7).
+  UNIQUE (principal_id, client_request_id, received_at),
+  CHECK (outcome IN ('answer','refusal','partial_deadline')),
+  CHECK (served_from IN ('cache','coalesced','vendor','none')),
+  CHECK ((outcome = 'refusal') = (refusal_class IS NOT NULL)),
+  CHECK (escalated_to_paid IN (0,1))
+);
+CREATE INDEX IF NOT EXISTS idx_request_trace_principal ON request_trace (principal_id, received_at);
+CREATE INDEX IF NOT EXISTS idx_request_trace_received  ON request_trace (received_at);
+CREATE INDEX IF NOT EXISTS idx_request_trace_spend     ON request_trace (vendor_provider, vendor_day);
+
+CREATE TABLE IF NOT EXISTS diagnostics (
+  id           TEXT PRIMARY KEY NOT NULL,   -- ULID; also the identifier a withheld refusal carries
+  ts           INTEGER NOT NULL,
+  severity     TEXT NOT NULL,      -- 'info' | 'warn' | 'error'
+  event        TEXT NOT NULL,      -- closed vocabulary of eight (§4.5.8)
+  principal_id TEXT,               -- NULL when the request was refused before a principal existed
+  session_id   TEXT,
+  provider     TEXT,
+  capability   TEXT,
+  -- Deliberately WITHOUT REFERENCES: a diagnostics row is written mid-request and a trace row once,
+  -- at completion. Under PRAGMA foreign_keys=ON a reference would refuse the mid-request insert,
+  -- and the process would lose exactly the diagnostics it needs most (§4.5.8).
+  trace_id     TEXT,
+  detail_json  TEXT NOT NULL,      -- the FULL operator rendering (R-31.1)
+  created_at   INTEGER NOT NULL,
+  CHECK (severity IN ('info','warn','error'))
+);
+CREATE INDEX IF NOT EXISTS idx_diagnostics_ts       ON diagnostics (ts);
+CREATE INDEX IF NOT EXISTS idx_diagnostics_event_ts ON diagnostics (event, ts);
+
+CREATE TABLE IF NOT EXISTS retention_runs (
+  id            TEXT PRIMARY KEY NOT NULL,   -- ULID
+  job           TEXT NOT NULL,      -- the three named jobs of deployment.md §10.6
+  target_table  TEXT NOT NULL,
+  period_from   INTEGER NOT NULL,   -- inclusive
+  period_to     INTEGER NOT NULL,   -- exclusive
+  rows_affected INTEGER NOT NULL,   -- a pass that deleted zero rows still writes its row: "nothing
+  started_at    INTEGER NOT NULL,   -- to delete" and "the job did not run" are different facts
+  finished_at   INTEGER NOT NULL,
+  outcome       TEXT NOT NULL,      -- 'ok' | 'failed'
+  detail_json   TEXT,
+  UNIQUE (job, period_from, period_to, started_at),
+  CHECK (outcome IN ('ok','failed')),
+  CHECK (period_to > period_from),
+  CHECK (rows_affected >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_retention_runs_job ON retention_runs (job, started_at);
+
+-- The phase 0 access profile. The id is a LITERAL, identical to the one migration 002 seeds: two
+-- engines seeding independently would mint two ids for one entity, and a token's access_profile_id
+-- would resolve on one host and dangle on the other (§4.5.3).
+INSERT INTO access_profiles (
+  id, name, status,
+  credits_mode, credits_balance_raw,
+  rate_limit_mode, rate_limit_per_min,
+  tool_allowlist_mode, tool_allowlist_json,
+  route_disclosure_mode,
+  created_at, updated_at
+) VALUES (
+  '01JPHASE00000000000000000A', 'phase0-unlimited', 'active',
+  'unlimited', NULL,
+  'unlimited', NULL,
+  'all', NULL,
+  'full',
+  0, 0
+) ON CONFLICT (name) DO NOTHING;
 `;
 
 /**
