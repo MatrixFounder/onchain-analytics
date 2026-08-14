@@ -13,11 +13,17 @@ import { CACHE_DDL } from '../src/cache/ddl.js';
  * switching to Postgres, which means a divergence here shows up as "works in debugging, fails in
  * production" — the most expensive shape a schema defect can take.
  *
- * **What this compares and what it deliberately does not.** Table names and column names, per table.
- * Not types: the axes differ there on purpose (§4.5.1 maps `INTEGER` to `BIGINT` and `REAL` to
- * `DOUBLE PRECISION`), and asserting equality would forbid the mapping the canon requires. Not
- * constraints: `CHECK` text is the same in both today, but SQLite and Postgres do not have to spell
- * every guard identically — the audit guard already differs by construction.
+ * **What this compares and what it deliberately does not.** Table names, column names and `CHECK`
+ * bodies, per table. Not types: the axes differ there on purpose (§4.5.1 maps `INTEGER` to `BIGINT`
+ * and `REAL` to `DOUBLE PRECISION`), and asserting equality would forbid the mapping the canon
+ * requires. Not the append-only guard: SQLite has no rules, so it spells with two triggers what
+ * Postgres spells with a rule and a trigger — a difference of dialect, not of intent.
+ *
+ * **`CHECK` bodies were exempted in the first revision, and that exemption cost a defect within the
+ * day.** `onchain.usage` shipped without the `CHECK (credits_used >= 0)` its SQLite twin carries;
+ * the engine-level seatbelt was missing on one axis while both files passed their own gates. The
+ * reasoning for the exemption — "the two dialects need not spell every guard identically" — is true
+ * of the audit guard and false of a column predicate, and the gate had inherited the wrong half.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -37,6 +43,9 @@ const ENGINE_TABLES = [
   'diagnostics',
   'retention_runs',
 ] as const;
+
+/** The four counter tables of §4.2.4 — also declared on both axes, also comparable. */
+const COUNTER_TABLES = ['providers', 'cache_entries', 'usage', 'usage_window'] as const;
 
 const stripComments = (sql: string): string =>
   sql
@@ -66,6 +75,26 @@ const columnsOf = (sql: string, table: string, qualifier: string): string[] => {
     .sort();
 };
 
+/**
+ * The `CHECK` predicates of one table, normalised so only the predicate itself is compared.
+ *
+ * Whitespace is collapsed and the trailing comma dropped: the two files lay their columns out
+ * differently, and a gate that failed on alignment would be noise rather than a guard.
+ */
+const checksOf = (sql: string, table: string, qualifier: string): string[] => {
+  const pattern = new RegExp(
+    `CREATE TABLE IF NOT EXISTS\\s+${qualifier}${table}\\s*\\(([\\s\\S]*?)\\n\\);`,
+    'i',
+  );
+  // The captured body stops before the closing `\n);`, so the LAST constraint of a table has no
+  // newline behind it. A lookahead for one silently dropped it on every table — which made this
+  // comparison pass on the very defect it was added for. One appended newline is the whole fix.
+  const body = `${pattern.exec(stripComments(sql))?.[1] ?? ''}\n`;
+  return [...body.matchAll(/CHECK\s*(\([\s\S]*?\))\s*,?\s*(?=\n)/gi)]
+    .map((m) => (m[1] ?? '').replace(/\s+/g, ' ').trim())
+    .sort();
+};
+
 describe('the two storage axes declare the same engine schema', () => {
   it('both axes carry all eight tables of §4.5', () => {
     for (const table of ENGINE_TABLES) {
@@ -85,6 +114,20 @@ describe('the two storage axes declare the same engine schema', () => {
       0,
     );
     expect(sqlite, `${table} column sets differ between the axes`).toEqual(postgres);
+  });
+
+  it.each([...ENGINE_TABLES, ...COUNTER_TABLES])(
+    '%s declares the same CHECK predicates on both axes',
+    (table) => {
+      expect(checksOf(CACHE_DDL, table, ''), `${table} CHECK predicates differ`).toEqual(
+        checksOf(migration, table, 'onchain\\.'),
+      );
+    },
+  );
+
+  it('detects a CHECK present on one axis only — the defect the first revision let through', () => {
+    const mutated = migration.replace('  CHECK (credits_used >= 0)\n', '');
+    expect(checksOf(mutated, 'usage', 'onchain\\.')).not.toEqual(checksOf(CACHE_DDL, 'usage', ''));
   });
 
   it('both axes seed the phase 0 profile under the SAME literal id', () => {

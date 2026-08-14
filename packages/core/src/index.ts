@@ -210,3 +210,37 @@ export type { CacheStore, CacheGetResult } from './adapters/cache-store.js';
 // (unlike `SqliteBudgetStore`) knows nothing about any specific provider.
 export { type BudgetStore, createBudgetStore } from './cache/budget-store.js';
 export { dayBucketMs } from './cache/day-bucket.js';
+
+// T-014 (task 014-39) — the storage axis, as one factory over the two engines. Exported for the
+// same reason `createCacheStore`/`createBudgetStore` are: the process that picks the axis is
+// `mcp-server`'s entry point, in the other package. The three concrete `Pg*` classes stay behind
+// this factory ("factory, not singleton", ARCHITECTURE.md §8) — a caller that wants one of them
+// alone would also be a caller deciding the DSN and the bootstrap order for itself, which is what
+// the factory exists to hold.
+//
+// `LimiterOperatorNotImplementedError` is on the surface deliberately, and it is the only class
+// here that is: task 014-19's degradation path has to tell "the store is unreachable" (degrade to
+// the in-process bucket) from "this axis has no slot operator yet" (a defect, not an outage), and
+// `instanceof` across the package boundary is the only way to tell them apart without parsing a
+// message.
+export {
+  createStateStores,
+  type StateStores,
+  type StorageAxis,
+  type LimiterSlot,
+  type CreateStateStoresOptions,
+} from './pg/stores.js';
+export { LimiterOperatorNotImplementedError } from './pg/limiter-store.js';
+// The write-capable client itself: the engine repositories of task 014-03 take THIS client, not the
+// read-only one, and they live in `mcp-server`.
+export {
+  createStateClient,
+  PgStateQueryTimeoutError,
+  PgStateServerRejectedError,
+  type StateClient,
+  type StateClientDeps,
+  type StateTransaction,
+  type PgStatePoolLike,
+  type PgStatePoolCtor,
+  type PgStateConnectionLike,
+} from './pg/state-client.js';

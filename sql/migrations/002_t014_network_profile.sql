@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS onchain.usage (
   day          BIGINT NOT NULL,
   credits_used BIGINT NOT NULL DEFAULT 0,
   updated_at   BIGINT NOT NULL,
-  PRIMARY KEY (provider, day)
+  PRIMARY KEY (provider, day),
+  CHECK (credits_used >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS onchain.usage_window (
