@@ -105,6 +105,18 @@ export const DEFAULT_SESSION_IDLE_MS = 900_000;
  * NARROW the live vendor ceiling, never widen it, `budget-gate.ts`'s `effectiveCeilingFor()`),
  * `NANSEN_BUDGET_WARN_RATIO` (the stderr warn-threshold fraction, default 0.8 inside
  * `budget-gate.ts` itself when this key is unset — `.min(0).max(1)`, a ratio, not a credit count).
+ *
+ * **Every field here carries a class, and the class is declared in `settings-classification.ts`**
+ * (task 014-05, R-29, `deployment.md` §10.3.1). `secret` and `bootstrap` stay in `.env` permanently;
+ * `narrowing` may move to a store editable without a release, because a value that can only restrict
+ * cannot widen access when it is edited.
+ *
+ * **Why the class is not written beside each field below.** It would be a second copy of that table,
+ * and two places answering one question disagree the first time one of them is edited. The registry
+ * is typed `Record<keyof Env, SettingClass>`, so a field added here without a class fails `tsc` with
+ * the field named — an unclassified setting cannot be built, let alone merged. The task's own plan
+ * asked for a mark in this file; a mark that can drift from the registry is weaker than a mark the
+ * compiler enforces, and this is the difference recorded rather than made silently.
  */
 export const EnvSchema = z.object({
   LOG_LEVEL: emptyAsUndefined(z.enum(['debug', 'info', 'warn', 'error']).optional()),
