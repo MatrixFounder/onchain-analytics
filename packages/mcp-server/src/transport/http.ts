@@ -229,6 +229,13 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_MCP_PATH = '/mcp';
 
 /**
+ * The three methods Streamable HTTP defines, in the SDK's own order and spelling — its `Allow`
+ * header reads `GET, POST, DELETE`, and answering a different list from the same endpoint would
+ * make the two halves of one transport disagree in writing.
+ */
+export const ALLOWED_METHODS = Object.freeze(['GET', 'POST', 'DELETE']);
+
+/**
  * Raises the listener and answers MCP over it.
  *
  * **One server and one transport per REQUEST, and that is the stub.** The SDK's stateless mode is
@@ -402,6 +409,23 @@ async function handle(
     return;
   }
 
+  // **Step 3: the method** (task 014-25's `method-not-allowed` class). Streamable HTTP uses exactly
+  // three, and the SDK's own `handleUnsupportedRequest` answers 405 with `Allow` — but it is only
+  // reached once a request has been routed to a transport, so a `PUT` with no session used to be
+  // answered 400 here and the declared class had no producer on that path.
+  if (!ALLOWED_METHODS.includes(req.method ?? '')) {
+    res
+      .writeHead(405, { 'content-type': 'application/json', allow: ALLOWED_METHODS.join(', ') })
+      .end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          error: { code: -32000, message: 'Method not allowed.' },
+          id: null,
+        }),
+      );
+    return;
+  }
+
   const body = await readBody(req);
   if (!body.ok) {
     res.writeHead(413).end();
@@ -416,8 +440,18 @@ async function handle(
       const existing = sessions.get(sessionId);
       // An id this process does not know is a 404, which is what the SDK answers for the same case.
       // Minting a session for it would let a client choose its own id.
+      //
+      // The BODY is the SDK's too, value for value: `createJsonErrorResponse(404, -32001, 'Session
+      // not found')`. A bare 404 was the same status with nothing to parse, and it left one of the
+      // five declared protocol classes without a JSON-RPC code on the path this listener owns.
       if (existing === undefined) {
-        res.writeHead(404).end();
+        res.writeHead(404, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: 'Session not found' },
+            id: null,
+          }),
+        );
         return;
       }
       // On EVERY inbound message, not only on `tools/call` (§3.4.2). A client holding its session

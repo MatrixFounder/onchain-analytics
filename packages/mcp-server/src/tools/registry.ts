@@ -197,8 +197,17 @@ function project<K extends keyof ToolContext>(
   return narrowed as Pick<ToolContext, K>;
 }
 
-/** Renders an outcome into the SDK's result shape, reproducing all three response forms exactly. */
-function toCallToolResult<TOutput extends Record<string, unknown>>(
+/**
+ * Renders an outcome into the SDK's result shape, reproducing all three response forms exactly.
+ *
+ * **Exported for task 014-25's AC-33 gate, and for a measured reason.** Asserting the flag through a
+ * client cannot see this function: with an `outputSchema` declared — which `defineTool` requires —
+ * the SDK demands `structuredContent` on any result NOT flagged `isError`, so a mutation flipping
+ * the flag below makes the SDK throw and render its own `isError: true` in place of ours. The
+ * end-to-end assertion then passes while the renderer is broken. The gate reads this function
+ * directly, and keeps the end-to-end case beside it as what it actually measures: the SDK backstop.
+ */
+export function toCallToolResult<TOutput extends Record<string, unknown>>(
   outcome: ToolOutcome<TOutput>,
 ): CallToolResult {
   if (!outcome.ok) {
