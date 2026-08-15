@@ -8,9 +8,9 @@
  * re-export from this task: `packages/core` receives no type of token, role or header. That is an
  * acceptance criterion of task 014-02, checked by `test/engine-store-contracts.test.ts`.
  *
- * **What is deliberately absent.** `auth/principal.ts` (`system-architecture.md` §3.4.3) is another
- * task's file and joins this list when 014-10 lands; `access-profile.ts` and
- * `default-access-profile.ts` joined it with task 014-04, `identity-types.ts` with task 014-06.
+ * **When each file joined.** `access-profile.ts` and `default-access-profile.ts` with task 014-04,
+ * `identity-types.ts` with 014-06, `principal.ts` (`system-architecture.md` §3.4.3) with 014-14 —
+ * the note here used to predict 014-10, which shipped the session without touching the type.
  */
 export {
   AUTH_REFUSAL_CLASSES,
@@ -44,6 +44,12 @@ export {
   type AccessProfileStore,
 } from './access-profile-store.js';
 export { classifyToken, type AuthOutcome } from './authenticate.js';
+export {
+  STDIO_PRINCIPAL,
+  principalFor,
+  type Principal,
+  type PrincipalResolver,
+} from './principal.js';
 export {
   createTokenStore,
   createTokenStoreStub,

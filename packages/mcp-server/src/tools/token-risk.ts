@@ -136,6 +136,6 @@ export const tokenRiskToolSpec = defineTool({
   inputSchema: TokenRiskInputSchema,
   outputSchema: TokenRiskOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry', 'budgetStore'],
+  needs: ['registry', 'budgetStore', 'principal'],
   handler: tokenRiskHandler,
 });

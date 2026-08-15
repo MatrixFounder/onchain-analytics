@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BudgetStore, CapabilityRegistry } from '@onchain-intel/core';
 import type { z } from 'zod';
+import type { Principal } from '../auth/principal.js';
 import type { Diagnostics } from '../engine/diagnostics.js';
 import { toClientText } from '../transport/failure-classes.js';
 import type { BudgetMeta } from './budget-meta.js';
@@ -48,6 +49,15 @@ export interface ToolContext {
   registry: CapabilityRegistry;
   /** Read-only `_meta.budget` visibility. Absent is legal: the tool degrades, never errors. */
   budgetStore?: BudgetStore;
+  /**
+   * Who the request is on behalf of (task 014-14, R-4). REQUIRED, and rationed like every other key:
+   * a tool that does not declare `'principal'` in its `needs` receives an object without it.
+   *
+   * **Why required and not optional.** There is a principal on every transport — `STDIO_PRINCIPAL`
+   * is the local one — so an optional key would only describe a state that does not exist, while
+   * costing the compiler's check at every read.
+   */
+  principal: Principal;
   /**
    * The diagnostics channel (task 014-26). Read by `defineTool`'s WRAPPER, never by a handler.
    *

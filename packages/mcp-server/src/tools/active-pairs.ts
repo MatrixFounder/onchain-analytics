@@ -181,6 +181,6 @@ export const activePairsToolSpec = defineTool({
   inputSchema: ActivePairsInputSchema,
   outputSchema: ActivePairsOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: activePairsHandler,
 });

@@ -150,6 +150,6 @@ export const tokenHoldersToolSpec = defineTool({
   inputSchema: TokenHoldersInputSchema,
   outputSchema: TokenHoldersOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: tokenHoldersHandler,
 });

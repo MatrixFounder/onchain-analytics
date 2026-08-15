@@ -200,6 +200,6 @@ export const entityLabelToolSpec = defineTool({
   inputSchema: EntityLabelInputSchema,
   outputSchema: EntityLabelOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry', 'budgetStore'],
+  needs: ['registry', 'budgetStore', 'principal'],
   handler: entityLabelHandler,
 });

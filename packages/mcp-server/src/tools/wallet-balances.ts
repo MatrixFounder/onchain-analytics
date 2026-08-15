@@ -123,6 +123,6 @@ export const walletBalancesToolSpec = defineTool({
   inputSchema: WalletBalancesInputSchema,
   outputSchema: WalletBalancesOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: walletBalancesHandler,
 });

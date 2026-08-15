@@ -166,6 +166,6 @@ export const protocolTvlToolSpec = defineTool({
   inputSchema: ProtocolTvlInputSchema,
   outputSchema: ProtocolTvlOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: protocolTvlHandler,
 });

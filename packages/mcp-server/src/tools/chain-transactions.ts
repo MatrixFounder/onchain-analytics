@@ -96,7 +96,7 @@ export const chainTransactionsToolSpec = defineTool({
   inputSchema: ChainTransactionsInputSchema,
   outputSchema: ChainTransactionsOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: async (input, ctx) => {
     const outcome = await chainTransactionsHandler(input, ctx);
     return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;

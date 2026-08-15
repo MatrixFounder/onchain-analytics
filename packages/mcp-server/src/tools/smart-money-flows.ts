@@ -151,6 +151,6 @@ export const smartMoneyFlowsToolSpec = defineTool({
   inputSchema: SmartMoneyFlowsInputSchema,
   outputSchema: SmartMoneyFlowsOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry', 'budgetStore'],
+  needs: ['registry', 'budgetStore', 'principal'],
   handler: smartMoneyFlowsHandler,
 });

@@ -78,7 +78,7 @@ export const chainTvlToolSpec = defineTool({
   inputSchema: ChainTvlInputSchema,
   outputSchema: ChainTvlOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: async (input, ctx) => {
     const outcome = await chainTvlHandler(input, ctx);
     return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;

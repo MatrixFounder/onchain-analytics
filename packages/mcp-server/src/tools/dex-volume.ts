@@ -161,7 +161,7 @@ export const dexVolumeToolSpec = defineTool({
   inputSchema: DexVolumeInputSchema,
   outputSchema: DexVolumeOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: async (input, ctx) => {
     const outcome = await dexVolumeHandler(input, ctx);
     return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;

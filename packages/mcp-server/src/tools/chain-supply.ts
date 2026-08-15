@@ -89,7 +89,7 @@ export const chainSupplyToolSpec = defineTool({
   inputSchema: ChainSupplyInputSchema,
   outputSchema: ChainSupplyOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: async (input, ctx) => {
     const outcome = await chainSupplyHandler(input, ctx);
     return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;

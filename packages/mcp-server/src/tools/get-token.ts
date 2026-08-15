@@ -173,6 +173,6 @@ export const getTokenToolSpec = defineTool({
   inputSchema: GetTokenInputSchema,
   outputSchema: GetTokenOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: getTokenHandler,
 });

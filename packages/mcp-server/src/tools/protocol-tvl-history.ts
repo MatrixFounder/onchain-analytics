@@ -102,7 +102,7 @@ export const protocolTvlHistoryToolSpec = defineTool({
   inputSchema: ProtocolTvlHistoryInputSchema,
   outputSchema: ProtocolTvlHistoryOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: async (input, ctx) => {
     const outcome = await protocolTvlHistoryHandler(input, ctx);
     return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;

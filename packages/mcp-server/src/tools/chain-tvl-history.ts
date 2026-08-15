@@ -112,7 +112,7 @@ export const chainTvlHistoryToolSpec = defineTool({
   inputSchema: ChainTvlHistoryInputSchema,
   outputSchema: ChainTvlHistoryOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: async (input, ctx) => {
     const outcome = await chainTvlHistoryHandler(input, ctx);
     return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;

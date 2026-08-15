@@ -60,6 +60,6 @@ export const pingToolSpec = defineTool({
   inputSchema: PingInputSchema,
   outputSchema: PingOutputSchema,
   capability: null,
-  needs: ['version'],
+  needs: ['version', 'principal'],
   handler: (input, ctx) => ({ ok: true, output: pingHandler(input, ctx) }),
 });

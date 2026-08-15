@@ -4,6 +4,7 @@ import type { AccessProfile } from './auth/access-profile.js';
 import type { Env } from './env.js';
 import { type ToolContext } from './tools/registry.js';
 import type { Diagnostics } from './engine/diagnostics.js';
+import { principalFor, type PrincipalResolver } from './auth/principal.js';
 import { toolSpecs } from './tools/tool-specs.js';
 
 /**
@@ -60,6 +61,20 @@ export interface CreateServerDeps {
    * no identifier, which is the honest degradation.
    */
   diagnostics?: Diagnostics;
+  /**
+   * Maps the SDK's `AuthInfo` into this engine's `Principal` (task 014-14,
+   * `system-architecture.md` §3.4.3, which declares the injection point here).
+   *
+   * **Optional, and the default is the stdio constant.** A local run and every test that never had a
+   * transport keep working unchanged, which is what makes AC-2's frozen `tools/list` snapshot still
+   * mean what it meant.
+   *
+   * **Task 014-14 calls it ONCE, at construction, with `undefined`.** That is the stub half: the
+   * principal is present and influences nothing. 014-15 moves the call into `defineTool`'s wrapper,
+   * where `extra.authInfo` exists and the answer is per request — which is what AC-26 needs, since a
+   * value resolved once per session would keep a revoked token working until the idle timeout.
+   */
+  principals?: PrincipalResolver;
 }
 
 /**
@@ -98,6 +113,7 @@ export function createServer(deps: CreateServerDeps): McpServer {
     registry: deps.registry ?? new CapabilityRegistry(routes, new Map()),
     ...(deps.budgetStore ? { budgetStore: deps.budgetStore } : {}),
     ...(deps.diagnostics ? { diagnostics: deps.diagnostics } : {}),
+    principal: principalFor(deps.principals, undefined),
   };
 
   // **The access profile narrows HERE, once per session** (task 014-04, `security.md` §7.5.3a,

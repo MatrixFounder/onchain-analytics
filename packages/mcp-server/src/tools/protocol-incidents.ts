@@ -132,7 +132,7 @@ export const protocolIncidentsToolSpec = defineTool({
   inputSchema: ProtocolIncidentsInputSchema,
   outputSchema: ProtocolIncidentsOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: async (input, ctx) => {
     const outcome = await protocolIncidentsHandler(input, ctx);
     return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;

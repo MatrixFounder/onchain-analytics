@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CapabilityRegistry, routes, type BudgetStore } from '@onchain-intel/core';
+import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
 import { defineTool, type ToolContext, type ToolSpec } from '../src/tools/registry.js';
 import { toolSpecs } from '../src/tools/tool-specs.js';
 
@@ -35,6 +36,9 @@ function fullContext(): ToolContext {
     version: '0.0.0-test',
     registry: new CapabilityRegistry(routes, new Map()),
     budgetStore,
+    // Required since task 014-14: there is a principal on every transport, so the key is not
+    // optional and this fixture supplies the local one.
+    principal: STDIO_PRINCIPAL,
   };
 }
 

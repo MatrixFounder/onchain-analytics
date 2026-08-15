@@ -318,7 +318,7 @@ export const dashPlatformHistoryToolSpec = defineTool({
     '"platform.metrics.history" to see where each is available.',
   capability: null,
   servedCapabilities: SERVED_CAPABILITIES,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   inputSchema: DashPlatformHistoryInputSchema,
   outputSchema: DashPlatformHistoryOutputSchema,
   handler: async (input, ctx) => {

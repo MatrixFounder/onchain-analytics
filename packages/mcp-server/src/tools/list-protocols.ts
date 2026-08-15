@@ -142,7 +142,7 @@ export const listProtocolsToolSpec = defineTool({
   inputSchema: ListProtocolsInputSchema,
   outputSchema: ListProtocolsOutputSchema,
   capability: CAPABILITY,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: async (input, ctx) => {
     const outcome = await listProtocolsHandler(input, ctx);
     return outcome.ok ? { ok: true, output: outcome.value, ...metaFrom(outcome) } : outcome;

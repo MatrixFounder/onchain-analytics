@@ -152,6 +152,6 @@ export const listChainsToolSpec = defineTool({
   inputSchema: ListChainsInputSchema,
   outputSchema: ListChainsOutputSchema,
   capability: null,
-  needs: ['registry'],
+  needs: ['registry', 'principal'],
   handler: (input, ctx) => ({ ok: true, output: listChainsHandler(input, ctx) }),
 });
