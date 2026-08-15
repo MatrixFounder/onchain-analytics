@@ -132,6 +132,10 @@ async function main(): Promise<void> {
     createSessionServer: () => runtime.createSessionServer(),
     bind: httpBind,
     port,
+    // Both perimeter lists come from `EnvSchema`, already parsed into arrays there so that this
+    // reader and the SDK's read one value rather than two splits of one string (R-12.1, R-12.2).
+    ...(env.ONCHAIN_ALLOWED_HOSTS ? { allowedHosts: env.ONCHAIN_ALLOWED_HOSTS } : {}),
+    ...(env.ONCHAIN_ALLOWED_ORIGINS ? { allowedOrigins: env.ONCHAIN_ALLOWED_ORIGINS } : {}),
   });
   console.error(
     `onchain-intel-mcp-server: listening on ${running.address.host}:${String(running.address.port)}`,

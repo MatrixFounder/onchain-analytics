@@ -44,11 +44,111 @@ export interface HttpTransportDeps {
   readonly port: number;
   /** Endpoint path. One value, so the client and the listener cannot disagree about it. */
   readonly path?: string;
+  /**
+   * Accepted `Host` values (R-12.1). Unset means the bound address and port, with no wildcard.
+   *
+   * **One value, two readers** (task 014-11). This list is handed to our own check below AND to the
+   * SDK transport's own. Two copies of a perimeter list diverge; two readers of one value cannot.
+   */
+  readonly allowedHosts?: readonly string[];
+  /** Accepted `Origin` values (R-12.2). Unset means no browser origin is admitted. */
+  readonly allowedOrigins?: readonly string[];
+}
+
+/**
+ * The perimeter, normalized (`security.md` §7.5.4).
+ *
+ * **Why our own check runs in front of the SDK's.** Three measurements make it load-bearing rather
+ * than defensive habit:
+ *
+ * 1. The three SDK options are `@deprecated` in the installed version
+ *    (`webStandardStreamableHttp.d.ts`), so a future release can remove them.
+ * 2. The SDK's `Host` comparison is exact and case-sensitive
+ *    (`webStandardStreamableHttp.js`: `!this._allowedHosts.includes(hostHeader)`), so a configured
+ *    `LOCALHOST:8848` would not match a client sending `localhost:8848`.
+ * 3. A request with NO `Origin` header passes the SDK's origin check — deliberately admitted here
+ *    too, because the engine's clients are servers and n8n sends none. Refusing an absent `Origin`
+ *    would refuse the only client T-014 has.
+ *
+ * **Both checks are kept.** R-12.3 requires the SDK option to be set, and two independent checks of
+ * one perimeter fail independently. They can disagree only in the fail-closed direction: ours
+ * normalizes, so anything ours admits and the SDK's refuses is still refused.
+ */
+export interface Perimeter {
+  readonly hosts: readonly string[];
+  readonly origins: readonly string[];
+  /**
+   * The port this process actually bound — the value a missing port is filled in from.
+   *
+   * **It is carried here, and not derived from the request.** The first draft of this file computed
+   * the fill-in port from the incoming `Host` header, which would have made every value match its
+   * own port and left the check admitting everything. The number a request is measured against has
+   * to come from the process, never from the request.
+   */
+  readonly boundPort: number;
+}
+
+/**
+ * Lowercases, and fills a missing port from the bound one — on BOTH sides.
+ *
+ * The symmetry is what makes it work behind a reverse proxy: a configured `onchain.internal` and an
+ * incoming `Host: onchain.internal` both become `onchain.internal:8848`, so the operator does not
+ * have to write a port the proxy never sends. A side that states a port explicitly keeps it, so a
+ * mismatch is still a mismatch.
+ */
+export function normalizeHost(value: string, boundPort: number): string {
+  const lowered = value.trim().toLowerCase();
+  if (lowered === '') return '';
+  // An IPv6 literal carries its own colons; only a `]:port` suffix is a port.
+  const hasPort = lowered.startsWith('[')
+    ? /\]:\d+$/.test(lowered)
+    : /:\d+$/.test(lowered) && lowered.split(':').length === 2;
+  return hasPort ? lowered : `${lowered}:${String(boundPort)}`;
+}
+
+/** Origins are compared lowercased and without a trailing slash; no port is invented. */
+export function normalizeOrigin(value: string): string {
+  return value.trim().toLowerCase().replace(/\/+$/, '');
+}
+
+export function resolvePerimeter(deps: HttpTransportDeps, boundPort: number): Perimeter {
+  return {
+    boundPort,
+    // Unset is NOT "anything": it is the address this process bound, and nothing else (R-12.1).
+    hosts: (deps.allowedHosts ?? [`${deps.bind}:${String(boundPort)}`]).map((host) =>
+      normalizeHost(host, boundPort),
+    ),
+    // Unset is the empty list, and an empty list admits no browser origin at all (R-12.2). CORS is
+    // denied by being ABSENT (R-12.5): no `Access-Control-Allow-Origin` is produced anywhere in the
+    // SDK's server tree, and this file adds no CORS middleware.
+    origins: (deps.allowedOrigins ?? []).map(normalizeOrigin),
+  };
+}
+
+/**
+ * Whether the request is inside the perimeter.
+ *
+ * Returns the failing header's NAME, never its value: the caller chose that value, and reflecting it
+ * into a response body is a habit worth not having. The SDK's own message does echo it — that text
+ * is its own, and this one is ours.
+ */
+export function perimeterRefusal(
+  headers: { readonly host?: string; readonly origin?: string },
+  perimeter: Perimeter,
+): 'Host' | 'Origin' | null {
+  const host = normalizeHost(headers.host ?? '', perimeter.boundPort);
+  if (host === '' || !perimeter.hosts.includes(host)) return 'Host';
+  const origin = headers.origin;
+  // Measurement 3: an absent `Origin` passes. The engine's clients are servers.
+  if (origin === undefined) return null;
+  return perimeter.origins.includes(normalizeOrigin(origin)) ? null : 'Origin';
 }
 
 export interface RunningHttpTransport {
   /** The bound address — the PORT is what a test needs, since it asks for an ephemeral one. */
   readonly address: { readonly host: string; readonly port: number };
+  /** The perimeter in force, resolved from the port actually bound. */
+  readonly perimeter: Perimeter;
   /** Live sessions. RISK-6 is a map that only grows; this is what a test watches it with. */
   sessionCount(): number;
   close(): Promise<void>;
@@ -92,8 +192,12 @@ export async function startHttpTransport(deps: HttpTransportDeps): Promise<Runni
     { server: McpServer; transport: StreamableHTTPServerTransport }
   >();
 
+  // The perimeter needs the BOUND port, which port 0 only reveals after `listen`. The listener is
+  // created first and the perimeter resolved from the address it actually got.
+  let perimeter: Perimeter | null = null;
+
   const listener = createHttpServer((req: IncomingMessage, res: ServerResponse) => {
-    void handle(req, res, path, deps, sessions);
+    void handle(req, res, path, deps, sessions, perimeter);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -105,8 +209,10 @@ export async function startHttpTransport(deps: HttpTransportDeps): Promise<Runni
   });
 
   const bound = listener.address() as AddressInfo;
+  perimeter = resolvePerimeter(deps, bound.port);
   return {
     address: { host: bound.address, port: bound.port },
+    perimeter,
     sessionCount: () => sessions.size,
     close: async () => {
       // Every session is closed before the listener is: a transport left open holds a socket, and
@@ -153,12 +259,39 @@ async function handle(
   path: string,
   deps: HttpTransportDeps,
   sessions: Map<string, { server: McpServer; transport: StreamableHTTPServerTransport }>,
+  perimeter: Perimeter | null,
 ): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://placeholder');
   if (url.pathname !== path) {
     // A path this transport does not serve is a 404 and nothing else — no body describing what the
     // process does serve. An unauthenticated caller learns the shape of the surface from that.
     res.writeHead(404).end();
+    return;
+  }
+
+  // **The perimeter is checked FIRST** — before the body is read, before a session is looked up and,
+  // from task 014-12, before the token store is asked anything. A request from outside the perimeter
+  // must not cause a read of the credential table (§10.2.1, task 014-12's step order).
+  const refused =
+    perimeter === null
+      ? 'Host'
+      : perimeterRefusal(
+          {
+            ...(typeof req.headers.host === 'string' ? { host: req.headers.host } : {}),
+            ...(typeof req.headers.origin === 'string' ? { origin: req.headers.origin } : {}),
+          },
+          perimeter,
+        );
+  if (refused !== null) {
+    // The same shape the SDK's own refusal uses: HTTP 403 and a JSON-RPC error carrying -32000, so
+    // a client parses one form (`webStandardStreamableHttp.js`, `createJsonErrorResponse`).
+    res.writeHead(403, { 'content-type': 'application/json' }).end(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: `Invalid ${refused} header` },
+        id: null,
+      }),
+    );
     return;
   }
 
@@ -195,6 +328,11 @@ async function handle(
     const server = deps.createSessionServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
+      // R-12.3 requires the option to be set, and AC-37 asserts it on the transport. Ours ran above;
+      // this is the second, independent check of one perimeter (§7.5.4).
+      enableDnsRebindingProtection: true,
+      allowedHosts: [...(perimeter?.hosts ?? [])],
+      allowedOrigins: [...(perimeter?.origins ?? [])],
       onsessioninitialized: (id: string) => {
         sessions.set(id, { server, transport });
       },
