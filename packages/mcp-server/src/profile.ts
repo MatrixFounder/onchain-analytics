@@ -97,7 +97,10 @@ export function resolveProfile(raw: NodeJS.ProcessEnv = {}): DeploymentProfile {
  * still names an owner. A check that quietly passed because nothing ran it would be the shape this
  * project keeps paying for (L-10) — an answer of "fine" from a question nobody asked.
  */
+export type PreStartCheckId = 'state-dsn' | 'state-store' | 'active-token';
+
 export interface PreStartCheck {
+  readonly id: PreStartCheckId;
   readonly name: string;
   readonly owner: string;
   readonly probe: ((raw: NodeJS.ProcessEnv) => Promise<boolean>) | null;
@@ -116,19 +119,40 @@ export class PreStartCheckFailed extends Error {
  * **Why this order.** The DSN is checked first because the two after it cannot run without it, and
  * the token check is last because it is the only one that needs a schema to already exist.
  */
-export function networkPreStartChecks(): readonly PreStartCheck[] {
+export function networkPreStartChecks(
+  /**
+   * Probes supplied by the caller, keyed by check id.
+   *
+   * **Why they arrive from outside.** The last two need a database connection, and this module
+   * resolves the profile BEFORE anything is constructed — that separation is what lets the checks
+   * run before a socket is bound. `index.ts` opens the client and hands its probes in.
+   */
+  probes: Partial<Record<PreStartCheckId, (raw: NodeJS.ProcessEnv) => Promise<boolean>>> = {},
+): readonly PreStartCheck[] {
   return [
     {
+      id: 'state-dsn',
       name: 'ONCHAIN_STATE_PG_URL is set',
       owner: 'this task',
       probe: (raw) => Promise.resolve((raw['ONCHAIN_STATE_PG_URL']?.trim() ?? '') !== ''),
     },
-    { name: 'the state store answers', owner: 'task 014-39', probe: null },
-    // Owner corrected from 014-07 to 014-12 while 014-07 landed. 014-07 supplies the store and the
-    // refusal classes; the STARTUP refusal — "the network profile does not start without an issued
-    // token" — is 014-12's own section, and an owner named for a task that does not do the work is
-    // the same silence this field exists to prevent.
-    { name: 'api_tokens holds a live active row', owner: 'task 014-12', probe: null },
+    {
+      id: 'state-store',
+      name: 'the state store answers',
+      // Owner corrected from 014-39 to 014-12: 014-39 built the client, and this check is one
+      // statement over the connection 014-12 opens anyway for the token check below. An owner named
+      // for a task that does not do the work is the silence this field exists to prevent.
+      owner: 'task 014-12',
+      probe: probes['state-store'] ?? null,
+    },
+    {
+      id: 'active-token',
+      name: 'api_tokens holds a live active row',
+      // Owner corrected from 014-07 while 014-07 landed: that task supplies the store and the
+      // refusal classes; the STARTUP refusal is 014-12's own section.
+      owner: 'task 014-12',
+      probe: probes['active-token'] ?? null,
+    },
   ];
 }
 

@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { TokenLookupRow } from '../auth/identity-types.js';
 
 /**
  * The second transport (task 014-09, R-1, ADR-003 D1): Streamable HTTP beside stdio.
@@ -53,6 +54,35 @@ export interface HttpTransportDeps {
   readonly allowedHosts?: readonly string[];
   /** Accepted `Origin` values (R-12.2). Unset means no browser origin is admitted. */
   readonly allowedOrigins?: readonly string[];
+  /**
+   * Step 2 of the admission order: the bearer, decided before anything is routed (task 014-12,
+   * R-3, `deployment.md` §10.2.1).
+   *
+   * **Why it is REQUIRED and not optional.** An optional authenticator is an unauthenticated path
+   * that still exists — and a test written against it stays green while asserting nothing about the
+   * running server. Task 014-09 shipped exactly that path deliberately, and this is where it is
+   * removed: a transport cannot be raised without saying who decides a token.
+   *
+   * The `local` profile is unaffected: it attaches stdio and never reaches this file. stdio requires
+   * no token and checks none (`docs/TASK.md`), and a token issued into the store of a stdio process
+   * is inert.
+   */
+  readonly authenticate: (presented: string | null) => Promise<AuthDecision>;
+}
+
+/**
+ * What step 2 answers. The refusal class is the OPERATOR's answer, recorded in diagnostics; the
+ * caller sees one `401` whichever of the four states applied (`security.md` §7.5.2).
+ */
+export type AuthDecision =
+  | { readonly ok: true; readonly principal: TokenLookupRow }
+  | { readonly ok: false; readonly refusalClass: string };
+
+/** `Authorization: Bearer <token>` — the only form (§7.5.2). Anything else presents nothing. */
+export function bearerOf(header: string | undefined): string | null {
+  if (typeof header !== 'string') return null;
+  const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
+  return match?.[1] ?? null;
 }
 
 /**
@@ -289,6 +319,28 @@ async function handle(
       JSON.stringify({
         jsonrpc: '2.0',
         error: { code: -32000, message: `Invalid ${refused} header` },
+        id: null,
+      }),
+    );
+    return;
+  }
+
+  // **Step 2: authentication, before the body is read and before anything is routed** (R-3).
+  //
+  // Ahead of the body so an unauthenticated caller cannot make this process buffer megabytes, and
+  // far ahead of the registry and the cache: AC-3 requires that an unauthenticated request produce
+  // no outgoing vendor call and no cache read, and the only way to guarantee that is to refuse
+  // before either is reachable.
+  const decision = await deps.authenticate(bearerOf(req.headers.authorization));
+  if (!decision.ok) {
+    // `WWW-Authenticate: Bearer` is what makes this a challenge rather than a bare refusal, and the
+    // body carries -32000 — the code the SDK's own transport-level refusal uses — so a client parses
+    // one shape. The refusal CLASS is not rendered: it is the operator's, and a caller without a
+    // valid token learns nothing from the difference between "unknown" and "revoked".
+    res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' }).end(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Unauthorized' },
         id: null,
       }),
     );

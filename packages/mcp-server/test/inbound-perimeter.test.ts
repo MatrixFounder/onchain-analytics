@@ -12,6 +12,7 @@ import {
   type HttpTransportDeps,
   type RunningHttpTransport,
 } from '../src/transport/http.js';
+import { acceptsTestToken, bearerHeader } from './helpers/test-auth.js';
 
 /**
  * Task 014-11 — the inbound perimeter (R-12, `security.md` §7.5.4).
@@ -31,6 +32,7 @@ async function listen(options: Partial<HttpTransportDeps> = {}): Promise<Running
       sessionServersBuilt += 1;
       return createServer({ env: loadEnv({}), version: '0.0.0-test' });
     },
+    authenticate: acceptsTestToken(),
     bind: '127.0.0.1',
     port: 0,
     ...options,
@@ -87,6 +89,9 @@ function post(
           'content-type': 'application/json',
           accept: 'application/json, text/event-stream',
           'content-length': Buffer.byteLength(payload),
+          // A valid bearer by default: these tests are about the PERIMETER, which runs ahead of the
+          // token check, and a request refused at step 2 would hide whether step 1 refused it first.
+          ...bearerHeader(),
           ...headers,
         },
       },
@@ -204,6 +209,7 @@ describe('an EMPTY list admits nothing, and is not the same as an unset one', ()
     const perimeter = resolvePerimeter(
       {
         createSessionServer: () => createServer({ env: loadEnv({}), version: 'x' }),
+        authenticate: acceptsTestToken(),
         bind: '127.0.0.1',
         port: 0,
       },
@@ -306,6 +312,7 @@ describe('normalization — the reason our check exists at all', () => {
     const perimeter = resolvePerimeter(
       {
         createSessionServer: () => createServer({ env: loadEnv({}), version: 'x' }),
+        authenticate: acceptsTestToken(),
         bind: '',
         port: 0,
         allowedHosts: ['onchain.internal'],

@@ -9,6 +9,7 @@ import {
   startHttpTransport,
   type RunningHttpTransport,
 } from '../src/transport/http.js';
+import { acceptsTestToken, bearerHeader } from './helpers/test-auth.js';
 
 /**
  * Task 014-09 — the second transport answers what the first one answers (AC-1).
@@ -17,10 +18,10 @@ import {
  * invariant forbids a call that LEAVES the machine; a listener on 127.0.0.1 reaches no vendor,
  * spends no credit and reads no secret. `deployment.md` §10.2.1 item 3 states the same.
  *
- * **These tests describe a path with no token check**, which task 014-12 removes. AC-1 and AC-2 are
- * re-asserted there on the authenticated path — a test describing a path that no longer exists stays
- * green while asserting nothing about the running server, and this file is the reason that
- * obligation is written down in 014-12 rather than remembered.
+ * **Since task 014-12 these run on the AUTHENTICATED path.** They described a token-free path when
+ * 014-09 shipped one; making `authenticate` a required dependency of the transport is what turned
+ * "re-assert AC-1 with a token" from an obligation somebody remembers into a compile error at every
+ * call site that had none.
  */
 
 let running: RunningHttpTransport;
@@ -31,6 +32,7 @@ const buildServer = (): ReturnType<typeof createServer> =>
 beforeEach(async () => {
   running = await startHttpTransport({
     createSessionServer: buildServer,
+    authenticate: acceptsTestToken(),
     bind: '127.0.0.1',
     // Port 0: the OS picks a free one. A fixed port makes the suite fail on a developer's machine
     // for a reason that has nothing to do with the code.
@@ -47,7 +49,11 @@ const endpoint = (): URL =>
 
 async function overHttp<T>(use: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client({ name: 'e2e-http', version: '1.0.0' });
-  const transport = new StreamableHTTPClientTransport(endpoint());
+  // Task 014-12's obligation, discharged mechanically: AC-1 is re-asserted on the path that now
+  // exists — the authenticated one — rather than on the token-free path task 014-09 shipped.
+  const transport = new StreamableHTTPClientTransport(endpoint(), {
+    requestInit: { headers: bearerHeader() },
+  });
   await client.connect(transport);
   try {
     return await use(client);

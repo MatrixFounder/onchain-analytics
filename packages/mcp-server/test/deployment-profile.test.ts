@@ -107,7 +107,12 @@ describe('deployment profile — the network profile refuses rather than downgra
 
   it('TC-UNIT-06: an unreachable state store stops the start, naming the failed check', async () => {
     const unreachable: PreStartCheck[] = [
-      { name: 'the state store answers', owner: 'test', probe: () => Promise.resolve(false) },
+      {
+        id: 'state-store',
+        name: 'the state store answers',
+        owner: 'test',
+        probe: () => Promise.resolve(false),
+      },
     ];
     const profile = resolveProfile({ ONCHAIN_PROFILE: 'network' });
     await expect(
@@ -119,6 +124,7 @@ describe('deployment profile — the network profile refuses rather than downgra
     const seen: string[] = [];
     const checks: PreStartCheck[] = [
       {
+        id: 'state-store',
         name: 'first',
         owner: 'test',
         probe: () => {
@@ -127,6 +133,7 @@ describe('deployment profile — the network profile refuses rather than downgra
         },
       },
       {
+        id: 'active-token',
         name: 'second',
         owner: 'test',
         probe: () => {
@@ -144,6 +151,7 @@ describe('deployment profile — the network profile refuses rather than downgra
     const ran: string[] = [];
     const checks: PreStartCheck[] = [
       {
+        id: 'active-token',
         name: 'must not run',
         owner: 'test',
         probe: () => {

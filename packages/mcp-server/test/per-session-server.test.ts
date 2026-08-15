@@ -10,6 +10,7 @@ import {
   startHttpTransport,
   type RunningHttpTransport,
 } from '../src/transport/http.js';
+import { acceptsTestToken, bearerHeader } from './helpers/test-auth.js';
 
 /**
  * Task 014-10 — one `McpServer` per session, over dependencies assembled once (AC-18, R-2.2).
@@ -57,6 +58,7 @@ beforeEach(async () => {
       sessionServers.push(server);
       return server;
     },
+    authenticate: acceptsTestToken(),
     bind: '127.0.0.1',
     port: 0,
   });
@@ -84,7 +86,9 @@ async function openSession(): Promise<{
   abandon: () => Promise<void>;
 }> {
   const client = new Client({ name: 'session', version: '1.0.0' });
-  const transport = new StreamableHTTPClientTransport(endpoint());
+  const transport = new StreamableHTTPClientTransport(endpoint(), {
+    requestInit: { headers: bearerHeader() },
+  });
   await client.connect(transport);
   return {
     client,
@@ -176,6 +180,7 @@ describe('a session id is the server’s to mint, never the client’s', () => {
         'content-type': 'application/json',
         accept: 'application/json, text/event-stream',
         'mcp-session-id': 'a-session-the-client-invented',
+        ...bearerHeader(),
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
     });
@@ -184,12 +189,14 @@ describe('a session id is the server’s to mint, never the client’s', () => {
   });
 
   it('refuses a request that carries neither a session nor an initialize', async () => {
-    // Building a pair for it would let an unauthenticated caller create one `McpServer` per request.
+    // Building a pair for it would let a caller create one `McpServer` per request. The bearer is
+    // valid on purpose: without it this would be refused at step 2 and say nothing about step 3.
     const response = await fetch(endpoint(), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         accept: 'application/json, text/event-stream',
+        ...bearerHeader(),
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
     });
@@ -201,7 +208,7 @@ describe('a session id is the server’s to mint, never the client’s', () => {
   it('refuses a body larger than the cap without buffering it', async () => {
     const response = await fetch(endpoint(), {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...bearerHeader() },
       body: 'x'.repeat(5 * 1024 * 1024),
     });
     expect(response.status).toBe(413);

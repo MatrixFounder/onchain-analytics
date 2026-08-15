@@ -6,14 +6,19 @@ import {
   adapterRegistrations,
   assertValidAdapterRegistrations,
   assertMergeParticipantsAreFree,
+  createStateClient,
 } from '@onchain-intel/core';
 import { loadEnv, toProcessEnv, withDeclaredDefaults, type Env } from './env.js';
 import {
   SHIPPED_TRANSPORTS,
   assertNetworkPreconditions,
   assertTransportAvailable,
+  networkPreStartChecks,
   resolveProfile,
 } from './profile.js';
+import { classifyToken } from './auth/authenticate.js';
+import { createTokenStore } from './auth/token-store.js';
+import { createEngineStore } from './engine/pg-engine-store.js';
 import { createSharedRuntime } from './runtime.js';
 import { startHttpTransport } from './transport/http.js';
 
@@ -79,11 +84,56 @@ async function main(): Promise<void> {
   const rawEnv = toProcessEnv(env);
   const profile = resolveProfile(rawEnv);
 
+  // **Task 014-12 — step 2's store, opened before any socket exists.** The `network` profile
+  // authenticates against Postgres; the pre-start checks below run over this same client, which is
+  // why they are wired here rather than inside `profile.ts`.
+  const identity =
+    profile.storage === 'postgres' && env.ONCHAIN_TOKEN_HASH_SALT !== undefined
+      ? (() => {
+          const engine = createEngineStore(createStateClient({ env: rawEnv }));
+          return {
+            engine,
+            tokens: createTokenStore({
+              engine,
+              pepper: env.ONCHAIN_TOKEN_HASH_SALT,
+              now: () => Date.now(),
+            }),
+          };
+        })()
+      : null;
+
   // The network profile refuses to start rather than downgrading to the SQLite axis. A downgrade
   // with no refusal would put this server's tokens, traces and spend ledger in a local file while
   // every gate reported success — the L-10 defect. Nothing is bound until this resolves.
   try {
-    await assertNetworkPreconditions(profile, rawEnv);
+    await assertNetworkPreconditions(
+      profile,
+      rawEnv,
+      networkPreStartChecks(
+        identity === null
+          ? {}
+          : {
+              // One statement over the connection, so "the store answers" is measured rather than
+              // assumed from a DSN that merely parses.
+              'state-store': async () => {
+                await identity.engine.query('SELECT 1');
+                return true;
+              },
+              // AC-24's second half: the process must not bind a port when no token can reach it.
+              // A listener with no issuable credential is an unauthenticated surface that answers
+              // 401 to everyone, including the operator who has no way to make one.
+              'active-token': async () => {
+                const rows = await identity.engine.query<{ one: number }>(
+                  `SELECT 1 AS one FROM ${identity.engine.qualify('api_tokens')}
+                    WHERE status = 'active' AND (expires_at IS NULL OR expires_at > $1)
+                    LIMIT 1`,
+                  [Date.now()],
+                );
+                return rows.length > 0;
+              },
+            },
+      ),
+    );
   } catch (error) {
     console.error(
       `onchain-intel-mcp-server: ${error instanceof Error ? error.message : String(error)}`,
@@ -128,8 +178,35 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (identity === null) {
+    // Two ways to arrive here, and both are refusals rather than an unauthenticated listener.
+    //
+    // - `network` without `ONCHAIN_TOKEN_HASH_SALT`: no pepper, so no digest can be verified.
+    // - `network-sqlite`: `security.md` §7.5.4 says it authenticates exactly as `network` does,
+    //   against the SQLite tables — and no SQLite state client is shipped. The DDL exists (task
+    //   014-36) and the store is written against `StateClient` (014-07), so what is missing is one
+    //   adapter. It is NAMED here rather than worked around, because the alternative is the one
+    //   configuration whose refusal path never runs.
+    console.error(
+      'onchain-intel-mcp-server: the http transport needs an identity store. ' +
+        'Set ONCHAIN_TOKEN_HASH_SALT for the network profile; network-sqlite needs a SQLite state ' +
+        'client, which no task has shipped yet.',
+    );
+    process.exit(1);
+  }
+
   const running = await startHttpTransport({
     createSessionServer: () => runtime.createSessionServer(),
+    // Step 2 of the admission order. Every request is verified, including one on an established
+    // session: no verified-token cache exists, so a revocation takes effect on the next request
+    // (R-15.6, AC-26).
+    authenticate: async (presented) => {
+      if (presented === null) return { ok: false, refusalClass: 'auth.unknown_token' };
+      const outcome = classifyToken(await identity.tokens.lookup(presented), Date.now());
+      return outcome.ok
+        ? { ok: true, principal: outcome.row }
+        : { ok: false, refusalClass: outcome.refusalClass };
+    },
     bind: httpBind,
     port,
     // Both perimeter lists come from `EnvSchema`, already parsed into arrays there so that this
