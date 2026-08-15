@@ -1,8 +1,14 @@
+import { createHash, randomBytes } from 'node:crypto';
+import type { EngineStore } from '../engine/pg-engine-store.js';
+import { ulid } from '../ulid.js';
 import type {
   AccessAuditEntry,
   IssueOptions,
   IssuedToken,
+  Role,
   TokenLookupRow,
+  TokenStatus,
+  UserStatus,
 } from './identity-types.js';
 
 /**
@@ -95,6 +101,241 @@ export function createTokenStoreStub(
     appendAudit(entry: AccessAuditEntry): Promise<void> {
       audited.push(entry);
       return Promise.resolve();
+    },
+  };
+}
+
+/* --------------------------------------------------------------------------------------------- *
+ * Task 014-07 — the repository over the shared access mechanism.
+ * --------------------------------------------------------------------------------------------- */
+
+/** `oi_` + an 8-character label + `_` + a 43-character secret (`security.md` §7.5.2). */
+const TOKEN_PREFIX = 'oi_';
+const LABEL_BYTES = 6; // base64url of 6 bytes is exactly 8 characters, with no padding
+const SECRET_BYTES = 32; // 256 bits — R-15.1 asks for at least 128
+/** The stored `prefix` is the leading 11 characters: `oi_` plus the label. */
+export const TOKEN_PREFIX_LENGTH = 11;
+
+/**
+ * How many times a mint may be retried after a `UNIQUE (prefix)` collision.
+ *
+ * The label is 48 bits, so a collision is a coincidence rather than an event to plan for; the bound
+ * exists because a loop with no bound turns a database that refuses every insert — a revoked grant,
+ * a full disk — into a process that spins instead of reporting.
+ */
+const MAX_MINT_ATTEMPTS = 5;
+
+function base64url(bytes: Buffer): string {
+  return bytes.toString('base64url');
+}
+
+/** Mints one token value. Exported for the shape test; the store calls it through its `mint` dep. */
+export function mintToken(entropy: (size: number) => Buffer = randomBytes): string {
+  return `${TOKEN_PREFIX}${base64url(entropy(LABEL_BYTES))}_${base64url(entropy(SECRET_BYTES))}`;
+}
+
+/**
+ * `sha256(pepper || presented)` as lowercase hex (`security.md` §7.5.2, `data-model.md` §4.5.4).
+ *
+ * **Why a pepper and not a per-row salt.** The read is one indexed equality on `token_hash`. A
+ * per-row salt would force a scan over every candidate row, because there would be no single value
+ * to look up.
+ *
+ * **Why the pepper lives outside the database.** A salt stored beside the digests makes a stolen
+ * dump self-sufficient. Without the pepper, the same dump is not a candidate list for an offline
+ * dictionary attack.
+ *
+ * **Consequence, stated in advance rather than discovered.** Rotating the pepper invalidates every
+ * issued token at once, and there is no re-hash path: the presented secrets are not stored.
+ */
+export function tokenDigest(pepper: string, presented: string): string {
+  return createHash('sha256').update(`${pepper}${presented}`, 'utf8').digest('hex');
+}
+
+export class MissingPepperError extends Error {
+  constructor() {
+    super(
+      'ONCHAIN_TOKEN_HASH_SALT is not set; refusing to build a token store that would digest without a pepper',
+    );
+    this.name = 'MissingPepperError';
+  }
+}
+
+export class TokenMintExhaustedError extends Error {
+  constructor(readonly attempts: number) {
+    super(`could not mint a token with an unused prefix in ${attempts} attempts`);
+    this.name = 'TokenMintExhaustedError';
+  }
+}
+
+export class TokenNotRevocableError extends Error {
+  constructor(readonly tokenId: string) {
+    super(`no active token ${tokenId} to revoke`);
+    this.name = 'TokenNotRevocableError';
+  }
+}
+
+export interface TokenStoreDeps {
+  readonly engine: EngineStore;
+  /** `ONCHAIN_TOKEN_HASH_SALT`, injected — no consumer reads the environment itself (R-13.3a). */
+  readonly pepper: string;
+  readonly now: () => number;
+  /** Seams: a test needs a predictable id and a mint it can force into a collision. */
+  readonly newId?: (nowMs: number) => string;
+  readonly mint?: () => string;
+}
+
+/** Rows as the engine returns them — snake_case, exactly the column names. */
+interface TokenLookupSqlRow {
+  readonly id: string;
+  readonly status: string;
+  readonly expires_at: number | string | null;
+  readonly access_profile_id: string;
+  readonly user_id: string;
+  readonly role: string;
+  readonly user_status: string;
+}
+
+/**
+ * `pg` returns `BIGINT` as a STRING, because an arbitrary 64-bit integer does not survive a JS
+ * number. Every time column of migration 002 is `BIGINT`, so a store that forgot this would compare
+ * `'1770000000000' <= now` — a string against a number — and answer whatever the coercion happened
+ * to give. The SQLite axis returns numbers, so only a coercion applied on BOTH paths is correct on
+ * both.
+ */
+function asEpochMs(value: number | string | null): number | null {
+  if (value === null) return null;
+  return typeof value === 'number' ? value : Number(value);
+}
+
+/**
+ * The identity repository over the write client of task 014-39, reached through the shared access
+ * mechanism of task 014-03.
+ *
+ * **Why not its own connection.** One write client per process, and the state role holds the grants
+ * (`deployment.md` §10.5.1). A second connection opened from here would mean a second role and a
+ * second grant set to keep in step with the first.
+ */
+export function createTokenStore(deps: TokenStoreDeps): TokenStore {
+  if (deps.pepper.trim() === '') throw new MissingPepperError();
+  const { engine, pepper, now } = deps;
+  const newId = deps.newId ?? ((nowMs: number): string => ulid(nowMs));
+  const mint = deps.mint ?? ((): string => mintToken());
+
+  return {
+    async issue(userId, accessProfileId, options: IssueOptions = {}): Promise<IssuedToken> {
+      for (let attempt = 1; attempt <= MAX_MINT_ATTEMPTS; attempt += 1) {
+        const token = mint();
+        const prefix = token.slice(0, TOKEN_PREFIX_LENGTH);
+        const createdAt = now();
+        const id = newId(createdAt);
+        // `ON CONFLICT (prefix) DO NOTHING RETURNING id` rather than catching a driver error: the
+        // two engines word a constraint violation differently, and a store that parsed those
+        // messages would be reading one dialect's prose to make a portable decision. An empty
+        // `RETURNING` is the same answer in both. The conflict TARGET is named, so a duplicate
+        // `token_hash` — which would mean the CSPRNG repeated — still raises instead of being
+        // retried away.
+        const written = await engine.query<{ id: string }>(
+          `INSERT INTO ${engine.qualify('api_tokens')}
+             (id, user_id, access_profile_id, token_hash, prefix, name, status, expires_at, revoked_at, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, NULL, $8)
+           ON CONFLICT (prefix) DO NOTHING
+           RETURNING id`,
+          [
+            id,
+            userId,
+            accessProfileId,
+            tokenDigest(pepper, token),
+            prefix,
+            options.name ?? null,
+            options.expiresAt ?? null,
+            createdAt,
+          ],
+        );
+        if (written.length > 0) return { id, token, prefix };
+      }
+      throw new TokenMintExhaustedError(MAX_MINT_ATTEMPTS);
+    },
+
+    async lookup(presented: string): Promise<TokenLookupRow | null> {
+      // The read of §4.5.4, verbatim: one indexed equality, both objects schema-qualified. No
+      // liveness predicate — see `classifyToken`.
+      const rows = await engine.query<TokenLookupSqlRow>(
+        `SELECT t.id, t.status, t.expires_at, t.access_profile_id,
+                u.id AS user_id, u.role, u.status AS user_status
+           FROM ${engine.qualify('api_tokens')} t
+           JOIN ${engine.qualify('users')} u ON u.id = t.user_id
+          WHERE t.token_hash = $1`,
+        [tokenDigest(pepper, presented)],
+      );
+      const row = rows[0];
+      if (row === undefined) return null;
+      return {
+        tokenId: row.id,
+        tokenStatus: row.status as TokenStatus,
+        expiresAt: asEpochMs(row.expires_at),
+        accessProfileId: row.access_profile_id,
+        userId: row.user_id,
+        role: row.role as Role,
+        userStatus: row.user_status as UserStatus,
+      };
+    },
+
+    async revoke(tokenId: string, actorId: string): Promise<void> {
+      const revokedAt = now();
+      // The update and its journal row are one transaction. A revocation recorded with no journal
+      // row, or a journal row for a revocation that did not happen, are both worse than a failure:
+      // R-15.7 makes the journal the record of what an admin did, and a record that disagrees with
+      // the state is read as the state.
+      await engine.transaction(async (tx) => {
+        const updated = await tx.query<{ id: string; prefix: string }>(
+          `UPDATE ${engine.qualify('api_tokens')}
+              SET status = 'revoked', revoked_at = $1
+            WHERE id = $2 AND status = 'active'
+            RETURNING id, prefix`,
+          [revokedAt, tokenId],
+        );
+        const row = updated[0];
+        // An unknown id and an already-revoked token are both "nothing to revoke". Refusing rather
+        // than answering silently is the canon: an operator who mistyped an id must not be told the
+        // revocation succeeded.
+        if (row === undefined) throw new TokenNotRevocableError(tokenId);
+        await tx.query(
+          `INSERT INTO ${engine.qualify('access_audit')}
+             (id, ts, actor_user_id, action, target_type, target_id, before_json, after_json, created_at)
+           VALUES ($1, $2, $3, 'token.revoke', 'api_token', $4, $5, $6, $2)`,
+          [
+            newId(revokedAt),
+            revokedAt,
+            actorId,
+            tokenId,
+            // Neither side carries the secret or its digest (§4.5.5): the prefix is what identifies
+            // a token to every reader of this journal, and there are more of them than of the
+            // authentication path.
+            JSON.stringify({ status: 'active', prefix: row.prefix }),
+            JSON.stringify({ status: 'revoked', prefix: row.prefix, revoked_at: revokedAt }),
+          ],
+        );
+      });
+    },
+
+    async appendAudit(entry: AccessAuditEntry): Promise<void> {
+      await engine.query(
+        `INSERT INTO ${engine.qualify('access_audit')}
+           (id, ts, actor_user_id, action, target_type, target_id, before_json, after_json, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          entry.id,
+          entry.ts,
+          entry.actorUserId,
+          entry.action,
+          entry.targetType,
+          entry.targetId,
+          entry.beforeJson,
+          entry.afterJson,
+          entry.createdAt,
+        ],
+      );
     },
   };
 }

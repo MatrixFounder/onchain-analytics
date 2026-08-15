@@ -124,7 +124,11 @@ export function networkPreStartChecks(): readonly PreStartCheck[] {
       probe: (raw) => Promise.resolve((raw['ONCHAIN_STATE_PG_URL']?.trim() ?? '') !== ''),
     },
     { name: 'the state store answers', owner: 'task 014-39', probe: null },
-    { name: 'api_tokens holds a live active row', owner: 'task 014-07', probe: null },
+    // Owner corrected from 014-07 to 014-12 while 014-07 landed. 014-07 supplies the store and the
+    // refusal classes; the STARTUP refusal — "the network profile does not start without an issued
+    // token" — is 014-12's own section, and an owner named for a task that does not do the work is
+    // the same silence this field exists to prevent.
+    { name: 'api_tokens holds a live active row', owner: 'task 014-12', probe: null },
   ];
 }
 

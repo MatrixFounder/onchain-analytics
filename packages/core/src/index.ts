@@ -211,6 +211,20 @@ export type { CacheStore, CacheGetResult } from './adapters/cache-store.js';
 export { type BudgetStore, createBudgetStore } from './cache/budget-store.js';
 export { dayBucketMs } from './cache/day-bucket.js';
 
+// The SQLite declaration of every engine table (task 014-36), exported for task 014-07's tests.
+//
+// **Why a DDL string crosses the package boundary.** The identity repositories live in `mcp-server`
+// (`security.md` §7.5.1), and R-21 forbids a live Postgres in `pnpm test` — so the only way to run
+// their real statements against a real engine is the SQLite axis, whose declaration is this string.
+// A second copy of it in `mcp-server` would be a second schema, agreeing with this one until the
+// first column is added to one of them; `pg-store-parity.test.ts` already imports it for the same
+// reason from inside this package.
+//
+// It stays DECLARATIVE data. Nothing in `mcp-server`'s `src` executes it — a runtime consumer there
+// would be creating the engine's tables from the transport, which `deployment.md` §10.4.2 assigns to
+// a migration run by an operator.
+export { CACHE_DDL } from './cache/ddl.js';
+
 // T-014 (task 014-39) — the storage axis, as one factory over the two engines. Exported for the
 // same reason `createCacheStore`/`createBudgetStore` are: the process that picks the axis is
 // `mcp-server`'s entry point, in the other package. The three concrete `Pg*` classes stay behind

@@ -1,4 +1,6 @@
-import type { NewUser, User } from './identity-types.js';
+import type { EngineStore } from '../engine/pg-engine-store.js';
+import { ulid } from '../ulid.js';
+import type { NewUser, Role, User, UserStatus } from './identity-types.js';
 
 /**
  * The `users` repository (`data-model.md` §4.5.3).
@@ -70,6 +72,95 @@ export function createUserStoreStub(seed: readonly User[] = []): UserStore {
     },
     listUsers(): Promise<readonly User[]> {
       return Promise.resolve([...rows]);
+    },
+  };
+}
+
+/* --------------------------------------------------------------------------------------------- *
+ * Task 014-07 — the repository over the shared access mechanism.
+ * --------------------------------------------------------------------------------------------- */
+
+export interface UserStoreDeps {
+  readonly engine: EngineStore;
+  readonly now: () => number;
+  readonly newId?: (nowMs: number) => string;
+}
+
+/** A row as the engine returns it — snake_case, exactly the column names. */
+interface UserSqlRow {
+  readonly id: string;
+  readonly email: string;
+  readonly display_name: string | null;
+  readonly role: string;
+  readonly status: string;
+  readonly created_at: number | string;
+  readonly updated_at: number | string;
+}
+
+/** `pg` hands back `BIGINT` as a string; the SQLite axis hands back a number. See `token-store.ts`. */
+const epochMs = (value: number | string): number =>
+  typeof value === 'number' ? value : Number(value);
+
+const toUser = (row: UserSqlRow): User => ({
+  id: row.id,
+  email: row.email,
+  displayName: row.display_name,
+  role: row.role as Role,
+  status: row.status as UserStatus,
+  createdAt: epochMs(row.created_at),
+  updatedAt: epochMs(row.updated_at),
+});
+
+const COLUMNS = 'id, email, display_name, role, status, created_at, updated_at';
+
+export function createUserStore(deps: UserStoreDeps): UserStore {
+  const { engine, now } = deps;
+  const newId = deps.newId ?? ((nowMs: number): string => ulid(nowMs));
+
+  return {
+    async createUser(input: NewUser): Promise<User> {
+      const createdAt = now();
+      // `created_at` and `updated_at` are the same instant and are bound to the SAME parameter.
+      // Reading the clock twice would let a row exist whose "last changed" precedes its own
+      // creation by a millisecond, which is the kind of impossibility a later query has to work
+      // around rather than report.
+      const rows = await engine.query<UserSqlRow>(
+        `INSERT INTO ${engine.qualify('users')} (${COLUMNS})
+         VALUES ($1, $2, $3, $4, 'active', $5, $5)
+         RETURNING ${COLUMNS}`,
+        [
+          newId(createdAt),
+          // Lowercased HERE, by the writer, because neither engine folds case in a UNIQUE index by
+          // default (§4.5.3): `A@x` and `a@x` would otherwise both be admitted, and the second of
+          // them is a person nobody meant to create.
+          input.email.toLowerCase(),
+          input.displayName ?? null,
+          input.role,
+          createdAt,
+        ],
+      );
+      const row = rows[0];
+      if (row === undefined) throw new Error('INSERT ... RETURNING produced no row for users');
+      return toUser(row);
+    },
+
+    async findUser(selector): Promise<User | null> {
+      const byId = 'id' in selector;
+      const rows = await engine.query<UserSqlRow>(
+        `SELECT ${COLUMNS} FROM ${engine.qualify('users')} WHERE ${byId ? 'id' : 'email'} = $1`,
+        [byId ? selector.id : selector.email.toLowerCase()],
+      );
+      const row = rows[0];
+      return row === undefined ? null : toUser(row);
+    },
+
+    async listUsers(): Promise<readonly User[]> {
+      // Ordered by the ULID, which sorts by creation time as text (§1.3) — so the listing is stable
+      // across engines without an ORDER BY over a column either of them might collate differently.
+      const rows = await engine.query<UserSqlRow>(
+        `SELECT ${COLUMNS} FROM ${engine.qualify('users')} ORDER BY id`,
+      );
+      return rows.map(toUser);
     },
   };
 }

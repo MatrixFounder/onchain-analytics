@@ -43,5 +43,22 @@ export {
   type AccessProfileRecord,
   type AccessProfileStore,
 } from './access-profile-store.js';
-export { createTokenStoreStub, type TokenStore } from './token-store.js';
-export { createUserStoreStub, type UserStore } from './user-store.js';
+export { classifyToken, type AuthOutcome } from './authenticate.js';
+export {
+  createTokenStore,
+  createTokenStoreStub,
+  mintToken,
+  tokenDigest,
+  MissingPepperError,
+  TokenMintExhaustedError,
+  TokenNotRevocableError,
+  TOKEN_PREFIX_LENGTH,
+  type TokenStore,
+  type TokenStoreDeps,
+} from './token-store.js';
+export {
+  createUserStore,
+  createUserStoreStub,
+  type UserStore,
+  type UserStoreDeps,
+} from './user-store.js';
