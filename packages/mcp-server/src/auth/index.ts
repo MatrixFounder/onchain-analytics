@@ -8,10 +8,26 @@
  * re-export from this task: `packages/core` receives no type of token, role or header. That is an
  * acceptance criterion of task 014-02, checked by `test/engine-store-contracts.test.ts`.
  *
- * **What is deliberately absent.** `auth/principal.ts` (`system-architecture.md` §3.4.3) and
- * `auth/identity-types.ts` (task 014-06) are other tasks' files. Each joins this list when its own
- * task lands; `access-profile.ts` and `default-access-profile.ts` joined it with task 014-04.
+ * **What is deliberately absent.** `auth/principal.ts` (`system-architecture.md` §3.4.3) is another
+ * task's file and joins this list when 014-10 lands; `access-profile.ts` and
+ * `default-access-profile.ts` joined it with task 014-04, `identity-types.ts` with task 014-06.
  */
+export {
+  AUTH_REFUSAL_CLASSES,
+  type AccessAuditEntry,
+  type ApiToken,
+  type AuditAction,
+  type AuditTargetType,
+  type AuthRefusalClass,
+  type IssueOptions,
+  type IssuedToken,
+  type NewUser,
+  type Role,
+  type TokenLookupRow,
+  type TokenStatus,
+  type User,
+  type UserStatus,
+} from './identity-types.js';
 export {
   AccessProfileUnavailableError,
   type AccessProfile,
