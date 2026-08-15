@@ -2,7 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { EnvSchema, loadEnv } from '../src/env.js';
+import { capabilityManifests } from '@onchain-intel/core';
+import {
+  DEFAULT_HTTP_RESPONSE_TIMEOUT_MS,
+  EnvSchema,
+  HTTP_RESPONSE_TIMEOUT_FLOOR_MS,
+  loadEnv,
+  toProcessEnv,
+  withDeclaredDefaults,
+} from '../src/env.js';
+import { PROFILE_NAMES, resolveProfile } from '../src/profile.js';
 
 /**
  * Unit tests for `src/env.ts` (task 001-3, closes R-6/R-12).
@@ -319,5 +328,276 @@ describe('BLOCKSCOUT_PRO_API_KEY (TASK-008 R-79a)', () => {
     expect(
       EnvSchema.parse({ BLOCKSCOUT_PRO_API_KEY: 'proapi_real\n' }).BLOCKSCOUT_PRO_API_KEY,
     ).toBe('proapi_real');
+  });
+});
+
+/**
+ * T-014's ten keys (task 014-40, `deployment.md` §10.3).
+ *
+ * Nine bootstrap, one secret. Every one optional, so the invariant the twelve before them established
+ * survives: `EnvSchema.parse({})` succeeds, and an empty value behaves as an absent one.
+ */
+describe('T-014 environment keys (task 014-40)', () => {
+  const TASK_014_KEYS = [
+    'ONCHAIN_PROFILE',
+    'ONCHAIN_STATE_PG_URL',
+    'ONCHAIN_HTTP_BIND',
+    'ONCHAIN_HTTP_PORT',
+    'ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS',
+    'ONCHAIN_ALLOWED_HOSTS',
+    'ONCHAIN_ALLOWED_ORIGINS',
+    'ONCHAIN_TOKEN_HASH_SALT',
+    'ONCHAIN_SESSION_MAX',
+    'ONCHAIN_SESSION_IDLE_MS',
+  ] as const;
+
+  it('TC-UNIT-01: an empty environment is still a valid configuration (R-13.5)', () => {
+    expect(() => EnvSchema.parse({})).not.toThrow();
+    // And it is still EMPTY. A zod `.default()` on any of the ten would make an unset key
+    // indistinguishable from a chosen one — the L-10 shape, a value with nothing to say whether
+    // anybody decided it. The defaults live in `withDeclaredDefaults`, where the answer is derived
+    // rather than remembered.
+    expect(EnvSchema.parse({})).toStrictEqual({});
+  });
+
+  it('declares all ten, and nine of them are new bootstrap keys', () => {
+    for (const key of TASK_014_KEYS) {
+      expect(Object.keys(EnvSchema.shape), `${key} is declared`).toContain(key);
+    }
+  });
+
+  it('TC-UNIT-06: an empty value equals an unset key for each of the ten', () => {
+    for (const key of TASK_014_KEYS) {
+      const parsed = EnvSchema.parse({ [key]: '' }) as Record<string, unknown>;
+      expect(parsed[key], `${key}='' behaves as absent`).toBeUndefined();
+      const decided = Object.entries(parsed).filter(([, value]) => value !== undefined);
+      expect(decided, `${key}='' decided nothing else`).toStrictEqual([]);
+    }
+  });
+
+  it('an empty value leaves the PROPERTY present, so presence is not the test for "set"', () => {
+    // Measured, not assumed: `EnvSchema.parse({KEY: ''})` yields `{KEY: undefined}` — the property
+    // exists and its value does not. That is true of all twenty-two keys, not just T-014's, and it
+    // matters because `'ONCHAIN_HTTP_PORT' in env` answers `true` for a `.env` line with no value.
+    // A consumer deciding "configured?" must read the VALUE. `withDeclaredDefaults` does; a
+    // hand-written `in` check would silently treat a blank line as a decision.
+    const blank = EnvSchema.parse({ ONCHAIN_HTTP_PORT: '', LOG_LEVEL: '' });
+    expect('ONCHAIN_HTTP_PORT' in blank).toBe(true);
+    expect(blank.ONCHAIN_HTTP_PORT).toBeUndefined();
+    expect('ONCHAIN_HTTP_PORT' in EnvSchema.parse({})).toBe(false);
+  });
+
+  it('TC-UNIT-05: ONCHAIN_PROFILE admits the three declared names and refuses a fourth', () => {
+    for (const name of PROFILE_NAMES) {
+      expect(EnvSchema.parse({ ONCHAIN_PROFILE: name }).ONCHAIN_PROFILE).toBe(name);
+    }
+    expect(() => EnvSchema.parse({ ONCHAIN_PROFILE: 'remote' })).toThrow();
+    // Unset is `local`, and that default is `profile.ts`'s — the schema leaves the field undefined
+    // so the two cannot disagree about the vocabulary or about the default.
+    expect(EnvSchema.parse({}).ONCHAIN_PROFILE).toBeUndefined();
+    expect(resolveProfile({}).name).toBe('local');
+  });
+
+  it('the schema and resolveProfile admit exactly the same set of names', () => {
+    // One key, one set of admissible values. The failure this prevents is a value that parses and
+    // then throws — or throws and would have parsed — depending on which door it came through.
+    for (const candidate of [...PROFILE_NAMES, 'remote', 'LOCAL', 'network sqlite']) {
+      const schemaAccepts = EnvSchema.safeParse({ ONCHAIN_PROFILE: candidate }).success;
+      let resolverAccepts = true;
+      try {
+        resolveProfile({ ONCHAIN_PROFILE: candidate });
+      } catch {
+        resolverAccepts = false;
+      }
+      expect(schemaAccepts, `${candidate}: schema and resolver disagree`).toBe(resolverAccepts);
+    }
+  });
+
+  describe('ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS is bounded from below by the manifest (R-16.3)', () => {
+    it('TC-UNIT-02: the floor itself is refused, and the message names the key, not the value', () => {
+      let thrown: unknown;
+      try {
+        EnvSchema.parse({
+          ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS: String(HTTP_RESPONSE_TIMEOUT_FLOOR_MS),
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeDefined();
+      const message = thrown instanceof Error ? thrown.message : String(thrown);
+      expect(message).toContain('ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS');
+      // A value equal to the floor cuts a call that was completing lawfully, so `gt` and not `gte`.
+      expect(EnvSchema.safeParse({ ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS: '1000' }).success).toBe(false);
+    });
+
+    it('TC-UNIT-03: one millisecond above the floor is accepted', () => {
+      expect(
+        EnvSchema.parse({
+          ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS: String(HTTP_RESPONSE_TIMEOUT_FLOOR_MS + 1),
+        }).ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS,
+      ).toBe(HTTP_RESPONSE_TIMEOUT_FLOOR_MS + 1);
+    });
+
+    it('TC-UNIT-04: an unset value resolves to 360 000 through the one place that defaults it', () => {
+      expect(EnvSchema.parse({}).ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS).toBeUndefined();
+      expect(withDeclaredDefaults(EnvSchema.parse({})).httpResponseTimeoutMs).toBe(360_000);
+      expect(DEFAULT_HTTP_RESPONSE_TIMEOUT_MS).toBeGreaterThan(HTTP_RESPONSE_TIMEOUT_FLOOR_MS);
+    });
+
+    /**
+     * The floor is a DERIVED number, and this is the derivation.
+     *
+     * §10.3 states it as a measurement over the manifest: the worst case one response may lawfully
+     * occupy is the largest `deadlineMs + paidLegMs`, because the deadline bounds the cancellable
+     * part and the paid leg is uncut. Written as a constant, that number would rot the first time a
+     * capability raised either half — and it would rot INVISIBLY, because a too-low floor refuses
+     * nothing: it admits a response window that cuts a lawful call.
+     *
+     * So the measurement runs here instead of being remembered. It is deliberately an EQUALITY: a
+     * manifest row that lowered the worst case would leave the floor higher than it needs to be,
+     * refusing configurations that are now legitimate, and the operator would have no way to learn
+     * why. Either direction is a statement someone has to make on purpose.
+     */
+    it('the floor equals the worst case measured over the whole manifest', () => {
+      const rows = Object.values(capabilityManifests);
+      expect(rows.length).toBeGreaterThan(0);
+      const worst = Math.max(...rows.map((row) => row.deadlineMs + (row.paidLegMs ?? 0)));
+      expect(
+        HTTP_RESPONSE_TIMEOUT_FLOOR_MS,
+        'the manifest worst case moved. Update HTTP_RESPONSE_TIMEOUT_FLOOR_MS, deployment.md §10.3 ' +
+          'and .env.example together — the floor is what keeps a configured response window from ' +
+          'cutting a call that was completing lawfully.',
+      ).toBe(worst);
+    });
+  });
+
+  it('ONCHAIN_HTTP_PORT is validated as a port, and has no default to fall back on', () => {
+    expect(EnvSchema.parse({ ONCHAIN_HTTP_PORT: '8848' }).ONCHAIN_HTTP_PORT).toBe(8848);
+    for (const bad of ['0', '65536', '-1', '80.5', 'http']) {
+      expect(EnvSchema.safeParse({ ONCHAIN_HTTP_PORT: bad }).success, bad).toBe(false);
+    }
+    expect(EnvSchema.parse({}).ONCHAIN_HTTP_PORT).toBeUndefined();
+  });
+
+  it('ONCHAIN_STATE_PG_URL is a URL, and is a different key from the read-only DSN', () => {
+    const dsn = 'postgres://onchain_state:p%40ss@ubuntu-linux-2404.local:5432/postgres';
+    expect(EnvSchema.parse({ ONCHAIN_STATE_PG_URL: dsn }).ONCHAIN_STATE_PG_URL).toBe(dsn);
+    expect(EnvSchema.safeParse({ ONCHAIN_STATE_PG_URL: 'not-a-dsn' }).success).toBe(false);
+    // Two keys, because they carry two roles with two grant sets. One key for both would give the
+    // read path write privileges (`sql/migrations/002_t014_network_profile.sql`).
+    const both = EnvSchema.parse({ ONCHAIN_STATE_PG_URL: dsn, ONCHAIN_PG_URL: dsn });
+    expect(both.ONCHAIN_STATE_PG_URL).toBe(dsn);
+    expect(both.ONCHAIN_PG_URL).toBe(dsn);
+  });
+
+  it('the two perimeter keys parse to lists, so no consumer splits the string itself', () => {
+    const parsed = EnvSchema.parse({
+      ONCHAIN_ALLOWED_HOSTS: 'onchain.internal:8848, 127.0.0.1:8848 ',
+      ONCHAIN_ALLOWED_ORIGINS: 'https://n8n.internal',
+    });
+    expect(parsed.ONCHAIN_ALLOWED_HOSTS).toStrictEqual(['onchain.internal:8848', '127.0.0.1:8848']);
+    expect(parsed.ONCHAIN_ALLOWED_ORIGINS).toStrictEqual(['https://n8n.internal']);
+    // A trailing comma cannot delete an entry the operator wrote, so it is forgiven.
+    expect(
+      EnvSchema.parse({ ONCHAIN_ALLOWED_HOSTS: 'a.internal,' }).ONCHAIN_ALLOWED_HOSTS,
+    ).toStrictEqual(['a.internal']);
+    // A value that yields NO entries is refused rather than read as an empty perimeter: it would
+    // configure a listener that admits nothing while reading, to the operator, as configured.
+    for (const bad of [',', ' , ', ',,']) {
+      expect(EnvSchema.safeParse({ ONCHAIN_ALLOWED_HOSTS: bad }).success, bad).toBe(false);
+    }
+    // Unset stays unset — the defaults are the bound address and "no browser origin", and only the
+    // bound listener knows the first (`security.md` §7.5.4, task 014-11).
+    expect(EnvSchema.parse({}).ONCHAIN_ALLOWED_ORIGINS).toBeUndefined();
+  });
+
+  it('ONCHAIN_TOKEN_HASH_SALT refuses a value that only looks present', () => {
+    // The pepper enters `sha256(pepper || presented)`. A trailing newline from `echo salt >> .env`
+    // changes every digest, so every issued token stops verifying at once — and D10 forbids printing
+    // the value that did it, which leaves nothing to debug with.
+    expect(EnvSchema.parse({ ONCHAIN_TOKEN_HASH_SALT: 'pepper\n' }).ONCHAIN_TOKEN_HASH_SALT).toBe(
+      'pepper',
+    );
+    expect(EnvSchema.safeParse({ ONCHAIN_TOKEN_HASH_SALT: '   ' }).success).toBe(false);
+    expect(
+      EnvSchema.parse({ ONCHAIN_TOKEN_HASH_SALT: '' }).ONCHAIN_TOKEN_HASH_SALT,
+    ).toBeUndefined();
+  });
+
+  it('the two session keys are positive integers, defaulted in one place', () => {
+    expect(EnvSchema.parse({ ONCHAIN_SESSION_MAX: '128' }).ONCHAIN_SESSION_MAX).toBe(128);
+    for (const bad of ['0', '-1', '1.5', 'many']) {
+      expect(EnvSchema.safeParse({ ONCHAIN_SESSION_MAX: bad }).success, bad).toBe(false);
+      expect(EnvSchema.safeParse({ ONCHAIN_SESSION_IDLE_MS: bad }).success, bad).toBe(false);
+    }
+    const defaults = withDeclaredDefaults(EnvSchema.parse({}));
+    expect(defaults.sessionMax).toBe(64);
+    expect(defaults.sessionIdleMs).toBe(900_000);
+    expect(defaults.httpBind).toBe('127.0.0.1');
+  });
+
+  it('a set value wins over every declared default', () => {
+    const defaults = withDeclaredDefaults(
+      EnvSchema.parse({
+        ONCHAIN_HTTP_BIND: '0.0.0.0',
+        ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS: '400000',
+        ONCHAIN_SESSION_MAX: '8',
+        ONCHAIN_SESSION_IDLE_MS: '60000',
+      }),
+    );
+    expect(defaults).toStrictEqual({
+      httpBind: '0.0.0.0',
+      httpResponseTimeoutMs: 400_000,
+      sessionMax: 8,
+      sessionIdleMs: 60_000,
+    });
+  });
+});
+
+describe('toProcessEnv projects the string-valued keys and only those', () => {
+  it('drops exactly the keys whose parsed value is not a string', () => {
+    // The projection is a predicate rather than a list of names, so this test is where the list
+    // lives — a key that silently changes type shows up here instead of as an adapter reading
+    // `undefined` from an environment record it was handed.
+    const full = EnvSchema.parse({
+      LOG_LEVEL: 'info',
+      NANSEN_API_KEY: 'nansen-key',
+      NANSEN_DAILY_CREDIT_CAP: '250',
+      NANSEN_VELOCITY_CREDITS_PER_MIN: '200',
+      NANSEN_MAX_CALLS_PER_MIN: '120',
+      NANSEN_BUDGET_WARN_RATIO: '0.8',
+      ONCHAIN_PROFILE: 'network',
+      ONCHAIN_HTTP_PORT: '8848',
+      ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS: '400000',
+      ONCHAIN_ALLOWED_HOSTS: 'a.internal:8848',
+      ONCHAIN_ALLOWED_ORIGINS: 'https://n8n.internal',
+      ONCHAIN_SESSION_MAX: '8',
+      ONCHAIN_SESSION_IDLE_MS: '60000',
+    });
+    const projected = toProcessEnv(full);
+    const dropped = Object.keys(full).filter((key) => !(key in projected));
+    expect(dropped.sort()).toStrictEqual(
+      [
+        'NANSEN_DAILY_CREDIT_CAP',
+        'NANSEN_VELOCITY_CREDITS_PER_MIN',
+        'NANSEN_MAX_CALLS_PER_MIN',
+        'NANSEN_BUDGET_WARN_RATIO',
+        'ONCHAIN_HTTP_PORT',
+        'ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS',
+        'ONCHAIN_ALLOWED_HOSTS',
+        'ONCHAIN_ALLOWED_ORIGINS',
+        'ONCHAIN_SESSION_MAX',
+        'ONCHAIN_SESSION_IDLE_MS',
+      ].sort(),
+    );
+    // The three states of the Nansen caps include the WORD `off`, which is a string and therefore
+    // survives the projection — that is correct and worth pinning: the adapters read it from `env`.
+    expect(toProcessEnv(EnvSchema.parse({ NANSEN_DAILY_CREDIT_CAP: 'off' }))).toStrictEqual({
+      NANSEN_DAILY_CREDIT_CAP: 'off',
+    });
+    // Every key an adapter reads through this view is a string key and survives.
+    expect(projected.LOG_LEVEL).toBe('info');
+    expect(projected.NANSEN_API_KEY).toBe('nansen-key');
+    expect(projected.ONCHAIN_PROFILE).toBe('network');
   });
 });

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/env.js';
 import {
   DEFAULT_PROFILE,
+  PROFILE_NAMES,
   PROFILES,
   PreStartCheckFailed,
   UnknownProfileError,
@@ -64,6 +65,14 @@ describe('deployment profile — three declared pairs', () => {
 
   it('refuses an unknown value instead of falling back to the default', () => {
     expect(() => resolveProfile({ ONCHAIN_PROFILE: 'production' })).toThrow(UnknownProfileError);
+  });
+
+  it('the name tuple and the profile table hold the same three names (task 014-40)', () => {
+    // `PROFILE_NAMES` exists because `EnvSchema` needs the vocabulary as a tuple type and the table
+    // cannot supply one. Two spellings of one vocabulary is what this compares: a name added to the
+    // table and not to the tuple would parse nowhere, and the reverse would parse and then fail to
+    // resolve.
+    expect([...PROFILE_NAMES]).toEqual(Object.keys(PROFILES));
   });
 
   it('names no key value in the refusal beyond the one presented (D10)', () => {

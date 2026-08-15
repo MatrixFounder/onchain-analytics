@@ -24,6 +24,24 @@ export type StorageKind = 'sqlite' | 'postgres';
 
 export type ProfileName = 'local' | 'network' | 'network-sqlite';
 
+/**
+ * The three names as a value, so ONE vocabulary serves both entry points.
+ *
+ * **Why this export exists** (task 014-40). `EnvSchema` has to refuse `ONCHAIN_PROFILE=remote` at
+ * the process boundary, and `resolveProfile` below has to refuse the same value on an injected
+ * record. Spelling the three names twice would give one key two sets of admissible values — the
+ * failure the declaring task exists to prevent — and the disagreement would surface as a profile
+ * that parses and then throws, or throws and would have parsed.
+ *
+ * A tuple rather than `Object.keys(PROFILES)`: `z.enum` needs a non-empty tuple TYPE, which
+ * `string[]` is not. `PROFILES` is built from these names and a test compares the two, so the tuple
+ * cannot fall behind the table.
+ */
+export const PROFILE_NAMES = ['local', 'network', 'network-sqlite'] as const satisfies readonly [
+  ProfileName,
+  ...ProfileName[],
+];
+
 export interface DeploymentProfile {
   readonly name: ProfileName;
   readonly transport: TransportKind;
