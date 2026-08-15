@@ -24,7 +24,7 @@ import {
   type BudgetStore,
   type ProviderAdapter,
 } from '@onchain-intel/core';
-import { loadEnv, toProcessEnv, type Env } from './env.js';
+import { loadEnv, toProcessEnv, withDeclaredDefaults, type Env } from './env.js';
 import {
   SHIPPED_TRANSPORTS,
   assertNetworkPreconditions,
@@ -32,6 +32,7 @@ import {
   resolveProfile,
 } from './profile.js';
 import { createServer } from './server.js';
+import { startHttpTransport } from './transport/http.js';
 
 // Task 012-2 (ADR-002 D8/D9, R-153/R-154) — every adapter registration must DECLARE its `tier` and
 // its `trust` rank. Deliberately at module scope, immediately after the imports and therefore
@@ -205,7 +206,34 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-  await server.connect(new StdioServerTransport());
+
+  if (profile.transport === 'stdio') {
+    // Unchanged since M0, and that is an acceptance criterion (AC-2): the local path raises no
+    // listener, opens no port and reads no header.
+    await server.connect(new StdioServerTransport());
+    return;
+  }
+
+  // The `http` axis. `createServer` is called per request here — task 014-10 makes it per session —
+  // and the process-wide dependencies assembled above are what every one of them receives.
+  const { httpBind, httpResponseTimeoutMs } = withDeclaredDefaults(env);
+  void httpResponseTimeoutMs; // task 014-23 applies it to the response window
+  const port = env.ONCHAIN_HTTP_PORT;
+  if (port === undefined) {
+    // §10.3 declares no default port. An unset value is not a port — it is a decision nobody made,
+    // and guessing one would bind a surface the operator did not ask for.
+    console.error('onchain-intel-mcp-server: ONCHAIN_HTTP_PORT is required by the http transport');
+    process.exit(1);
+  }
+
+  const running = await startHttpTransport({
+    createSessionServer: () => createServer({ env, version, registry, budgetStore }),
+    bind: httpBind,
+    port,
+  });
+  console.error(
+    `onchain-intel-mcp-server: listening on ${running.address.host}:${String(running.address.port)}`,
+  );
 }
 
 main().catch((error: unknown) => {

@@ -158,13 +158,31 @@ describe('deployment profile — the network profile refuses rather than downgra
 });
 
 describe('deployment profile — an unshipped transport refuses, never falls back', () => {
-  it('refuses an http profile while only stdio is shipped', () => {
-    expect(() => assertTransportAvailable(PROFILES.network, SHIPPED_TRANSPORTS)).toThrow(
+  it('refuses a profile whose transport the given set does not carry', () => {
+    // Measured on the SET, not on today's contents of `SHIPPED_TRANSPORTS`: task 014-09 added
+    // `'http'`, so passing the shipped set here would assert nothing from that commit onward. The
+    // mechanism is what must stay provable — the day a third transport is named by a profile and not
+    // shipped, this is the shape that refuses.
+    expect(() => assertTransportAvailable(PROFILES.network, ['stdio'])).toThrow(
       TransportNotShippedError,
     );
-    expect(() => assertTransportAvailable(PROFILES['network-sqlite'], SHIPPED_TRANSPORTS)).toThrow(
+    expect(() => assertTransportAvailable(PROFILES['network-sqlite'], ['stdio'])).toThrow(
       TransportNotShippedError,
     );
+    expect(() => assertTransportAvailable(PROFILES.local, ['http'])).toThrow(
+      TransportNotShippedError,
+    );
+  });
+
+  it('ships every transport the three profiles name — no profile is unstartable', () => {
+    // The invariant that replaces "http is not shipped yet". A profile naming a transport absent
+    // from the set is a configuration an operator can write and the process can only refuse.
+    for (const profile of Object.values(PROFILES)) {
+      expect(SHIPPED_TRANSPORTS, `${profile.name} needs ${profile.transport}`).toContain(
+        profile.transport,
+      );
+      expect(() => assertTransportAvailable(profile, SHIPPED_TRANSPORTS)).not.toThrow();
+    }
   });
 
   it('admits the local profile, whose transport is shipped', () => {
@@ -177,10 +195,9 @@ describe('deployment profile — an unshipped transport refuses, never falls bac
     }
   });
 
-  it('names the task that ships the missing transport, so the refusal is actionable', () => {
-    expect(() => assertTransportAvailable(PROFILES.network, SHIPPED_TRANSPORTS)).toThrow(
-      /task 014-09/,
-    );
+  it('names the profile and the missing transport, so the refusal is actionable', () => {
+    expect(() => assertTransportAvailable(PROFILES.network, ['stdio'])).toThrow(/network/);
+    expect(() => assertTransportAvailable(PROFILES.network, ['stdio'])).toThrow(/http/);
   });
 });
 

@@ -152,7 +152,7 @@ export class TransportNotShippedError extends Error {
     readonly transport: TransportKind,
   ) {
     super(
-      `profile ${profile} needs the ${transport} transport, which task 014-09 ships; refusing to start on another transport instead`,
+      `profile ${profile} needs the ${transport} transport, which this build does not carry; refusing to start on another transport instead`,
     );
     this.name = 'TransportNotShippedError';
   }
@@ -166,7 +166,7 @@ export class TransportNotShippedError extends Error {
  * configuration says otherwise. That is the same shape as downgrading Postgres to SQLite: the
  * process works, every gate is green, and the thing that was asked for is not what is running.
  *
- * `available` is a parameter so this stays true as transports arrive: task 014-09 adds `'http'` to
+ * `available` is a parameter so this stays true as transports arrive: task 014-09 added `'http'` to
  * the set, and the test below fails the day the set and the profile table disagree.
  */
 export function assertTransportAvailable(
@@ -178,8 +178,14 @@ export function assertTransportAvailable(
   }
 }
 
-/** The transports this build can attach. Task 014-09 adds `'http'`. */
-export const SHIPPED_TRANSPORTS: readonly TransportKind[] = ['stdio'];
+/**
+ * The transports this build can attach.
+ *
+ * `'http'` joined the set with task 014-09, which is what makes the refusal above a live check
+ * rather than a permanent no: a profile naming a transport this build does not carry still refuses,
+ * and the set is the one thing to edit when that changes.
+ */
+export const SHIPPED_TRANSPORTS: readonly TransportKind[] = ['stdio', 'http'];
 
 export async function assertNetworkPreconditions(
   profile: DeploymentProfile,
