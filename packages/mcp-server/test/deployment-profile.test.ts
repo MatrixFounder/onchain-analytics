@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -220,20 +220,39 @@ describe('deployment profile — unwired checks are declared, not silent', () =>
   /**
    * TC-UNIT-07 — the profile does not reach a tool.
    *
-   * Read off the source of `index.ts` rather than off a constructed server: what must stay true is
-   * that the ONE call site never threads the profile in. A test that inspected a built object would
-   * pass just as well if a future call site added the field under another name.
+   * Read off the SOURCE rather than off a constructed server: what must stay true is that no
+   * production call site threads the profile in. A test inspecting a built object would pass just as
+   * well if a future call site added the field under another name.
+   *
+   * **Scanned over `src/`, not over one named file.** It read `index.ts` until task 014-10 moved the
+   * assembly into `runtime.ts`, and a gate that names a file follows the file rather than the fact:
+   * it went red on a move that changed nothing it was written about, and it would have gone GREEN
+   * and blind had the call moved without the file being renamed.
    */
-  it('TC-UNIT-07: index.ts does not pass the profile into createServer (R-1.2)', () => {
-    const source = readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/index.ts'),
-      'utf8',
-    );
-    const call = /createServer\(\{([^}]*)\}\)/.exec(source);
-    expect(call, 'createServer is called exactly once, with an object literal').not.toBeNull();
-    const keys = (call?.[1] ?? '').split(',').map((k) => k.trim().split(':')[0]?.trim());
-    expect(keys.filter(Boolean)).toEqual(['env', 'version', 'registry', 'budgetStore']);
-    expect(keys).not.toContain('profile');
+  it('TC-UNIT-07: no production call passes the profile into createServer (R-1.2)', () => {
+    const srcDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src');
+    const calls: { file: string; keys: string[] }[] = [];
+    for (const file of readdirSync(srcDirectory, { recursive: true, encoding: 'utf8' })) {
+      if (!file.endsWith('.ts')) continue;
+      const source = readFileSync(path.join(srcDirectory, file), 'utf8');
+      for (const call of source.matchAll(/createServer\(\{([^}]*)\}\)/g)) {
+        calls.push({
+          file,
+          keys: (call[1] ?? '')
+            .split(',')
+            .map((key) => key.trim().split(':')[0]?.trim() ?? '')
+            .filter(Boolean),
+        });
+      }
+    }
+    // Not vacuous: the server is constructed somewhere, and if the pattern stopped matching this
+    // would assert nothing while reporting success.
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call.keys, `${call.file} passes the profile into a tool's context`).not.toContain(
+        'profile',
+      );
+    }
   });
 
   it('keeps the order deployment.md §10.3.2 fixes — the DSN is checked first', () => {

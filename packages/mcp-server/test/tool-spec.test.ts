@@ -559,9 +559,13 @@ describe('each tool module declares its privileges once (adversarial cycle 2)', 
     // gate by a directory listing rather than by the dependency graph made its coverage an accident
     // of where files happen to sit.
     //
-    // `src/index.ts` is the exemption: composing the stores is exactly its job. One exemption with
+    // `src/runtime.ts` is the exemption: composing the stores is exactly its job. One exemption with
     // a stated reason is cheaper than a class of holes — and unlike a per-file exclusion list it
     // cannot silently grow, because every addition is a visible edit to this line.
+    //
+    // It was `index.ts` until task 014-10 moved the assembly into `runtime.ts` — so that "assembled
+    // once per process" could be measured by a test, which cannot import a bin whose module body
+    // ends in `await main()`. The exemption follows the composition; it does not accumulate.
     //
     // The class names are here too, not only the factories: `SqliteBudgetStore` and
     // `SqliteCacheStore` are exported from their modules and `@onchain-intel/core` declares no
@@ -574,7 +578,7 @@ describe('each tool module declares its privileges once (adversarial cycle 2)', 
       'SqliteBudgetStore',
       'SqliteCacheStore',
     ];
-    const EXEMPT = 'index.ts'; // composes the stores — the one file architecturally allowed to
+    const EXEMPT = 'runtime.ts'; // composes the stores — the one file architecturally allowed to
     const srcDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src');
     const offenders: string[] = [];
     for (const file of readdirSync(srcDirectory, { recursive: true, encoding: 'utf8' })) {

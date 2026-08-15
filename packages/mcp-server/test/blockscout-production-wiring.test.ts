@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -61,7 +61,7 @@ describe('blockscout production wiring — the validated env reaches the adapter
     expect(urls[0]).not.toContain('proapi_real_value');
   });
 
-  it('`src/index.ts` constructs the adapter WITH an env, not with none', () => {
+  it('the production wiring constructs the adapter WITH an env, not with none', () => {
     // The weak half, and stated as such. `buildRegistry` is not exported and the nansen wiring test
     // reconstructs the composition rather than importing it — exporting a seam purely for a test
     // would be a production change made for a test's convenience. So this asserts the source line
@@ -69,8 +69,14 @@ describe('blockscout production wiring — the validated env reaches the adapter
     // which is exactly the regression it guards: the adapter shipped with `createBlockscoutAdapter()`
     // and no env at all, making the one secret TASK-008 introduced the only one reading raw
     // `process.env`. If `buildRegistry` ever gains a proper seam, replace this with a real one.
-    const source = readFileSync(path.join(here, '../src/index.ts'), 'utf8');
-    const registration = /\[\s*'blockscout'\s*,\s*createBlockscoutAdapter\(([^)]*)\)/.exec(source);
+    // Scanned over `src/`, not read from one named file: the registration lived in `index.ts` until
+    // task 014-10 moved the assembly into `runtime.ts`, and a gate that names a file follows the
+    // file rather than the fact.
+    const sources = readdirSync(path.join(here, '../src'), { recursive: true, encoding: 'utf8' })
+      .filter((file) => file.endsWith('.ts'))
+      .map((file) => readFileSync(path.join(here, '../src', file), 'utf8'))
+      .join('\n');
+    const registration = /\[\s*'blockscout'\s*,\s*createBlockscoutAdapter\(([^)]*)\)/.exec(sources);
 
     expect(registration, 'the blockscout registration moved or was renamed').not.toBeNull();
     expect(
