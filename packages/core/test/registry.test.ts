@@ -99,10 +99,16 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
     // value is asserted in `registry.deadline.test.ts` (TC-UNIT-01/02), where the manifest is
     // injected. THE ONLY EDIT task 012-8 made to a pre-existing test file, and it is mechanical:
     // `toHaveBeenCalledWith` matches the full argument list, so one more argument fails it.
+    //
+    // Task 014-30 added a FOURTH: `onCoalesced`, the callback an adapter invokes when this call is
+    // a follower on somebody else's in-flight vendor request. Additive and optional, by the same
+    // rule the third argument followed — an adapter that declares no coalescing never reads it, and
+    // this assertion is the one place in the suite that measures the walk's call shape.
     expect(adapter.fetch).toHaveBeenCalledWith(
       'token.price',
       { address: '0xabc' },
       expect.any(Number),
+      expect.any(Function),
     );
   });
 

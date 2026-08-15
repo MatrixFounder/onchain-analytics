@@ -49,7 +49,18 @@ export interface ProviderAdapter {
    * never re-derive a remainder from it — and must not honour it after a payment has committed
    * (ADR-002 D4 §2: cancelling there means paying without receiving).
    */
-  fetch(cap: string, args: Record<string, unknown>, deadlineAtMs?: number): Promise<unknown>;
+  /**
+   * `onCoalesced` (task 014-30, R-27.3) is called SYNCHRONOUSLY when this call is a follower on
+   * somebody else's in-flight vendor request. Optional and additive, exactly as `deadlineAtMs` was
+   * (D4/R-140): an adapter that declares no coalescing never reads it. Today one adapter does —
+   * `nansen`, through `createSingleflight`.
+   */
+  fetch(
+    cap: string,
+    args: Record<string, unknown>,
+    deadlineAtMs?: number,
+    onCoalesced?: () => void,
+  ): Promise<unknown>;
   /** Narrows the provider-specific `raw` shape into the canonical domain type for `cap`. */
   normalize(cap: string, raw: unknown): unknown;
   /**

@@ -378,6 +378,15 @@ export interface CapabilityResolution {
    */
   deadlineOverrunMs?: number;
   /**
+   * `true` when this request waited on another caller's in-flight vendor call instead of making one
+   * (task 014-30). Absent otherwise — never `false` — by the same rule as `deadlineOverrunMs` above.
+   *
+   * **Not published in `_meta`.** `_meta.cache.status` keeps its two values and a follower reports
+   * `miss` (`interfaces.md` §5.4.4); a third value would redefine that field on every tool in the
+   * registry. This travels to `request_trace.served_from` and stops there.
+   */
+  coalesced?: true;
+  /**
    * Contributors on a MERGE-ENABLED walk (T-013, task 013-3, R-174(a)) — participant ids whose
    * points are actually present in `result`, NOT every participant who merely answered. The
    * distinction is the field's whole reason to exist: on the ordinary composition where
@@ -874,6 +883,19 @@ export class CapabilityRegistry {
      * name — and the overrun is by definition unknown until the walk stops. One function, so a third
      * return-time fact needs no third edit at every `return` in the loop (there are three).
      */
+    /**
+     * Whether this walk WAITED on somebody else's in-flight vendor call (task 014-30, R-27.3).
+     *
+     * Beside `attempted`, and for the same reason: it is a fact about the traversal, discovered
+     * during it and reported once at the end. The adapter announces it through the `onCoalesced`
+     * callback because leader and follower share one promise and one value — the fact distinguishes
+     * callers, not answers, so it cannot travel in the result.
+     */
+    let coalesced = false;
+    const markCoalesced = (): void => {
+      coalesced = true;
+    };
+
     const withDiagnostics = (resolution: CapabilityResolution): CapabilityResolution => {
       const overrunMs = Date.now() - effectiveDeadlineAtMs;
       // `> 0`, so the field is absent on every ordinary call rather than present as `0`. Same rule
@@ -881,8 +903,11 @@ export class CapabilityRegistry {
       // to look for a meaning it does not have.
       const late = overrunMs > 0 ? { deadlineOverrunMs: overrunMs } : {};
       const walk = attempted.length > 0 ? { attempted: [...attempted] } : {};
-      return Object.keys(late).length + Object.keys(walk).length > 0
-        ? { ...resolution, ...walk, ...late }
+      // Task 014-30, set by the SAME rule as the two above: the fact is known only when the walk
+      // stops, and a third return-time fact must not require a third edit at every `return`.
+      const shared = coalesced ? { coalesced: true as const } : {};
+      return Object.keys(late).length + Object.keys(walk).length + Object.keys(shared).length > 0
+        ? { ...resolution, ...walk, ...late, ...shared }
         : resolution;
     };
 
@@ -1221,7 +1246,7 @@ export class CapabilityRegistry {
         let raw: unknown;
         try {
           attempted.push(adapterId);
-          raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs);
+          raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs, markCoalesced);
         } catch (error) {
           if (error instanceof CapabilityNotCoveredOnChainError) throw error;
           // Door 2 of 013-5's deadline precondition — the net-layer class caught here exactly as
@@ -1577,7 +1602,7 @@ export class CapabilityRegistry {
         // `isAvailable()` refuses them a few lines above. Coverage by CAPABILITY, measured
         // 2026-08-05: 20 of 20 (`capability-manifest.ts`'s ENFORCEMENT section, re-derived by
         // TC-F5-GATE on every run rather than transcribed here).
-        raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs);
+        raw = await adapter.fetch(capability, args, effectiveDeadlineAtMs, markCoalesced);
       } catch (error) {
         // A PERMANENT refusal propagates as itself (vdd-multi cycle 5, H-1). Everything else in
         // this catch is treated as "this adapter could not answer right now, try the next one",

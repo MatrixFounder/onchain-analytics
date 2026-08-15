@@ -25,6 +25,7 @@ export function createSingleflight(): <T>(
   key: string,
   fn: () => Promise<T>,
   deadlineAtMs?: number,
+  onCoalesced?: () => void,
 ) => Promise<T> {
   const inFlight = new Map<string, Promise<unknown>>();
 
@@ -61,9 +62,16 @@ export function createSingleflight(): <T>(
     key: string,
     fn: () => Promise<T>,
     deadlineAtMs?: number,
+    onCoalesced?: () => void,
   ): Promise<T> {
     const existing = inFlight.get(key);
     if (existing) {
+      // **The follower announces itself, synchronously, before the shared promise is handed back**
+      // (task 014-30). Leader and follower receive the SAME promise and the same value, so the fact
+      // cannot travel in the result: it distinguishes CALLERS, not answers. One vendor call served
+      // two charges, and T-015 reconciles the ledger against `usage` by exactly that count (R-27.3)
+      // — without this signal the number of charges one vendor call produced is unrecoverable.
+      onCoalesced?.();
       return deadlineAtMs === undefined
         ? (existing as Promise<T>)
         : followUntilDeadline(existing as Promise<T>, deadlineAtMs);

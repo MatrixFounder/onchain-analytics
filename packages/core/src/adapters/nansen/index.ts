@@ -624,6 +624,12 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
        * covers all 2–3 sub-calls, so cancelling sub-call 2 would abandon work already paid for.
        */
       deadlineAtMs?: number,
+      /**
+       * Task 014-30: forwarded verbatim to `singleflight`, which calls it in the follower branch.
+       * Nothing in this adapter reads it — the fact belongs to the CALLER, not to the answer, since
+       * leader and follower receive the same promise and the same value.
+       */
+      onCoalesced?: () => void,
     ): Promise<unknown> =>
       singleflight(
         deriveArgsHash(cap, args),
@@ -779,6 +785,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
           }
         },
         deadlineAtMs,
+        onCoalesced,
       ),
     // Real from THIS task (005-4): dispatches to normalize.ts's three pure functions. `raw` is
     // always this SAME adapter instance's own `fetch()` hand-off shape (never validated against a

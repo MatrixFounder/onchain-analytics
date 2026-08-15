@@ -67,6 +67,13 @@ export interface ResolveSuccess {
   /** See {@link TimingMeta}. Absent on every call that finished inside its ceiling. */
   timing?: TimingMeta;
   /**
+   * `CapabilityResolution.coalesced` forwarded verbatim (task 014-30): this request waited on
+   * another caller's in-flight vendor call rather than making one. It becomes
+   * `request_trace.served_from = 'coalesced'` and reaches no client — `_meta.cache.status` keeps its
+   * two values and a follower reports `miss`.
+   */
+  coalesced?: true;
+  /**
    * `CapabilityResolution.attempted` forwarded verbatim — the adapters whose `fetch()` the
    * traversal actually entered, which is NOT the same set as `cache.provider` (adversarial cycle 2,
    * F-4). Read by `budgetMeta()` and by nothing else: it never reaches the wire, and no tool's zod
@@ -157,6 +164,8 @@ export async function resolveCapability(
       ...(resolution.deadlineOverrunMs !== undefined
         ? { timing: { overrunMs: resolution.deadlineOverrunMs } }
         : {}),
+      // Verbatim, and by the same conditional spread: absent, never `{coalesced: undefined}`.
+      ...(resolution.coalesced === true ? { coalesced: true as const } : {}),
       // T-013, task 013-3 (R-174/R-175) — same conditional-spread idiom as `attempted`/`timing`
       // above: `exactOptionalPropertyTypes` is NOT enabled (tsconfig.base.json), so an unconditional
       // `sources: resolution.sources` would compile and pass a naive `toBeUndefined()` check even
