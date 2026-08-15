@@ -10,6 +10,12 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { TokenLookupRow } from '../auth/identity-types.js';
 import type { Diagnostics } from '../engine/diagnostics.js';
+import { DEFAULT_SESSION_IDLE_MS, DEFAULT_SESSION_MAX } from '../env.js';
+import {
+  assertIdleTimeoutClearsManifest,
+  createSessionManager,
+  type SessionManager,
+} from './session-manager.js';
 
 /**
  * The second transport (task 014-09, R-1, ADR-003 D1): Streamable HTTP beside stdio.
@@ -25,6 +31,8 @@ import type { Diagnostics } from '../engine/diagnostics.js';
  * keyed by the id the SDK mints, and removed when the session ends. Everything else — the registry,
  * the cache, the budget ledger — is assembled once per process in `runtime.ts` and shared by every
  * session, because a cache nobody shares is not a cache and a ceiling nobody shares is not a ceiling.
+ * Task 014-13 moved that map into `session-manager.ts`, which owns the two removal causes a client
+ * cannot signal — the idle sweep and the ceiling — and the two this file already had.
  *
  * **What this file still does NOT do, and the running server is unsafe until it does.** No token is
  * checked (task 014-12) and no perimeter is configured (014-11); the listener below accepts whatever
@@ -75,6 +83,17 @@ export interface HttpTransportDeps {
    * is inert.
    */
   readonly authenticate: (presented: string | null) => Promise<AuthDecision>;
+  /**
+   * The session ceiling and the idle timeout (task 014-13, R-24). Both default to the value
+   * `withDeclaredDefaults` applies, so a test raising a bare transport gets the SHIPPED numbers
+   * rather than a second set that could drift from them.
+   */
+  readonly sessionMax?: number;
+  readonly sessionIdleMs?: number;
+  /** The clock the idle sweep measures against. Injectable so no test waits for real time. */
+  readonly now?: () => number;
+  /** Passed through to the sweeper; a test uses it to hold the timer handle. */
+  readonly createTimer?: (tick: () => void, intervalMs: number) => NodeJS.Timeout;
 }
 
 /**
@@ -188,6 +207,13 @@ export interface RunningHttpTransport {
   readonly perimeter: Perimeter;
   /** Live sessions. RISK-6 is a map that only grows; this is what a test watches it with. */
   sessionCount(): number;
+  /**
+   * The manager itself — the SAME instance the handler routes through, never a view of it.
+   *
+   * Exposed so a test can drive the sweep on an injected clock instead of waiting for the periodic
+   * one. A second object here would be a copy that agreed with the first until one was edited.
+   */
+  readonly sessions: SessionManager;
   close(): Promise<void>;
 }
 
@@ -216,18 +242,28 @@ export const DEFAULT_MCP_PATH = '/mcp';
  */
 export async function startHttpTransport(deps: HttpTransportDeps): Promise<RunningHttpTransport> {
   const path = deps.path ?? DEFAULT_MCP_PATH;
+  const idleMs = deps.sessionIdleMs ?? DEFAULT_SESSION_IDLE_MS;
+
+  // **Before anything is bound** (task 014-13, §3.4.2). The assertion lives here rather than in
+  // `index.ts` so that no caller can raise this transport without it: a timeout below the longest
+  // declared deadline evicts a session whose own request is still running, and the only way to make
+  // that unreachable is to make the listener unreachable without the check.
+  assertIdleTimeoutClearsManifest(idleMs);
 
   /**
-   * `sessionId` → the pair that serves it.
+   * `sessionId` → the pair that serves it, plus the two timestamps the sweep reads.
    *
    * **Why the map holds the transport and not only the server.** A Streamable HTTP session is a
    * stream the transport owns; routing a later request to a NEW transport would answer on a channel
    * the client is not reading.
    */
-  const sessions = new Map<
-    string,
-    { server: McpServer; transport: StreamableHTTPServerTransport }
-  >();
+  const sessions = createSessionManager({
+    max: deps.sessionMax ?? DEFAULT_SESSION_MAX,
+    idleMs,
+    now: deps.now ?? ((): number => Date.now()),
+    ...(deps.diagnostics ? { diagnostics: deps.diagnostics } : {}),
+    ...(deps.createTimer ? { createTimer: deps.createTimer } : {}),
+  });
 
   // The perimeter needs the BOUND port, which port 0 only reveals after `listen`. The listener is
   // created first and the perimeter resolved from the address it actually got.
@@ -250,15 +286,14 @@ export async function startHttpTransport(deps: HttpTransportDeps): Promise<Runni
   return {
     address: { host: bound.address, port: bound.port },
     perimeter,
-    sessionCount: () => sessions.size,
+    sessionCount: () => sessions.size(),
+    sessions,
     close: async () => {
       // Every session is closed before the listener is: a transport left open holds a socket, and
-      // `listener.close()` would then wait for a client that has no reason to leave.
-      for (const { server, transport } of [...sessions.values()]) {
-        await transport.close();
-        await server.close();
-      }
-      sessions.clear();
+      // `listener.close()` would then wait for a client that has no reason to leave. The sweeper
+      // timer is cleared in the same call — `unref` keeps it from holding the process open, and
+      // clearing it keeps it from firing against a map nothing is serving.
+      await sessions.shutdown();
       await new Promise<void>((resolve, reject) => {
         listener.close((error) => (error ? reject(error) : resolve()));
         listener.closeIdleConnections();
@@ -295,7 +330,7 @@ async function handle(
   res: ServerResponse,
   path: string,
   deps: HttpTransportDeps,
-  sessions: Map<string, { server: McpServer; transport: StreamableHTTPServerTransport }>,
+  sessions: SessionManager,
   perimeter: Perimeter | null,
 ): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://placeholder');
@@ -385,6 +420,11 @@ async function handle(
         res.writeHead(404).end();
         return;
       }
+      // On EVERY inbound message, not only on `tools/call` (§3.4.2). A client holding its session
+      // open with notifications is not idle, and a sweeper judging by tool calls would evict it
+      // mid-conversation. Unconditional assignment, no read-modify-write: this is the one
+      // per-session field a request writes, and R-25.2 is why it stays that way.
+      sessions.touch(sessionId);
       await existing.transport.handleRequest(req, res, body.value);
       return;
     }
@@ -397,6 +437,34 @@ async function handle(
       return;
     }
 
+    // **Step 4: the ceiling** (R-24.3, AC-30). It runs here and not earlier for two reasons: an
+    // established session must not be refused by it, and a request that is not an `initialize`
+    // creates nothing to count. `admit` sweeps first, so an abandoned session cannot deny service
+    // to a new one.
+    const admission = await sessions.admit(decision.principal.tokenId);
+    if (!admission.ok) {
+      // **503 and not 429.** A 429 asserts that THIS caller called too often; the measured cause is
+      // the capacity of the process across every principal. `Retry-After` is what makes the refusal
+      // actionable, and AC-30 asks for a declared class rather than a timeout — so the caller gets a
+      // named answer inside its own deadline instead of a hang.
+      res
+        .writeHead(503, {
+          'content-type': 'application/json',
+          'retry-after': String(admission.retryAfterSeconds),
+        })
+        .end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            // The same -32000 the perimeter and the authentication refusals carry, so a client
+            // parses one shape. The live/max numbers stay in diagnostics: they describe the
+            // process's capacity across every principal, and this caller is one of them.
+            error: { code: -32000, message: 'Session limit reached' },
+            id: null,
+          }),
+        );
+      return;
+    }
+
     const server = deps.createSessionServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
@@ -406,18 +474,18 @@ async function handle(
       allowedHosts: [...(perimeter?.hosts ?? [])],
       allowedOrigins: [...(perimeter?.origins ?? [])],
       onsessioninitialized: (id: string) => {
-        sessions.set(id, { server, transport });
+        sessions.register(id, { server, transport, principalId: decision.principal.tokenId });
       },
       onsessionclosed: (id: string) => {
-        sessions.delete(id);
+        sessions.forget(id);
       },
     });
-    // Two removal paths, because a session ends in two ways: a client DELETE (`onsessionclosed`) and
-    // the transport closing for any other reason. RISK-6 is a map that only ever grows, and one path
-    // covered is a map that grows more slowly.
+    // Four removal causes, one removal path (§3.4.2). Two are here — a client DELETE
+    // (`onsessionclosed`) and the transport closing for any other reason; the other two are the
+    // sweep and the ceiling, and both live in the manager. RISK-6 is a map that only ever grows.
     transport.onclose = (): void => {
       const id = transport.sessionId;
-      if (id !== undefined) sessions.delete(id);
+      if (id !== undefined) sessions.forget(id);
     };
 
     await server.connect(transport);

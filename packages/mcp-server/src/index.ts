@@ -182,7 +182,7 @@ async function main(): Promise<void> {
 
   // The `http` axis. `createServer` is called per request here — task 014-10 makes it per session —
   // and the process-wide dependencies assembled above are what every one of them receives.
-  const { httpBind, httpResponseTimeoutMs } = withDeclaredDefaults(env);
+  const { httpBind, httpResponseTimeoutMs, sessionMax, sessionIdleMs } = withDeclaredDefaults(env);
   void httpResponseTimeoutMs; // task 014-23 applies it to the response window
   const port = env.ONCHAIN_HTTP_PORT;
   if (port === undefined) {
@@ -226,6 +226,11 @@ async function main(): Promise<void> {
     },
     bind: httpBind,
     port,
+    // Task 014-13. `startHttpTransport` asserts the idle timeout against the manifest before it
+    // binds, so an operator who sets a timeout below the longest declared deadline gets a refusal
+    // at start rather than a session evicted mid-request.
+    sessionMax,
+    sessionIdleMs,
     // Both perimeter lists come from `EnvSchema`, already parsed into arrays there so that this
     // reader and the SDK's read one value rather than two splits of one string (R-12.1, R-12.2).
     ...(env.ONCHAIN_ALLOWED_HOSTS ? { allowedHosts: env.ONCHAIN_ALLOWED_HOSTS } : {}),
