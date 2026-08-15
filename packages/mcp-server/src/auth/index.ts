@@ -45,8 +45,13 @@ export {
 } from './access-profile-store.js';
 export { classifyToken, type AuthOutcome } from './authenticate.js';
 export {
+  PRINCIPAL_EXTRA_KEY,
+  PrincipalMissingError,
   STDIO_PRINCIPAL,
+  createHttpPrincipalResolver,
   principalFor,
+  principalFromToken,
+  toAuthInfo,
   type Principal,
   type PrincipalResolver,
 } from './principal.js';

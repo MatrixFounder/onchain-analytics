@@ -8,7 +8,9 @@ import { randomUUID } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { TokenLookupRow } from '../auth/identity-types.js';
+import { principalFromToken, toAuthInfo } from '../auth/principal.js';
 import type { Diagnostics } from '../engine/diagnostics.js';
 import { DEFAULT_SESSION_IDLE_MS, DEFAULT_SESSION_MAX } from '../env.js';
 import {
@@ -332,6 +334,27 @@ async function readBody(
   }
 }
 
+/**
+ * Hands the verified principal to the SDK, which is what makes it visible inside a tool (014-15).
+ *
+ * **`req.auth` is a DECLARED seam, not a private field.** `streamableHttp.d.ts` types the parameter
+ * as `IncomingMessage & { auth?: AuthInfo }` and `handleRequest` reads exactly that property before
+ * forwarding it as `HandleRequestOptions.authInfo`. Measured against SDK 1.29.0 and confirmed by a
+ * probe that drove a real session end to end.
+ *
+ * **Set on every request, including one on an established session.** The token is re-verified per
+ * request (no verified-token cache exists), so the principal a tool sees is the one this request
+ * presented — which is what makes a revocation take effect on the next call (R-15.6, AC-26) rather
+ * than at the idle timeout.
+ *
+ * **Only the POST branch carries it.** The web-standard transport passes its options to
+ * `handlePostRequest` alone, so `GET` (the standalone SSE stream) and `DELETE` drop it. That costs
+ * nothing here: a `tools/call` is always a POST, and neither of the other two reaches a tool.
+ */
+function attachPrincipal(req: IncomingMessage, row: TokenLookupRow): void {
+  (req as IncomingMessage & { auth?: AuthInfo }).auth = toAuthInfo(principalFromToken(row));
+}
+
 async function handle(
   req: IncomingMessage,
   res: ServerResponse,
@@ -471,6 +494,7 @@ async function handle(
       // mid-conversation. Unconditional assignment, no read-modify-write: this is the one
       // per-session field a request writes, and R-25.2 is why it stays that way.
       sessions.touch(sessionId);
+      attachPrincipal(req, decision.principal);
       await existing.transport.handleRequest(req, res, body.value);
       return;
     }
@@ -539,6 +563,7 @@ async function handle(
     };
 
     await server.connect(transport);
+    attachPrincipal(req, decision.principal);
     await transport.handleRequest(req, res, body.value);
   } catch (error) {
     // The SDK answers most protocol errors itself; this covers the rest. The message is not

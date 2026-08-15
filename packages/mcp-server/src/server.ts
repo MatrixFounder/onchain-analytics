@@ -113,7 +113,11 @@ export function createServer(deps: CreateServerDeps): McpServer {
     registry: deps.registry ?? new CapabilityRegistry(routes, new Map()),
     ...(deps.budgetStore ? { budgetStore: deps.budgetStore } : {}),
     ...(deps.diagnostics ? { diagnostics: deps.diagnostics } : {}),
+    // The session-construction default (task 014-14). The wrapper overrides it per request from
+    // `extra.authInfo` (014-15); this value is what a transport carrying no `AuthInfo` gets, which
+    // is stdio.
     principal: principalFor(deps.principals, undefined),
+    ...(deps.principals ? { principals: deps.principals } : {}),
   };
 
   // **The access profile narrows HERE, once per session** (task 014-04, `security.md` §7.5.3a,

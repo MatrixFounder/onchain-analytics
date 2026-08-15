@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CapabilityRegistry, routes } from '@onchain-intel/core';
 import { STDIO_PRINCIPAL, principalFor, type Principal } from '../src/auth/principal.js';
@@ -31,14 +32,12 @@ const inertRegistry = (): CapabilityRegistry => new CapabilityRegistry(routes, n
  * context before it calls the handler, so invoking the captured callback is enough, whatever the
  * handler then does with the arguments.
  */
-function captureCallback(spec: ToolSpec, ctx: ToolContext): (input: unknown) => Promise<unknown> {
-  let captured: ((input: unknown) => Promise<unknown>) | undefined;
+type ToolCallback = (input: unknown, extra: { authInfo?: AuthInfo }) => Promise<unknown>;
+
+function captureCallback(spec: ToolSpec, ctx: ToolContext): ToolCallback {
+  let captured: ToolCallback | undefined;
   const fake = {
-    registerTool: (
-      _name: string,
-      _config: unknown,
-      callback: (input: unknown) => Promise<unknown>,
-    ) => {
+    registerTool: (_name: string, _config: unknown, callback: ToolCallback) => {
       captured = callback;
       return { remove: () => undefined, disable: () => undefined };
     },
@@ -99,7 +98,7 @@ describe('TC-UNIT-02 / TC-UNIT-03: every registered tool declares and receives t
       } as ToolContext;
       // The handler runs on an inert registry, so most of them refuse or throw — irrelevant here,
       // because the context is built before the handler is entered.
-      await captureCallback(spec, ctx)({}).catch(() => undefined);
+      await captureCallback(spec, ctx)({}, {}).catch(() => undefined);
     }
     expect([...new Set(reads)]).toHaveLength(toolSpecs.length);
   });
@@ -137,7 +136,7 @@ describe('TC-UNIT-04: a tool that does not declare it does not get it', () => {
       version: '0.0.0-test',
       registry: inertRegistry(),
       principal: STDIO_PRINCIPAL,
-    })({});
+    })({}, {});
     expect(seen).toBeDefined();
     // `Object.hasOwn`, not `in`: `in` walks the prototype chain, and a polluted
     // `Object.prototype.principal` would satisfy a weaker check on a context that never carried one.
@@ -163,7 +162,7 @@ describe('TC-UNIT-04: a tool that does not declare it does not get it', () => {
       version: '0.0.0-test',
       registry: inertRegistry(),
       principal: STDIO_PRINCIPAL,
-    })({});
+    })({}, {});
     expect(seen).toBe(STDIO_PRINCIPAL);
   });
 });

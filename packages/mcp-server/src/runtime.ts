@@ -22,6 +22,7 @@ import {
 } from '@onchain-intel/core';
 import { toProcessEnv, type Env } from './env.js';
 import { createDiagnostics, type Diagnostics } from './engine/diagnostics.js';
+import type { PrincipalResolver } from './auth/principal.js';
 import { createServer } from './server.js';
 
 /**
@@ -59,6 +60,12 @@ export interface SharedRuntimeDeps {
    * profile has, and a test that omits this gets the same code path production runs.
    */
   readonly diagnostics?: Diagnostics;
+  /**
+   * Resolves the principal per request (task 014-15). Supplied only on the `http` axis: absent means
+   * stdio, where the constant IS the answer, and a resolver that fell back to that constant on the
+   * network path would answer `role: 'admin'` to a plumbing bug.
+   */
+  readonly principals?: PrincipalResolver;
 }
 
 export interface SharedRuntime {
@@ -171,6 +178,13 @@ export function createSharedRuntime(deps: SharedRuntimeDeps): SharedRuntime {
     budgetStore,
     diagnostics,
     createSessionServer: (): McpServer =>
-      createServer({ env: deps.env, version: deps.version, registry, budgetStore, diagnostics }),
+      createServer({
+        env: deps.env,
+        version: deps.version,
+        registry,
+        budgetStore,
+        diagnostics,
+        principals: deps.principals,
+      }),
   };
 }

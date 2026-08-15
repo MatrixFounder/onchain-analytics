@@ -19,6 +19,7 @@ import {
   resolveProfile,
 } from './profile.js';
 import { classifyToken } from './auth/authenticate.js';
+import { createHttpPrincipalResolver } from './auth/principal.js';
 import { createTokenStore } from './auth/token-store.js';
 import { createEngineStore } from './engine/pg-engine-store.js';
 import { createDiagnostics } from './engine/diagnostics.js';
@@ -167,7 +168,16 @@ async function main(): Promise<void> {
     now: () => Date.now(),
   });
 
-  const runtime = createSharedRuntime({ env, version, diagnostics });
+  // The resolver is injected ONLY on the http axis (task 014-15). On stdio no resolver is passed and
+  // the constant answers; on http an absent principal is refused rather than defaulted, because the
+  // constant is `role: 'admin'` and a default there would be a privilege escalation wearing the
+  // clothes of a fallback.
+  const runtime = createSharedRuntime({
+    env,
+    version,
+    diagnostics,
+    ...(profile.transport === 'http' ? { principals: createHttpPrincipalResolver() } : {}),
+  });
 
   // The only place a transport is chosen (D3). Task 014-09 attaches the Streamable HTTP transport
   // for the `http` axis; until it lands, an `http` profile REFUSES rather than falling back to

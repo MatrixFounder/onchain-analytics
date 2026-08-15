@@ -237,16 +237,47 @@ describe('deployment profile — unwired checks are declared, not silent', () =>
    * it went red on a move that changed nothing it was written about, and it would have gone GREEN
    * and blind had the call moved without the file being renamed.
    */
+  /**
+   * The TOP-LEVEL keys of every `createServer({...})` literal in a source file.
+   *
+   * **Why a brace matcher and not `/createServer\(\{([^}]*)\}\)/`.** That pattern stops at the first
+   * `}`, so a call site containing a nested object — a conditional spread, an inline literal — matched
+   * NOTHING, and the scan silently found zero call sites. The vacuity guard below caught it (that is
+   * what it is for), but a gate that goes blind whenever the code it reads gains a brace is a gate
+   * with a scheduled expiry. Nested braces are skipped, so only the outer keys are reported, which is
+   * the level `profile` would have to appear at to reach a tool.
+   */
+  function callSites(source: string): string[] {
+    const found: string[] = [];
+    const needle = 'createServer({';
+    for (let at = source.indexOf(needle); at !== -1; at = source.indexOf(needle, at + 1)) {
+      let depth = 0;
+      let top = '';
+      for (let index = at + needle.length - 1; index < source.length; index += 1) {
+        const character = source[index] ?? '';
+        if (character === '{') depth += 1;
+        else if (character === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            found.push(top);
+            break;
+          }
+        } else if (depth === 1) top += character;
+      }
+    }
+    return found;
+  }
+
   it('TC-UNIT-07: no production call passes the profile into createServer (R-1.2)', () => {
     const srcDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src');
     const calls: { file: string; keys: string[] }[] = [];
     for (const file of readdirSync(srcDirectory, { recursive: true, encoding: 'utf8' })) {
       if (!file.endsWith('.ts')) continue;
       const source = readFileSync(path.join(srcDirectory, file), 'utf8');
-      for (const call of source.matchAll(/createServer\(\{([^}]*)\}\)/g)) {
+      for (const call of callSites(source)) {
         calls.push({
           file,
-          keys: (call[1] ?? '')
+          keys: call
             .split(',')
             .map((key) => key.trim().split(':')[0]?.trim() ?? '')
             .filter(Boolean),

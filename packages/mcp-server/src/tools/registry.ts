@@ -1,8 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BudgetStore, CapabilityRegistry } from '@onchain-intel/core';
 import type { z } from 'zod';
-import type { Principal } from '../auth/principal.js';
+import { principalFor, type Principal, type PrincipalResolver } from '../auth/principal.js';
 import type { Diagnostics } from '../engine/diagnostics.js';
 import { toClientText } from '../transport/failure-classes.js';
 import type { BudgetMeta } from './budget-meta.js';
@@ -58,6 +59,16 @@ export interface ToolContext {
    * costing the compiler's check at every read.
    */
   principal: Principal;
+  /**
+   * Resolves the principal FOR THIS REQUEST from the SDK's `extra.authInfo` (task 014-15). Read by
+   * `defineTool`'s wrapper, never by a handler — the same rationing as `diagnostics` below.
+   *
+   * **Why a resolver in the context and not a resolved value.** `principal` above is fixed when the
+   * session server is constructed, which is once per session; AC-26 requires a revoked token to be
+   * refused on the NEXT request, and a value held for a session would keep it working until the idle
+   * timeout — up to 900 000 ms (§3.4.2). Absent means stdio, where the constant is the answer.
+   */
+  principals?: PrincipalResolver;
   /**
    * The diagnostics channel (task 014-26). Read by `defineTool`'s WRAPPER, never by a handler.
    *
@@ -321,8 +332,21 @@ export function defineTool<
           inputSchema: definition.inputSchema,
           outputSchema: definition.outputSchema,
         },
-        async (input) => {
-          const outcome = await definition.handler(input, project(ctx, needs));
+        async (input, extra: { authInfo?: AuthInfo }) => {
+          // **The interception point** (task 014-15, `system-architecture.md` §3.4.3 names this
+          // wrapper by name). It runs BEFORE `resolve()` and therefore before the cache: a cache HIT
+          // is a billable request — the owner's model is that both clients pay, and the second one
+          // was served from cache (`docs/TASK.md:530`) — so a hook below the cache would undercount
+          // exactly the requests the margin is built on.
+          //
+          // **Why here and not `resolve-capability.ts`.** Two handlers never enter that file:
+          // `onchain_ping` and `onchain_list_chains` answer synchronously and resolve no capability.
+          // This wrapper is the ONE place in `src` that reaches `server.registerTool` for a tool
+          // spec, so the hook is written once and cannot be forgotten by a twenty-first tool.
+          //
+          // Resolved per request, never cached — see `ToolContext.principals`.
+          const principal = principalFor(ctx.principals, extra.authInfo);
+          const outcome = await definition.handler(input, project({ ...ctx, principal }, needs));
           if (outcome.ok) return toCallToolResult(outcome);
 
           // **Two renderings of one refusal** (task 014-26, R-31, AC-47, AC-50).

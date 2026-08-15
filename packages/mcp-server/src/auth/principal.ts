@@ -1,4 +1,5 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { TokenLookupRow } from './identity-types.js';
 
 /**
  * Who a request is on behalf of (task 014-14, R-4, `system-architecture.md` §3.4.3).
@@ -83,4 +84,88 @@ export function principalFor(
   authInfo: AuthInfo | undefined,
 ): Principal {
   return resolver === undefined ? STDIO_PRINCIPAL : resolver(authInfo);
+}
+
+/** The key our principal travels under inside `AuthInfo.extra` — written once, read once. */
+export const PRINCIPAL_EXTRA_KEY = 'principal';
+
+/** The verified token row, projected into a principal. `transport` is `http` by construction. */
+export function principalFromToken(row: TokenLookupRow): Principal {
+  return {
+    principalId: row.tokenId,
+    userId: row.userId,
+    role: row.role,
+    accessProfileId: row.accessProfileId,
+    transport: 'http',
+  };
+}
+
+/**
+ * Packs a principal into the SDK's `AuthInfo`, the ONE seam that carries per-request data from a
+ * transport to a tool callback (measured against SDK 1.29.0, and by a live probe).
+ *
+ * The chain is four hops, all in installed source: `handleRequest` reads `req.auth`
+ * (`streamableHttp.d.ts` types the parameter as `IncomingMessage & { auth?: AuthInfo }`, so this is
+ * a declared seam and not a private field) → `HandleRequestOptions.authInfo` → `onmessage(message,
+ * { authInfo })` → `RequestHandlerExtra.authInfo` → the tool callback's second argument.
+ *
+ * **`token` is deliberately EMPTY.** The SDK's field is the access token; ours is a secret that has
+ * already been verified, and putting it here would leave it one property access away from every
+ * tool callback and every error dump for the rest of the request. Nothing downstream reads it: we
+ * do not use `requireBearerAuth` (which is Express-shaped and additionally rejects any `AuthInfo`
+ * without a numeric `expiresAt` — our tokens are allowed to have none).
+ *
+ * **`clientId` carries the token ID, not the token.** It identifies the principal to an operator
+ * reading a dump and discloses nothing that `api_tokens.id` does not.
+ */
+export function toAuthInfo(principal: Principal): AuthInfo {
+  return {
+    token: '',
+    clientId: principal.principalId,
+    scopes: [],
+    extra: { [PRINCIPAL_EXTRA_KEY]: principal },
+  };
+}
+
+/** Thrown when the HTTP path reaches a tool without the principal its transport should have set. */
+export class PrincipalMissingError extends Error {
+  constructor(detail: string) {
+    super(`no principal reached the tool boundary: ${detail}`);
+    this.name = 'PrincipalMissingError';
+  }
+}
+
+function isPrincipal(value: unknown): value is Principal {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate['principalId'] === 'string' &&
+    (candidate['userId'] === null || typeof candidate['userId'] === 'string') &&
+    (candidate['role'] === 'admin' || candidate['role'] === 'user') &&
+    (candidate['accessProfileId'] === null || typeof candidate['accessProfileId'] === 'string') &&
+    (candidate['transport'] === 'stdio' || candidate['transport'] === 'http')
+  );
+}
+
+/**
+ * The resolver the HTTP transport injects: unpacks what `toAuthInfo` packed, and REFUSES otherwise.
+ *
+ * **Why it throws where the stdio default returns.** The stdio principal is `role: 'admin'`. A
+ * resolver that fell back to it when `authInfo` was missing would turn a plumbing bug on the network
+ * path into an administrator — the failure would be a privilege escalation that looks like a default.
+ * Step 2 of the admission order has already refused every request without a valid token
+ * (`deployment.md` §10.2.1), so an absent principal here is an invariant this process broke itself,
+ * and refusing is the only answer that cannot be mistaken for success.
+ */
+export function createHttpPrincipalResolver(): PrincipalResolver {
+  return (authInfo) => {
+    if (authInfo === undefined) throw new PrincipalMissingError('the request carried no AuthInfo');
+    const carried = authInfo.extra?.[PRINCIPAL_EXTRA_KEY];
+    if (!isPrincipal(carried)) {
+      throw new PrincipalMissingError(
+        `AuthInfo.extra.${PRINCIPAL_EXTRA_KEY} is absent or malformed`,
+      );
+    }
+    return carried;
+  };
 }
