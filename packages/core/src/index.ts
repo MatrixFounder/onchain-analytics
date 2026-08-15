@@ -225,6 +225,11 @@ export { dayBucketMs } from './cache/day-bucket.js';
 // a migration run by an operator.
 export { CACHE_DDL } from './cache/ddl.js';
 
+// The SQLite axis of the engine's own state (task 014-12 gap closure). `security.md` §7.5.4 makes
+// `network-sqlite` authenticate exactly as `network` does; this is the adapter that lets the
+// identity repositories — written once, against `StateClient` — run on the axis with no schemas.
+export { createSqliteStateClient, toSqliteDialect } from './sqlite/state-client.js';
+
 // T-014 (task 014-39) — the storage axis, as one factory over the two engines. Exported for the
 // same reason `createCacheStore`/`createBudgetStore` are: the process that picks the axis is
 // `mcp-server`'s entry point, in the other package. The three concrete `Pg*` classes stay behind

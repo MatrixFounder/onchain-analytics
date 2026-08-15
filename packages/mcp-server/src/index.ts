@@ -7,6 +7,7 @@ import {
   assertValidAdapterRegistrations,
   assertMergeParticipantsAreFree,
   createStateClient,
+  createSqliteStateClient,
 } from '@onchain-intel/core';
 import { loadEnv, toProcessEnv, withDeclaredDefaults, type Env } from './env.js';
 import {
@@ -87,17 +88,23 @@ async function main(): Promise<void> {
   // **Task 014-12 — step 2's store, opened before any socket exists.** The `network` profile
   // authenticates against Postgres; the pre-start checks below run over this same client, which is
   // why they are wired here rather than inside `profile.ts`.
+  // **One repository, two axes.** The identity stores are written once against `StateClient`; which
+  // client backs it is the storage axis of the profile. `security.md` §7.5.4: `network-sqlite`
+  // authenticates every request exactly as `network` does, and is explicitly "not an authentication
+  // exception" — a debugging combination that skipped the token would be the one configuration whose
+  // refusal path never runs.
+  const pepper = env.ONCHAIN_TOKEN_HASH_SALT;
   const identity =
-    profile.storage === 'postgres' && env.ONCHAIN_TOKEN_HASH_SALT !== undefined
+    profile.transport === 'http' && pepper !== undefined
       ? (() => {
-          const engine = createEngineStore(createStateClient({ env: rawEnv }));
+          const engine = createEngineStore(
+            profile.storage === 'postgres'
+              ? createStateClient({ env: rawEnv })
+              : createSqliteStateClient({ env: rawEnv }),
+          );
           return {
             engine,
-            tokens: createTokenStore({
-              engine,
-              pepper: env.ONCHAIN_TOKEN_HASH_SALT,
-              now: () => Date.now(),
-            }),
+            tokens: createTokenStore({ engine, pepper, now: () => Date.now() }),
           };
         })()
       : null;
@@ -179,18 +186,13 @@ async function main(): Promise<void> {
   }
 
   if (identity === null) {
-    // Two ways to arrive here, and both are refusals rather than an unauthenticated listener.
-    //
-    // - `network` without `ONCHAIN_TOKEN_HASH_SALT`: no pepper, so no digest can be verified.
-    // - `network-sqlite`: `security.md` §7.5.4 says it authenticates exactly as `network` does,
-    //   against the SQLite tables — and no SQLite state client is shipped. The DDL exists (task
-    //   014-36) and the store is written against `StateClient` (014-07), so what is missing is one
-    //   adapter. It is NAMED here rather than worked around, because the alternative is the one
-    //   configuration whose refusal path never runs.
+    // One way to arrive here now that both axes have a state client: no pepper. Without it a digest
+    // cannot be verified, so every token would be refused — and a listener that answers 401 to
+    // everyone, including the operator who has no way to mint a matching row, is worse than a
+    // refusal at start.
     console.error(
-      'onchain-intel-mcp-server: the http transport needs an identity store. ' +
-        'Set ONCHAIN_TOKEN_HASH_SALT for the network profile; network-sqlite needs a SQLite state ' +
-        'client, which no task has shipped yet.',
+      'onchain-intel-mcp-server: the http transport needs ONCHAIN_TOKEN_HASH_SALT — without a ' +
+        'pepper no presented token can be verified against a stored digest (security.md §7.5.2)',
     );
     process.exit(1);
   }

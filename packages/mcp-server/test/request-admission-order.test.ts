@@ -338,14 +338,25 @@ describe('TC-UNIT-03: the network profile does not start without a live token (A
     expect(bind).toBeGreaterThan(preconditions);
   });
 
-  it('refuses the http transport outright when no identity store can be built', () => {
-    // `network-sqlite` authenticates exactly as `network` does (§7.5.4), against the SQLite tables —
-    // and no SQLite state client is shipped. Refusing by name beats raising a listener that answers
-    // 401 to everyone, which would be the one configuration whose refusal path never runs.
+  it('refuses the http transport outright when no pepper can verify a token', () => {
+    // Without `ONCHAIN_TOKEN_HASH_SALT` no presented token can be checked against a stored digest,
+    // so the listener would answer 401 to everyone — including the operator, who would have no way
+    // to mint a matching row. Refusing at start beats a surface that is up and useless.
     const source = readSource();
-    expect(source).toContain('the http transport needs an identity store');
-    const refusal = source.indexOf('the http transport needs an identity store');
+    const refusal = source.indexOf('the http transport needs ONCHAIN_TOKEN_HASH_SALT');
+    expect(refusal).toBeGreaterThan(0);
     expect(source.indexOf('startHttpTransport(')).toBeGreaterThan(refusal);
+  });
+
+  it('gives BOTH storage axes an identity store — network-sqlite is no exception (§7.5.4)', () => {
+    // The gap this closes: `network-sqlite` used to refuse to start because no SQLite `StateClient`
+    // existed. §7.5.4 calls it "not an authentication exception" precisely because a debugging
+    // combination that skipped the token would be the one configuration whose refusal path never
+    // runs — so the axis chooses the client, and the repositories above it do not change.
+    const source = readSource();
+    expect(source).toContain('createStateClient(');
+    expect(source).toContain('createSqliteStateClient(');
+    expect(source).toMatch(/profile\.storage === 'postgres'/);
   });
 });
 
