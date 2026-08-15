@@ -3,6 +3,8 @@ import { DeadlineExceededError } from './safe-fetch.js';
 /**
  * Per-provider token-bucket configuration (D4/R-26, `providers.config.ts`'s `rateLimit` field).
  */
+import type { LimiterStore } from './limiter-store.js';
+
 export interface TokenBucketConfig {
   capacity: number;
   refillPerSec: number;
@@ -13,6 +15,16 @@ export interface TokenBucketConfig {
 export interface ThrottleDeps {
   now?: () => number;
   wait?: (ms: number) => Promise<void>;
+  /**
+   * The shared bucket store (task 014-17, R-7, R-8). Absent means the in-process map below, which
+   * is what every call site gets today — the seam is declared here so task 014-18 lands one
+   * implementation rather than one implementation plus its wiring.
+   *
+   * **Injectable, exactly as the clock is** (R-8): the limiter's dependency is a parameter and never
+   * a module-level singleton, so a test can substitute a failing store and observe R-7.7's
+   * degradation rather than simulate it.
+   */
+  store?: LimiterStore;
 }
 
 /**

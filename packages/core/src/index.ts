@@ -102,6 +102,19 @@ export { routes, adapterRegistrations } from './providers.config.js';
 
 export { safeFetch, assertAllowedHost } from './net/safe-fetch.js';
 export { throttle } from './net/rate-limit.js';
+// Task 014-17 — the bucket seam and its key. Exported because the limiter's store is injected from
+// outside `core` on the Postgres axis (task 014-18) and because `scopedProviderId` is the one
+// composition a splitting adapter is allowed to perform.
+export {
+  DEFAULT_SCOPE_KEY,
+  SCOPE_SEPARATOR,
+  createInProcessLimiterStore,
+  limiterKeyOf,
+  scopedProviderId,
+  type LimiterKey,
+  type LimiterTake,
+  type LimiterStore,
+} from './net/limiter-store.js';
 // task 012-7 — the two NETWORK-layer deadline outcomes. Exported for the reason the classes are two
 // and not one: the registry (012-8) tells them apart with `instanceof` — `DeadlineExceededError`
 // ends the traversal, `DeadlineWouldExceedError` moves it to the next adapter.

@@ -1,6 +1,7 @@
 import { normalizeAddress } from '../../chain/address.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
+import { scopedProviderId } from '../../net/limiter-store.js';
 import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
 import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
 import { adapterRegistrations } from '../../providers.config.js';
@@ -178,7 +179,11 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
     body: string,
     deadlineAtMs?: number,
   ): Promise<JsonRpcResponse> {
-    await throttle('rpc-evm', RATE_LIMIT, 1, deadlineAtMs);
+    // **One bucket per CHAIN, not per provider** (task 014-17, AC-42). The split is declared in
+    // `providers.config.ts` and composed here, because the scope has to be a value this call site
+    // knows: the hostname is not — `chain.rpcHosts` is read below, after this line, and the loop
+    // over endpoints is further down still. The chain is known; the host is not.
+    await throttle(scopedProviderId('rpc-evm', chain.caip2), RATE_LIMIT, 1, deadlineAtMs);
 
     // TASK-006 (task 006-8, R-56): endpoints and the SSRF allowlist BOTH come from this chain's
     // curated `rpcHosts` row — per chain, never merged. The allowlist handed to `safeFetch` is

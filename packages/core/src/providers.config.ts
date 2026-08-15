@@ -349,6 +349,9 @@ export const adapterRegistrations: AdapterRegistration[] = [
     hosts: ['ethereum-rpc.publicnode.com', 'eth.drpc.org'],
     rateLimit: { capacity: 5, refillPerSec: 1 },
     requiresEnv: [],
+    // The one provider that splits (task 014-17): its quota is a property of the NODE behind each
+    // chain, not of a vendor account, so one saturated chain must not delay another (AC-42).
+    scopeKey: 'chain',
     tier: 'free',
     // Consensus data read straight off a node — the chain itself is the origin.
     trust: 'authoritative',

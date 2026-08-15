@@ -134,6 +134,17 @@ export interface AdapterRegistration {
   rateLimit: TokenBucketConfig;
   requiresEnv: string[];
   /**
+   * How this provider's rate-limit bucket SPLITS (task 014-17, R-7, AC-40/AC-42). Absent means one
+   * bucket for every call the provider makes, which is what twelve of the thirteen declare and what
+   * they do today.
+   *
+   * **Why the unit is the chain and not the host.** `rpc-evm` calls the limiter before it reads
+   * `chain.rpcHosts` and before the loop over endpoints, so at the call site the hostname is not yet
+   * known and the chain is. `coingecko` picks exactly one host per installation, so its two
+   * registered hosts never live at once and a host split there is unobservable.
+   */
+  scopeKey?: 'chain';
+  /**
    * Free or paid at this vendor (ADR-002 D8) — a STATIC property of the vendor RELATIONSHIP, held
    * here so that "is this a paid provider" has exactly one answer in the codebase.
    *

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { loadChainRegistry } from '../src/chain/registry.js';
+import { scopedProviderId } from '../src/net/limiter-store.js';
 import { createBlockchainInfoAdapter } from '../src/adapters/blockchain-info/index.js';
 import { createBlockscoutAdapter } from '../src/adapters/blockscout/index.js';
 import { createCoingeckoAdapter } from '../src/adapters/coingecko/index.js';
@@ -63,8 +65,26 @@ function rateLimitOf(id: string): TokenBucketConfig {
 }
 
 /** Drives `id`'s bucket into deficit, so the limiter — not the transport — is what answers next. */
+/**
+ * The id whose BUCKET this subject drains — not always the id it is registered under.
+ *
+ * Task 014-17 splits `rpc-evm`'s bucket by chain (AC-42), so the adapter throttles on
+ * `rpc-evm#<caip2>` and draining the bare `rpc-evm` bucket would leave the one it actually uses
+ * full. The refusal below would then come from `safeFetch` a layer down, and this suite's whole
+ * point is telling those two apart — which is why the discriminator is asserted, and why it caught
+ * the change.
+ */
+function limiterIdOf(subject: { id: string; args: Record<string, unknown> }): string {
+  const registration = adapterRegistrations.find((entry) => entry.id === subject.id);
+  if (registration?.scopeKey !== 'chain') return subject.id;
+  const chain = loadChainRegistry().resolve(String(subject.args['chain']));
+  if (chain === undefined)
+    throw new Error(`${subject.id}: no chain in args to scope the bucket by`);
+  return scopedProviderId(subject.id, chain.caip2);
+}
+
 async function saturate(throttle: Throttle, id: string): Promise<void> {
-  const config = rateLimitOf(id);
+  const config = rateLimitOf(id.split('#')[0] ?? id);
   for (let spent = 0; spent < config.capacity; spent += 1) {
     await throttle(id, config);
   }
@@ -131,7 +151,8 @@ const SUBJECTS: Subject[] = [
 describe('WI-37 — a spent deadline is refused BY THE LIMITER, with no request at all', () => {
   it.each(SUBJECTS)('$id', async ({ id, create, capability, args }) => {
     const throttle = realClockThrottle();
-    await saturate(throttle, id);
+    const limiterId = limiterIdOf({ id, args });
+    await saturate(throttle, limiterId);
 
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }));
     const adapter = create({ throttle, fetchImpl });
@@ -145,7 +166,7 @@ describe('WI-37 — a spent deadline is refused BY THE LIMITER, with no request 
     // The context string is the discriminator: the transport path builds the same class from a URL,
     // so `provider "<id>"` is what pins the refusal to the limiter rather than to `safeFetch`'s own
     // entry check one layer down.
-    expect((thrown as DeadlineExceededError).at).toBe(`provider "${id}"`);
+    expect((thrown as DeadlineExceededError).at).toBe(`provider "${limiterId}"`);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
