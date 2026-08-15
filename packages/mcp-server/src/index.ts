@@ -158,7 +158,16 @@ async function main(): Promise<void> {
   // it. Set from the VALIDATED value, never read from the environment at the call site (R-13.3a).
   setCacheStatsDebug(env.LOG_LEVEL === 'debug');
 
-  const runtime = createSharedRuntime({ env, version });
+  // Both channels (task 014-27), built BEFORE the runtime because every session server renders its
+  // refusals through this one (task 014-26). `store: null` is the local profile: stdio, one
+  // operator, and that operator IS reading stderr — the event still reaches the one channel that
+  // exists there, so a refusal always has an identifier and the full text always has a reader.
+  const diagnostics = createDiagnostics({
+    store: identity === null ? null : createDiagnosticsStore(identity.engine),
+    now: () => Date.now(),
+  });
+
+  const runtime = createSharedRuntime({ env, version, diagnostics });
 
   // The only place a transport is chosen (D3). Task 014-09 attaches the Streamable HTTP transport
   // for the `http` axis; until it lands, an `http` profile REFUSES rather than falling back to
@@ -203,13 +212,6 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-
-  // Both channels (task 014-27). The stored one exists because on this transport neither the client
-  // nor its operator reads stderr — a diagnostic nobody reads is not a diagnostic (L-2).
-  const diagnostics = createDiagnostics({
-    store: createDiagnosticsStore(identity.engine),
-    now: () => Date.now(),
-  });
 
   const running = await startHttpTransport({
     createSessionServer: () => runtime.createSessionServer(),

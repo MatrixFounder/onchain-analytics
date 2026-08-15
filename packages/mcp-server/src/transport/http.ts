@@ -365,16 +365,23 @@ async function handle(
     // R-19.4: a perimeter refusal is OBSERVABLE. The header VALUE goes to the stored channel and
     // never to the client — the caller chose it, and an operator is the one who needs to see what
     // was presented.
-    await deps.diagnostics?.emit('perimeter.rejected', {
-      severity: 'warn',
-      detail: { header: refused, presented: req.headers[refused.toLowerCase()] ?? null },
-    });
+    const eventId =
+      (await deps.diagnostics?.emit('perimeter.rejected', {
+        severity: 'warn',
+        detail: { header: refused, presented: req.headers[refused.toLowerCase()] ?? null },
+      })) ?? null;
     // The same shape the SDK's own refusal uses: HTTP 403 and a JSON-RPC error carrying -32000, so
     // a client parses one form (`webStandardStreamableHttp.js`, `createJsonErrorResponse`).
     res.writeHead(403, { 'content-type': 'application/json' }).end(
       JSON.stringify({
         jsonrpc: '2.0',
-        error: { code: -32000, message: `Invalid ${refused} header` },
+        error: {
+          code: -32000,
+          message: `Invalid ${refused} header`,
+          // The client's half of the pair (task 014-26): an identifier, never the operator text.
+          // It resolves to the row that holds what was presented.
+          ...(eventId === null ? {} : { data: { event: eventId } }),
+        },
         id: null,
       }),
     );
@@ -391,10 +398,11 @@ async function handle(
   if (!decision.ok) {
     // R-19.3: an authentication refusal is observable, and the CLASS is what an operator needs —
     // the four states answer one `401` on the wire and are told apart only here (§7.5.2).
-    await deps.diagnostics?.emit('auth.rejected', {
-      severity: 'warn',
-      detail: { refusalClass: decision.refusalClass },
-    });
+    const eventId =
+      (await deps.diagnostics?.emit('auth.rejected', {
+        severity: 'warn',
+        detail: { refusalClass: decision.refusalClass },
+      })) ?? null;
     // `WWW-Authenticate: Bearer` is what makes this a challenge rather than a bare refusal, and the
     // body carries -32000 — the code the SDK's own transport-level refusal uses — so a client parses
     // one shape. The refusal CLASS is not rendered: it is the operator's, and a caller without a
@@ -402,7 +410,11 @@ async function handle(
     res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' }).end(
       JSON.stringify({
         jsonrpc: '2.0',
-        error: { code: -32000, message: 'Unauthorized' },
+        error: {
+          code: -32000,
+          message: 'Unauthorized',
+          ...(eventId === null ? {} : { data: { event: eventId } }),
+        },
         id: null,
       }),
     );
@@ -492,7 +504,11 @@ async function handle(
             // The same -32000 the perimeter and the authentication refusals carry, so a client
             // parses one shape. The live/max numbers stay in diagnostics: they describe the
             // process's capacity across every principal, and this caller is one of them.
-            error: { code: -32000, message: 'Session limit reached' },
+            error: {
+              code: -32000,
+              message: 'Session limit reached',
+              ...(admission.eventId === null ? {} : { data: { event: admission.eventId } }),
+            },
             id: null,
           }),
         );

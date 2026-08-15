@@ -21,6 +21,7 @@ import {
   type ProviderAdapter,
 } from '@onchain-intel/core';
 import { toProcessEnv, type Env } from './env.js';
+import { createDiagnostics, type Diagnostics } from './engine/diagnostics.js';
 import { createServer } from './server.js';
 
 /**
@@ -50,11 +51,20 @@ export interface SharedRuntimeDeps {
    */
   readonly budgetStoreFactory?: () => BudgetStore;
   readonly cacheStoreFactory?: () => CacheStore;
+  /**
+   * The diagnostics channel every session server renders its refusals through (task 014-26).
+   *
+   * Absent means a channel with NO store — stderr only. That is the `local` profile's shape and it
+   * is deliberate: an identifier still exists, the full text still reaches the one channel that
+   * profile has, and a test that omits this gets the same code path production runs.
+   */
+  readonly diagnostics?: Diagnostics;
 }
 
 export interface SharedRuntime {
   readonly registry: CapabilityRegistry;
   readonly budgetStore: BudgetStore;
+  readonly diagnostics: Diagnostics;
   /** A fresh `McpServer` over the SAME shared dependencies. One call per session. */
   createSessionServer(): McpServer;
 }
@@ -153,10 +163,14 @@ function buildRegistry(
 export function createSharedRuntime(deps: SharedRuntimeDeps): SharedRuntime {
   const budgetStore = (deps.budgetStoreFactory ?? createBudgetStore)();
   const registry = buildRegistry(deps.env, budgetStore, deps.cacheStoreFactory ?? createCacheStore);
+  // Process-wide, like the registry and the ledger: the channel is a property of the installation,
+  // and a per-session one would give each client its own idea of what an operator can read.
+  const diagnostics = deps.diagnostics ?? createDiagnostics({ store: null, now: () => Date.now() });
   return {
     registry,
     budgetStore,
+    diagnostics,
     createSessionServer: (): McpServer =>
-      createServer({ env: deps.env, version: deps.version, registry, budgetStore }),
+      createServer({ env: deps.env, version: deps.version, registry, budgetStore, diagnostics }),
   };
 }

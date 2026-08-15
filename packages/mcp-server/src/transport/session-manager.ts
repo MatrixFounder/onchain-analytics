@@ -50,6 +50,13 @@ export type Admission =
       readonly retryAfterSeconds: number;
       readonly live: number;
       readonly max: number;
+      /**
+       * The `diagnostics` row this refusal wrote, or `null` where no channel exists (task 014-26).
+       *
+       * It travels back to the transport rather than being re-derived there: the row is written
+       * before the response goes out, and the id the client is given has to be the id of THAT row.
+       */
+      readonly eventId: string | null;
     };
 
 export interface SessionManagerDeps {
@@ -210,13 +217,14 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       // deviation from TC-E2E-03's wording, which asks each of the two rows to carry "its own"
       // session id; the caller is identified by the token that presented itself, which is both true
       // and the more actionable of the two.
-      await deps.diagnostics?.emit('session.limit_reached', {
-        severity: 'warn',
-        principalId,
-        sessionId: null,
-        detail: { live: entries.size, max, retryAfterSeconds },
-      });
-      return { ok: false, retryAfterSeconds, live: entries.size, max };
+      const eventId =
+        (await deps.diagnostics?.emit('session.limit_reached', {
+          severity: 'warn',
+          principalId,
+          sessionId: null,
+          detail: { live: entries.size, max, retryAfterSeconds },
+        })) ?? null;
+      return { ok: false, retryAfterSeconds, live: entries.size, max, eventId };
     },
     register(id, entry) {
       const now = deps.now();

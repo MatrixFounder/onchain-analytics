@@ -1,5 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { adapterRegistrations } from '@onchain-intel/core';
 import type { DiagnosticEvent } from '../engine/diagnostics-store.js';
+import { EnvSchema } from '../env.js';
 
 /**
  * Every way this server refuses, and at which of the TWO levels it is represented (task 014-25,
@@ -201,6 +203,76 @@ export const TOOL_RESULT_KEYS = Object.freeze(['isError', 'content', 'structured
 export function isToolResultEnvelope(body: unknown): boolean {
   if (typeof body !== 'object' || body === null) return false;
   return TOOL_RESULT_KEYS.some((key) => Object.hasOwn(body, key));
+}
+
+/**
+ * The separator the registry puts between a refusal and its attempt list
+ * (`packages/core/src/adapters/registry.ts` — `\`… — tried: ${triedText}\``).
+ *
+ * Everything after it is the TRAVERSAL: which adapters were entered, in what order, and what each
+ * one said. Task 014-26 removes it from the client rendering, and the reason is not that the text is
+ * long — the order tells a caller which provider is free and which is paid, which is a fact about
+ * our unit economics rather than about their request.
+ */
+export const TRAVERSAL_MARKER = ' — tried: ';
+
+/**
+ * Tokens a client rendering must never contain, read from the repository's own two sources.
+ *
+ * **Why the redactor and the gate read ONE list.** A scrub list written by hand beside a test that
+ * checks a different list is two lists, and the day they disagree the one that stops matching is the
+ * redactor. `adapterRegistrations` and `EnvSchema` are where these names are declared, so a
+ * thirteenth adapter or a new key is covered by both at the same instant.
+ */
+export const OPERATOR_TOKENS: readonly string[] = Object.freeze([
+  ...adapterRegistrations.map((registration) => registration.id),
+  ...Object.keys(EnvSchema.shape),
+]);
+
+/** What a client is told when nothing more specific can be said safely. */
+export const GENERIC_REFUSAL = 'the call was refused';
+
+const BUDGET_CLASS_ID = 'budget-exhausted';
+
+function containsOperatorToken(text: string): boolean {
+  const lowered = text.toLowerCase();
+  return OPERATOR_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
+}
+
+/**
+ * The CLIENT half of a refusal (task 014-26, R-20, AC-47).
+ *
+ * The operator half is the `diagnostics` row: full text, unedited. This one carries as much as can
+ * be said without describing the inside of the process, plus the row id — which is what makes the
+ * pair recoverable rather than merely halved. An identifier that resolves to nothing is worse than
+ * no identifier (§"Порядок записи"), so the caller emits FIRST and renders with the id it got.
+ *
+ * Three steps, fail-closed at each:
+ *
+ * 1. Cut the traversal. `capability unavailable: entity.labels on ethereum` survives — the caller
+ *    asked for both of those — and the attempt list does not.
+ * 2. A budget refusal is replaced outright rather than trimmed: its sentence is built from the
+ *    operator's remaining credits and ceiling, and there is no prefix of it that is safe.
+ * 3. Anything still naming an adapter or an environment key is replaced by {@link GENERIC_REFUSAL}.
+ *    Not patched in place: a surgical substitution assumes the rest of an unrecognised sentence is
+ *    safe, and the whole point of this step is that it is the sentence nobody classified.
+ */
+export function toClientText(reason: string, eventId: string | null): string {
+  const suffix = eventId === null ? '' : ` (event ${eventId})`;
+  const head = (reason.split(TRAVERSAL_MARKER)[0] ?? reason).trim();
+
+  // Against the WHOLE reason, traversal included, and that is a decision rather than an oversight.
+  // A budget refusal reaches a caller nested inside `capability unavailable: … — tried: nansen
+  // (budget …)`, so matching only the head would tell the caller "unavailable" — indistinguishable
+  // from "this chain is not served", which is the difference between "retry later" and "never".
+  // The budget FACT names nothing on the forbidden list; the arithmetic behind it does, which is
+  // why the sentence is replaced outright rather than trimmed.
+  const budget = TOOL_FAILURE_CLASSES.find((entry) => entry.id === BUDGET_CLASS_ID);
+  if (budget !== undefined && budget.marker.test(reason)) {
+    return `the provider budget for this call is exhausted${suffix}`;
+  }
+  if (head === '' || containsOperatorToken(head)) return `${GENERIC_REFUSAL}${suffix}`;
+  return `${head}${suffix}`;
 }
 
 export class RefusalRenderedAsSuccessError extends Error {

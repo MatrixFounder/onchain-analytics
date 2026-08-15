@@ -195,6 +195,24 @@ function expectNoBudgetMeta(result: CallToolResult): void {
   expect(meta && 'budget' in meta).toBe(false);
 }
 
+/**
+ * Every refusal the servers below rendered, in FULL — the operator half of task 014-26's pair.
+ *
+ * The client half is deliberately bounded: an environment key, an adapter name or the budget
+ * arithmetic never reaches a caller, and the identifier is what makes the two halves one refusal.
+ * Filtered by `detail.tool`, so the suites in this file do not have to reset it between them.
+ */
+const refusals: { event: string; detail: Record<string, unknown> }[] = [];
+
+const REFUSAL_EVENT_ID = '01JREFUSAL0000000000000000';
+
+/** The full text this suite's server put in the channel for one tool. */
+const operatorTextFor = (tool: string): string =>
+  refusals
+    .filter((entry) => entry.detail['tool'] === tool)
+    .map((entry) => String(entry.detail['reason']))
+    .join('\n');
+
 async function connectLinked(
   registry: CapabilityRegistry,
   budgetStore?: BudgetStore,
@@ -203,7 +221,18 @@ async function connectLinked(
   close: () => Promise<void>;
 }> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createServer({ env: loadEnv({}), version: '0.0.0-test', registry, budgetStore });
+  const server = createServer({
+    env: loadEnv({}),
+    version: '0.0.0-test',
+    registry,
+    budgetStore,
+    diagnostics: {
+      emit: (event, detail) => {
+        refusals.push({ event, detail: detail.detail });
+        return Promise.resolve(REFUSAL_EVENT_ID);
+      },
+    },
+  });
   await server.connect(serverTransport);
 
   const client = new Client({
@@ -962,7 +991,15 @@ describe('M2 degradation — no NANSEN_API_KEY (R-41/R-42/R-43), M1 tools unaffe
       expect(result.isError).toBe(true);
       const [block] = result.content;
       if (block?.type !== 'text') throw new Error('expected a text content block');
-      expect(block.text).toContain('NANSEN_API_KEY');
+      // **Where the key is named moved in task 014-26, and it is still named.** R-40's substance is
+      // that an operator learns WHICH key is missing; what changed is that the client is not the
+      // one told. An environment key on the wire is an operator detail (R-20, AC-47), so the full
+      // text goes to `diagnostics` and the caller gets a bounded message plus the row id.
+      expect(block.text).not.toContain('NANSEN_API_KEY');
+      expect(block.text).toContain(REFUSAL_EVENT_ID);
+      expect(operatorTextFor(toolName)).toContain('NANSEN_API_KEY');
+      // And still never a value — there is none to leak here, but the assertion is the point.
+      expect(operatorTextFor(toolName)).not.toContain('test-key-not-real');
     },
     CALL_TIMEOUT_MS,
   );

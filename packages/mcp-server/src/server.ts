@@ -3,6 +3,7 @@ import { CapabilityRegistry, routes, type BudgetStore } from '@onchain-intel/cor
 import type { AccessProfile } from './auth/access-profile.js';
 import type { Env } from './env.js';
 import { type ToolContext } from './tools/registry.js';
+import type { Diagnostics } from './engine/diagnostics.js';
 import { toolSpecs } from './tools/tool-specs.js';
 
 /**
@@ -52,6 +53,13 @@ export interface CreateServerDeps {
    * and applies the narrowing; how the read profile travels to the factory is §3.4.3's open point.
    */
   accessProfile?: AccessProfile;
+  /**
+   * The diagnostics channel (task 014-26), forwarded into the tool context so a refusal is rendered
+   * twice: fully into the channel, and bounded plus an identifier to the client. Optional here for
+   * the same reason as `budgetStore` — a test builds a server without one and gets a refusal with
+   * no identifier, which is the honest degradation.
+   */
+  diagnostics?: Diagnostics;
 }
 
 /**
@@ -89,6 +97,7 @@ export function createServer(deps: CreateServerDeps): McpServer {
     version: deps.version,
     registry: deps.registry ?? new CapabilityRegistry(routes, new Map()),
     ...(deps.budgetStore ? { budgetStore: deps.budgetStore } : {}),
+    ...(deps.diagnostics ? { diagnostics: deps.diagnostics } : {}),
   };
 
   // **The access profile narrows HERE, once per session** (task 014-04, `security.md` §7.5.3a,

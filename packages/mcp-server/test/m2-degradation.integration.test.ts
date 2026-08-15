@@ -192,12 +192,37 @@ function assertMissCacheMetaUnchanged(
   expect(Object.keys(meta).sort()).toStrictEqual(['capability', 'provider', 'status']);
 }
 
+/** Every refusal these servers rendered in full, keyed by the tool that produced it. */
+const refusals: { event: string; detail: Record<string, unknown> }[] = [];
+
+const REFUSAL_EVENT_ID = '01JREFUSAL0000000000000000';
+
+const operatorTextFor = (tool: string): string =>
+  refusals
+    .filter((entry) => entry.detail['tool'] === tool)
+    .map((entry) => String(entry.detail['reason']))
+    .join('\n');
+
 async function connectLinked(
   registry: CapabilityRegistry,
   budgetStore?: BudgetStore,
 ): Promise<{ client: Client; close: () => Promise<void> }> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createServer({ env: loadEnv({}), version: '0.0.0-test', registry, budgetStore });
+  const server = createServer({
+    env: loadEnv({}),
+    version: '0.0.0-test',
+    registry,
+    budgetStore,
+    // Task 014-26: the operator half of every refusal. R-40's substance — an operator learns WHICH
+    // key is missing — is unchanged; what moved is that the CLIENT is no longer the one told, and
+    // the assertions below now read the key here and its absence on the wire.
+    diagnostics: {
+      emit: (event, detail) => {
+        refusals.push({ event, detail: detail.detail });
+        return Promise.resolve(REFUSAL_EVENT_ID);
+      },
+    },
+  });
   await server.connect(serverTransport);
 
   const client = new Client({
@@ -305,7 +330,9 @@ describe('TC-INT-01 (R-40): no NANSEN_API_KEY — 3 M2 tools isError, 5 M1 paths
       expect(smartMoney.isError).toBe(true);
       const [smartMoneyBlock] = smartMoney.content;
       if (smartMoneyBlock?.type !== 'text') throw new Error('expected a text content block');
-      expect(smartMoneyBlock.text).toContain('NANSEN_API_KEY');
+      expect(smartMoneyBlock.text).not.toContain('NANSEN_API_KEY');
+      expect(smartMoneyBlock.text).toContain(REFUSAL_EVENT_ID);
+      expect(operatorTextFor('onchain_smart_money_flows')).toContain('NANSEN_API_KEY');
 
       const entityLabel = (await client.callTool(
         { name: 'onchain_entity_label', arguments: { chain: 'ethereum', query: 'uniswap' } },
@@ -315,7 +342,9 @@ describe('TC-INT-01 (R-40): no NANSEN_API_KEY — 3 M2 tools isError, 5 M1 paths
       expect(entityLabel.isError).toBe(true);
       const [entityLabelBlock] = entityLabel.content;
       if (entityLabelBlock?.type !== 'text') throw new Error('expected a text content block');
-      expect(entityLabelBlock.text).toContain('NANSEN_API_KEY');
+      expect(entityLabelBlock.text).not.toContain('NANSEN_API_KEY');
+      expect(entityLabelBlock.text).toContain(REFUSAL_EVENT_ID);
+      expect(operatorTextFor('onchain_entity_label')).toContain('NANSEN_API_KEY');
 
       const tokenRisk = (await client.callTool(
         { name: 'onchain_token_risk', arguments: { chain: 'ethereum', tokenAddress: ETH_ADDRESS } },
@@ -325,7 +354,9 @@ describe('TC-INT-01 (R-40): no NANSEN_API_KEY — 3 M2 tools isError, 5 M1 paths
       expect(tokenRisk.isError).toBe(true);
       const [tokenRiskBlock] = tokenRisk.content;
       if (tokenRiskBlock?.type !== 'text') throw new Error('expected a text content block');
-      expect(tokenRiskBlock.text).toContain('NANSEN_API_KEY');
+      expect(tokenRiskBlock.text).not.toContain('NANSEN_API_KEY');
+      expect(tokenRiskBlock.text).toContain(REFUSAL_EVENT_ID);
+      expect(operatorTextFor('onchain_token_risk')).toContain('NANSEN_API_KEY');
 
       // "той же сессии" — the SAME client/server the 3 refusals above just ran on.
       await assertFiveM1PathsAnswerNormally(client);
@@ -532,10 +563,16 @@ describe('TC-INT-05: blockscout registered ahead of nansen — an empty free ans
       );
       const [block] = result.content;
       if (block?.type !== 'text') throw new Error('expected a text content block');
-      expect(block.text).toContain('NANSEN_API_KEY');
+      expect(block.text).not.toContain('NANSEN_API_KEY');
+      expect(operatorTextFor('onchain_entity_label')).toContain('NANSEN_API_KEY');
       // The free provider's own reason must be visible too — otherwise an operator reading this
-      // cannot tell "blockscout was skipped" from "blockscout had nothing".
-      expect(block.text).toContain('blockscout');
+      // cannot tell "blockscout was skipped" from "blockscout had nothing". Task 014-26 moved WHERE
+      // it is visible: the attempt list names the traversal ORDER, which says indirectly which
+      // provider is free, so it is the operator's to read and not the caller's.
+      expect(operatorTextFor('onchain_entity_label')).toContain('blockscout');
+      expect(block.text, 'the traversal order is not the caller’s business').not.toContain(
+        'blockscout',
+      );
     },
     CALL_TIMEOUT_MS,
   );

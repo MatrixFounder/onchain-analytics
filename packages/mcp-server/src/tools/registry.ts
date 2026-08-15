@@ -2,6 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BudgetStore, CapabilityRegistry } from '@onchain-intel/core';
 import type { z } from 'zod';
+import type { Diagnostics } from '../engine/diagnostics.js';
+import { toClientText } from '../transport/failure-classes.js';
 import type { BudgetMeta } from './budget-meta.js';
 import type { CacheMeta, MergedCacheMeta, TimingMeta } from './resolve-capability.js';
 
@@ -46,6 +48,20 @@ export interface ToolContext {
   registry: CapabilityRegistry;
   /** Read-only `_meta.budget` visibility. Absent is legal: the tool degrades, never errors. */
   budgetStore?: BudgetStore;
+  /**
+   * The diagnostics channel (task 014-26). Read by `defineTool`'s WRAPPER, never by a handler.
+   *
+   * **Why it is here and still not reachable from a tool.** `register` receives the whole context
+   * and `project` hands the handler only the keys it declared, so a tool cannot ask for this one:
+   * `needs: ['diagnostics']` does not typecheck, because the key is not in any tool's `K`. The
+   * refusal rendering is the transport's business, not a tool's, and a handler able to write its
+   * own diagnostics rows would be a handler able to choose what an operator sees.
+   *
+   * **Absent means no identifier.** Then the client rendering is redacted with nothing to recover
+   * it by — worse than either half alone — so production always supplies one, with `store: null` on
+   * the local profile where stderr IS the operator's channel.
+   */
+  diagnostics?: Diagnostics;
 }
 
 /**
@@ -295,7 +311,28 @@ export function defineTool<
           inputSchema: definition.inputSchema,
           outputSchema: definition.outputSchema,
         },
-        async (input) => toCallToolResult(await definition.handler(input, project(ctx, needs))),
+        async (input) => {
+          const outcome = await definition.handler(input, project(ctx, needs));
+          if (outcome.ok) return toCallToolResult(outcome);
+
+          // **Two renderings of one refusal** (task 014-26, R-31, AC-47, AC-50).
+          //
+          // The operator's is the row: the reason unedited, which is where a `tried:` list, a
+          // vendor's own body and the budget arithmetic belong. The client's is what
+          // `toClientText` leaves plus the row id, and that id is the whole mechanism — a bounded
+          // message with a handle beats a full text handed to whoever holds a token.
+          //
+          // The row is written BEFORE the response goes out. An identifier resolving to nothing is
+          // worse than no identifier, and the emit is awaited here precisely so the ordering is
+          // causal rather than probable.
+          const eventId =
+            (await ctx.diagnostics?.emit('tool.refused', {
+              severity: 'warn',
+              capability: definition.capability,
+              detail: { tool: definition.name, reason: outcome.reason },
+            })) ?? null;
+          return toCallToolResult({ ok: false, reason: toClientText(outcome.reason, eventId) });
+        },
       );
     },
   };
