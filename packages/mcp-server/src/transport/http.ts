@@ -9,6 +9,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { TokenLookupRow } from '../auth/identity-types.js';
+import type { Diagnostics } from '../engine/diagnostics.js';
 
 /**
  * The second transport (task 014-09, R-1, ADR-003 D1): Streamable HTTP beside stdio.
@@ -54,6 +55,12 @@ export interface HttpTransportDeps {
   readonly allowedHosts?: readonly string[];
   /** Accepted `Origin` values (R-12.2). Unset means no browser origin is admitted. */
   readonly allowedOrigins?: readonly string[];
+  /**
+   * The diagnostics channel (task 014-27). Optional: the `local` profile has none, and the two
+   * events this file emits — `auth.rejected` and `perimeter.rejected` — are network-only by
+   * construction.
+   */
+  readonly diagnostics?: Diagnostics;
   /**
    * Step 2 of the admission order: the bearer, decided before anything is routed (task 014-12,
    * R-3, `deployment.md` §10.2.1).
@@ -313,6 +320,13 @@ async function handle(
           perimeter,
         );
   if (refused !== null) {
+    // R-19.4: a perimeter refusal is OBSERVABLE. The header VALUE goes to the stored channel and
+    // never to the client — the caller chose it, and an operator is the one who needs to see what
+    // was presented.
+    await deps.diagnostics?.emit('perimeter.rejected', {
+      severity: 'warn',
+      detail: { header: refused, presented: req.headers[refused.toLowerCase()] ?? null },
+    });
     // The same shape the SDK's own refusal uses: HTTP 403 and a JSON-RPC error carrying -32000, so
     // a client parses one form (`webStandardStreamableHttp.js`, `createJsonErrorResponse`).
     res.writeHead(403, { 'content-type': 'application/json' }).end(
@@ -333,6 +347,12 @@ async function handle(
   // before either is reachable.
   const decision = await deps.authenticate(bearerOf(req.headers.authorization));
   if (!decision.ok) {
+    // R-19.3: an authentication refusal is observable, and the CLASS is what an operator needs —
+    // the four states answer one `401` on the wire and are told apart only here (§7.5.2).
+    await deps.diagnostics?.emit('auth.rejected', {
+      severity: 'warn',
+      detail: { refusalClass: decision.refusalClass },
+    });
     // `WWW-Authenticate: Bearer` is what makes this a challenge rather than a bare refusal, and the
     // body carries -32000 — the code the SDK's own transport-level refusal uses — so a client parses
     // one shape. The refusal CLASS is not rendered: it is the operator's, and a caller without a

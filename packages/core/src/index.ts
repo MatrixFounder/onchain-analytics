@@ -196,7 +196,7 @@ export {
 } from './adapters/nansen/budget-gate.js';
 
 export { createCacheStore } from './cache/two-level-store.js';
-export { getCacheStats } from './cache/stats.js';
+export { getCacheStats, setCacheStatsDebug } from './cache/stats.js';
 
 // The cache SEAM itself, not just the factory (adversarial cycle 3). `CapabilityRegistry`'s third
 // constructor parameter is a `CacheStore`, so a consumer that wants anything other than the shipped

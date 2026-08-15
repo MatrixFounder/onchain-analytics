@@ -8,6 +8,7 @@ import {
   assertMergeParticipantsAreFree,
   createStateClient,
   createSqliteStateClient,
+  setCacheStatsDebug,
 } from '@onchain-intel/core';
 import { loadEnv, toProcessEnv, withDeclaredDefaults, type Env } from './env.js';
 import {
@@ -20,6 +21,8 @@ import {
 import { classifyToken } from './auth/authenticate.js';
 import { createTokenStore } from './auth/token-store.js';
 import { createEngineStore } from './engine/pg-engine-store.js';
+import { createDiagnostics } from './engine/diagnostics.js';
+import { createDiagnosticsStore } from './engine/diagnostics-store.js';
 import { createSharedRuntime } from './runtime.js';
 import { startHttpTransport } from './transport/http.js';
 
@@ -151,6 +154,10 @@ async function main(): Promise<void> {
   // M2 (task 005-6) — constructed ONCE, threaded into BOTH the `nansen` adapter's own gate
   // (`buildRegistry`) and `createServer`'s read-only `_meta.budget` visibility (see
   // `buildRegistry`'s own docstring above for why those are the SAME instance in production).
+  // R-19.2 — the one site that writes on every cache access is silent unless the operator asked for
+  // it. Set from the VALIDATED value, never read from the environment at the call site (R-13.3a).
+  setCacheStatsDebug(env.LOG_LEVEL === 'debug');
+
   const runtime = createSharedRuntime({ env, version });
 
   // The only place a transport is chosen (D3). Task 014-09 attaches the Streamable HTTP transport
@@ -197,8 +204,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Both channels (task 014-27). The stored one exists because on this transport neither the client
+  // nor its operator reads stderr — a diagnostic nobody reads is not a diagnostic (L-2).
+  const diagnostics = createDiagnostics({
+    store: createDiagnosticsStore(identity.engine),
+    now: () => Date.now(),
+  });
+
   const running = await startHttpTransport({
     createSessionServer: () => runtime.createSessionServer(),
+    diagnostics,
     // Step 2 of the admission order. Every request is verified, including one on an established
     // session: no verified-token cache exists, so a revocation takes effect on the next request
     // (R-15.6, AC-26).

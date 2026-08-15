@@ -1,3 +1,5 @@
+import type { EngineStore } from './pg-engine-store.js';
+
 /**
  * The stored diagnostics channel (`data-model.md` §4.5.8, R-32) — the events an administrator must
  * be able to read WITHOUT access to the process stderr.
@@ -138,6 +140,43 @@ export function createDiagnosticsStoreStub(): DiagnosticsStoreStub {
     append(record: DiagnosticsRecord): Promise<void> {
       appended.push(record);
       return Promise.resolve();
+    },
+  };
+}
+
+/* --------------------------------------------------------------------------------------------- *
+ * Task 014-27 — the repository over the shared access mechanism.
+ * --------------------------------------------------------------------------------------------- */
+
+/**
+ * `onchain.diagnostics`, over the write client of task 014-39 through the mechanism of 014-03.
+ *
+ * **Append-only by use, not by trigger.** Unlike `access_audit`, this table carries no engine guard
+ * against `UPDATE`: §4.5.8 makes it a retention-managed log rather than a record of what an admin
+ * did, and the `onchain-retention` job DELETEs from it by design (task 014-41). The append-only
+ * property here is a property of the only writer, which is this function.
+ */
+export function createDiagnosticsStore(engine: EngineStore): DiagnosticsStore {
+  return {
+    async append(record: DiagnosticsRecord): Promise<void> {
+      await engine.query(
+        `INSERT INTO ${engine.qualify('diagnostics')}
+           (id, ts, severity, event, principal_id, session_id, provider, capability, trace_id, detail_json, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          record.id,
+          record.ts,
+          record.severity,
+          record.event,
+          record.principalId,
+          record.sessionId,
+          record.provider,
+          record.capability,
+          record.traceId,
+          record.detailJson,
+          record.createdAt,
+        ],
+      );
     },
   };
 }

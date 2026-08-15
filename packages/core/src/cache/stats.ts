@@ -35,6 +35,25 @@ function bucketFor(capability: string): CacheCounters {
  * would, without touching `registry.ts` itself (it already calls `cache.get(...)` unchanged since
  * task 003-2).
  */
+/**
+ * Whether the per-access line below is written (task 014-27, R-19.2).
+ *
+ * **Why the line is silenced rather than deleted.** `system-architecture.md` §3.4.10: it is the only
+ * site that writes on EVERY cache access, in a process that may have no reachable database — which
+ * is exactly the state in which a storage failure is being diagnosed. Deleting it would remove the
+ * one signal available when the stored channel is the thing that broke.
+ *
+ * **Why a module-level setting rather than a parameter.** The caller is `CapabilityRegistry`, which
+ * has no business carrying a log level through to a counter; and reading the environment here would
+ * be the direct read R-13.3a forbids. `index.ts` sets it once from the validated `EnvSchema` value.
+ * Default silent: an operator who has not asked for `debug` gets none of these lines.
+ */
+let debugEnabled = false;
+
+export function setCacheStatsDebug(enabled: boolean): void {
+  debugEnabled = enabled;
+}
+
 export function recordCacheAccess(
   provider: string,
   capability: string,
@@ -42,6 +61,7 @@ export function recordCacheAccess(
   ageMs?: number,
 ): void {
   bucketFor(capability)[outcome] += 1;
+  if (!debugEnabled) return;
   process.stderr.write(
     `cache=${outcome} provider=${provider} capability=${capability} ageMs=${ageMs ?? 0}\n`,
   );

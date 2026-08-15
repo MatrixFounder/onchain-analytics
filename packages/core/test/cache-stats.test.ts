@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CacheGetResult, CacheStore } from '../src/adapters/cache-store.js';
-import { getCacheStats, recordCacheAccess, resetCacheStats } from '../src/cache/stats.js';
+import {
+  getCacheStats,
+  recordCacheAccess,
+  resetCacheStats,
+  setCacheStatsDebug,
+} from '../src/cache/stats.js';
 import { TwoLevelStore } from '../src/cache/two-level-store.js';
 
 describe('cache stats (R-15)', () => {
@@ -24,11 +29,24 @@ describe('cache stats (R-15)', () => {
     });
   });
 
-  it('never writes to stdout (M0 stdout-discipline invariant, ARCHITECTURE.md §7.3) and writes a greppable stderr line', () => {
+  it('writes NOTHING by default — the line is level-gated since task 014-27 (R-19.2)', () => {
+    // The default is silence. This is the one site that writes on EVERY cache access, so leaving it
+    // on made the container log of a busy process useless for anything else; §3.4.10 keeps the line
+    // and closes it behind a level rather than deleting it, because it is the only signal available
+    // when the STORED channel is the thing that broke.
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    recordCacheAccess('coingecko', 'token.price', 'hit', 42);
+    expect(stderrSpy).not.toHaveBeenCalled();
+    stderrSpy.mockRestore();
+  });
+
+  it('never writes to stdout (M0 stdout-discipline invariant, ARCHITECTURE.md §7.3) and writes a greppable stderr line at debug', () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
+    setCacheStatsDebug(true);
     recordCacheAccess('coingecko', 'token.price', 'hit', 42);
+    setCacheStatsDebug(false);
 
     expect(stdoutSpy).not.toHaveBeenCalled();
     expect(stderrSpy).toHaveBeenCalledTimes(1);
@@ -44,7 +62,9 @@ describe('cache stats (R-15)', () => {
 
   it('records a miss with ageMs=0 in the stderr line (nothing was ever cached)', () => {
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    setCacheStatsDebug(true);
     recordCacheAccess('coingecko', 'token.price', 'miss');
+    setCacheStatsDebug(false);
     const line = stderrSpy.mock.calls[0]?.[0] as string;
     expect(line).toContain('cache=miss');
     expect(line).toContain('ageMs=0');
