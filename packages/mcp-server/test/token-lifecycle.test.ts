@@ -36,10 +36,26 @@ let tokens: TokenStore;
 let users: UserStore;
 let clock = NOW;
 
-/** A deterministic id source, so a failure names a row rather than a fresh random string. */
+/**
+ * A deterministic id source, so a failure names a row rather than a fresh random string.
+ *
+ * The counter is spread over three bytes rather than filling all sixteen with one value: the first
+ * version had a period of 32, and `issue` mints TWO ids per call — the token's and its journal
+ * row's — so a loop of 25 issues wrapped and hit `UNIQUE constraint failed: api_tokens.id`. A test
+ * fixture whose period is shorter than the test is a failure that looks like a product defect.
+ */
 const ids = (): ((nowMs: number) => string) => {
   let n = 0;
-  return (nowMs: number): string => ulid(nowMs, () => Uint8Array.from(Array(16).fill(n++ % 32)));
+  return (nowMs: number): string => {
+    const seed = n++;
+    return ulid(nowMs, () =>
+      Uint8Array.from(
+        Array.from({ length: 16 }, (_unused, index) =>
+          index < 3 ? Math.floor(seed / 32 ** index) % 32 : 7,
+        ),
+      ),
+    );
+  };
 };
 
 beforeEach(async () => {
@@ -82,7 +98,7 @@ const allTextValues = (harness_: SqliteEngine): string[] => {
 
 describe('the token is minted, never stored, and never printed', () => {
   it('TC-UNIT-01: the issued value appears in no column of the three tables (AC-26)', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     await tokens.revoke(issued.id, await adminId());
 
     const stored = allTextValues(harness);
@@ -102,7 +118,7 @@ describe('the token is minted, never stored, and never printed', () => {
     // delimiter — anything that parses one of these values by splitting is wrong for the same
     // reason, and this comment is here so the next reader does not reintroduce it.
     for (let attempt = 0; attempt < 25; attempt += 1) {
-      const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+      const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
       expect(issued.token.slice(0, 3)).toBe('oi_');
       expect(issued.token.slice(3, 11)).toMatch(/^[A-Za-z0-9_-]{8}$/); // the 8-character label
       expect(issued.token.slice(11, 12)).toBe('_'); // the separator
@@ -117,8 +133,8 @@ describe('the token is minted, never stored, and never printed', () => {
 
   it('TC-UNIT-05: two issues differ in both the value and the prefix', async () => {
     const user = await adminId();
-    const first = await tokens.issue(user, PHASE_0_PROFILE_ID);
-    const second = await tokens.issue(user, PHASE_0_PROFILE_ID);
+    const first = await tokens.issue(user, PHASE_0_PROFILE_ID, user);
+    const second = await tokens.issue(user, PHASE_0_PROFILE_ID, user);
     expect(first.token).not.toBe(second.token);
     expect(first.prefix).not.toBe(second.prefix);
     expect(first.id).not.toBe(second.id);
@@ -128,7 +144,7 @@ describe('the token is minted, never stored, and never printed', () => {
     const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
       vi.spyOn(console, level).mockImplementation(() => undefined),
     );
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     await tokens.lookup(issued.token);
     await tokens.revoke(issued.id, await adminId());
     await tokens.lookup(issued.token);
@@ -140,7 +156,7 @@ describe('the token is minted, never stored, and never printed', () => {
 
 describe('the digest is peppered, and the pepper is the only thing that makes it verify', () => {
   it('TC-UNIT-03: the stored digest equals sha256(pepper || value), computed outside the code', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     const row = harness.db
       .prepare('SELECT token_hash FROM api_tokens WHERE id = ?')
       .get(issued.id) as { token_hash: string };
@@ -155,7 +171,7 @@ describe('the digest is peppered, and the pepper is the only thing that makes it
   });
 
   it('TC-UNIT-04: rotating the pepper invalidates every issued token at once', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     expect(await tokens.lookup(issued.token)).not.toBeNull();
 
     const rotated = createTokenStore({
@@ -182,7 +198,7 @@ describe('the digest is peppered, and the pepper is the only thing that makes it
 
 describe('lookup is by digest and by nothing else', () => {
   it('finds the row by digest, and the statement carries no liveness predicate', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     harness.statements.length = 0;
     const found = await tokens.lookup(issued.token);
     expect(found?.tokenId).toBe(issued.id);
@@ -198,7 +214,7 @@ describe('lookup is by digest and by nothing else', () => {
   });
 
   it('never looks a token up by its prefix', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     await tokens.lookup(issued.token);
     await tokens.revoke(issued.id, await adminId());
     // A second lookup path over a shorter, non-secret value would be a weaker credential in the same
@@ -216,7 +232,7 @@ describe('lookup is by digest and by nothing else', () => {
 
   it('TC-UNIT-06: a prefix collision is re-minted, and no ambiguous row is written', async () => {
     const user = await adminId();
-    const taken = await tokens.issue(user, PHASE_0_PROFILE_ID);
+    const taken = await tokens.issue(user, PHASE_0_PROFILE_ID, user);
 
     // A mint whose FIRST value repeats a prefix already in the table. `UNIQUE (prefix)` is what makes
     // identification unambiguous (R-15.2), so the issue path must produce a different one rather
@@ -232,7 +248,7 @@ describe('lookup is by digest and by nothing else', () => {
         return call === 1 ? `${taken.prefix}_${'A'.repeat(43)}` : mintToken();
       },
     });
-    const second = await colliding.issue(user, PHASE_0_PROFILE_ID);
+    const second = await colliding.issue(user, PHASE_0_PROFILE_ID, user);
     expect(call).toBe(2);
     expect(second.prefix).not.toBe(taken.prefix);
 
@@ -244,7 +260,7 @@ describe('lookup is by digest and by nothing else', () => {
 
   it('gives up after a bounded number of collisions instead of spinning', async () => {
     const user = await adminId();
-    const taken = await tokens.issue(user, PHASE_0_PROFILE_ID);
+    const taken = await tokens.issue(user, PHASE_0_PROFILE_ID, user);
     const stuck = createTokenStore({
       engine: harness.engine,
       pepper: PEPPER,
@@ -254,7 +270,7 @@ describe('lookup is by digest and by nothing else', () => {
     });
     // An unbounded retry turns a database that refuses every insert into a process that spins
     // instead of reporting.
-    await expect(stuck.issue(user, PHASE_0_PROFILE_ID)).rejects.toBeInstanceOf(
+    await expect(stuck.issue(user, PHASE_0_PROFILE_ID, user)).rejects.toBeInstanceOf(
       TokenMintExhaustedError,
     );
   });
@@ -318,7 +334,7 @@ describe('TC-UNIT-07: the four refusing states are distinguishable', () => {
 
 describe('revocation, and the journal that records it', () => {
   it('TC-UNIT-10: the row stays, with a status and a timestamp', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     clock = NOW + 60_000;
     await tokens.revoke(issued.id, await adminId());
 
@@ -337,7 +353,7 @@ describe('revocation, and the journal that records it', () => {
     // The store-level half of AC-26. The other half — the request path and the dropped session —
     // belongs to task 014-15 (TC-E2E-03, the next request is refused) and task 014-13 (the
     // `session.evicted` row), because neither the transport nor the session manager exists yet.
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     expect(classifyToken(await tokens.lookup(issued.token), NOW).ok).toBe(true);
     await tokens.revoke(issued.id, await adminId());
     expect(classifyToken(await tokens.lookup(issued.token), NOW)).toStrictEqual({
@@ -347,7 +363,7 @@ describe('revocation, and the journal that records it', () => {
   });
 
   it('refuses an unknown or already-revoked id rather than reporting success', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     const actor = await adminId();
     await tokens.revoke(issued.id, actor);
     await expect(tokens.revoke(issued.id, actor)).rejects.toBeInstanceOf(TokenNotRevocableError);
@@ -355,14 +371,15 @@ describe('revocation, and the journal that records it', () => {
       TokenNotRevocableError,
     );
     // And the refused attempts wrote no journal row: a record of something that did not happen is
-    // read as a record of something that did.
+    // read as a record of something that did. Two rows remain — the issue and the one revocation
+    // that succeeded.
     expect(
       (harness.db.prepare('SELECT COUNT(*) AS n FROM access_audit').get() as { n: number }).n,
-    ).toBe(1);
+    ).toBe(2);
   });
 
   it('rolls the revocation back when its journal row cannot be written', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     // An actor that does not exist violates `access_audit.actor_user_id REFERENCES users(id)`, which
     // SQLite enforces only because the harness sets the pragma (§1.6). The point is the pairing: the
     // token must not be left revoked with nothing in the journal saying who did it.
@@ -373,8 +390,36 @@ describe('revocation, and the journal that records it', () => {
     expect(row.status).toBe('active');
   });
 
+  it('issue writes its own journal row, in the same transaction as the token (R-15.7)', async () => {
+    const actor = await adminId();
+    const issued = await tokens.issue(actor, PHASE_0_PROFILE_ID, actor);
+    const entry = harness.db
+      .prepare("SELECT * FROM access_audit WHERE action = 'token.issue'")
+      .get() as { target_id: string; actor_user_id: string; after_json: string };
+    expect(entry.target_id).toBe(issued.id);
+    expect(entry.actor_user_id).toBe(actor);
+    expect(entry.after_json).toContain(issued.prefix);
+    expect(entry.after_json).not.toContain(issued.token);
+    expect(entry.after_json).not.toMatch(/\b[0-9a-f]{64}\b/);
+  });
+
+  it('leaves no token behind when its journal row cannot be written', async () => {
+    // The pairing, from the issuing side. A credential that exists with nothing recording who
+    // issued it is worse than a failed issue: R-15.7 makes the journal the record of what an admin
+    // did, and a token absent from it is a token nobody can account for.
+    const before = (
+      harness.db.prepare('SELECT COUNT(*) AS n FROM api_tokens').get() as { n: number }
+    ).n;
+    await expect(
+      tokens.issue(await adminId(), PHASE_0_PROFILE_ID, '01JNOSUCHUSER'),
+    ).rejects.toThrow();
+    expect(
+      (harness.db.prepare('SELECT COUNT(*) AS n FROM api_tokens').get() as { n: number }).n,
+    ).toBe(before);
+  });
+
   it('TC-UNIT-09: the journal row carries the id and the prefix, and neither secret', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     await tokens.revoke(issued.id, await adminId());
     const entry = harness.db
       .prepare("SELECT * FROM access_audit WHERE action = 'token.revoke'")
@@ -404,12 +449,12 @@ describe('revocation, and the journal that records it', () => {
   });
 
   it('TC-UNIT-08: the journal cannot be rewritten or emptied (AC-41)', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     await tokens.revoke(issued.id, await adminId());
     const before = harness.db.prepare('SELECT COUNT(*) AS n FROM access_audit').get() as {
       n: number;
     };
-    expect(before.n).toBe(1);
+    expect(before.n).toBe(2); // token.issue and token.revoke
 
     // The guard is the ENGINE's, declared by task 014-36 for this axis and by 014-35 for the other.
     // Testing it here is testing the declaration those tasks shipped, on the statements this one
@@ -424,7 +469,7 @@ describe('revocation, and the journal that records it', () => {
     const after = harness.db.prepare('SELECT COUNT(*) AS n FROM access_audit').get() as {
       n: number;
     };
-    expect(after.n).toBe(1);
+    expect(after.n).toBe(2);
   });
 });
 
@@ -467,7 +512,7 @@ describe('the user repository writes what §4.5.3 declares', () => {
 
 describe('every statement this task issues is schema-qualified', () => {
   it('names onchain.<table> in each one', async () => {
-    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID);
+    const issued = await tokens.issue(await adminId(), PHASE_0_PROFILE_ID, await adminId());
     await tokens.lookup(issued.token);
     await tokens.revoke(issued.id, await adminId());
     await users.listUsers();

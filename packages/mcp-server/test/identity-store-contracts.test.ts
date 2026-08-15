@@ -105,7 +105,7 @@ describe('the two stores answer their declared methods', () => {
   });
 
   it('TC-UNIT-03: issue returns the value and the prefix separately', async () => {
-    const issued = await createTokenStoreStub().issue('01JUSER', '01JPROFILE');
+    const issued = await createTokenStoreStub().issue('01JUSER', '01JPROFILE', '01JACTOR');
     expect(typeof issued.token).toBe('string');
     expect(typeof issued.prefix).toBe('string');
     // The prefix is the leading 11 characters (§7.5.2) — asserted on the stub too, so the rule is

@@ -114,10 +114,24 @@ export interface IssuedToken {
   readonly prefix: string;
 }
 
-/** Optional columns of `api_tokens` an issuing operation may set. */
+/** Optional columns of `api_tokens` an issuing operation may set, plus the value itself. */
 export interface IssueOptions {
   readonly name?: string | null;
   readonly expiresAt?: number | null;
+  /**
+   * A token value minted elsewhere, stored instead of one this process mints.
+   *
+   * **Why the store accepts a value it did not create** (owner decision, task 014-08). The owner
+   * mints the first token themselves, on their own machine, and hands over only what the database
+   * keeps. A tool that could only mint its own would leave that path unsupported and push the
+   * operator into writing SQL by hand.
+   *
+   * It is validated against the §7.5.2 form before it is stored. A value of another shape yields a
+   * `prefix` that is not the leading 11 characters the server computes, so the row would be
+   * identified by something no reader could reproduce — the failure PROD-RUNBOOK's first draft
+   * shipped, where `openssl rand -base64 32` seeded a row the server could never match.
+   */
+  readonly token?: string;
 }
 
 /**

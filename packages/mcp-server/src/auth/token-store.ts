@@ -35,8 +35,23 @@ export interface TokenStore {
    *
    * The returned `token` is the only time the secret exists outside the client. It is not stored,
    * not logged and not recoverable (`security.md` §7.5.2).
+   *
+   * **Why `actorId` is a parameter, and why the journal row is written HERE** (task 014-08). Task
+   * 014-06 declared this method with two parameters and left the journal to the caller. That leaves
+   * R-15.7 — every admin operation writes an `access_audit` row — as a convention each call site has
+   * to remember, and it leaves a window in which a token exists with nothing recording who issued
+   * it. Issuing is an admin operation and never request-path code (R-15.4), so an actor always
+   * exists; making it a parameter is what lets the row and its journal entry be one transaction.
+   *
+   * The precedent is inside T-014 already: `003_seed_engine_admin.sql` writes the `token.issue` row
+   * in the same transaction as the token it describes.
    */
-  issue(userId: string, accessProfileId: string, options?: IssueOptions): Promise<IssuedToken>;
+  issue(
+    userId: string,
+    accessProfileId: string,
+    actorId: string,
+    options?: IssueOptions,
+  ): Promise<IssuedToken>;
 
   /**
    * Looks a presented token up by DIGEST and returns the seven values of §4.5.4, or `null`.
@@ -135,6 +150,34 @@ export function mintToken(entropy: (size: number) => Buffer = randomBytes): stri
 }
 
 /**
+ * The §7.5.2 form: `oi_` + 8 base64url characters + `_` + 43 base64url characters.
+ *
+ * **Anchored, and matched by POSITION rather than by splitting.** base64url's alphabet includes `_`,
+ * so a 43-character secret contains one about half the time — anything that parsed these values by
+ * splitting on the separator would be right in one run and wrong in the next.
+ */
+const TOKEN_SHAPE = /^oi_[A-Za-z0-9_-]{8}_[A-Za-z0-9_-]{43}$/;
+
+export class MalformedTokenError extends Error {
+  constructor() {
+    // The value is never named (D10) — and naming it would print a live credential.
+    super(
+      'the supplied token is not in the form security.md §7.5.2 defines (oi_ + 8 + _ + 43 base64url characters)',
+    );
+    this.name = 'MalformedTokenError';
+  }
+}
+
+export class TokenPrefixTakenError extends Error {
+  constructor(readonly prefix: string) {
+    super(
+      `prefix ${prefix} is already in use; mint another value rather than writing an ambiguous row`,
+    );
+    this.name = 'TokenPrefixTakenError';
+  }
+}
+
+/**
  * `sha256(pepper || presented)` as lowercase hex (`security.md` §7.5.2, `data-model.md` §4.5.4).
  *
  * **Why a pepper and not a per-row salt.** The read is one indexed equality on `token_hash`. A
@@ -223,38 +266,71 @@ export function createTokenStore(deps: TokenStoreDeps): TokenStore {
   const mint = deps.mint ?? ((): string => mintToken());
 
   return {
-    async issue(userId, accessProfileId, options: IssueOptions = {}): Promise<IssuedToken> {
-      for (let attempt = 1; attempt <= MAX_MINT_ATTEMPTS; attempt += 1) {
-        const token = mint();
-        const prefix = token.slice(0, TOKEN_PREFIX_LENGTH);
-        const createdAt = now();
-        const id = newId(createdAt);
-        // `ON CONFLICT (prefix) DO NOTHING RETURNING id` rather than catching a driver error: the
-        // two engines word a constraint violation differently, and a store that parsed those
-        // messages would be reading one dialect's prose to make a portable decision. An empty
-        // `RETURNING` is the same answer in both. The conflict TARGET is named, so a duplicate
-        // `token_hash` — which would mean the CSPRNG repeated — still raises instead of being
-        // retried away.
-        const written = await engine.query<{ id: string }>(
-          `INSERT INTO ${engine.qualify('api_tokens')}
+    issue(userId, accessProfileId, actorId, options: IssueOptions = {}): Promise<IssuedToken> {
+      // The token row and its journal row are ONE transaction, for the reason `revoke` gives below:
+      // a credential that exists with nothing recording who issued it is worse than a failure.
+      //
+      // The retry sits INSIDE the transaction, and `ON CONFLICT DO NOTHING` is what makes that
+      // possible. In Postgres a constraint violation aborts the whole transaction, so a version that
+      // caught a driver error could not retry inside one — it would have to issue outside a
+      // transaction and lose the pairing.
+      // A value minted elsewhere is stored as presented and never re-minted: retrying would produce
+      // the same value, so a prefix collision on it is reported rather than looped over.
+      const supplied = options.token;
+      if (supplied !== undefined && !TOKEN_SHAPE.test(supplied)) throw new MalformedTokenError();
+      const attempts = supplied === undefined ? MAX_MINT_ATTEMPTS : 1;
+
+      return engine.transaction(async (tx) => {
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+          const token = supplied ?? mint();
+          const prefix = token.slice(0, TOKEN_PREFIX_LENGTH);
+          const createdAt = now();
+          const id = newId(createdAt);
+          // `ON CONFLICT (prefix) DO NOTHING RETURNING id` rather than catching a driver error: the
+          // two engines word a constraint violation differently, and a store that parsed those
+          // messages would be reading one dialect's prose to make a portable decision. An empty
+          // `RETURNING` is the same answer in both. The conflict TARGET is named, so a duplicate
+          // `token_hash` — which would mean the CSPRNG repeated — still raises instead of being
+          // retried away.
+          const written = await tx.query<{ id: string }>(
+            `INSERT INTO ${engine.qualify('api_tokens')}
              (id, user_id, access_profile_id, token_hash, prefix, name, status, expires_at, revoked_at, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, NULL, $8)
            ON CONFLICT (prefix) DO NOTHING
            RETURNING id`,
-          [
-            id,
-            userId,
-            accessProfileId,
-            tokenDigest(pepper, token),
-            prefix,
-            options.name ?? null,
-            options.expiresAt ?? null,
-            createdAt,
-          ],
-        );
-        if (written.length > 0) return { id, token, prefix };
-      }
-      throw new TokenMintExhaustedError(MAX_MINT_ATTEMPTS);
+            [
+              id,
+              userId,
+              accessProfileId,
+              tokenDigest(pepper, token),
+              prefix,
+              options.name ?? null,
+              options.expiresAt ?? null,
+              createdAt,
+            ],
+          );
+          if (written.length === 0) continue;
+
+          await tx.query(
+            `INSERT INTO ${engine.qualify('access_audit')}
+             (id, ts, actor_user_id, action, target_type, target_id, before_json, after_json, created_at)
+           VALUES ($1, $2, $3, 'token.issue', 'api_token', $4, NULL, $5, $2)`,
+            [
+              newId(createdAt),
+              createdAt,
+              actorId,
+              id,
+              // The prefix, never the value and never the digest (§4.5.5).
+              JSON.stringify({ status: 'active', prefix, access_profile_id: accessProfileId }),
+            ],
+          );
+          return { id, token, prefix };
+        }
+        if (supplied !== undefined) {
+          throw new TokenPrefixTakenError(supplied.slice(0, TOKEN_PREFIX_LENGTH));
+        }
+        throw new TokenMintExhaustedError(MAX_MINT_ATTEMPTS);
+      });
     },
 
     async lookup(presented: string): Promise<TokenLookupRow | null> {

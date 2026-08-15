@@ -230,6 +230,36 @@ old row is revoked, not edited.
 **If you lose the token.** There is no recovery — the digest is one-way. Seed a second admin by
 repeating steps 1–2 with a new email, then revoke the lost row.
 
+### Everything after the first admin — the CLI, not the migration
+
+The seed exists because the first admin cannot be created by an admin. Every user and token after it
+is an admin operation (R-15.4), and each one writes its own `access_audit` row (R-15.7):
+
+```bash
+# add a person
+pnpm --filter @onchain-intel/mcp-server exec tsx src/admin/bin.ts \
+  user:add --email analyst@example.com --role user --actor <your-user-id>
+
+# issue them a token — the value is printed ONCE and stored nowhere
+… token:issue --user analyst@example.com --actor <your-user-id>
+
+# or store a value you minted yourself, in the form of §7.5.2
+… token:issue --user analyst@example.com --actor <your-user-id> --token oi_XXXXXXXX_<43 chars>
+
+# list — prefixes, owners, dates and status; never a value and never a digest
+… token:list [--user analyst@example.com]
+
+# revoke; the row is kept, not deleted, and refuses from the next request onward
+… token:revoke --token-id <id> --actor <your-user-id>
+```
+
+**A revoked row stays and still appears in the listing.** Withdrawal of access is a state, not an
+absence: `request_trace` rows reference the principal that held the token, and deleting it would
+strand the record of what it did.
+
+**`token:list` never prints a digest.** The prefix is what identifies a token to a reader; the digest
+is a verifier, and this listing has more readers than the authentication path.
+
 ## Close-out
 - Record the move (date, hosts, verify **`0/11/0`** — stale / metrics seen / orphans) — nothing
   silently (§6).
