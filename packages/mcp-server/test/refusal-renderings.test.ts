@@ -2,7 +2,8 @@ import { request as httpRequest } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { adapterRegistrations } from '@onchain-intel/core';
+import { CapabilityRegistry, adapterRegistrations, routes } from '@onchain-intel/core';
+import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
 import { EnvSchema } from '../src/env.js';
 import { createDiagnostics, type Diagnostics } from '../src/engine/diagnostics.js';
 import { createDiagnosticsStore } from '../src/engine/diagnostics-store.js';
@@ -98,7 +99,15 @@ function refusingServer(diagnostics: Diagnostics): McpServer {
     handler: () => ({ ok: false, reason: OPERATOR_TEXT }),
   });
   const server = new McpServer({ name: 'refusal-renderings', version: '0.0.0-test' });
-  spec.register(server, { version: '0.0.0-test', diagnostics } as never);
+  // A real `ToolContext`, not `as never`: the cast used to hide exactly the key stage 6 makes
+  // load-bearing — a context with no `principal` would have compiled and failed at runtime, or
+  // worse, silently taken the `user` branch.
+  spec.register(server, {
+    version: '0.0.0-test',
+    registry: new CapabilityRegistry(routes, new Map()),
+    principal: STDIO_PRINCIPAL,
+    diagnostics,
+  });
   return server;
 }
 

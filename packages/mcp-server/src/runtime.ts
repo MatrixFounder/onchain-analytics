@@ -22,6 +22,7 @@ import {
 } from '@onchain-intel/core';
 import { toProcessEnv, type Env } from './env.js';
 import { createDiagnostics, type Diagnostics } from './engine/diagnostics.js';
+import type { AccessProfileReader } from './auth/access-profile.js';
 import type { PrincipalResolver } from './auth/principal.js';
 import { createServer } from './server.js';
 
@@ -66,6 +67,8 @@ export interface SharedRuntimeDeps {
    * network path would answer `role: 'admin'` to a plumbing bug.
    */
   readonly principals?: PrincipalResolver;
+  /** Supplies `routeDisclosureMode` on the request path (task 014-16). Absent on the local axis. */
+  readonly accessProfiles?: AccessProfileReader;
 }
 
 export interface SharedRuntime {
@@ -185,6 +188,7 @@ export function createSharedRuntime(deps: SharedRuntimeDeps): SharedRuntime {
         budgetStore,
         diagnostics,
         principals: deps.principals,
+        accessProfiles: deps.accessProfiles,
       }),
   };
 }

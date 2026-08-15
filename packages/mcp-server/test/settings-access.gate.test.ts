@@ -204,9 +204,26 @@ const EXEMPTIONS: readonly Exemption[] = [
   },
   {
     file: 'packages/mcp-server/src/tools/registry.ts',
+    // §7.5.3 names `toCallToolResult` as the point of application; the READ is one function above it,
+    // in `defineTool`'s wrapper, because `toCallToolResult` is synchronous and
+    // `AccessProfileReader.read` returns a promise. The value is passed down beside the principal.
+    // The exemption is file-scoped, so the distinction does not move it — but it is stated here
+    // rather than left for someone to rediscover from a doc sentence that cannot be implemented.
     why: '`toCallToolResult` applies `routeDisclosureMode` (§7.5.3) — the other named point',
     owner: 'task 014-16',
-    active: false,
+    active: true,
+  },
+  {
+    file: 'packages/mcp-server/src/tools/meta-visibility.ts',
+    // **Not a second reader, and the distinction is the whole point of the rule.** This module
+    // never touches a supplier: it takes `routeDisclosureMode` as a parameter of `MetaView` and
+    // applies it. `toCallToolResult` — the point §7.5.3 names — is two lines of delegation to it,
+    // because one compiled visibility table cannot live inside the function that consults it. The
+    // gate matches the field NAME textually, which is what makes it able to catch a real second
+    // reader; this entry is what keeps that strictness from costing the split.
+    why: 'applies `routeDisclosureMode` handed to it as a parameter; reads no supplier (§5.4.4)',
+    owner: 'task 014-16',
+    active: true,
   },
 ];
 

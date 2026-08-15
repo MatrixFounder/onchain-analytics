@@ -17,6 +17,8 @@ import {
   isToolResultEnvelope,
   type ProtocolFailureClass,
 } from '../src/transport/failure-classes.js';
+import { CapabilityRegistry, routes } from '@onchain-intel/core';
+import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
 import { defineTool, toCallToolResult, type ToolOutcome } from '../src/tools/registry.js';
 import {
   ALLOWED_METHODS,
@@ -226,7 +228,12 @@ async function callThrough(outcome: ToolOutcome<{ note: string }>): Promise<Call
     handler: () => outcome,
   });
   const server = new McpServer({ name: 'failure-representation', version: '0.0.0-test' });
-  spec.register(server, { version: '0.0.0-test' } as never);
+  // A real `ToolContext`, not `as never` — see the same note in `refusal-renderings.test.ts`.
+  spec.register(server, {
+    version: '0.0.0-test',
+    registry: new CapabilityRegistry(routes, new Map()),
+    principal: STDIO_PRINCIPAL,
+  });
   const client = new Client({ name: 'probe', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);

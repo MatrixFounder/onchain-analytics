@@ -3,9 +3,16 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BudgetStore, CapabilityRegistry } from '@onchain-intel/core';
 import type { z } from 'zod';
+import type { AccessProfileReader } from '../auth/access-profile.js';
 import { principalFor, type Principal, type PrincipalResolver } from '../auth/principal.js';
 import type { Diagnostics } from '../engine/diagnostics.js';
 import { toClientText } from '../transport/failure-classes.js';
+import {
+  DEFAULT_META_VIEW,
+  applyRouteDisclosure,
+  metaFor,
+  type MetaView,
+} from './meta-visibility.js';
 import type { BudgetMeta } from './budget-meta.js';
 import type { CacheMeta, MergedCacheMeta, TimingMeta } from './resolve-capability.js';
 
@@ -69,6 +76,22 @@ export interface ToolContext {
    * timeout — up to 900 000 ms (§3.4.2). Absent means stdio, where the constant is the answer.
    */
   principals?: PrincipalResolver;
+  /**
+   * The access-profile reader (task 014-16, R-13.2). Read by `defineTool`'s wrapper, never by a
+   * handler — a tool that could read a profile could decide what an operator sees.
+   *
+   * **Why on the request path and not at session creation.** The profile is named by the TOKEN, and
+   * the token is resolved per request (§3.4.3). A value held for a session would lag a profile
+   * change until the idle timeout.
+   *
+   * **Why the read is skipped for a principal with no profile id, and that is a DECISION.** The
+   * stdio principal carries `accessProfileId: null` (§3.4.3) while `AccessProfileReader.read` takes
+   * a non-null id and is fail-closed with no default substitution — so calling it on the local path
+   * would refuse every local call and the eval gate with them. No document declares this branch;
+   * `'full'` is chosen because it is the phase-0 default and the value the task's own regression
+   * test ("the local profile keeps its previous volume of `_meta`") assumes.
+   */
+  accessProfiles?: AccessProfileReader;
   /**
    * The diagnostics channel (task 014-26). Read by `defineTool`'s WRAPPER, never by a handler.
    *
@@ -246,23 +269,33 @@ function project<K extends keyof ToolContext>(
  */
 export function toCallToolResult<TOutput extends Record<string, unknown>>(
   outcome: ToolOutcome<TOutput>,
+  view: MetaView = DEFAULT_META_VIEW,
 ): CallToolResult {
   if (!outcome.ok) {
     return { isError: true, content: [{ type: 'text', text: outcome.reason }] };
   }
-  const meta = {
-    ...(outcome.cache ? { cache: outcome.cache } : {}),
-    ...(outcome.budget ? { budget: outcome.budget } : {}),
-    // `timing` is present only when the answer crossed its own ceiling (OQ-T012-6): the owner's
-    // decision returns such an answer rather than discarding it, and this is the half of the
-    // decision that keeps "late" from being invisible. On every ordinary call the key is absent,
-    // so no existing `_meta` assertion moves.
-    ...(outcome.timing ? { timing: outcome.timing } : {}),
-  };
+  // **The projection runs HERE and nowhere else** (§5.4.4 property 2, `security.md` §7.5.3): one
+  // function renders every tool's result, so a new tool inherits the rule instead of repeating it.
+  // `budgetMeta()` keeps computing its part and does not decide who sees it (task 014-16).
+  const meta = metaFor(
+    {
+      ...(outcome.cache ? { cache: outcome.cache } : {}),
+      ...(outcome.budget ? { budget: outcome.budget } : {}),
+      // `timing` is present only when the answer crossed its own ceiling (OQ-T012-6): the owner's
+      // decision returns such an answer rather than discarding it, and this is the half of the
+      // decision that keeps "late" from being invisible. On every ordinary call the key is absent,
+      // so no existing `_meta` assertion moves.
+      ...(outcome.timing ? { timing: outcome.timing } : {}),
+    },
+    view,
+  );
+  // The third governed field, which is not a `_meta` field at all — and stripped BEFORE the two
+  // publications below, because the output is mirrored into `content[0].text`.
+  const output = applyRouteDisclosure(outcome.output, view);
   return {
-    content: [{ type: 'text', text: JSON.stringify(outcome.output) }],
-    structuredContent: outcome.output,
-    ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
+    content: [{ type: 'text', text: JSON.stringify(output) }],
+    structuredContent: output,
+    ...(meta === undefined ? {} : { _meta: meta }),
   };
 }
 
@@ -346,8 +379,16 @@ export function defineTool<
           //
           // Resolved per request, never cached — see `ToolContext.principals`.
           const principal = principalFor(ctx.principals, extra.authInfo);
+          // R-13.3a's second named point of application. A failed read REFUSES the request rather
+          // than substituting a default (task 014-04): a profile that could not be read is not a
+          // permissive profile.
+          const routeDisclosureMode =
+            ctx.accessProfiles === undefined || principal.accessProfileId === null
+              ? 'full'
+              : (await ctx.accessProfiles.read(principal.accessProfileId)).routeDisclosureMode;
+          const view: MetaView = { principal, routeDisclosureMode };
           const outcome = await definition.handler(input, project({ ...ctx, principal }, needs));
-          if (outcome.ok) return toCallToolResult(outcome);
+          if (outcome.ok) return toCallToolResult(outcome, view);
 
           // **Two renderings of one refusal** (task 014-26, R-31, AC-47, AC-50).
           //
@@ -365,7 +406,10 @@ export function defineTool<
               capability: definition.capability,
               detail: { tool: definition.name, reason: outcome.reason },
             })) ?? null;
-          return toCallToolResult({ ok: false, reason: toClientText(outcome.reason, eventId) });
+          return toCallToolResult(
+            { ok: false, reason: toClientText(outcome.reason, eventId) },
+            view,
+          );
         },
       );
     },

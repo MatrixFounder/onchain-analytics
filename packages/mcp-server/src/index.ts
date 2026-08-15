@@ -19,6 +19,7 @@ import {
   resolveProfile,
 } from './profile.js';
 import { classifyToken } from './auth/authenticate.js';
+import { createDefaultAccessProfileReader } from './auth/default-access-profile.js';
 import { createHttpPrincipalResolver } from './auth/principal.js';
 import { createTokenStore } from './auth/token-store.js';
 import { createEngineStore } from './engine/pg-engine-store.js';
@@ -176,7 +177,15 @@ async function main(): Promise<void> {
     env,
     version,
     diagnostics,
-    ...(profile.transport === 'http' ? { principals: createHttpPrincipalResolver() } : {}),
+    ...(profile.transport === 'http'
+      ? {
+          principals: createHttpPrincipalResolver(),
+          // Task 014-16's supplier. The phase-0 one until the table-backed reader is wired: it is
+          // the one `createDefaultAccessProfileReader` was written for, and it had no production
+          // caller before this line.
+          accessProfiles: createDefaultAccessProfileReader(),
+        }
+      : {}),
   });
 
   // The only place a transport is chosen (D3). Task 014-09 attaches the Streamable HTTP transport

@@ -4,6 +4,7 @@ import type { AccessProfile } from './auth/access-profile.js';
 import type { Env } from './env.js';
 import { type ToolContext } from './tools/registry.js';
 import type { Diagnostics } from './engine/diagnostics.js';
+import type { AccessProfileReader } from './auth/access-profile.js';
 import { principalFor, type PrincipalResolver } from './auth/principal.js';
 import { toolSpecs } from './tools/tool-specs.js';
 
@@ -75,6 +76,11 @@ export interface CreateServerDeps {
    * value resolved once per session would keep a revoked token working until the idle timeout.
    */
   principals?: PrincipalResolver;
+  /**
+   * Reads the access profile named by the request's principal (task 014-16). Absent means no read
+   * and `routeDisclosureMode: 'full'` — the local path, where the principal names no profile.
+   */
+  accessProfiles?: AccessProfileReader;
 }
 
 /**
@@ -118,6 +124,7 @@ export function createServer(deps: CreateServerDeps): McpServer {
     // is stdio.
     principal: principalFor(deps.principals, undefined),
     ...(deps.principals ? { principals: deps.principals } : {}),
+    ...(deps.accessProfiles ? { accessProfiles: deps.accessProfiles } : {}),
   };
 
   // **The access profile narrows HERE, once per session** (task 014-04, `security.md` §7.5.3a,
