@@ -165,13 +165,20 @@ async function main(): Promise<void> {
   // before anything is bound. It carries two axes: who reaches the process, and where its state
   // lives. `createServer` does NOT receive it (R-1.2): a profile that reached a tool would let a
   // handler behave differently per deployment, which no requirement asks for and no test covers.
-  const profile = resolveProfile(process.env);
+  // The VALIDATED environment, not the raw one. §10.3.2 fixes the startup order — `loadEnv` parses,
+  // THEN the profile resolves — and reading `process.env` here skipped step 1 for the two keys that
+  // decide the deployment: `ONCHAIN_PROFILE=remote` would have been refused by `resolveProfile`
+  // rather than by the schema, and a malformed `ONCHAIN_STATE_PG_URL` would have passed the "is set"
+  // pre-check and failed at connect time. Found by task 014-04's R-13.3a gate, which counts a direct
+  // `process.env` read outside `env.ts` as a defect — this was one, introduced by task 014-38.
+  const rawEnv = toProcessEnv(env);
+  const profile = resolveProfile(rawEnv);
 
   // The network profile refuses to start rather than downgrading to the SQLite axis. A downgrade
   // with no refusal would put this server's tokens, traces and spend ledger in a local file while
   // every gate reported success — the L-10 defect. Nothing is bound until this resolves.
   try {
-    await assertNetworkPreconditions(profile, process.env);
+    await assertNetworkPreconditions(profile, rawEnv);
   } catch (error) {
     console.error(
       `onchain-intel-mcp-server: ${error instanceof Error ? error.message : String(error)}`,

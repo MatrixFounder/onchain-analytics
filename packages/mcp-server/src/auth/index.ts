@@ -8,11 +8,19 @@
  * re-export from this task: `packages/core` receives no type of token, role or header. That is an
  * acceptance criterion of task 014-02, checked by `test/engine-store-contracts.test.ts`.
  *
- * **What is deliberately absent.** `auth/principal.ts` (`system-architecture.md` §3.4.3),
- * `auth/access-profile.ts` and `auth/default-access-profile.ts` (task 014-04, `security.md`
- * §7.5.3a) and `auth/identity-types.ts` (task 014-06) are other tasks' files. Each joins this list
- * when its own task lands.
+ * **What is deliberately absent.** `auth/principal.ts` (`system-architecture.md` §3.4.3) and
+ * `auth/identity-types.ts` (task 014-06) are other tasks' files. Each joins this list when its own
+ * task lands; `access-profile.ts` and `default-access-profile.ts` joined it with task 014-04.
  */
+export {
+  AccessProfileUnavailableError,
+  type AccessProfile,
+  type AccessProfileReader,
+} from './access-profile.js';
+export {
+  createDefaultAccessProfileReader,
+  PHASE_0_ACCESS_PROFILE,
+} from './default-access-profile.js';
 export {
   createAccessProfileStoreStub,
   STUB_ACCESS_PROFILE,

@@ -17,48 +17,23 @@
  * inside the first.
  */
 
+import type { AccessProfile } from './access-profile.js';
+
 /**
- * The seven settings of one access profile, reproduced field for field from `security.md` §7.5.3a
- * and column for column from `access_profiles` (`data-model.md` §4.5.3).
+ * The seven settings of one access profile — the SAME type task 014-04 declares, under this file's
+ * name for it.
  *
- * **Why every value is accompanied by its mode.** "Unlimited" is DECLARED here, never inferred from
- * a missing value. A `null` that means unlimited cannot be told apart from a profile that was never
- * provisioned — the L-10 class of defect, where 43 of 458 chains answered a confident "not deployed"
- * and both gates stayed green. The three `CHECK` pairs in §4.5.3 keep the same distinction at the
- * engine level, and this type keeps it in the process.
+ * **Why an alias and not a second declaration** (collapsed by task 014-04). While 014-04 was
+ * unlanded this file carried its own seven-field interface, reproduced from `security.md` §7.5.3a,
+ * with a note saying that collapsing it into an alias when 014-04 arrived would be a rename and
+ * never a reshape. That is this line. Two structurally identical declarations of one entity are two
+ * places to add a field to, and the R-13.3a gate counts field names in exactly one of them.
  *
- * **Why `creditsBalanceRaw` is a string and not a number.** Credits are exact integers and a client
- * facing balance in our own currency. A JS number loses precision past 2^53, which is precisely why
- * `data-model.md` §4.5.3 declares the column `TEXT` (DB-SCHEMA §1.7). Reading it into a number here
- * would spend the exactness the column was chosen to preserve, one layer above the storage that
- * preserved it.
- *
- * **Why the type is named `AccessProfileRecord` and not `AccessProfile`.** Task 014-04 owns
- * `AccessProfile` in `auth/access-profile.ts` (`security.md` §7.5.3a), and `auth/index.ts` is a
- * barrel: two files exporting one name through it is a duplicate export, not a merge. The field
- * names and their value types are reproduced verbatim, so when 014-04 lands, collapsing this into
- * `export type AccessProfileRecord = AccessProfile` is a rename and never a reshape.
- *
- * **Why the declaration order differs from task 014-04's.** §7.5.3a lists `routeDisclosureMode`
- * sixth; 014-04 lists it last and says so. Property order is not part of a TypeScript type's
- * identity, so both orders compile to the same type — this file follows the architecture document it
- * is transcribing, and the difference is recorded here so nobody "repairs" one into the other.
- *
- * **What this shape deliberately does not carry.** `access_profiles` also holds `name`, `status`,
- * `created_at` and `updated_at`. §7.5.3a declares seven fields and only seven; a wider shape here
- * would give one entity two vocabularies, and the R-13.3a gate of task 014-04 counts exactly these
- * seven names. A supplier that must refuse a retired profile refuses — the reader's contract is
- * fail-closed (§7.5.3a) — rather than growing an eighth field for a caller to interpret.
+ * The declaration order differed between the two (§7.5.3a lists `routeDisclosureMode` sixth, 014-04
+ * lists it last) — property order is not part of a TypeScript type's identity, so nothing about the
+ * collapse turns on it.
  */
-export interface AccessProfileRecord {
-  readonly creditsMode: 'unlimited' | 'metered';
-  readonly creditsBalanceRaw: string | null; // exact value as a string
-  readonly rateLimitMode: 'unlimited' | 'metered';
-  readonly rateLimitPerMin: number | null;
-  readonly toolAllowlistMode: 'all' | 'list';
-  readonly routeDisclosureMode: 'full' | 'none'; // R-20.4 — data-model.md §4.5.3
-  readonly toolAllowlist: readonly string[] | null;
-}
+export type AccessProfileRecord = AccessProfile;
 
 /**
  * Reading one profile out of `access_profiles` by its id.
