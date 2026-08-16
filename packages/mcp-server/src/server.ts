@@ -4,6 +4,7 @@ import type { AccessProfile } from './auth/access-profile.js';
 import type { Env } from './env.js';
 import { type ToolContext } from './tools/registry.js';
 import type { Diagnostics } from './engine/diagnostics.js';
+import type { RequestTraceStore } from './engine/request-trace-store.js';
 import type { AccessProfileReader } from './auth/access-profile.js';
 import { principalFor, type PrincipalResolver } from './auth/principal.js';
 import { toolSpecs } from './tools/tool-specs.js';
@@ -55,6 +56,17 @@ export interface CreateServerDeps {
    * and applies the narrowing; how the read profile travels to the factory is §3.4.3's open point.
    */
   accessProfile?: AccessProfile;
+  /**
+   * The per-request ledger (task 014-30). Absent means no row is written — the local profile, where
+   * the table does not exist.
+   *
+   * **Why the store and not a flag.** The wrapper writes through an interface it is handed, so a
+   * test reads the rows it produced without a database, and production hands it the repository over
+   * the engine. The same shape `budgetStore` and `diagnostics` already use.
+   */
+  requestTrace?: RequestTraceStore;
+  /** The clock the trace row is stamped with; injectable so a test asserts a value it chose. */
+  now?: () => number;
   /**
    * The diagnostics channel (task 014-26), forwarded into the tool context so a refusal is rendered
    * twice: fully into the channel, and bounded plus an identifier to the client. Optional here for
@@ -125,6 +137,13 @@ export function createServer(deps: CreateServerDeps): McpServer {
     principal: principalFor(deps.principals, undefined),
     ...(deps.principals ? { principals: deps.principals } : {}),
     ...(deps.accessProfiles ? { accessProfiles: deps.accessProfiles } : {}),
+    // Task 014-30. Absent `requestTrace` means no row is written, which is the local profile's
+    // shape: the table does not exist there either, so nothing is lost and nothing is silent.
+    ...(deps.requestTrace ? { requestTrace: deps.requestTrace } : {}),
+    ...(deps.env.ONCHAIN_META_NAMESPACE === undefined
+      ? {}
+      : { metaNamespace: deps.env.ONCHAIN_META_NAMESPACE }),
+    ...(deps.now ? { now: deps.now } : {}),
   };
 
   // **The access profile narrows HERE, once per session** (task 014-04, `security.md` §7.5.3a,

@@ -1,7 +1,7 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
 import { z } from 'zod';
-import type { CapabilityRegistry } from '@onchain-intel/core';
+import type { CapabilityResolver } from '@onchain-intel/core';
 import {
   resolveCapability,
   type CacheMeta,
@@ -42,7 +42,7 @@ export const ChainTvlOutputSchema = z
 export type ChainTvlOutput = z.infer<typeof ChainTvlOutputSchema>;
 
 export interface ChainTvlContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 export type ChainTvlOutcome =

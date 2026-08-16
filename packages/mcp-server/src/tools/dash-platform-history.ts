@@ -1,6 +1,6 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { z } from 'zod';
-import type { CapabilityRegistry } from '@onchain-intel/core';
+import type { CapabilityResolver } from '@onchain-intel/core';
 import { resolveCapability, type MergedCacheMeta, type TimingMeta } from './resolve-capability.js';
 import { defineTool } from './registry.js';
 import { contractViolation } from './contract-violation.js';
@@ -162,7 +162,7 @@ export type DashPlatformHistoryOutput = z.infer<typeof DashPlatformHistoryOutput
 export type DashPlatformHistoryCacheMeta = MergedCacheMeta;
 
 export interface DashPlatformHistoryContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 export type DashPlatformHistoryOutcome =

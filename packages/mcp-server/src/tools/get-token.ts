@@ -6,7 +6,7 @@ import {
   isValidAddress,
   normalizeAddress,
   TokenSchema,
-  type CapabilityRegistry,
+  type CapabilityResolver,
   type Token,
 } from '@onchain-intel/core';
 import {
@@ -74,7 +74,7 @@ export const GetTokenOutputSchema = TokenSchema;
 export type GetTokenOutput = Token;
 
 export interface GetTokenContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 /** `token.price` (not `token.metadata`) — both route to `coingecko` and its `normalize()` produces

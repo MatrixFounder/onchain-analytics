@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineTool } from './registry.js';
-import type { CapabilityRegistry, ChainFamily, ChainInfo } from '@onchain-intel/core';
+import type { CapabilityResolver, ChainFamily, ChainInfo } from '@onchain-intel/core';
 
 /** Default page size. Small on purpose — see `ListChainsOutputSchema.total`. */
 const DEFAULT_LIMIT = 50;
@@ -64,7 +64,7 @@ export const ListChainsOutputSchema = z
 export type ListChainsOutput = z.infer<typeof ListChainsOutputSchema>;
 
 export interface ListChainsContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 /**
@@ -78,7 +78,7 @@ export interface ListChainsContext {
  * living in module scope, so it holds no process-lifetime state of its own (ARCHITECTURE.md §8) and
  * a test that builds its own `CapabilityRegistry` gets its own entry.
  */
-const capabilityCache = new WeakMap<CapabilityRegistry, Map<string, string[]>>();
+const capabilityCache = new WeakMap<CapabilityResolver, Map<string, string[]>>();
 
 function capabilitiesOf(ctx: ListChainsContext, chain: ChainInfo): string[] {
   let perRegistry = capabilityCache.get(ctx.registry);

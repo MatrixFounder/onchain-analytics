@@ -7,7 +7,7 @@ import {
   normalizeAddress,
   TokenRiskScoreSchema,
   type BudgetStore,
-  type CapabilityRegistry,
+  type CapabilityResolver,
   type TokenRiskScore,
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
@@ -60,7 +60,7 @@ export const TokenRiskOutputSchema = TokenRiskScoreSchema;
 export type TokenRiskOutput = TokenRiskScore;
 
 export interface TokenRiskContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
   /** Injectable the SAME way as `registry` — read-only `_meta.budget` visibility only (see
    * `smart-money-flows.ts`'s `SmartMoneyFlowsContext` docstring for the full rationale). */
   budgetStore?: BudgetStore;

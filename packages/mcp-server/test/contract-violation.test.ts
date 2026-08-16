@@ -191,8 +191,18 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       [/JSON\.stringify\(\s*[\w.]*\berror\b/, '`JSON.stringify(error…)`'],
       [/\$\{\s*[\w.]*\berror\s*\}/, '`${error}` in a template literal'],
     ];
+    // `registry.ts` is exempt for a DESTINATION reason, and the exemption is paid for by the
+    // companion assertion below (task 014-30). Its renderings of a caught error go to stderr — the
+    // operator channel — from the request-trace writer, where the caught value is a store failure
+    // and never a `ZodError`. What must stay true is that none of them reaches the client, and that
+    // is what the next `expect` checks rather than assumes.
     const offenders = [...TOOL_SOURCES]
-      .filter(([file]) => file !== 'resolve-capability.ts' && file !== 'contract-violation.ts')
+      .filter(
+        ([file]) =>
+          file !== 'resolve-capability.ts' &&
+          file !== 'contract-violation.ts' &&
+          file !== 'registry.ts',
+      )
       .flatMap(([file, text]) => {
         // Comments are stripped first: the sibling gate in this session forgot to, which let a
         // docstring satisfy — or trip — a check about executable code.
@@ -208,6 +218,22 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
         'points is ~200 KB in one isError frame. (`resolve-capability.ts` is exempt: there `error` ' +
         'is a thrown Error whose message IS the diagnostic, R-24/R-40.)',
     ).toStrictEqual([]);
+
+    // The price of exempting `registry.ts`: every refusal text it hands a client goes through
+    // `toClientText`, which is what bounds it and attaches the diagnostics id. A rendering that
+    // reached `toCallToolResult` directly would put an unbounded operator string on the wire, which
+    // is the exact defect this gate exists to prevent — one file over.
+    const wrapper = codeOnly(TOOL_SOURCES.get('registry.ts') ?? '');
+    const clientRefusals = [...wrapper.matchAll(/toCallToolResult\(\s*\{\s*ok:\s*false[^)]*/g)].map(
+      (match) => match[0],
+    );
+    expect(clientRefusals.length).toBeGreaterThan(0);
+    for (const refusal of clientRefusals) {
+      expect(
+        refusal,
+        'a refusal reaches the client without passing through `toClientText`',
+      ).toContain('toClientText(');
+    }
   });
 
   it('no tool output schema lets a PROVIDER-CONTROLLED key into the rendered path', () => {

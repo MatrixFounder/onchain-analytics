@@ -351,8 +351,11 @@ async function readBody(
  * `handlePostRequest` alone, so `GET` (the standalone SSE stream) and `DELETE` drop it. That costs
  * nothing here: a `tools/call` is always a POST, and neither of the other two reaches a tool.
  */
-function attachPrincipal(req: IncomingMessage, row: TokenLookupRow): void {
-  (req as IncomingMessage & { auth?: AuthInfo }).auth = toAuthInfo(principalFromToken(row));
+function attachPrincipal(req: IncomingMessage, row: TokenLookupRow, receivedAtMs: number): void {
+  (req as IncomingMessage & { auth?: AuthInfo }).auth = toAuthInfo(
+    principalFromToken(row),
+    receivedAtMs,
+  );
 }
 
 async function handle(
@@ -363,6 +366,16 @@ async function handle(
   sessions: SessionManager,
   perimeter: Perimeter | null,
 ): Promise<void> {
+  // **Admission is pinned HERE** (task 014-30, `OD-014-30-13`, R-27.5) — the first statement of the
+  // first function this process runs for an inbound request, before the perimeter check, before the
+  // body is read off the socket and before the SDK dispatches anything.
+  //
+  // Everything between this line and the tool boundary is OUR OWN I/O: a Postgres round trip for the
+  // token and a full body read, neither of which carries a timeout on this listener. Letting the
+  // tool boundary's clock stand in would move `received_at` by that whole interval — and the column
+  // is the axis of both declared indexes, so the drift crosses billing-period and retention
+  // boundaries, not merely the dedup key.
+  const receivedAtMs = (deps.now ?? ((): number => Date.now()))();
   const url = new URL(req.url ?? '/', 'http://placeholder');
   if (url.pathname !== path) {
     // A path this transport does not serve is a 404 and nothing else — no body describing what the
@@ -494,7 +507,7 @@ async function handle(
       // mid-conversation. Unconditional assignment, no read-modify-write: this is the one
       // per-session field a request writes, and R-25.2 is why it stays that way.
       sessions.touch(sessionId);
-      attachPrincipal(req, decision.principal);
+      attachPrincipal(req, decision.principal, receivedAtMs);
       await existing.transport.handleRequest(req, res, body.value);
       return;
     }
@@ -563,7 +576,7 @@ async function handle(
     };
 
     await server.connect(transport);
-    attachPrincipal(req, decision.principal);
+    attachPrincipal(req, decision.principal, receivedAtMs);
     await transport.handleRequest(req, res, body.value);
   } catch (error) {
     // The SDK answers most protocol errors itself; this covers the rest. The message is not

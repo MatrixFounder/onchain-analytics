@@ -175,30 +175,31 @@ schema declares **twelve** keys today (`packages/mcp-server/src/env.ts:46-96`, m
 `BLOCKSCOUT_PRO_API_KEY` was missing from this table until 2026-08-12. The schema has declared it
 since TASK-008 (`packages/mcp-server/src/env.ts:64`), and `.env.example` documents it.
 
-| Key                                | Class     | Purpose                                                                                      |
-| ---------------------------------- | --------- | -------------------------------------------------------------------------------------------- |
-| `LOG_LEVEL`                        | narrowing | `debug`/`info`/`warn`/`error`; reserved since M0 for stderr diagnostics                      |
-| `COINGECKO_API_KEY`                | secret    | CoinGecko Demo contour (`api.coingecko.com`, `x-cg-demo-api-key`)                            |
-| `COINGECKO_PRO_API_KEY`            | secret    | CoinGecko Pro contour (`pro-api.coingecko.com`, `x-cg-pro-api-key`); wins when both are set  |
-| `DUNE_API_KEY`                     | secret    | the `dune` adapter — an interface stub, so the key is unused even when set                   |
-| `BLOCKSCOUT_PRO_API_KEY`           | secret    | the `blockscout` facade; the only secret sent as a query parameter (TASK-008 R-79(a))        |
-| `NANSEN_API_KEY`                   | secret    | the only paid adapter                                                                        |
-| `ONCHAIN_PG_URL`                   | bootstrap | read-only Postgres DSN for `pg-history`, validated as a URL                                  |
-| `DATA_DIR`                         | bootstrap | cache directory override (default `~/.onchain-intel`, never cwd-relative)                    |
-| `NANSEN_DAILY_CREDIT_CAP`          | narrowing | self-imposed daily ceiling: unset → derived, a positive integer, or `off`                    |
-| `NANSEN_VELOCITY_CREDITS_PER_MIN`  | narrowing | SEC-1 velocity brake, credits per 60 s window: unset → derived, a positive integer, or `off` |
-| `NANSEN_MAX_CALLS_PER_MIN`         | narrowing | Q-3 call brake, calls per 60 s window: unset → 60 (fixed, not derived), an integer, or `off` |
-| `NANSEN_BUDGET_WARN_RATIO`         | narrowing | stderr warn threshold as a fraction of the effective ceiling (default 0.8)                   |
-| `ONCHAIN_PROFILE`                  | bootstrap | deployment profile: `local` \| `network` \| `network-sqlite`; unset → `local` (R-13)         |
-| `ONCHAIN_STATE_PG_URL`             | bootstrap | read-write DSN for the engine's own state in schema `onchain` (§10.5)                        |
-| `ONCHAIN_HTTP_BIND`                | bootstrap | listen address; unset → `127.0.0.1` (R-12.4, AC-34)                                          |
-| `ONCHAIN_HTTP_PORT`                | bootstrap | listen port                                                                                  |
-| `ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS` | bootstrap | how long one HTTP response may stay open; unset → 360 000 (R-16.3, see below)                |
-| `ONCHAIN_ALLOWED_HOSTS`            | bootstrap | accepted `Host` values on the incoming request (R-12.1)                                      |
-| `ONCHAIN_ALLOWED_ORIGINS`          | bootstrap | accepted `Origin` values; unset → CORS refused (R-12.2, R-12.5, R-29.3)                      |
-| `ONCHAIN_TOKEN_HASH_SALT`          | secret    | the pepper R-29.1 names, mixed into the stored token digest (`security.md` §7.5.2)           |
-| `ONCHAIN_SESSION_MAX`              | bootstrap | ceiling on concurrent sessions (R-24.1)                                                      |
-| `ONCHAIN_SESSION_IDLE_MS`          | bootstrap | idle timeout after which a session is evicted (R-24.2)                                       |
+| Key                                | Class     | Purpose                                                                                                         |
+| ---------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------- |
+| `LOG_LEVEL`                        | narrowing | `debug`/`info`/`warn`/`error`; reserved since M0 for stderr diagnostics                                         |
+| `COINGECKO_API_KEY`                | secret    | CoinGecko Demo contour (`api.coingecko.com`, `x-cg-demo-api-key`)                                               |
+| `COINGECKO_PRO_API_KEY`            | secret    | CoinGecko Pro contour (`pro-api.coingecko.com`, `x-cg-pro-api-key`); wins when both are set                     |
+| `DUNE_API_KEY`                     | secret    | the `dune` adapter — an interface stub, so the key is unused even when set                                      |
+| `BLOCKSCOUT_PRO_API_KEY`           | secret    | the `blockscout` facade; the only secret sent as a query parameter (TASK-008 R-79(a))                           |
+| `NANSEN_API_KEY`                   | secret    | the only paid adapter                                                                                           |
+| `ONCHAIN_PG_URL`                   | bootstrap | read-only Postgres DSN for `pg-history`, validated as a URL                                                     |
+| `DATA_DIR`                         | bootstrap | cache directory override (default `~/.onchain-intel`, never cwd-relative)                                       |
+| `NANSEN_DAILY_CREDIT_CAP`          | narrowing | self-imposed daily ceiling: unset → derived, a positive integer, or `off`                                       |
+| `NANSEN_VELOCITY_CREDITS_PER_MIN`  | narrowing | SEC-1 velocity brake, credits per 60 s window: unset → derived, a positive integer, or `off`                    |
+| `NANSEN_MAX_CALLS_PER_MIN`         | narrowing | Q-3 call brake, calls per 60 s window: unset → 60 (fixed, not derived), an integer, or `off`                    |
+| `NANSEN_BUDGET_WARN_RATIO`         | narrowing | stderr warn threshold as a fraction of the effective ceiling (default 0.8)                                      |
+| `ONCHAIN_PROFILE`                  | bootstrap | deployment profile: `local` \| `network` \| `network-sqlite`; unset → `local` (R-13)                            |
+| `ONCHAIN_STATE_PG_URL`             | bootstrap | read-write DSN for the engine's own state in schema `onchain` (§10.5)                                           |
+| `ONCHAIN_HTTP_BIND`                | bootstrap | listen address; unset → `127.0.0.1` (R-12.4, AC-34)                                                             |
+| `ONCHAIN_HTTP_PORT`                | bootstrap | listen port                                                                                                     |
+| `ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS` | bootstrap | how long one HTTP response may stay open; unset → 360 000 (R-16.3, see below)                                   |
+| `ONCHAIN_ALLOWED_HOSTS`            | bootstrap | accepted `Host` values on the incoming request (R-12.1)                                                         |
+| `ONCHAIN_ALLOWED_ORIGINS`          | bootstrap | accepted `Origin` values; unset → CORS refused (R-12.2, R-12.5, R-29.3)                                         |
+| `ONCHAIN_TOKEN_HASH_SALT`          | secret    | the pepper R-29.1 names, mixed into the stored token digest (`security.md` §7.5.2)                              |
+| `ONCHAIN_SESSION_MAX`              | bootstrap | ceiling on concurrent sessions (R-24.1)                                                                         |
+| `ONCHAIN_SESSION_IDLE_MS`          | bootstrap | idle timeout after which a session is evicted (R-24.2)                                                          |
+| `ONCHAIN_META_NAMESPACE`           | bootstrap | namespace of the incoming `_meta` key carrying a client request id; unset → every id is minted (`OD-014-30-14`) |
 
 **The response timeout is bounded from below by the capability manifest** (R-16.3,
 [interfaces.md](interfaces.md) §5.4.5).

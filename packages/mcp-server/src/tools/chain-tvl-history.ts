@@ -2,7 +2,7 @@ import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
 import { WindowChangeSchema } from './window-change.js';
 import { z } from 'zod';
-import type { CapabilityRegistry } from '@onchain-intel/core';
+import type { CapabilityResolver } from '@onchain-intel/core';
 import {
   resolveCapability,
   type CacheMeta,
@@ -72,7 +72,7 @@ export const ChainTvlHistoryOutputSchema = z
 export type ChainTvlHistoryOutput = z.infer<typeof ChainTvlHistoryOutputSchema>;
 
 export interface ChainTvlHistoryContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 export type ChainTvlHistoryOutcome =

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineTool } from './registry.js';
-import type { CapabilityRegistry } from '@onchain-intel/core';
+import type { CapabilityResolver } from '@onchain-intel/core';
 import {
   resolveCapability,
   type CacheMeta,
@@ -92,7 +92,7 @@ export const ProtocolIncidentsOutputSchema = z
 export type ProtocolIncidentsOutput = z.infer<typeof ProtocolIncidentsOutputSchema>;
 
 export interface ProtocolIncidentsContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 export type ProtocolIncidentsOutcome =

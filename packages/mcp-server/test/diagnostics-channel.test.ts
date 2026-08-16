@@ -203,6 +203,13 @@ const STDERR_INVENTORY: Readonly<Record<string, 'stderr' | 'level' | 'dual'>> = 
   'packages/mcp-server/src/env.ts': 'stderr',
   'packages/mcp-server/src/index.ts': 'stderr',
   'packages/mcp-server/src/transport/http.ts': 'stderr',
+  // Task 014-30. Four sites, all in the request-trace writer, all reporting something that ALREADY
+  // happened: a missing admission timestamp on http, an `_meta` key under the wrong namespace, a
+  // spend receipt the single-provider row could not hold, and a lost ledger row. Stays stderr-only
+  // (R-32.1) because `DIAGNOSTIC_EVENTS` is a closed vocabulary behind a CHECK constraint, and
+  // widening it is a schema change owned by 014-35/014-36 — recorded as a residual in the task file
+  // rather than taken here.
+  'packages/mcp-server/src/tools/registry.ts': 'stderr',
   'packages/mcp-server/src/engine/diagnostics.ts': 'dual',
 };
 

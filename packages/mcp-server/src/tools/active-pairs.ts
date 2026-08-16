@@ -4,7 +4,7 @@ import {
   canonicalizeChain,
   ChainInputSchema,
   PoolSchema,
-  type CapabilityRegistry,
+  type CapabilityResolver,
 } from '@onchain-intel/core';
 import {
   resolveCapability,
@@ -93,7 +93,7 @@ export const ActivePairsOutputSchema = z
 export type ActivePairsOutput = z.infer<typeof ActivePairsOutputSchema>;
 
 export interface ActivePairsContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 const CAPABILITY = 'pairs.active';

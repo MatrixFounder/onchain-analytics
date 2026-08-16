@@ -89,6 +89,22 @@ export function principalFor(
 /** The key our principal travels under inside `AuthInfo.extra` — written once, read once. */
 export const PRINCIPAL_EXTRA_KEY = 'principal';
 
+/**
+ * The key the admission timestamp travels under, beside the principal (task 014-30,
+ * `OD-014-30-13`).
+ *
+ * **Why it rides the SAME seam rather than getting its own.** `AuthInfo.extra` is the one declared
+ * channel from a transport to a tool callback in SDK 1.29.0 — `RequestHandlerExtra` carries no clock
+ * of any kind. A second mechanism (`AsyncLocalStorage`, a synthetic header) would be a second
+ * per-request channel beside an existing one, and the synthetic header additionally does not exist
+ * on stdio and is rewritable by any intermediary.
+ *
+ * **Why a separate key rather than a field on `Principal`.** A principal is WHO; this is WHEN. The
+ * principal is also compared, logged and carried into the profile read, and none of those should
+ * acquire a timestamp that varies per request.
+ */
+export const RECEIVED_AT_EXTRA_KEY = 'receivedAtMs';
+
 /** The verified token row, projected into a principal. `transport` is `http` by construction. */
 export function principalFromToken(row: TokenLookupRow): Principal {
   return {
@@ -118,13 +134,38 @@ export function principalFromToken(row: TokenLookupRow): Principal {
  * **`clientId` carries the token ID, not the token.** It identifies the principal to an operator
  * reading a dump and discloses nothing that `api_tokens.id` does not.
  */
-export function toAuthInfo(principal: Principal): AuthInfo {
+export function toAuthInfo(principal: Principal, receivedAtMs?: number): AuthInfo {
   return {
     token: '',
     clientId: principal.principalId,
     scopes: [],
-    extra: { [PRINCIPAL_EXTRA_KEY]: principal },
+    extra: {
+      [PRINCIPAL_EXTRA_KEY]: principal,
+      // Omitted rather than written as `undefined` when the caller has none, so `extra` keeps the
+      // shape it had before this task on every path that does not supply one.
+      ...(receivedAtMs === undefined ? {} : { [RECEIVED_AT_EXTRA_KEY]: receivedAtMs }),
+    },
   };
+}
+
+/**
+ * The admission timestamp this request was pinned with, or `undefined` when none travelled.
+ *
+ * **`undefined` has two meanings and the caller can tell them apart.** On stdio there is no request
+ * channel at all — `StdioServerTransport` invokes `onmessage` with no second argument — so no
+ * timestamp can exist and the tool boundary's own clock is the honest answer. On HTTP an absent
+ * value means this process failed to pin one, which is a defect in our own wiring. The reader
+ * returns the same `undefined` for both; `principal.transport` is what distinguishes them, and the
+ * caller is expected to say so out loud rather than silently substitute (L-10).
+ *
+ * Validated rather than cast: `extra` is `Record<string, unknown>`, and a non-integer here would
+ * become a `received_at` that orders wrongly and a dedup key component that never matches.
+ */
+export function receivedAtFrom(authInfo: AuthInfo | undefined): number | undefined {
+  const carried = authInfo?.extra?.[RECEIVED_AT_EXTRA_KEY];
+  return typeof carried === 'number' && Number.isSafeInteger(carried) && carried >= 0
+    ? carried
+    : undefined;
 }
 
 /** Thrown when the HTTP path reaches a tool without the principal its transport should have set. */

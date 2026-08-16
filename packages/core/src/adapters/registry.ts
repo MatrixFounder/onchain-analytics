@@ -1760,6 +1760,23 @@ export interface CapabilityResolver {
     requestedDeadlineAtMs?: number,
     onVendorSpend?: VendorSpendReporter,
   ): Promise<CapabilityResolution>;
+  /**
+   * The chain registry, which tool handlers read to validate and canonicalise a chain BEFORE they
+   * resolve anything.
+   *
+   * Part of this interface because it is part of what a tool context's registry provides — an
+   * interface naming only `resolve` would force every handler to hold a second reference to the
+   * class, which is the coupling this interface exists to remove.
+   */
+  getChainRegistry(): ChainRegistry;
+  /**
+   * The coverage matrix, which `onchain_list_chains` reads to answer "which capabilities exist on
+   * this chain" without resolving anything.
+   *
+   * Here for the same reason as `getChainRegistry`: this interface names what a tool CONTEXT's
+   * registry provides, and a tool forced to hold the class as well would defeat the substitution.
+   */
+  getCoverage(): Coverage;
 }
 
 /**
@@ -1824,6 +1841,10 @@ export function bindCallObserver(
   observer: CapabilityCallObserver,
 ): CapabilityResolver {
   return {
+    // Forwarded untouched: the observer watches spending, and chain resolution neither spends nor
+    // identifies a call.
+    getChainRegistry: () => inner.getChainRegistry(),
+    getCoverage: () => inner.getCoverage(),
     resolve(capability, chain, args, requestedDeadlineAtMs) {
       // Before delegating, and outside the observer's control: a throwing observer must not stop a
       // call, for the same reason a faulty spend reporter must not fail a paid one.

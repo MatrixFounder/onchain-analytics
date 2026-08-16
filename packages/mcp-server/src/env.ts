@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { DAILY_CAP_OFF, MAX_CALLS_OFF, VELOCITY_OFF } from '@onchain-intel/core';
 import { PROFILE_NAMES } from './profile.js';
@@ -10,6 +11,20 @@ import { PROFILE_NAMES } from './profile.js';
  */
 function emptyAsUndefined<T extends z.ZodType>(schema: T): z.ZodPreprocess<T> {
   return z.preprocess((v) => (v === '' ? undefined : v), schema);
+}
+
+/**
+ * A DNS name or an IP literal, and nothing else (task 014-30, `OD-014-30-14`).
+ *
+ * `net.isIP` covers both address families; the alternative is a label sequence with at least one
+ * dot, which is what makes a reverse-DNS namespace a namespace. Everything a `/`, a colon-port or a
+ * mask could express is refused, because the value is concatenated into an `_meta` key: a `/` would
+ * break the composition, and a port or mask names an endpoint rather than a naming authority.
+ */
+function isMetaNamespace(value: string): boolean {
+  if (value.length === 0 || value.length > 253) return false;
+  if (isIP(value) !== 0) return true;
+  return /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/.test(value);
 }
 
 /**
@@ -233,6 +248,34 @@ export const EnvSchema = z.object({
   // are bootstrap, not narrowing, even though `system-architecture.md` §3.4.2 calls the session
   // ceiling a limit. Defaults 64 and 900 000 ms; the ceiling is APPLIED, not measured (§3.4.2), and
   // task 014-13 carries that statement to the place it is enforced.
+  /**
+   * The reverse-DNS namespace of the incoming `_meta` key that carries a client's own request id
+   * (task 014-30, `OD-014-30-14`). The full key is `<namespace>/client-request-id`; the suffix is
+   * ours and is not configurable.
+   *
+   * **A DNS name or an IP literal.** Reverse-DNS form exists for UNIQUENESS, not reachability, so a
+   * test installation with no domain is served just as well by its address.
+   *
+   * **Unset means no client value is accepted at all**, and every `client_request_id` is minted as
+   * the trace row's own `id`. There is no default because any default would be a domain we do not
+   * own — the collision this form exists to prevent.
+   *
+   * Lower-cased on the way in: host names are case-insensitive while the `_meta` key comparison is
+   * exact, so a differently-cased configuration would silently accept nothing.
+   */
+  ONCHAIN_META_NAMESPACE: emptyAsUndefined(
+    z
+      .string()
+      .trim()
+      .toLowerCase()
+      .refine((v) => isMetaNamespace(v), {
+        message:
+          'must be a DNS name or an IP literal: no whitespace, no "/", no port and no mask ' +
+          '(a "/" would break the key it composes, and a port names an endpoint rather than a ' +
+          'namespace)',
+      })
+      .optional(),
+  ),
   ONCHAIN_SESSION_MAX: emptyAsUndefined(z.coerce.number().int().positive().optional()),
   ONCHAIN_SESSION_IDLE_MS: emptyAsUndefined(z.coerce.number().int().positive().optional()),
 });

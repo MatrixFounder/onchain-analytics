@@ -6,7 +6,7 @@ import {
   isValidAddress,
   normalizeAddress,
   WalletSchema,
-  type CapabilityRegistry,
+  type CapabilityResolver,
   type Wallet,
 } from '@onchain-intel/core';
 import {
@@ -65,7 +65,7 @@ export const WalletBalancesOutputSchema = WalletSchema;
 export type WalletBalancesOutput = Wallet;
 
 export interface WalletBalancesContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 const CAPABILITY = 'wallet.balances.native';

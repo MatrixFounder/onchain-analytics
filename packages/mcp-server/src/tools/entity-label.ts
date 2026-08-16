@@ -7,7 +7,7 @@ import {
   isValidAddress,
   normalizeAddress,
   type BudgetStore,
-  type CapabilityRegistry,
+  type CapabilityResolver,
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
 import {
@@ -113,7 +113,7 @@ export const EntityLabelOutputSchema = z
 export type EntityLabelOutput = z.infer<typeof EntityLabelOutputSchema>;
 
 export interface EntityLabelContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
   /** Injectable the SAME way as `registry` — read-only `_meta.budget` visibility only. */
   budgetStore?: BudgetStore;
 }

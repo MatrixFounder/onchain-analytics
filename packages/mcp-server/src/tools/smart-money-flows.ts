@@ -7,7 +7,7 @@ import {
   normalizeAddress,
   SmartMoneyFlowSchema,
   type BudgetStore,
-  type CapabilityRegistry,
+  type CapabilityResolver,
   type SmartMoneyFlow,
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
@@ -64,7 +64,7 @@ export const SmartMoneyFlowsOutputSchema = SmartMoneyFlowSchema;
 export type SmartMoneyFlowsOutput = SmartMoneyFlow;
 
 export interface SmartMoneyFlowsContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
   /** Injectable the SAME way as `registry` (interfaces.md §5.1.2/§5.2) — used ONLY for read-only
    * `_meta.budget` visibility; the actual budget GATE already ran inside `nansen.fetch()` (that
    * adapter's OWN, separately-injected `budgetStore`, wired at `index.ts`'s construction site). */

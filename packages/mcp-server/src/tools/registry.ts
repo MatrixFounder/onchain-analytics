@@ -1,7 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { BudgetStore, CapabilityRegistry } from '@onchain-intel/core';
+import {
+  bindCallObserver,
+  type BudgetStore,
+  type CapabilityCall,
+  type CapabilityResolver,
+  type VendorSpendRecord,
+} from '@onchain-intel/core';
 import type { z } from 'zod';
 import type { AccessProfileReader } from '../auth/access-profile.js';
 import { principalFor, type Principal, type PrincipalResolver } from '../auth/principal.js';
@@ -15,6 +21,10 @@ import {
 } from './meta-visibility.js';
 import type { BudgetMeta } from './budget-meta.js';
 import type { CacheMeta, MergedCacheMeta, TimingMeta } from './resolve-capability.js';
+import type { RequestTraceStore } from '../engine/request-trace-store.js';
+import { receivedAtFrom } from '../auth/principal.js';
+import { ulid } from '../ulid.js';
+import { buildRequestTraceRow, readClientRequestId } from './request-trace-row.js';
 
 /**
  * The single source of the MCP tool inventory (TASK-011, ADR-002 D7).
@@ -53,8 +63,14 @@ import type { CacheMeta, MergedCacheMeta, TimingMeta } from './resolve-capabilit
 export interface ToolContext {
   /** The running package version, threaded in from `index.ts`; never hardcoded in a tool. */
   version: string;
-  /** The capability registry; injectable, which is what makes E2E-without-network possible. */
-  registry: CapabilityRegistry;
+  /**
+   * The capability registry; injectable, which is what makes E2E-without-network possible.
+   *
+   * Typed as the INTERFACE (task 014-30, `OD-014-30-7`): the wrapper substitutes a per-request
+   * observer in this slot before projecting the context, and `CapabilityRegistry` has private
+   * fields, so no structural wrapper is assignable to the class.
+   */
+  registry: CapabilityResolver;
   /** Read-only `_meta.budget` visibility. Absent is legal: the tool degrades, never errors. */
   budgetStore?: BudgetStore;
   /**
@@ -106,6 +122,23 @@ export interface ToolContext {
    * the local profile where stderr IS the operator's channel.
    */
   diagnostics?: Diagnostics;
+  /**
+   * The per-request ledger T-015 charges from (task 014-30). Read by the WRAPPER, never by a
+   * handler — for the same reason as `diagnostics`: a tool able to write this table would be a tool
+   * able to decide what it was billed for.
+   *
+   * Absent means the row is not written. That is the stdio/local shape today and it is deliberately
+   * silent, because nothing is lost: the table does not exist on that profile either.
+   */
+  requestTrace?: RequestTraceStore;
+  /**
+   * The reverse-DNS namespace an incoming `_meta` key must carry for this deployment
+   * (`ONCHAIN_META_NAMESPACE`, `OD-014-30-14`). Absent means no client-supplied request id is
+   * accepted at all and every row is server-minted.
+   */
+  metaNamespace?: string;
+  /** The clock the trace row is stamped with. Injectable so a test reads a value it chose. */
+  now?: () => number;
 }
 
 /**
@@ -361,6 +394,22 @@ export function toCallToolResult<TOutput extends Record<string, unknown>>(
  *   shared by reference with the spec, so anything holding `toolSpecs` could have widened a tool's
  *   privileges for every later call.
  */
+/**
+ * One stderr writer for this wrapper's operator signals, wrapped because stderr throws EPIPE once a
+ * stdio client has closed — and every caller here is reporting something that already happened.
+ *
+ * stderr and not the stored diagnostics channel, deliberately: `DIAGNOSTIC_EVENTS` is a closed
+ * vocabulary with a `CHECK` constraint behind it, and widening it is a schema change owned by the
+ * DDL tasks (014-35/014-36). Recorded as a residual rather than taken silently.
+ */
+function writeStderrLine(line: string): void {
+  try {
+    process.stderr.write(`${line}\n`);
+  } catch {
+    // Best-effort; the fact being reported is not in question either way.
+  }
+}
+
 export function defineTool<
   TInput,
   TOutput extends Record<string, unknown>,
@@ -392,7 +441,16 @@ export function defineTool<
           inputSchema: definition.inputSchema,
           outputSchema: definition.outputSchema,
         },
-        async (input, extra: { authInfo?: AuthInfo }) => {
+        async (
+          input,
+          extra: {
+            authInfo?: AuthInfo;
+            /** SDK 1.29.0 copies `_meta` from the RAW request before schema parsing, and
+             * `RequestMetaSchema` is `$loose`, so a declared key reaches us untouched. */
+            _meta?: Record<string, unknown>;
+            sessionId?: string;
+          },
+        ) => {
           // **The interception point** (task 014-15, `system-architecture.md` §3.4.3 names this
           // wrapper by name). It runs BEFORE `resolve()` and therefore before the cache: a cache HIT
           // is a billable request — the owner's model is that both clients pay, and the second one
@@ -405,6 +463,15 @@ export function defineTool<
           // spec, so the hook is written once and cannot be forgotten by a twenty-first tool.
           //
           // Resolved per request, never cached — see `ToolContext.principals`.
+          const now = ctx.now ?? ((): number => Date.now());
+          // Minted first, so the identifier exists before anything that might want to name the row.
+          const traceId = ulid(now());
+          // **Admission, or this boundary** (`OD-014-30-13`). On HTTP the transport pinned the
+          // moment the request arrived and carried it here; on stdio no request channel exists and
+          // this clock is the honest answer. The two are distinguished below rather than silently
+          // merged: an HTTP request reaching here without a pinned moment is OUR wiring defect.
+          const pinned = receivedAtFrom(extra.authInfo);
+
           const principal = principalFor(ctx.principals, extra.authInfo);
           // R-13.3a's second named point of application. A failed read REFUSES the request rather
           // than substituting a default (task 014-04): a profile that could not be read is not a
@@ -414,12 +481,113 @@ export function defineTool<
               ? 'full'
               : (await ctx.accessProfiles.read(principal.accessProfileId)).routeDisclosureMode;
           const view: MetaView = { principal, routeDisclosureMode };
-          const outcome = await definition.handler(input, project({ ...ctx, principal }, needs));
+
+          if (pinned === undefined && principal.transport === 'http') {
+            // Loud, because the fallback is silently plausible: `received_at` is the axis of both
+            // declared indexes, so a boundary clock standing in for admission moves rows across
+            // billing-period and retention boundaries, not merely across the dedup key.
+            writeStderrLine(
+              `request trace: no admission timestamp reached the tool boundary on the http ` +
+                `transport (tool=${definition.name}) — the row is stamped at the boundary instead`,
+            );
+          }
+          const receivedAt = pinned ?? now();
+
+          // **The per-request collector** (task 014-30). One observer, installed once, in the object
+          // `project` already narrows — so no handler learns about it and a twenty-first tool cannot
+          // forget to thread it.
+          const receipts: VendorSpendRecord[] = [];
+          const observedCalls: CapabilityCall[] = [];
+          const registry = bindCallObserver(ctx.registry, {
+            onCall: (call) => observedCalls.push(call),
+            onVendorSpend: (receipt) => receipts.push(receipt),
+          });
+
+          const outcome = await definition.handler(
+            input,
+            project({ ...ctx, principal, registry }, needs),
+          );
           // The capability this call is ABOUT: the tool's own declaration when it has one, else
           // what the handler reported resolving (task 014-30, `OD-014-30-12`). `null` only for the
           // two tools that resolve no capability at all.
           const resolvedCapability = definition.capability ?? outcome.capability ?? null;
-          if (outcome.ok) return toCallToolResult(outcome, view);
+
+          /**
+           * Writes the row and returns the client's result unchanged.
+           *
+           * **One call, in a tail both arms reach.** The row records a SERVED request, and both a
+           * refusal and an answer are served — R-27.7 makes the table append-only, so there is no
+           * second write to correct a first.
+           *
+           * **A ledger failure never fails the request** (`OD-014-30-6`), and never passes silently
+           * either: the row is a billing record, so a lost one is named on stderr with the id it
+           * would have carried. The four precedents in this repository for swallowing a bookkeeping
+           * error all concern side effects of some other decision; this one is the decision, which
+           * is why it is loud rather than absorbed.
+           */
+          const withTrace = async (result: CallToolResult): Promise<CallToolResult> => {
+            if (ctx.requestTrace === undefined) return result;
+            const clientRequestId = readClientRequestId(extra._meta, ctx.metaNamespace);
+            if (clientRequestId.nearMiss !== null) {
+              writeStderrLine(
+                `request trace: ignoring _meta key ${clientRequestId.nearMiss} — it is not this ` +
+                  `deployment's namespace (ONCHAIN_META_NAMESPACE${
+                    ctx.metaNamespace === undefined ? ' is unset' : `=${ctx.metaNamespace}`
+                  }); the request is served and its id is minted`,
+              );
+            }
+            const { record, spend } = buildRequestTraceRow({
+              id: traceId,
+              receivedAt,
+              completedAt: now(),
+              principal,
+              clientRequestId: clientRequestId.value,
+              sessionId: extra.sessionId ?? null,
+              tool: definition.name,
+              capability: resolvedCapability,
+              // One `resolve()` per tool call today; the LAST is taken rather than the first so a
+              // composing tool records the call its answer came from.
+              argsHash: observedCalls.at(-1)?.argsHash ?? null,
+              ok: outcome.ok,
+              refusalClass: outcome.ok ? null : (outcome.refusalClass ?? null),
+              cacheStatus: outcome.ok ? outcome.cache?.status : undefined,
+              // A MERGED answer carries no single age — it has one per participant — so the column
+              // stays empty there rather than reporting one contributor's age as the row's.
+              cacheAgeMs:
+                outcome.ok && outcome.cache !== undefined && 'ageMs' in outcome.cache
+                  ? outcome.cache.ageMs
+                  : undefined,
+              overrunMs: outcome.ok ? outcome.timing?.overrunMs : undefined,
+              receipts,
+            });
+            if (spend.dropped.length > 0) {
+              writeStderrLine(
+                `request trace: ${spend.dropped.length} vendor spend receipt(s) could not be ` +
+                  `recorded — the row holds one provider and this request spent at several ` +
+                  `(kept=${record.vendorProvider}, dropped=${spend.dropped
+                    .map((r) => r.providerId)
+                    .join(',')})`,
+              );
+            }
+            try {
+              const appended = await ctx.requestTrace.append(record);
+              if (!appended.written) {
+                writeStderrLine(
+                  `request trace: row ${record.id} was a repeat of an existing ` +
+                    `(principal, client_request_id, received_at) and was not written`,
+                );
+              }
+            } catch (error) {
+              writeStderrLine(
+                `request trace: FAILED to record served request ${record.id} (tool=` +
+                  `${definition.name}) — the request was served and is unbilled: ` +
+                  `${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+            return result;
+          };
+
+          if (outcome.ok) return withTrace(toCallToolResult(outcome, view));
 
           // **Two renderings of one refusal** (task 014-26, R-31, AC-47, AC-50).
           //
@@ -443,9 +611,8 @@ export function defineTool<
               capability: resolvedCapability,
               detail: { tool: definition.name, reason: outcome.reason },
             })) ?? null;
-          return toCallToolResult(
-            { ok: false, reason: toClientText(outcome.reason, eventId) },
-            view,
+          return withTrace(
+            toCallToolResult({ ok: false, reason: toClientText(outcome.reason, eventId) }, view),
           );
         },
       );

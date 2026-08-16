@@ -6,7 +6,7 @@ import {
   isValidAddress,
   normalizeAddress,
   TokenHoldersSchema,
-  type CapabilityRegistry,
+  type CapabilityResolver,
 } from '@onchain-intel/core';
 import {
   resolveCapability,
@@ -84,7 +84,7 @@ export const TokenHoldersOutputSchema = TokenHoldersSchema;
 export type TokenHoldersOutput = z.infer<typeof TokenHoldersOutputSchema>;
 
 export interface TokenHoldersContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 const CAPABILITY = 'token.holders';

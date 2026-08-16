@@ -1,7 +1,7 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
 import { z } from 'zod';
-import type { CapabilityRegistry } from '@onchain-intel/core';
+import type { CapabilityResolver } from '@onchain-intel/core';
 import {
   resolveCapability,
   type CacheMeta,
@@ -78,7 +78,7 @@ export const GasPriceOutputSchema = z
 export type GasPriceOutput = z.infer<typeof GasPriceOutputSchema>;
 
 export interface GasPriceContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 export type GasPriceOutcome =

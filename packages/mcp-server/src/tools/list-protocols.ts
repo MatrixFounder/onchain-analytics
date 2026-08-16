@@ -1,7 +1,7 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { defineTool } from './registry.js';
 import { z } from 'zod';
-import type { CapabilityRegistry } from '@onchain-intel/core';
+import type { CapabilityResolver } from '@onchain-intel/core';
 import {
   resolveCapability,
   type CacheMeta,
@@ -99,7 +99,7 @@ export const ListProtocolsOutputSchema = z
 export type ListProtocolsOutput = z.infer<typeof ListProtocolsOutputSchema>;
 
 export interface ListProtocolsContext {
-  registry: CapabilityRegistry;
+  registry: CapabilityResolver;
 }
 
 export type ListProtocolsOutcome =

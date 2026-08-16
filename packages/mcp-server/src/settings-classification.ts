@@ -114,6 +114,10 @@ export const SETTING_CLASSES: Readonly<Record<keyof Env, SettingClass>> = Object
   ONCHAIN_ALLOWED_HOSTS: 'bootstrap',
   ONCHAIN_ALLOWED_ORIGINS: 'bootstrap',
   ONCHAIN_TOKEN_HASH_SALT: 'secret',
+  // Task 014-30. Read once, when the tool context is built, and it decides what the process
+  // ACCEPTS from a client — a namespace that changes mid-session would make one session's rows
+  // idempotent and the next one's not.
+  ONCHAIN_META_NAMESPACE: 'bootstrap',
   ONCHAIN_SESSION_MAX: 'bootstrap',
   ONCHAIN_SESSION_IDLE_MS: 'bootstrap',
 });

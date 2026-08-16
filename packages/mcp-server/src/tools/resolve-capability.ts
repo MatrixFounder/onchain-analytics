@@ -1,4 +1,4 @@
-import type { CapabilityRegistry, Chain } from '@onchain-intel/core';
+import type { CapabilityResolver, Chain } from '@onchain-intel/core';
 
 /**
  * `_meta.cache` shape every one of the 4 new M1 tools attaches to its MCP response (ARCHITECTURE.md
@@ -156,7 +156,9 @@ export type ResolveOutcome = ResolveSuccess | ResolveFailure;
  * inherited from M0).
  */
 export async function resolveCapability(
-  registry: CapabilityRegistry,
+  // The narrow interface, not the class (task 014-30, `OD-014-30-7`): `mcp-server`'s wrapper
+  // interposes a per-request observer here, and a structural wrapper cannot satisfy a class type.
+  registry: CapabilityResolver,
   capability: string,
   chain: Chain,
   args: Record<string, unknown>,
