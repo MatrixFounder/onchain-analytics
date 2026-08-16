@@ -190,6 +190,12 @@ const STDERR_INVENTORY: Readonly<Record<string, 'stderr' | 'level' | 'dual'>> = 
   'packages/core/src/adapters/nansen/normalize.ts': 'stderr',
   'packages/core/src/adapters/nansen/reconcile.ts': 'stderr',
   'packages/core/src/cache/stats.ts': 'level',
+  // Task 014-30. One site: `reportVendorSpend` absorbs a throwing consumer and names it. Stays
+  // stderr-only (R-32.1) because it fires only when a CONSUMER is broken — the ledger write it
+  // describes has already committed, so the operator signal is about our own wiring, not about a
+  // vendor or a request. Routing it through the stored channel would mean the diagnostics writer
+  // could re-enter the reporter that just failed.
+  'packages/core/src/cache/vendor-spend.ts': 'stderr',
   'packages/core/src/pg/cache-store.ts': 'stderr',
   'packages/core/src/pg/read-client.ts': 'stderr',
   'packages/core/src/pg/state-client.ts': 'stderr',

@@ -37,7 +37,25 @@ import { smartMoneyFlowsHandler } from '../src/tools/smart-money-flows.js';
  * supposed to guard. A key named `tier` is the leak; the word `tier` in a sentence is not.
  */
 
-const FORBIDDEN_KEYS = ['tier', 'trust', 'attempted'];
+/**
+ * The last three are task 014-30's spend receipt (`vendorProvider`/`vendorCredits`/`vendorCalls`),
+ * added WITH the channel rather than after its consumer exists.
+ *
+ * **Why now, before anything can publish them.** Part 1 of that task shipped a `coalesced` field
+ * carrying the same promise — "reaches no client" — and did not add it here, so the promise had no
+ * gate for as long as the field lived. The keys below name what the receipt would be spread as if a
+ * handler ever did `return { ...outcome, … }`, and the amounts are operator-side by construction:
+ * `security.md` §7.5.1 keeps our vendor relationship out of the client rendering, and a client that
+ * learned our per-call credit cost would learn our margin.
+ */
+const FORBIDDEN_KEYS = [
+  'tier',
+  'trust',
+  'attempted',
+  'vendorProvider',
+  'vendorCredits',
+  'vendorCalls',
+];
 
 /** Every object key in `value`, at any depth, arrays included. */
 function collectKeys(value: unknown, into: Set<string> = new Set()): Set<string> {

@@ -41,6 +41,11 @@ import {
   type SmartMoneyFlowsFetchResult,
   type TokenRiskFetchResult,
 } from './normalize.js';
+import {
+  reportVendorSpend,
+  type VendorLedgerCoordinates,
+  type VendorSpendReporter,
+} from '../../cache/vendor-spend.js';
 import { reconcile } from './reconcile.js';
 import { createSingleflight } from './singleflight.js';
 
@@ -536,7 +541,10 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
   const accountState = createNansenAccountState();
   const chains = deps.chains ?? loadChainRegistry();
   const now = deps.now ?? Date.now;
-  const singleflight = createSingleflight();
+  // The leader publishes its ledger COORDINATES into the shared slot (task 014-30); the
+  // primitive stores them without reading them. Followers need the pair `(day, window)` and
+  // never the leader's amounts — those are typed `null` on their own receipt.
+  const singleflight = createSingleflight<VendorLedgerCoordinates>();
   const budgetStore = deps.budgetStore;
   // Constructed ONCE per adapter instance (mirrors `accountState`/`singleflight` above) — `undefined`
   // when no `budgetStore` was injected (see `NansenAdapterDeps`'s own docstring above for why this
@@ -625,15 +633,19 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
        */
       deadlineAtMs?: number,
       /**
-       * Task 014-30: forwarded verbatim to `singleflight`, which calls it in the follower branch.
-       * Nothing in this adapter reads it — the fact belongs to the CALLER, not to the answer, since
-       * leader and follower receive the same promise and the same value.
+       * Task 014-30: where this call's COMMITTED ledger writes are reported. Threaded into
+       * `ensureBudget()` and both `reconcile()` call sites below, and invoked once more — with a
+       * `coalesced` receipt — when this call turned out to be a follower.
+       *
+       * Nothing in this adapter READS it. The receipts describe what was written to
+       * `usage`/`usage_window`, and the consumer that attributes them to a request lives in
+       * `mcp-server`.
        */
-      onCoalesced?: () => void,
+      onVendorSpend?: VendorSpendReporter,
     ): Promise<unknown> =>
       singleflight(
         deriveArgsHash(cap, args),
-        async () => {
+        async (publish) => {
           const env = deps.env ?? process.env;
           const apiKey = env['NANSEN_API_KEY'];
           if (!apiKey) {
@@ -701,7 +713,15 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
           try {
             // The deadline stops HERE (task 012-9): `ensureBudget()` forwards it to the free
             // `/account` resync and to nothing past its own `checkAndReserve()`.
-            reservation = await gate.ensureBudget(cap, args, deadlineAtMs);
+            reservation = await gate.ensureBudget(cap, args, deadlineAtMs, onVendorSpend);
+            // Hand the singleflight slot the coordinates a FOLLOWER will need (task 014-30). They
+            // are `reservation`'s own values — the same pair `checkAndReserve()` was bound with —
+            // so a follower joins the buckets that actually hold this spend rather than the ones
+            // its own clock would name a full velocity window later.
+            publish({
+              dayBucketMs: reservation.bucket,
+              windowStartMs: reservation.window ?? null,
+            });
             const { result } = await performSubCalls(cap, args, endpointDeps, subResponses, chains);
             reconcileAttempted = true;
             try {
@@ -712,6 +732,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
                 ...(reservation.window === undefined ? {} : { window: reservation.window }),
                 budgetStore,
                 accountState,
+                ...(onVendorSpend === undefined ? {} : { onVendorSpend }),
               });
             } catch (reconcileError) {
               // BEST-EFFORT, and the failure is absorbed HERE rather than in the catch below
@@ -769,6 +790,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
                   ...(reservation.window === undefined ? {} : { window: reservation.window }),
                   budgetStore,
                   accountState,
+                  ...(onVendorSpend === undefined ? {} : { onVendorSpend }),
                 });
               } catch {
                 // best-effort — see this block's own comment above.
@@ -785,7 +807,23 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
           }
         },
         deadlineAtMs,
-        onCoalesced,
+        // The FOLLOWER's receipt (task 014-30). Fired at this caller's own settlement, on either
+        // outcome, with whatever the leader had published by then — `undefined` when the leader was
+        // refused before committing, or when this follower's own deadline expired first.
+        //
+        // `credits`/`calls` are typed `null` on this arm, so the leader's amounts cannot be copied
+        // here even by mistake: one vendor call served two charges, and duplicating the amount is
+        // exactly the double count R-27.3 reconciles against.
+        (shared) => {
+          reportVendorSpend(onVendorSpend, {
+            v: 1,
+            kind: 'coalesced',
+            providerId: 'nansen',
+            at: shared ?? null,
+            credits: null,
+            calls: null,
+          });
+        },
       ),
     // Real from THIS task (005-4): dispatches to normalize.ts's three pure functions. `raw` is
     // always this SAME adapter instance's own `fetch()` hand-off shape (never validated against a

@@ -1328,6 +1328,16 @@ contains only followers sums to NULL, which the reader reports as no attributabl
 `usage_window` buckets the leader's call landed in, which is how T-015 joins a follower's charge to
 the spend that served it.
 
+**One exception, measured during task 014-30 and decided as `OD-014-30-4` (2026-08-16).** A follower
+whose own deadline expires before the leader committed its reservation has no coordinate to name:
+the leader may still be inside its `/account` resync, and R-27.7 forbids revising the row later.
+That row carries `vendor_provider` and two NULL coordinates. `vendor_provider` is what keeps it
+distinguishable from a request that involved no vendor at all — the latter has no vendor column
+filled. Rejected: delaying the row until the leader settles (it would stop being one write at
+completion), and writing a coordinate derived from the follower's own clock (a velocity window is
+60 000 ms wide and the nansen capabilities declare `deadlineMs: 60_000`, so the derived bucket would
+routinely hold none of the spend).
+
 **Every component of the dedup key is `NOT NULL`.** In both engines a NULL never equals a NULL in a
 unique index, so one nullable component would disable dedup entirely. The server mints
 `client_request_id` when the client omits it.

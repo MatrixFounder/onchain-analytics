@@ -100,15 +100,40 @@ describe('CapabilityRegistry.resolve [Phase 2]', () => {
     // injected. THE ONLY EDIT task 012-8 made to a pre-existing test file, and it is mechanical:
     // `toHaveBeenCalledWith` matches the full argument list, so one more argument fails it.
     //
-    // Task 014-30 added a FOURTH: `onCoalesced`, the callback an adapter invokes when this call is
-    // a follower on somebody else's in-flight vendor request. Additive and optional, by the same
-    // rule the third argument followed — an adapter that declares no coalescing never reads it, and
-    // this assertion is the one place in the suite that measures the walk's call shape.
+    // Task 014-30 added a FOURTH: `onVendorSpend`, the reporter an adapter invokes once per
+    // committed write to a vendor spend ledger. Additive and optional, by the same rule the third
+    // argument followed — an adapter that spends nothing never reads it — and it is threaded
+    // INWARD from `resolve()`'s own caller rather than created by the walk. This call passed none,
+    // so the argument is `undefined`, and asserting that is what makes the next case meaningful.
     expect(adapter.fetch).toHaveBeenCalledWith(
       'token.price',
       { address: '0xabc' },
       expect.any(Number),
-      expect.any(Function),
+      undefined,
+    );
+  });
+
+  it('forwards the vendor-spend reporter it was given, unchanged, to the adapter it enters', async () => {
+    // The forwarding half of task 014-30. Without this case `resolve()` could drop the parameter on
+    // the floor and every other test in this file would stay green: nothing else observes the
+    // fourth argument's identity, and the walk itself never reads a receipt back.
+    const raw = { price: 123 };
+    const adapter = makeAdapter({
+      id: 'coingecko',
+      fetchImpl: async () => raw,
+      normalizeImpl: (_cap, r) => ({ priceUsd: (r as typeof raw).price }),
+    });
+    const routes: CapabilityRoute[] = [{ capability: 'token.price', adapterIds: ['coingecko'] }];
+    const registry = new CapabilityRegistry(routes, new Map([['coingecko', adapter]]));
+    const report = (): void => {};
+
+    await registry.resolve('token.price', CHAIN, { address: '0xabc' }, undefined, report);
+
+    expect(adapter.fetch).toHaveBeenCalledWith(
+      'token.price',
+      { address: '0xabc' },
+      expect.any(Number),
+      report,
     );
   });
 

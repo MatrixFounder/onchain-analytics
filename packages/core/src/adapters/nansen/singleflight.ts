@@ -21,13 +21,23 @@ import { DeadlineExceededError } from '../../net/safe-fetch.js';
  * `key` is always `deriveArgsHash(capability, args)` (`net/args-hash.ts`) — this module never
  * derives its own key, it only stores/looks one up (index.ts is this module's only caller).
  */
-export function createSingleflight(): <T>(
+/**
+ * `S` is whatever the LEADER wants a follower to learn, and this module never reads it (task
+ * 014-30). For the nansen adapter it is `VendorLedgerCoordinates`; here it is an opaque value
+ * stored beside the promise and handed back verbatim.
+ *
+ * **Why the primitive stays money-ignorant.** A follower needs the leader's `usage`/`usage_window`
+ * coordinates, and this file knows only a key and a promise — the same reason its own deadline
+ * rejection throws the net-layer `DeadlineExceededError` rather than the registry's richer class.
+ * Making the slot generic keeps the coalescing rule here and the ledger vocabulary in the adapter.
+ */
+export function createSingleflight<S = never>(): <T>(
   key: string,
-  fn: () => Promise<T>,
+  fn: (publish: (shared: S) => void) => Promise<T>,
   deadlineAtMs?: number,
-  onCoalesced?: () => void,
+  onFollowerSettled?: (shared: S | undefined) => void,
 ) => Promise<T> {
-  const inFlight = new Map<string, Promise<unknown>>();
+  const inFlight = new Map<string, { promise: Promise<unknown>; shared?: S }>();
 
   /**
    * `singleflight(key, fn, deadlineAtMs?)` (task 005-5, Phase 2; the deadline is task 012-9): an
@@ -60,27 +70,59 @@ export function createSingleflight(): <T>(
    */
   return function singleflight<T>(
     key: string,
-    fn: () => Promise<T>,
+    fn: (publish: (shared: S) => void) => Promise<T>,
     deadlineAtMs?: number,
-    onCoalesced?: () => void,
+    onFollowerSettled?: (shared: S | undefined) => void,
   ): Promise<T> {
     const existing = inFlight.get(key);
     if (existing) {
-      // **The follower announces itself, synchronously, before the shared promise is handed back**
-      // (task 014-30). Leader and follower receive the SAME promise and the same value, so the fact
-      // cannot travel in the result: it distinguishes CALLERS, not answers. One vendor call served
-      // two charges, and T-015 reconciles the ledger against `usage` by exactly that count (R-27.3)
-      // — without this signal the number of charges one vendor call produced is unrecoverable.
-      onCoalesced?.();
-      return deadlineAtMs === undefined
-        ? (existing as Promise<T>)
-        : followUntilDeadline(existing as Promise<T>, deadlineAtMs);
+      // **The follower is announced at ITS OWN settlement, not at the moment it joins** (task
+      // 014-30). Leader and follower receive the same value, so the fact distinguishes CALLERS, not
+      // answers, and cannot travel in the result — but it also cannot travel at JOIN time, which is
+      // what the first draft of this callback did.
+      //
+      // The reason is ordering. `fn()` is invoked before `inFlight.set` below, so by the time an
+      // entry is visible the leader has run only up to its first `await` — for the nansen adapter,
+      // the one inside `ensureBudget()`, i.e. BEFORE any reservation exists. Worse, the leader pins
+      // its velocity window from a second clock read that sits after a conditional `/account`
+      // resync, so on a cold start `shared` is still absent well into the call. Reading it here, at
+      // settlement, is the earliest point at which the leader's coordinates can honestly exist.
+      //
+      // `existing.shared` is read INSIDE the handlers rather than captured now, so a follower sees
+      // whatever the leader had published by the time the follower finished, and `undefined` when
+      // the leader never got that far (a refused reservation, or a follower whose own deadline
+      // expired first). Both outcomes notify: the caller must be able to tell "waited on a vendor
+      // call" from "no vendor was involved", and only a fired callback says the first.
+      const waited =
+        deadlineAtMs === undefined
+          ? (existing.promise as Promise<T>)
+          : followUntilDeadline(existing.promise as Promise<T>, deadlineAtMs);
+      return waited.then(
+        (value) => {
+          onFollowerSettled?.(existing.shared);
+          return value;
+        },
+        (error: unknown) => {
+          onFollowerSettled?.(existing.shared);
+          throw error;
+        },
+      );
     }
 
-    const promise = fn().finally(() => {
+    // The entry is created BEFORE `fn()` runs so `publish` has somewhere to write, and `fn()` may
+    // call it synchronously — the value is then already in place when the entry is inserted below.
+    // `promise` is assigned immediately after, and no caller can observe the entry in between: the
+    // three statements run without an intervening await on the single JS thread.
+    const entry: { promise: Promise<unknown>; shared?: S } = {
+      promise: undefined as unknown as Promise<unknown>,
+    };
+    const promise = fn((shared: S): void => {
+      entry.shared = shared;
+    }).finally(() => {
       inFlight.delete(key);
     });
-    inFlight.set(key, promise);
+    entry.promise = promise;
+    inFlight.set(key, entry);
     return promise;
   };
 }

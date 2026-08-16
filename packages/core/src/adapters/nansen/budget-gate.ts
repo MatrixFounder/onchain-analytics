@@ -1,5 +1,6 @@
 import type { BudgetStore } from '../../cache/budget-store.js';
 import { dayBucketMs } from '../../cache/day-bucket.js';
+import { reportVendorSpend, type VendorSpendReporter } from '../../cache/vendor-spend.js';
 import { throttle as productionThrottle } from '../../net/rate-limit.js';
 import type { Throttle } from '../../net/rate-limit.js';
 import { safeFetch } from '../../net/safe-fetch.js';
@@ -409,6 +410,7 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
     cap: string,
     args: Record<string, unknown>,
     deadlineAtMs?: number,
+    onVendorSpend?: VendorSpendReporter,
   ): Promise<NansenBudgetReservation>;
 } {
   const now = deps.now ?? Date.now;
@@ -534,6 +536,7 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
     cap: string,
     args: Record<string, unknown>,
     deadlineAtMs?: number,
+    onVendorSpend?: VendorSpendReporter,
   ): Promise<NansenBudgetReservation> {
     const bucket = dayBucketMs(now());
 
@@ -665,6 +668,32 @@ export function createNansenBudgetGate(deps: NansenBudgetGateDeps): {
       }
       throw new NansenBudgetExceededError(reason);
     }
+
+    // ⟵ THE RECEIPT (task 014-30, R-27.3). Published HERE — immediately after `checkAndReserve`
+    // reported `{ok:true}`, and BEFORE the warn block below — from the same locals that were bound
+    // into the call: `cost`, `bucket`, and `velocity`'s own `windowStartMs`. Nothing recomputes the
+    // amount, so the number a request reports and the number the ledger received cannot disagree.
+    //
+    // **Why before the warn block and not at the `return`.** Everything between here and `return`
+    // is best-effort observability that the block's own comment already documents as able to throw
+    // (`getUsage` under SQLITE_BUSY, `process.stderr.write` under EPIPE). Its try/catch absorbs the
+    // expected ones, but a receipt published after it would be a receipt that a second, unexpected
+    // throw can delete — for credits that are already spent. Publishing first makes "the reservation
+    // committed" and "the reservation was reported" the same instant.
+    //
+    // `calls` mirrors what the store actually did: `checkAndReserve` increments
+    // `usage_window.calls_made` by a hardcoded `1` INSIDE its `velocity !== undefined` branch and
+    // touches no window row at all otherwise, so an absent velocity object means this call added
+    // nothing to that counter and has no window coordinate to name.
+    reportVendorSpend(onVendorSpend, {
+      v: 1,
+      kind: 'charge',
+      providerId: 'nansen',
+      write: 'reservation',
+      at: { dayBucketMs: bucket, windowStartMs: velocity === undefined ? null : window },
+      credits: cost,
+      calls: velocity === undefined ? 0 : 1,
+    });
 
     // M-2(a) (adversarial review cycle 1): the reservation above is ALREADY committed at this
     // point — everything below is best-effort observability, never allowed to fail the call.

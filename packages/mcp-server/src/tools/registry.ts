@@ -147,13 +147,6 @@ export type ToolOutcome<TOutput> =
       cache?: CacheMeta | MergedCacheMeta;
       timing?: TimingMeta;
       budget?: BudgetMeta;
-      /**
-       * This request waited on another caller's in-flight vendor call (task 014-30). Read by the
-       * wrapper to write `request_trace.served_from = 'coalesced'`; `toCallToolResult` does NOT
-       * publish it, because `_meta.cache.status` keeps its two values and a follower reports `miss`
-       * (`interfaces.md` §5.4.4) — a third value would redefine that field on every tool.
-       */
-      coalesced?: true;
     }
   | { ok: false; reason: string };
 

@@ -1,3 +1,4 @@
+import type { VendorSpendReporter } from '../cache/vendor-spend.js';
 import type { TokenBucketConfig } from '../net/rate-limit.js';
 import type { Chain } from '../types/chain.js';
 import type { ChainInfo } from '../chain/registry-core.js';
@@ -50,16 +51,27 @@ export interface ProviderAdapter {
    * (ADR-002 D4 §2: cancelling there means paying without receiving).
    */
   /**
-   * `onCoalesced` (task 014-30, R-27.3) is called SYNCHRONOUSLY when this call is a follower on
-   * somebody else's in-flight vendor request. Optional and additive, exactly as `deadlineAtMs` was
-   * (D4/R-140): an adapter that declares no coalescing never reads it. Today one adapter does —
-   * `nansen`, through `createSingleflight`.
+   * `onVendorSpend` (task 014-30, R-27.3) receives one receipt per COMMITTED write this call made
+   * to a vendor spend ledger, and one for a call that waited on somebody else's in-flight vendor
+   * request instead of making its own. Optional and additive, exactly as `deadlineAtMs` was
+   * (D4/R-140): an adapter that spends nothing never reads it. Today one adapter does — `nansen`.
+   *
+   * **Why a callback and not a field on the returned value.** A logical call can commit a
+   * reservation and then reject, so a value carried on the result is lost on the one path where the
+   * money is hardest to account for. And the returned value flows into `normalize()` and then into
+   * the cache, so ledger coordinates embedded in it would replay on every later hit.
+   *
+   * **Why an alias and never an inline object type here.** `test/throttle-seam.test.ts`'s
+   * `STUB_FETCH` matches a parameter list with `\(([^)]*)\)`; an inline object type contains `)`
+   * and truncates that match, so a structural gate would silently stop measuring.
+   *
+   * A reporter must not throw — see `VendorSpendReporter`. Producers wrap the invocation.
    */
   fetch(
     cap: string,
     args: Record<string, unknown>,
     deadlineAtMs?: number,
-    onCoalesced?: () => void,
+    onVendorSpend?: VendorSpendReporter,
   ): Promise<unknown>;
   /** Narrows the provider-specific `raw` shape into the canonical domain type for `cap`. */
   normalize(cap: string, raw: unknown): unknown;

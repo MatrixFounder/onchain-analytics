@@ -223,6 +223,17 @@ export type { CacheStore, CacheGetResult } from './adapters/cache-store.js';
 // (unlike `SqliteBudgetStore`) knows nothing about any specific provider.
 export { type BudgetStore, createBudgetStore } from './cache/budget-store.js';
 export { dayBucketMs } from './cache/day-bucket.js';
+// Task 014-30: the per-call spend receipt. `mcp-server` consumes these to attribute a committed
+// ledger write to one request; `reportVendorSpend` is exported so a future paid adapter uses the
+// same never-throw wrapper rather than writing a second one.
+export {
+  reportVendorSpend,
+  type VendorChargeRecord,
+  type VendorCoalescedRecord,
+  type VendorLedgerCoordinates,
+  type VendorSpendRecord,
+  type VendorSpendReporter,
+} from './cache/vendor-spend.js';
 
 // The SQLite declaration of every engine table (task 014-36), exported for task 014-07's tests.
 //

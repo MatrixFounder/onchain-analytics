@@ -1,4 +1,5 @@
 import type { BudgetStore } from '../../cache/budget-store.js';
+import { reportVendorSpend, type VendorSpendReporter } from '../../cache/vendor-spend.js';
 import type { NansenAccountState } from './account-state.js';
 import type { NansenEndpointResult } from './endpoints.js';
 
@@ -23,6 +24,15 @@ export interface ReconcileDeps {
   window?: number;
   budgetStore: BudgetStore;
   accountState: NansenAccountState;
+  /**
+   * Where this call's COMMITTED adjustment is reported (task 014-30, R-27.3).
+   *
+   * The receipt is published after `recordDelta()` resolves and carries `delta` — the signed number
+   * this function actually wrote — never `actualTotal` and never `reservedTotal`. On each of the
+   * three degrade branches below the adjustment is forced to `0` while both of those inputs are
+   * non-zero, so reporting either one would name money the ledger never moved.
+   */
+  onVendorSpend?: VendorSpendReporter;
 }
 
 /**
@@ -68,7 +78,8 @@ const MIN_PLAUSIBLE_ACTUAL_CEILING = 200;
  * rather than silently trusting a run of unexamined full-refund responses.
  */
 export async function reconcile(deps: ReconcileDeps): Promise<void> {
-  const { subResponses, reservedTotal, bucket, window, budgetStore, accountState } = deps;
+  const { subResponses, reservedTotal, bucket, window, budgetStore, accountState, onVendorSpend } =
+    deps;
 
   let actualTotal = 0;
   let everyHeaderParsed = true;
@@ -128,4 +139,26 @@ export async function reconcile(deps: ReconcileDeps): Promise<void> {
   // call has to learn about a parameter that does not apply.
   if (window === undefined) await budgetStore.recordDelta('nansen', bucket, delta);
   else await budgetStore.recordDelta('nansen', bucket, delta, window);
+
+  // ⟵ THE RECEIPT (task 014-30, R-27.3), published only AFTER the write above resolved: a receipt
+  // emitted before it would claim an adjustment that a throwing `recordDelta` never made.
+  //
+  // `calls: 0` restates what `recordDelta` does rather than deciding it — a reconciliation adjusts
+  // CREDITS and never the call count (Q-3), because the vendor round trip already happened and
+  // "refunding" it would let a run of cheap-then-refunded calls walk past the limit that bounds
+  // exactly that traffic.
+  //
+  // The coordinates are `bucket` and `window` as they were RESERVED, threaded down from
+  // `ensureBudget()` and never recomputed from a fresh clock here — the same discipline that makes
+  // this function refund into the window that actually spent. A call outliving its window therefore
+  // reports the leader's window on both of its receipts, which is what makes them sum.
+  reportVendorSpend(onVendorSpend, {
+    v: 1,
+    kind: 'charge',
+    providerId: 'nansen',
+    write: 'reconciliation',
+    at: { dayBucketMs: bucket, windowStartMs: window ?? null },
+    credits: delta,
+    calls: 0,
+  });
 }
