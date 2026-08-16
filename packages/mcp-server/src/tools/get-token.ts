@@ -15,7 +15,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /**
  * Input contract for `onchain_get_token` (ARCHITECTURE.md §5.1, R-16). `chain` is narrowed to just
@@ -88,7 +88,7 @@ const CAPABILITY = 'token.price';
 
 export type GetTokenOutcome =
   | { ok: true; output: GetTokenOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 /**
  * Pure handler for `onchain_get_token` — separated from `defineTool` (SDK wiring),
@@ -126,7 +126,7 @@ export async function getTokenHandler(
   // invisible to a gate that looked for `OutputSchema.safeParse`.
   const parsed = TokenSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
   return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }

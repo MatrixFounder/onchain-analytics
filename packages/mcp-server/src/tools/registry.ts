@@ -147,8 +147,35 @@ export type ToolOutcome<TOutput> =
       cache?: CacheMeta | MergedCacheMeta;
       timing?: TimingMeta;
       budget?: BudgetMeta;
+      /** See the failure arm's own `capability`. Present on BOTH arms because a tool that picks its
+       * capability from the input picks it before it knows whether the call will succeed. */
+      capability?: string;
     }
-  | { ok: false; reason: string };
+  | {
+      ok: false;
+      reason: string;
+      /**
+       * The class name this refusal records in `request_trace.refusal_class` (task 014-30,
+       * `OD-014-30-11`). Optional HERE and required on `ResolveFailure`, because the two producers
+       * differ: `resolveCapability` always has a thrown instance, while a handler refusing on its
+       * own output contract has none and supplies a declared constant instead.
+       *
+       * Absent means the wrapper found no class to record. `tools-refusal-class.test.ts` makes that
+       * unreachable from `src/tools/` rather than papering over it with a default here — a
+       * substituted default is a guess written into a billing ledger.
+       */
+      refusalClass?: string;
+      /**
+       * The capability this call actually resolved, when the tool's own spec cannot name it (task
+       * 014-30, `OD-014-30-12`).
+       *
+       * `ToolSpec.capability` is static and is `null` for a tool that serves several capabilities
+       * and picks one from its input. The handler knows the choice; the wrapper does not, and
+       * `servedCapabilities` cannot supply it — that array is not ordered by meaning, so its first
+       * element is wrong for every call selecting the other one.
+       */
+      capability?: string;
+    };
 
 /**
  * A tool as its own module declares it.
@@ -388,6 +415,10 @@ export function defineTool<
               : (await ctx.accessProfiles.read(principal.accessProfileId)).routeDisclosureMode;
           const view: MetaView = { principal, routeDisclosureMode };
           const outcome = await definition.handler(input, project({ ...ctx, principal }, needs));
+          // The capability this call is ABOUT: the tool's own declaration when it has one, else
+          // what the handler reported resolving (task 014-30, `OD-014-30-12`). `null` only for the
+          // two tools that resolve no capability at all.
+          const resolvedCapability = definition.capability ?? outcome.capability ?? null;
           if (outcome.ok) return toCallToolResult(outcome, view);
 
           // **Two renderings of one refusal** (task 014-26, R-31, AC-47, AC-50).
@@ -400,10 +431,16 @@ export function defineTool<
           // The row is written BEFORE the response goes out. An identifier resolving to nothing is
           // worse than no identifier, and the emit is awaited here precisely so the ordering is
           // causal rather than probable.
+          //
+          // **`resolvedCapability`, not `definition.capability`** (task 014-30, `OD-014-30-12`).
+          // The static value is `null` for a tool that serves several capabilities and picks one
+          // from its input, so every refusal of `onchain_dash_platform_history` has been emitting a
+          // capability-less event since 014-27 shipped. The handler reports what it actually
+          // resolved; the static value still wins where it exists, because it is the declaration.
           const eventId =
             (await ctx.diagnostics?.emit('tool.refused', {
               severity: 'warn',
-              capability: definition.capability,
+              capability: resolvedCapability,
               detail: { tool: definition.name, reason: outcome.reason },
             })) ?? null;
           return toCallToolResult(

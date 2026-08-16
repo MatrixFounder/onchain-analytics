@@ -14,7 +14,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /**
  * `onchain_token_holders` — the MCP surface for the `token.holders` capability.
@@ -91,7 +91,7 @@ const CAPABILITY = 'token.holders';
 
 export type TokenHoldersOutcome =
   | { ok: true; output: TokenHoldersOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 /**
  * Pure handler for `onchain_token_holders`.
@@ -131,7 +131,7 @@ export async function tokenHoldersHandler(
     source: outcome.cache.provider,
   });
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
 
   return { ok: true, output: parsed.data, ...metaFrom(outcome) };

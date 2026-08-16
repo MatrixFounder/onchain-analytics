@@ -8,7 +8,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 const CAPABILITY = 'chain.tvl';
 
@@ -47,7 +47,7 @@ export interface ChainTvlContext {
 
 export type ChainTvlOutcome =
   | { ok: true; value: ChainTvlOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 export async function chainTvlHandler(
   input: ChainTvlInput,
@@ -64,7 +64,7 @@ export async function chainTvlHandler(
   // `{ok:false, reason}`, it never throws out of the handler (M1 adversarial cycle 2, finding 1a).
   const parsed = ChainTvlOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
   return { ok: true, value: parsed.data, ...metaFrom(outcome) };
 }

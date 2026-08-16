@@ -54,3 +54,35 @@ export function contractViolationReason(capability: string, error: ZodError): st
   const reason = `provider returned data violating the tool contract (${capability}): ${path}: ${message}`;
   return reason.length <= MAX_REASON_CHARS ? reason : `${reason.slice(0, MAX_REASON_CHARS)}…`;
 }
+
+/**
+ * The refusal class every output-contract violation records in `request_trace.refusal_class`
+ * (task 014-30, `OD-014-30-11`).
+ *
+ * **Why a constant and not an error class name.** This refusal has no `Error` instance at all — the
+ * tool holds a `ZodError` describing a PROVIDER's malformed response and turns it into a refusal
+ * without throwing. The column's declared content is "error class name", and inventing a throw just
+ * to have a name would put a stack unwind on a path that is a plain branch today. The constant is
+ * the name of the refusal, declared where the refusal is produced.
+ */
+export const OUTPUT_CONTRACT_REFUSAL_CLASS = 'OutputContractViolation';
+
+/**
+ * The whole failure outcome for an output-contract violation — reason and class together.
+ *
+ * **Why the pair is constructed here and not at each call site.** `request_trace.refusal_class` is
+ * `NOT NULL` on every refusal row by CHECK constraint, so a site that builds the reason and forgets
+ * the class produces a row the engine rejects. Nineteen call sites had the reason pasted through a
+ * shared helper and the class would have been pasted beside it; one declaration cannot drift, and
+ * `tools-refusal-class.test.ts` keeps the literal form from coming back.
+ */
+export function contractViolation(
+  capability: string,
+  error: ZodError,
+): { ok: false; reason: string; refusalClass: string } {
+  return {
+    ok: false,
+    reason: contractViolationReason(capability, error),
+    refusalClass: OUTPUT_CONTRACT_REFUSAL_CLASS,
+  };
+}

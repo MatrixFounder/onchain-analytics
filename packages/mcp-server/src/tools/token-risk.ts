@@ -17,7 +17,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /**
  * Input contract for `onchain_token_risk` (interfaces.md §5.1.2, R-43): same `chain` narrowing +
@@ -76,7 +76,7 @@ export type TokenRiskOutcome =
       timing?: TimingMeta;
       budget?: BudgetMeta;
     }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 /**
  * Pure handler for `onchain_token_risk` (R-43 — Nansen is the sole source; `token.risk`'s only
@@ -113,7 +113,7 @@ export async function tokenRiskHandler(
 
   const parsed = TokenRiskOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
 
   // Gated on the TRAVERSAL, never on `outcome.cache.status` (adversarial cycle 3, F-A). A `'hit'`

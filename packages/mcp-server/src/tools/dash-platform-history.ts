@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { CapabilityRegistry } from '@onchain-intel/core';
 import { resolveCapability, type MergedCacheMeta, type TimingMeta } from './resolve-capability.js';
 import { defineTool } from './registry.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /**
  * `onchain_dash_platform_history` — the 14th tool (T-013, OD-T013-1, R-170/R-171).
@@ -171,8 +171,18 @@ export type DashPlatformHistoryOutcome =
       value: DashPlatformHistoryOutput;
       cache: DashPlatformHistoryCacheMeta;
       timing?: TimingMeta;
+      capability: string;
     }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string; capability: string };
+
+/**
+ * `capability` is REQUIRED on both arms here, and optional on `ToolOutcome` (task 014-30,
+ * `OD-014-30-12`).
+ *
+ * This tool's spec declares `capability: null` because it serves two, so the wrapper has no static
+ * value to record and `servedCapabilities` cannot supply one — that array is not ordered by
+ * meaning. The choice is made from `input.series` before anything else happens, so every path out
+ * of this handler knows it, and requiring the field is what keeps a future path from forgetting.
 
 /** One point as this tool PUBLISHES it — the canonical `Snapshot` minus `metric`, which the
  * enclosing group already names. Derived from the schema so the two cannot drift. */
@@ -229,7 +239,7 @@ export async function dashPlatformHistoryHandler(
   const capability = SERIES_CAPABILITY[input.series];
 
   const outcome = await resolveCapability(ctx.registry, capability, chain, { chain, limit });
-  if (!outcome.ok) return outcome;
+  if (!outcome.ok) return { ...outcome, capability };
 
   const points = (Array.isArray(outcome.output) ? outcome.output : []) as RawSnapshot[];
   const grouped = groupByMetric(points);
@@ -285,7 +295,7 @@ export async function dashPlatformHistoryHandler(
   // thrown out of the handler.
   const parsed = DashPlatformHistoryOutputSchema.safeParse(candidate);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(capability, parsed.error) };
+    return { ...contractViolation(capability, parsed.error), capability };
   }
 
   const cache: DashPlatformHistoryCacheMeta = {
@@ -297,6 +307,7 @@ export async function dashPlatformHistoryHandler(
     value: parsed.data,
     cache,
     ...(outcome.timing ? { timing: outcome.timing } : {}),
+    capability,
   };
 }
 
@@ -323,12 +334,15 @@ export const dashPlatformHistoryToolSpec = defineTool({
   outputSchema: DashPlatformHistoryOutputSchema,
   handler: async (input, ctx) => {
     const outcome = await dashPlatformHistoryHandler(input, ctx);
+    // `capability` is forwarded on BOTH arms: it is what the trace row and the `tool.refused`
+    // diagnostics event record for a tool whose spec declares none.
     return outcome.ok
       ? {
           ok: true,
           output: outcome.value,
           cache: outcome.cache,
           ...(outcome.timing ? { timing: outcome.timing } : {}),
+          capability: outcome.capability,
         }
       : outcome;
   },

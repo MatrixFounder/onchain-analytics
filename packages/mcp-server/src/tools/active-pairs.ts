@@ -12,7 +12,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /**
  * TASK-006 (task 006-6, R-50): `chain` is an OPEN string resolved against the chain registry,
@@ -109,7 +109,7 @@ const DEFAULT_LIMIT = 10;
 
 export type ActivePairsOutcome =
   | { ok: true; output: ActivePairsOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 /**
  * Pure handler — no address to (re-)normalize here, unlike `get-token.ts`/`wallet-balances.ts`.
@@ -159,7 +159,7 @@ export async function activePairsHandler(
     fetchedAt: Date.now(),
   });
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
   return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }

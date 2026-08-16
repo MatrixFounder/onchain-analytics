@@ -445,7 +445,7 @@ export interface CapabilityResolution {
  * assemble once real adapters exist). This also keeps the door open for future multi-instance use
  * (§8) without a refactor.
  */
-export class CapabilityRegistry {
+export class CapabilityRegistry implements CapabilityResolver {
   /** Built lazily and memoized per instance (never a module singleton, §8): the shipped registry
    * is ~458 rows, and constructing one per `CapabilityRegistry` in a test suite would be pure
    * waste when most tests never reach the coverage gate. */
@@ -1739,4 +1739,107 @@ export class CapabilityRegistry {
 
     throw new CapabilityUnavailableError({ capability, chain, tried });
   }
+}
+
+/**
+ * The narrow shape of `CapabilityRegistry.resolve` (task 014-30, `OD-014-30-7`).
+ *
+ * **Why an interface next to a class that already exists.** `mcp-server` needs to interpose one
+ * per-request observer between its 18 tool handlers and the registry, and `CapabilityRegistry` has
+ * private fields — a structural wrapper is therefore not assignable to the class type. Naming the
+ * one method the handlers actually use makes the wrapper expressible without widening anything.
+ *
+ * `CapabilityRegistry implements CapabilityResolver`, so the interface cannot drift from the class:
+ * a signature change on either side fails the build.
+ */
+export interface CapabilityResolver {
+  resolve(
+    capability: string,
+    chain: string,
+    args: Record<string, unknown>,
+    requestedDeadlineAtMs?: number,
+    onVendorSpend?: VendorSpendReporter,
+  ): Promise<CapabilityResolution>;
+}
+
+/**
+ * What `bindCallObserver` reports about one `resolve()` call, at the moment the call is MADE.
+ *
+ * **Why at the call and not at its outcome** — the same rule `attempted` follows inside the walk. A
+ * `resolve()` that throws still identified a capability and still hashed its arguments, and the two
+ * refusals that can happen after money was already spent are exactly the rows where those two facts
+ * matter most.
+ */
+export interface CapabilityCall {
+  readonly capability: string;
+  /**
+   * `deriveArgsHash(capability, args)` over the arguments this call was given.
+   *
+   * **Why computed here and not carried out of `resolve()`.** The registry computes the identical
+   * value from the identical two parameters, but only after four of its nine throw paths have
+   * already left the function — so a field on `CapabilityResolution` would be absent on every
+   * refusal row, including the two refusals that follow a committed vendor charge.
+   *
+   * **Why not recomputed by the caller from a tool's raw input.** The value must be the one
+   * `cache_entries` carries. Between a tool's input and this call the arguments are renamed, chain
+   * aliases are canonicalised, addresses are case-normalised and optional arguments acquire values —
+   * so a recomputation produces a well-formed hash that matches no stored row.
+   *
+   * **One value, not one per stored row.** A merge-enabled walk writes several `cache_entries` rows,
+   * one per participant, all under this same hash.
+   */
+  readonly argsHash: string;
+}
+
+/**
+ * Per-request observer of capability resolution (task 014-30).
+ *
+ * Both members are invoked SYNCHRONOUSLY and must not throw: `onCall` runs before a call that may
+ * spend money, and `onVendorSpend` runs after a committed ledger write. `reportVendorSpend` already
+ * absorbs a throwing spend reporter; `onCall` is wrapped by `bindCallObserver` for the same reason.
+ */
+export interface CapabilityCallObserver {
+  onCall(call: CapabilityCall): void;
+  onVendorSpend: VendorSpendReporter;
+}
+
+/**
+ * Wraps a resolver so that every `resolve()` made through it reports to `observer` (task 014-30).
+ *
+ * **Why a wrapper and not a parameter each caller passes.** The 18 handlers that call
+ * `resolveCapability` would each have to forward it, and a nineteenth would forget — the shape
+ * `defineTool`'s context projection exists to prevent. `mcp-server`'s wrapper substitutes the bound
+ * resolver into the context it already builds per request, so no handler changes at all.
+ *
+ * **Why this lives in `core` and not beside its consumer.** It needs `deriveArgsHash`, which is
+ * deliberately not part of this package's public surface. Hosting the binder here keeps the hashing
+ * primitive internal while giving the consumer the value.
+ *
+ * The returned object delegates verbatim: the observer sees the call, never changes it. An
+ * `onVendorSpend` supplied by the caller of the BOUND resolver is ignored — the binding exists
+ * precisely because the per-request sink is the one that must receive the receipts.
+ */
+export function bindCallObserver(
+  inner: CapabilityResolver,
+  observer: CapabilityCallObserver,
+): CapabilityResolver {
+  return {
+    resolve(capability, chain, args, requestedDeadlineAtMs) {
+      // Before delegating, and outside the observer's control: a throwing observer must not stop a
+      // call, for the same reason a faulty spend reporter must not fail a paid one.
+      try {
+        observer.onCall({ capability, argsHash: deriveArgsHash(capability, args) });
+      } catch (error) {
+        try {
+          process.stderr.write(
+            `capability call observer threw for capability=${capability} — the call proceeds ` +
+              `unchanged: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        } catch {
+          // stderr can throw EPIPE once a stdio client has closed; diagnostics are best-effort.
+        }
+      }
+      return inner.resolve(capability, chain, args, requestedDeadlineAtMs, observer.onVendorSpend);
+    },
+  };
 }

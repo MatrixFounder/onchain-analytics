@@ -15,7 +15,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /**
  * Input contract for `onchain_wallet_balances` (ARCHITECTURE.md §5.1, R-17) — the literal
@@ -72,7 +72,7 @@ const CAPABILITY = 'wallet.balances.native';
 
 export type WalletBalancesOutcome =
   | { ok: true; output: WalletBalancesOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 /** Pure handler — see `get-token.ts`'s `getTokenHandler` docstring for the shared re-normalize-
  * before-cache-key rationale. */
@@ -98,7 +98,7 @@ export async function walletBalancesHandler(
   // different spelling. `WalletSchema.balances` is an array, so the per-element scaling was here too.
   const parsed = WalletSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
   return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }

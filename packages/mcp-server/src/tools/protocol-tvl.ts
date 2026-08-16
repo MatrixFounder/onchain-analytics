@@ -8,7 +8,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /** The two supported networks (task 003-7 reviewer note, Major-2 — see `get-token.ts`'s
  * docstring for why the full `ChainSchema` isn't used here) — declared once and reused for both
@@ -112,7 +112,7 @@ const CAPABILITY = 'protocol.tvl';
 
 export type ProtocolTvlOutcome =
   | { ok: true; output: ProtocolTvlOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 /** Pure handler — `defillama.normalize()` already returns this exact shape 1:1 (task 003-4), so
  * this handler's only job beyond `resolveCapability` is the defensive zod re-parse (the tool layer
@@ -147,7 +147,7 @@ export async function protocolTvlHandler(
 
   const parsed = ProtocolTvlOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
   return { ok: true, output: parsed.data, ...metaFrom(outcome) };
 }

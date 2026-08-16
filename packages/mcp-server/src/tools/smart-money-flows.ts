@@ -17,7 +17,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /**
  * Input contract for `onchain_smart_money_flows` (interfaces.md §5.1.2, R-41): `chain` narrowed
@@ -81,7 +81,7 @@ export type SmartMoneyFlowsOutcome =
       timing?: TimingMeta;
       budget?: BudgetMeta;
     }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 /**
  * Pure handler for `onchain_smart_money_flows` — mirrors `get-token.ts`'s `getTokenHandler` split
@@ -124,7 +124,7 @@ export async function smartMoneyFlowsHandler(
 
   const parsed = SmartMoneyFlowsOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
 
   // Gated on the TRAVERSAL, never on `outcome.cache.status` (adversarial cycle 3, F-A). A `'hit'`

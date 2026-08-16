@@ -68,6 +68,19 @@ export {
   // this one is DISTINGUISHABLE from `CapabilityUnavailableError`: a class that cannot be named
   // across the package boundary can only be told apart by parsing a message.
   CapabilityDeadlineExceededError,
+  // task 014-30 — the per-request observation seam. `CapabilityResolver` is the narrow shape a tool
+  // context holds instead of the class (which has private fields, so no structural wrapper is
+  // assignable to it); `bindCallObserver` is what installs one request's sink. `deriveArgsHash`
+  // deliberately stays OFF this list: the binder is what gives `mcp-server` the value, so the
+  // hashing primitive never becomes public surface.
+  bindCallObserver,
+  type CapabilityResolver,
+  type CapabilityCall,
+  type CapabilityCallObserver,
+  // The resolver's own return type. Exported WITH the interface rather than left inferrable: a
+  // consumer that can name `CapabilityResolver` but not what it resolves to cannot write an explicit
+  // annotation for a wrapper around it, which is the one thing the interface exists to make possible.
+  type CapabilityResolution,
 } from './adapters/registry.js';
 // task 012-6 (ADR-002 D2) — the route answer policy as data. The TYPE is exported because
 // `CapabilityRoute` (already on this surface) carries it; the class dictionary is NOT, because

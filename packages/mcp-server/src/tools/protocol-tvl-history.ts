@@ -9,7 +9,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 const CAPABILITY = 'protocol.tvl.history';
 
@@ -67,7 +67,7 @@ export interface ProtocolTvlHistoryContext {
 
 export type ProtocolTvlHistoryOutcome =
   | { ok: true; value: ProtocolTvlHistoryOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 export async function protocolTvlHistoryHandler(
   input: ProtocolTvlHistoryInput,
@@ -85,7 +85,7 @@ export async function protocolTvlHistoryHandler(
 
   const parsed = ProtocolTvlHistoryOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
   return { ok: true, value: parsed.data, ...metaFrom(outcome) };
 }

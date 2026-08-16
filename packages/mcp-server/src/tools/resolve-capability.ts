@@ -115,6 +115,25 @@ export interface ResolveSuccess {
 export interface ResolveFailure {
   ok: false;
   reason: string;
+  /**
+   * The `name` of the class that was thrown (task 014-30, `OD-014-30-11`) — what
+   * `request_trace.refusal_class` records.
+   *
+   * **REQUIRED, not optional.** The column is `NOT NULL` on every refusal row by CHECK constraint,
+   * and this interface has exactly one construction site: an optional field here would let that
+   * site be edited into producing a row the engine rejects, at runtime, on the failure path.
+   *
+   * **Why the class and not the message.** They answer different questions and only one is stable:
+   * `reason` is `error.message`, which for `CapabilityUnavailableError` concatenates every adapter's
+   * own failure text and can embed up to 500 characters of a vendor's response body. Classifying
+   * that text back into a class is not merely fragile — `transport/failure-classes.ts` carries
+   * byte-identical markers for two distinct classes, so it is not injective.
+   *
+   * **Why it is taken here.** This is the one place the thrown INSTANCE still exists; one line
+   * below, it is gone. Every error class in both packages assigns `this.name` explicitly, so the
+   * value survives bundling.
+   */
+  refusalClass: string;
 }
 
 export type ResolveOutcome = ResolveSuccess | ResolveFailure;
@@ -171,7 +190,13 @@ export async function resolveCapability(
         : {}),
     };
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      // A non-Error throw is recorded as such rather than as an empty class: the column is NOT NULL,
+      // and a row saying "some refusal" is not the same claim as a row naming what refused.
+      refusalClass: error instanceof Error ? error.name : 'NonErrorThrow',
+    };
   }
 }
 

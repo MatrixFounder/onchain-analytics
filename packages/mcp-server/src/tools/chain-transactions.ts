@@ -8,7 +8,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 const CAPABILITY = 'chain.transactions';
 
@@ -66,7 +66,7 @@ export interface ChainTransactionsContext {
 
 export type ChainTransactionsOutcome =
   | { ok: true; value: ChainTransactionsOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 export async function chainTransactionsHandler(
   input: ChainTransactionsInput,
@@ -78,7 +78,7 @@ export async function chainTransactionsHandler(
 
   const parsed = ChainTransactionsOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
   return { ok: true, value: parsed.data, ...metaFrom(outcome) };
 }

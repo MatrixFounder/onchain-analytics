@@ -16,7 +16,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 /** The two supported networks (same narrowing as every other M1/M2 tool — see `get-token.ts`'s
  * docstring). Declared once, reused for both the input and output `chain` fields below. */
@@ -128,7 +128,7 @@ export type EntityLabelOutcome =
       timing?: TimingMeta;
       budget?: BudgetMeta;
     }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 /**
  * Pure handler for `onchain_entity_label`. Builds `args = {chain, exhaustive, query?,
@@ -177,7 +177,7 @@ export async function entityLabelHandler(
     fetchedAt: Date.now(),
   });
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
 
   // Gated on the TRAVERSAL, never on `outcome.cache.status` (adversarial cycle 3, F-A). A `'hit'`

@@ -139,13 +139,20 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       'wallet-balances.ts',
     ]);
 
+    // Task 014-30 (`OD-014-30-11`) widened what "the shared renderer" means: a refusal now carries a
+    // CLASS as well as a reason, because `request_trace.refusal_class` is NOT NULL on every refusal
+    // row. `contractViolation()` returns the pair; `contractViolationReason()` remains exported and
+    // returns only the string, so a tool that reaches for it alone would build a refusal the ledger
+    // rejects. The gate therefore requires the PAIR constructor, and the check below is stricter
+    // than the one it replaces rather than merely renamed.
     const rolledTheirOwn = validating
-      .filter(([, text]) => !text.includes('contractViolationReason('))
+      .filter(([, text]) => !text.includes('contractViolation('))
       .map(([file]) => file);
     expect(
       rolledTheirOwn.sort(),
-      'These tools validate a provider result but do not use `contractViolationReason`. Six ' +
-        'identical copies plus three divergent ones is the state WI-27 removed.',
+      'These tools validate a provider result but do not use `contractViolation`. Six identical ' +
+        'copies plus three divergent ones is the state WI-27 removed; a reason without its refusal ' +
+        'class is the state 014-30 removed.',
     ).toStrictEqual([]);
   });
 

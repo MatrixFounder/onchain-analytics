@@ -8,7 +8,7 @@ import {
   type TimingMeta,
   metaFrom,
 } from './resolve-capability.js';
-import { contractViolationReason } from './contract-violation.js';
+import { contractViolation } from './contract-violation.js';
 
 const CAPABILITY = 'dex.volume.history';
 
@@ -113,7 +113,7 @@ export interface DexVolumeContext {
 
 export type DexVolumeOutcome =
   | { ok: true; value: DexVolumeOutput; cache: CacheMeta; timing?: TimingMeta }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; refusalClass?: string };
 
 export async function dexVolumeHandler(
   input: DexVolumeInput,
@@ -141,7 +141,7 @@ export async function dexVolumeHandler(
   // `{ok:false, reason}`; it never throws out of the handler (M1 adversarial cycle 2, finding 1a).
   const parsed = DexVolumeOutputSchema.safeParse(outcome.output);
   if (!parsed.success) {
-    return { ok: false, reason: contractViolationReason(CAPABILITY, parsed.error) };
+    return contractViolation(CAPABILITY, parsed.error);
   }
   return { ok: true, value: parsed.data, ...metaFrom(outcome) };
 }
