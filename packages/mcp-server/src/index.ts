@@ -25,6 +25,7 @@ import { createTokenStore } from './auth/token-store.js';
 import { createEngineStore } from './engine/pg-engine-store.js';
 import { createDiagnostics } from './engine/diagnostics.js';
 import { createDiagnosticsStore } from './engine/diagnostics-store.js';
+import { createRequestTraceStore } from './engine/request-trace-store.js';
 import { createSharedRuntime } from './runtime.js';
 import { startHttpTransport } from './transport/http.js';
 
@@ -177,6 +178,10 @@ async function main(): Promise<void> {
     env,
     version,
     diagnostics,
+    // Task 014-30. Built on the SAME condition as the stored diagnostics channel: both tables live
+    // in the engine, so the profile that has no engine has neither. On the local profile the row is
+    // not written and nothing is lost — `request_trace` does not exist there either.
+    ...(identity === null ? {} : { requestTrace: createRequestTraceStore(identity.engine) }),
     ...(profile.transport === 'http'
       ? {
           principals: createHttpPrincipalResolver(),

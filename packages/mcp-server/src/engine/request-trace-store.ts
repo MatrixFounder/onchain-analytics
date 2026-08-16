@@ -1,12 +1,19 @@
 import type { TransportKind } from '../profile.js';
+import type { EngineStore } from './pg-engine-store.js';
 
 /**
  * The append-only per-request ledger T-015 charges from (`data-model.md` §4.5.7, R-27).
  *
- * Task 014-02 declares the SHAPE and ships a stub under it. No table is created here — the Postgres
- * declaration is task 014-35, the SQLite one 014-36 — and nothing writes a row yet: task 014-30
- * replaces the stub and wires the four paths that produce one (cache hit, coalesced wait, live
- * vendor call, tool-level refusal).
+ * Task 014-02 declared the SHAPE and shipped a stub under it. No table is created here — the
+ * Postgres declaration is task 014-35, the SQLite one 014-36. Task 014-30 added the repository below
+ * and the writer in `tools/registry.ts`'s `defineTool` wrapper; the stub stays, because a store
+ * whose effect can be read back without an engine is what most of the suite needs.
+ *
+ * **`vendor_provider` REFERENCES `providers(id)`, so a row naming a vendor requires that vendor to
+ * be registered in the SAME database.** Production satisfies this through the budget store's own
+ * bootstrap (`core`'s `pg/budget-store.ts`), which runs when the runtime is built. It is a real
+ * constraint rather than decoration: the ledger must not claim spend at a provider the installation
+ * has never heard of, since that row would join to nothing in T-015's reconciliation.
  *
  * **Why the shape is fixed before the writers exist.** Four paths writing four shapes would give
  * T-015 four sources instead of one. The record below is the single form all four fill in.
@@ -198,6 +205,75 @@ export function createRequestTraceStoreStub(): RequestTraceStoreStub {
       seen.add(key);
       appended.push(record);
       return Promise.resolve({ written: true });
+    },
+  };
+}
+
+/* --------------------------------------------------------------------------------------------- *
+ * Task 014-30 — the repository over the shared access mechanism.
+ * --------------------------------------------------------------------------------------------- */
+
+/**
+ * `onchain.request_trace`, over the write client of task 014-39 through the mechanism of 014-03.
+ *
+ * **`ON CONFLICT DO NOTHING RETURNING id` is what makes `written` a fact rather than an assumption.**
+ * The declared dedup key is `(principal_id, client_request_id, received_at)`, and DB-SCHEMA §1.5
+ * makes the insert idempotent — so a repeat cannot fail and therefore cannot report itself either.
+ * The `RETURNING` clause yields one row when the insert happened and none when the conflict clause
+ * swallowed it, which is the only in-band way to tell the two apart. A caller that re-runs a writer
+ * is then harmless AND able to see that it re-ran, which is the property `RequestTraceAppendResult`
+ * was declared for (L-2: a diagnostic nobody receives is not a diagnostic).
+ *
+ * **No `transaction()`.** One statement, one row, no read-modify-write: a transaction would add a
+ * round trip and a lock to a write that has neither a sibling nor a prior read to be consistent
+ * with. This is the same shape `createDiagnosticsStore` uses, and for the same reason.
+ *
+ * **Every column is bound, never interpolated** — including `tried_json`, which is operator-side
+ * text naming adapters. The engine client's own guard refuses an unqualified table reference, and
+ * `qualify` is how this repository spells one.
+ */
+export function createRequestTraceStore(engine: EngineStore): RequestTraceStore {
+  return {
+    async append(record: RequestTraceRecord): Promise<RequestTraceAppendResult> {
+      const written = await engine.query<{ id: string }>(
+        `INSERT INTO ${engine.qualify('request_trace')}
+           (id, received_at, completed_at, principal_id, user_id, access_profile_id,
+            client_request_id, session_id, transport, tool, capability, args_hash,
+            outcome, refusal_class, served_from, cache_age_ms,
+            vendor_provider, vendor_credits, vendor_calls, vendor_day, vendor_window_start,
+            escalated_to_paid, tried_json, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                 $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+         ON CONFLICT (principal_id, client_request_id, received_at) DO NOTHING
+         RETURNING id`,
+        [
+          record.id,
+          record.receivedAt,
+          record.completedAt,
+          record.principalId,
+          record.userId,
+          record.accessProfileId,
+          record.clientRequestId,
+          record.sessionId,
+          record.transport,
+          record.tool,
+          record.capability,
+          record.argsHash,
+          record.outcome,
+          record.refusalClass,
+          record.servedFrom,
+          record.cacheAgeMs,
+          record.vendorProvider,
+          record.vendorCredits,
+          record.vendorCalls,
+          record.vendorDay,
+          record.vendorWindowStart,
+          record.escalatedToPaid,
+          record.triedJson,
+          record.createdAt,
+        ],
+      );
+      return { written: written.length > 0 };
     },
   };
 }

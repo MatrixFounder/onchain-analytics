@@ -22,6 +22,7 @@ import {
 } from '@onchain-intel/core';
 import { toProcessEnv, type Env } from './env.js';
 import { createDiagnostics, type Diagnostics } from './engine/diagnostics.js';
+import type { RequestTraceStore } from './engine/request-trace-store.js';
 import type { AccessProfileReader } from './auth/access-profile.js';
 import type { PrincipalResolver } from './auth/principal.js';
 import { createServer } from './server.js';
@@ -61,6 +62,12 @@ export interface SharedRuntimeDeps {
    * profile has, and a test that omits this gets the same code path production runs.
    */
   readonly diagnostics?: Diagnostics;
+  /**
+   * The per-request ledger (task 014-30). Process-wide for the same reason as `diagnostics`: it is a
+   * property of the installation, and a per-session one would let two clients disagree about what
+   * was billed. Absent means no row is written — the local profile, where the table does not exist.
+   */
+  readonly requestTrace?: RequestTraceStore;
   /**
    * Resolves the principal per request (task 014-15). Supplied only on the `http` axis: absent means
    * stdio, where the constant IS the answer, and a resolver that fell back to that constant on the
@@ -187,6 +194,7 @@ export function createSharedRuntime(deps: SharedRuntimeDeps): SharedRuntime {
         registry,
         budgetStore,
         diagnostics,
+        ...(deps.requestTrace ? { requestTrace: deps.requestTrace } : {}),
         principals: deps.principals,
         accessProfiles: deps.accessProfiles,
       }),
