@@ -86,6 +86,32 @@ export function principalFor(
   return resolver === undefined ? STDIO_PRINCIPAL : resolver(authInfo);
 }
 
+/**
+ * The placeholder a session server is CONSTRUCTED with when a per-request resolver is present.
+ *
+ * **Why a placeholder is needed at all.** `ToolContext.principal` is required, one `McpServer` is
+ * built per session, and the principal is resolved per REQUEST (§3.4.3) — so at construction there
+ * is no request and therefore no principal. `defineTool`'s wrapper overwrites this value on every
+ * call before any handler sees it, on both transports.
+ *
+ * **Why not `STDIO_PRINCIPAL`.** That constant is `role: 'admin'`, and a placeholder that leaked
+ * into a decision would be a privilege escalation wearing the clothes of a default — the exact
+ * hazard `createHttpPrincipalResolver`'s own fail-closed branch exists to prevent. This one carries
+ * the LEAST privilege the role vocabulary has and an id that names itself, so a value that ever
+ * reaches a `request_trace` row or a `_meta` decision is visibly wrong rather than quietly wrong.
+ *
+ * **Why not call the resolver with `undefined` instead** — which is what `server.ts` used to do. The
+ * http resolver is fail-closed and THROWS on absent `AuthInfo`, so constructing a session server
+ * with it raised `PrincipalMissingError` before any request existed.
+ */
+export const UNRESOLVED_PRINCIPAL: Principal = Object.freeze({
+  principalId: 'unresolved',
+  userId: null,
+  accessProfileId: null,
+  role: 'user',
+  transport: 'http',
+});
+
 /** The key our principal travels under inside `AuthInfo.extra` — written once, read once. */
 export const PRINCIPAL_EXTRA_KEY = 'principal';
 

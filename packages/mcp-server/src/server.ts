@@ -1,12 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { CapabilityRegistry, routes, type BudgetStore } from '@onchain-intel/core';
+import {
+  CapabilityRegistry,
+  routes,
+  type BudgetStore,
+  type CapabilityResolver,
+} from '@onchain-intel/core';
 import type { AccessProfile } from './auth/access-profile.js';
 import type { Env } from './env.js';
 import { type ToolContext } from './tools/registry.js';
 import type { Diagnostics } from './engine/diagnostics.js';
 import type { RequestTraceStore } from './engine/request-trace-store.js';
 import type { AccessProfileReader } from './auth/access-profile.js';
-import { principalFor, type PrincipalResolver } from './auth/principal.js';
+import { STDIO_PRINCIPAL, UNRESOLVED_PRINCIPAL, type PrincipalResolver } from './auth/principal.js';
 import { toolSpecs } from './tools/tool-specs.js';
 
 /**
@@ -35,7 +40,12 @@ import { toolSpecs } from './tools/tool-specs.js';
 export interface CreateServerDeps {
   env: Env;
   version: string;
-  registry?: CapabilityRegistry;
+  /**
+   * The capability resolver. Typed as the INTERFACE (task 014-30, `OD-014-30-7`), which is also what
+   * lets a suite hand in a hand-built resolver instead of assembling a whole registry to observe one
+   * cache status.
+   */
+  registry?: CapabilityResolver;
   budgetStore?: BudgetStore;
   /**
    * The access profile of the session being built (task 014-04, `system-architecture.md` §3.4.9).
@@ -131,10 +141,18 @@ export function createServer(deps: CreateServerDeps): McpServer {
     registry: deps.registry ?? new CapabilityRegistry(routes, new Map()),
     ...(deps.budgetStore ? { budgetStore: deps.budgetStore } : {}),
     ...(deps.diagnostics ? { diagnostics: deps.diagnostics } : {}),
-    // The session-construction default (task 014-14). The wrapper overrides it per request from
-    // `extra.authInfo` (014-15); this value is what a transport carrying no `AuthInfo` gets, which
-    // is stdio.
-    principal: principalFor(deps.principals, undefined),
+    // The session-construction placeholder (task 014-14; corrected while writing task 014-30's
+    // end-to-end suite). `defineTool`'s wrapper overwrites it per request from `extra.authInfo`
+    // (014-15), so no handler ever reads what is written here.
+    //
+    // **It must not be produced by CALLING the resolver.** This line used to read
+    // `principalFor(deps.principals, undefined)`, and `createHttpPrincipalResolver` is fail-closed:
+    // it throws on absent `AuthInfo`. A session server built with it therefore threw
+    // `PrincipalMissingError` at construction — so the shipped network profile could not create a
+    // session at all, and every request answered 500. Nothing caught it because no suite combined
+    // `createServer` with the http resolver: the HTTP end-to-end suite passes no resolver, and the
+    // interception suite registers its probe against a hand-built `McpServer`.
+    principal: deps.principals === undefined ? STDIO_PRINCIPAL : UNRESOLVED_PRINCIPAL,
     ...(deps.principals ? { principals: deps.principals } : {}),
     ...(deps.accessProfiles ? { accessProfiles: deps.accessProfiles } : {}),
     // Task 014-30. Absent `requestTrace` means no row is written, which is the local profile's
