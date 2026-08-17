@@ -77,6 +77,7 @@ export {
   type CapabilityResolver,
   type CapabilityCall,
   type CapabilityCallObserver,
+  type CapabilityWalk,
   // The resolver's own return type. Exported WITH the interface rather than left inferrable: a
   // consumer that can name `CapabilityResolver` but not what it resolves to cannot write an explicit
   // annotation for a wrapper around it, which is the one thing the interface exists to make possible.

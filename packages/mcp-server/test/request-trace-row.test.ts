@@ -61,6 +61,7 @@ const base = (over: Partial<RequestTraceRowInput> = {}): RequestTraceRowInput =>
   cacheStatus: 'miss',
   cacheAgeMs: undefined,
   overrunMs: undefined,
+  walks: [],
   receipts: [],
   ...over,
 });
@@ -77,9 +78,16 @@ describe('served_from names the source of the ANSWER', () => {
     expect(servedFromOf(true, 'miss', [CHARGE])).toBe('vendor');
   });
 
-  it('a request that reached neither reports none', () => {
+  it('a live answer from a FREE adapter is still vendor, though it left no receipt', () => {
+    // Eleven of the thirteen adapters are free. Deriving `vendor` from the presence of a charge
+    // would have recorded most of the engine's traffic as served by nobody.
+    expect(servedFromOf(true, 'miss', [])).toBe('vendor');
+  });
+
+  it('none means no capability was resolved at all', () => {
+    // `onchain_ping` and `onchain_list_chains` answer from local state: no cache was consulted, so
+    // there is no status, and nothing served the answer but the process itself.
     expect(servedFromOf(true, undefined, [])).toBe('none');
-    expect(servedFromOf(true, 'miss', [])).toBe('none');
   });
 
   it('a refusal was served by nobody, whatever the walk entered', () => {
@@ -213,6 +221,30 @@ describe('the assembled row', () => {
     expect(record.userId).toBe(PRINCIPAL.userId);
     expect(record.accessProfileId).toBe(PRINCIPAL.accessProfileId);
     expect(record.transport).toBe('http');
+  });
+
+  it('records the ordered walk, with reasons where the data has them', () => {
+    const { record } = buildRequestTraceRow(
+      base({
+        walks: [
+          {
+            capability: 'entity.labels',
+            tried: [{ adapterId: 'blockscout', reason: 'no labels' }, { adapterId: 'nansen' }],
+          },
+        ],
+      }),
+    );
+    expect(JSON.parse(record.triedJson!)).toStrictEqual([
+      {
+        capability: 'entity.labels',
+        tried: [{ adapterId: 'blockscout', reason: 'no labels' }, { adapterId: 'nansen' }],
+      },
+    ]);
+  });
+
+  it('writes no walk at all rather than an empty one', () => {
+    // `onchain_ping` resolves nothing. An empty array would claim a traversal that visited nobody.
+    expect(buildRequestTraceRow(base({ walks: [] })).record.triedJson).toBeNull();
   });
 
   it('reports receipts it could not fit rather than dropping them quietly', () => {

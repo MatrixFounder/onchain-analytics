@@ -1,4 +1,4 @@
-import type { VendorSpendRecord } from '@onchain-intel/core';
+import type { CapabilityWalk, VendorSpendRecord } from '@onchain-intel/core';
 import type { Principal } from '../auth/principal.js';
 import type {
   RequestTraceOutcome,
@@ -75,13 +75,23 @@ export function readClientRequestId(
 /**
  * Which of the four sources answered (`data-model.md` §4.5.7).
  *
- * **Cache is decided FIRST, and that is the decoupling** (`OD-014-30-2`). `served_from` names the
+ * **Derived from the CACHE STATUS, not from the spend receipts.** A `'miss'` means the walk actually
+ * entered an adapter and that adapter answered — which is a vendor call whether or not it cost
+ * anything. Deriving `vendor` from the presence of a charge receipt instead would record every live
+ * answer from a FREE adapter as `none`, and eleven of the thirteen adapters are free: the column
+ * would have said "nobody served this" for most of the traffic the engine carries.
+ *
+ * **`none` therefore means "no capability was resolved"** — `onchain_ping` and `onchain_list_chains`
+ * answer from local state — or "no answer was produced at all", which is every refusal.
+ *
+ * **Cache outranks a charge, and that is the decoupling** (`OD-014-30-2`). `served_from` names the
  * source of the ANSWER; the five vendor columns name this request's contribution to the ledger, and
  * the two are independent. A walk that entered a paid adapter, spent, and then returned an earlier
  * adapter's cached answer records `cache` here AND its spend in the vendor columns.
  *
- * A follower outranks a charge for the reverse reason: a request that waited on somebody else's call
- * made none of its own, whatever else is in the receipt set.
+ * **A follower outranks a live call** for the reverse reason: a request that waited on somebody
+ * else's vendor call made none of its own, and folding it into `vendor` would lose the count of how
+ * many charges one vendor call produced.
  */
 export function servedFromOf(
   ok: boolean,
@@ -98,8 +108,7 @@ export function servedFromOf(
   if (!ok) return 'none';
   if (cacheStatus === 'hit') return 'cache';
   if (receipts.some((r) => r.kind === 'coalesced')) return 'coalesced';
-  if (receipts.some((r) => r.kind === 'charge')) return 'vendor';
-  return 'none';
+  return cacheStatus === 'miss' ? 'vendor' : 'none';
 }
 
 /**
@@ -129,6 +138,7 @@ export interface RequestTraceRowInput {
   readonly cacheStatus: 'hit' | 'miss' | undefined;
   readonly cacheAgeMs: number | undefined;
   readonly overrunMs: number | undefined;
+  readonly walks: readonly CapabilityWalk[];
   readonly receipts: readonly VendorSpendRecord[];
 }
 
@@ -145,10 +155,14 @@ export interface BuiltRequestTraceRow {
  * to any provider, after which a route of two free adapters produces receipts. Paidness has one
  * classification and it reads `AdapterRegistration.tier`.
  *
- * **`triedJson` is `null`, and that is a named residual rather than an oversight.** The ordered walk
- * with its per-attempt reasons exists only on two error classes; on the success path the registry
- * reports adapter ids without reasons and `ToolOutcome` does not carry them at all. That channel has
- * a different arity and a different owner (`OQ-014-28-B`) and is not this task's.
+ * **`triedJson` carries the ordered walk, and is `null` only when there was none.** A request that
+ * resolved no capability — `onchain_ping`, `onchain_list_chains`, or a refusal before a route was
+ * chosen — has no walk to record, and an empty array there would claim a traversal that visited
+ * nobody. The reasons are present on a failed walk and absent on a successful one, which is the
+ * asymmetry of the data rather than of the encoding (see `CapabilityWalk`).
+ *
+ * `OQ-014-28-B` is NOT closed by this: task 014-28 needs to know why a FREE source did not satisfy
+ * on a walk that then succeeded, and a successful walk records no reasons at all.
  */
 export function buildRequestTraceRow(input: RequestTraceRowInput): BuiltRequestTraceRow {
   const spend = vendorSpendColumns(input.receipts);
@@ -176,7 +190,9 @@ export function buildRequestTraceRow(input: RequestTraceRowInput): BuiltRequestT
       cacheAgeMs: input.cacheStatus === 'hit' ? (input.cacheAgeMs ?? null) : null,
       ...spend.columns,
       escalatedToPaid: 0,
-      triedJson: null,
+      // JSON as TEXT (DB-SCHEMA §1.4). Operator-side by construction: it names adapters and their
+      // order, which R-20.3 and R-31.4 keep out of the client rendering — the ledger is not that.
+      triedJson: input.walks.length === 0 ? null : JSON.stringify(input.walks),
       createdAt: input.completedAt,
     },
   };

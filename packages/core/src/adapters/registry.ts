@@ -1815,8 +1815,32 @@ export interface CapabilityCall {
  * spend money, and `onVendorSpend` runs after a committed ledger write. `reportVendorSpend` already
  * absorbs a throwing spend reporter; `onCall` is wrapped by `bindCallObserver` for the same reason.
  */
+/**
+ * The ordered walk one `resolve()` performed, reported after it settled (task 014-30) — what
+ * `request_trace.tried_json` records.
+ *
+ * **Why after, when `CapabilityCall` is reported before.** The two answer different questions. The
+ * capability and the args hash identify the CALL and must survive a throw, so they are taken at the
+ * call. The walk is only known once the walk is over.
+ *
+ * **`reason` is present only where one exists.** A failed traversal carries a `CapabilityAttempt`
+ * per adapter and therefore a reason each; a successful one reports `attempted` — the adapters whose
+ * `fetch()` it entered — and the registry keeps no reason for a source that answered. The asymmetry
+ * belongs to the data, and flattening it by inventing an empty reason would make the two cases
+ * indistinguishable to a reader.
+ */
+export interface CapabilityWalk {
+  readonly capability: string;
+  readonly tried: readonly { readonly adapterId: string; readonly reason?: string }[];
+}
+
 export interface CapabilityCallObserver {
   onCall(call: CapabilityCall): void;
+  /**
+   * The walk, once it settled — on BOTH outcomes. Optional: a consumer that needs only the spend has
+   * no use for it.
+   */
+  onWalk?(walk: CapabilityWalk): void;
   onVendorSpend: VendorSpendReporter;
 }
 
@@ -1860,7 +1884,38 @@ export function bindCallObserver(
           // stderr can throw EPIPE once a stdio client has closed; diagnostics are best-effort.
         }
       }
-      return inner.resolve(capability, chain, args, requestedDeadlineAtMs, observer.onVendorSpend);
+      const report = (walk: CapabilityWalk): void => {
+        if (observer.onWalk === undefined) return;
+        try {
+          observer.onWalk(walk);
+        } catch {
+          // Same contract as `onCall` above: observation never changes the call it observes.
+        }
+      };
+      return inner
+        .resolve(capability, chain, args, requestedDeadlineAtMs, observer.onVendorSpend)
+        .then(
+          (resolution) => {
+            // Ids only: a source that ANSWERED left the registry no reason to record.
+            report({
+              capability,
+              tried: (resolution.attempted ?? []).map((adapterId) => ({ adapterId })),
+            });
+            return resolution;
+          },
+          (error: unknown) => {
+            // The two traversal error classes carry `CapabilityAttempt[]` — an id AND a reason per
+            // adapter, which is the richer half of this field and the only place it exists.
+            const tried = (error as { tried?: CapabilityAttempt[] } | null)?.tried;
+            if (Array.isArray(tried)) {
+              report({
+                capability,
+                tried: tried.map((t) => ({ adapterId: t.adapterId, reason: t.reason })),
+              });
+            }
+            throw error;
+          },
+        );
     },
   };
 }

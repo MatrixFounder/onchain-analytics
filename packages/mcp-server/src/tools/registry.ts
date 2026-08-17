@@ -6,6 +6,7 @@ import {
   type BudgetStore,
   type CapabilityCall,
   type CapabilityResolver,
+  type CapabilityWalk,
   type VendorSpendRecord,
 } from '@onchain-intel/core';
 import type { z } from 'zod';
@@ -498,8 +499,10 @@ export function defineTool<
           // forget to thread it.
           const receipts: VendorSpendRecord[] = [];
           const observedCalls: CapabilityCall[] = [];
+          const walks: CapabilityWalk[] = [];
           const registry = bindCallObserver(ctx.registry, {
             onCall: (call) => observedCalls.push(call),
+            onWalk: (walk) => walks.push(walk),
             onVendorSpend: (receipt) => receipts.push(receipt),
           });
 
@@ -558,6 +561,7 @@ export function defineTool<
                   ? outcome.cache.ageMs
                   : undefined,
               overrunMs: outcome.ok ? outcome.timing?.overrunMs : undefined,
+              walks,
               receipts,
             });
             if (spend.dropped.length > 0) {
