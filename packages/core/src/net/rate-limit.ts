@@ -3,7 +3,13 @@ import { DeadlineExceededError } from './safe-fetch.js';
 /**
  * Per-provider token-bucket configuration (D4/R-26, `providers.config.ts`'s `rateLimit` field).
  */
-import { createInProcessLimiterStore, limiterKeyOf, type LimiterStore } from './limiter-store.js';
+import {
+  createInProcessLimiterStore,
+  limiterKeyOf,
+  type LimiterKey,
+  type LimiterStore,
+  type LimiterTake,
+} from './limiter-store.js';
 
 export interface TokenBucketConfig {
   capacity: number;
@@ -28,6 +34,39 @@ export interface ThrottleDeps {
    * degradation rather than simulate it.
    */
   store?: LimiterStore;
+  /**
+   * The degradation port (task 014-19, R-7.7, `system-architecture.md` §3.4.4).
+   *
+   * **Why a port of one method and not the diagnostics writer.** `throttle` lives in
+   * `packages/core` and the writer lives in `packages/mcp-server`, the package `core` is forbidden
+   * to know about (`security.md` §7.5.1). One method keeps `core` unable to name a table, a
+   * principal or a connection.
+   *
+   * **Why `void` and not a promise.** Degradation is already the slow path: awaiting a write here
+   * would add the store's latency to a call that just failed to reach a store. The sink owns its
+   * own buffering.
+   *
+   * **Why optional.** Omitted, the limiter degrades exactly as it does with it and writes nothing.
+   * `createThrottle()` is called with no arguments for the module singleton, and every existing
+   * test constructs it the same way.
+   */
+  emit?: (event: 'limiter.degraded', detail: Record<string, unknown>) => void;
+  /**
+   * How a store call is bounded (§3.4.4 item 1). Injected by tests so a HANGING store is proven
+   * without a real timer; production gets `setTimeout`.
+   *
+   * A hang is the failure a `try`/`catch` does not cover, and it is the one that matters most: a
+   * throwing store costs a caller nothing, while a store that never answers parks every throttling
+   * call in the process for as long as the outage lasts — turning a storage failure into the
+   * service outage R-7.7 exists to prevent.
+   */
+  storeTimer?: (ms: number) => LimiterStoreTimer;
+}
+
+/** A cancellable deadline for one store call. `promise` never resolves; it only rejects. */
+export interface LimiterStoreTimer {
+  readonly promise: Promise<never>;
+  readonly cancel: () => void;
 }
 
 /**
@@ -118,6 +157,51 @@ const MAX_WAIT_MS = 30_000;
  * behind them sooner, lowering it re-opens the terminal misattribution above.
  */
 const MIN_POST_WAIT_REMAINDER_MS = 5_000;
+
+/**
+ * How long one store call may take before the process treats the store as unavailable
+ * (`system-architecture.md` §3.4.4 item 1, applied value).
+ *
+ * **Where the number comes from.** One fifth of `MIN_POST_WAIT_REMAINDER_MS`, and the ratio is the
+ * point rather than the number: a failing store must cost the caller LESS time than the floor it
+ * must still clear afterwards. At 1 000 ms a caller that meets a dead store still has at least
+ * 4 000 ms of any budget that was going to clear the floor at all, so the outage does not convert
+ * an admissible call into `DeadlineWouldExceedError` by itself.
+ */
+const STORE_CALL_TIMEOUT_MS = 1_000;
+
+/**
+ * How long the process serves from its own bucket before trying the store again (§3.4.4 item 4,
+ * applied value; measured: none).
+ *
+ * **What it buys.** Without it, an outage is paid for once per call by every caller — each one
+ * waiting out `STORE_CALL_TIMEOUT_MS` to learn what the previous one already learned. With it, the
+ * cost of an outage is one timeout a minute per process.
+ *
+ * **What it costs, stated rather than left to be discovered.** Up to a minute of per-process
+ * limiting after the store has recovered. That is the same direction as degradation itself — each
+ * process holds itself to the declared ceiling and the SUM across processes may exceed it — so the
+ * cooldown widens a window that is already accepted, and does not open a new kind of hole.
+ */
+const DEGRADED_COOLDOWN_MS = 60_000;
+
+/** Production's bounded wait: a real timer, unref'd so a pending deadline cannot hold the process
+ * open, and cancelled the moment the store answers. */
+function realStoreTimer(ms: number): LimiterStoreTimer {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<never>((_resolve, reject) => {
+    handle = setTimeout(() => {
+      reject(new Error(`limiter store did not answer within ${ms}ms`));
+    }, ms);
+    handle.unref?.();
+  });
+  return {
+    promise,
+    cancel: (): void => {
+      if (handle !== undefined) clearTimeout(handle);
+    },
+  };
+}
 
 /**
  * Thrown by `throttle()` for either of two DISTINCT reasons — both are misconfiguration/overload
@@ -278,9 +362,123 @@ export class DeadlineWouldExceedError extends Error {
 export function createThrottle(deps: ThrottleDeps = {}): Throttle {
   const now = deps.now ?? Date.now;
   const wait = deps.wait ?? defaultWait;
-  // Omitted means one map in one process — today's behaviour, kept as the default so no existing
-  // call site changes meaning by standing still (R-7.7 also degrades to exactly this store).
-  const store = deps.store ?? createInProcessLimiterStore();
+  const storeTimer = deps.storeTimer ?? realStoreTimer;
+  const shared = deps.store;
+  /**
+   * R-7.7's fallback, and also the whole limiter when no store is injected.
+   *
+   * Constructed unconditionally rather than lazily on the first failure: a bucket created at the
+   * moment of an outage would start FULL, so the first burst after a store failed would be admitted
+   * at capacity on top of whatever the shared row had already granted. Created here, it accumulates
+   * nothing while unused and is simply the state this process would have had all along.
+   */
+  const fallback = createInProcessLimiterStore();
+
+  /**
+   * The instant the process may speak to the store again. Zero means "not degraded".
+   *
+   * One number and not a boolean, because the cooldown and the state are the same fact: while it is
+   * in the future the store is not called at all, and the first call after it decides whether the
+   * process is still degraded.
+   */
+  let degradedUntilMs = 0;
+
+  /** Bounds one store call, and always cancels its deadline — a leaked timer per call would be a
+   * slow leak in the hottest path this module has. */
+  async function bounded<T>(run: () => Promise<T>): Promise<T> {
+    const timer = storeTimer(STORE_CALL_TIMEOUT_MS);
+    try {
+      return await Promise.race([run(), timer.promise]);
+    } finally {
+      timer.cancel();
+    }
+  }
+
+  /**
+   * Enters degradation and announces it ONCE per transition (R-7.7, AC-45).
+   *
+   * **Announced on the transition, not on every degraded call.** A degraded process serves every
+   * call from its own bucket, and an event per call would be a row per request for the length of an
+   * outage — a channel that drowns the eight events `data-model.md` §4.5.8 declares. A second event
+   * follows only after the cooldown has expired and a retry has failed again, which is a NEW fact:
+   * the outage is still going.
+   *
+   * **A recovery announces nothing, and that is a residual rather than a decision.**
+   * `DIAGNOSTIC_EVENTS` is a closed vocabulary behind a `CHECK` (§4.5.8) and has no member for it,
+   * so recovery is visible only as degraded rows stopping. Naming it would mean widening a
+   * vocabulary that four other tasks write into.
+   */
+  function degrade(nowMs: number, phase: 'take' | 'refund', key: LimiterKey, error: unknown): void {
+    degradedUntilMs = nowMs + DEGRADED_COOLDOWN_MS;
+    deps.emit?.('limiter.degraded', {
+      providerId: key.providerId,
+      scopeKey: key.scopeKey,
+      phase,
+      reason: error instanceof Error ? error.message : String(error),
+      cooldownMs: DEGRADED_COOLDOWN_MS,
+      retryAtMs: degradedUntilMs,
+    });
+  }
+
+  /**
+   * Takes a slot from the shared store, or from this process's own bucket when the store cannot be
+   * reached — and says WHICH answered, because the refund has to go back to the same one.
+   *
+   * **Degradation never skips the bucket.** The alternative R-7.7 rejects is "let the call
+   * through"; that would pierce the declared ceiling and, on a route with a paid fallback behind a
+   * free source, move spend onto the paid one. So the fallback is consulted on exactly the terms
+   * the store would have been.
+   */
+  async function acquire(
+    key: LimiterKey,
+    config: TokenBucketConfig,
+    weight: number,
+    nowMs: number,
+  ): Promise<{ take: LimiterTake; served: LimiterStore }> {
+    if (shared === undefined || nowMs < degradedUntilMs) {
+      return { take: await fallback.take(key, config, weight, nowMs), served: fallback };
+    }
+    try {
+      const take = await bounded(() => shared.take(key, config, weight, nowMs));
+      // No `degradedUntilMs = 0` here, and its absence is the point: this branch is only reached
+      // when `nowMs >= degradedUntilMs`, so the mark is already a point in the past, and a point in
+      // the past is not degradation. Clearing it would be a line no test could distinguish from its
+      // own removal — which is how a reader ends up believing recovery is a step rather than the
+      // absence of one.
+      return { take, served: shared };
+    } catch (error) {
+      degrade(nowMs, 'take', key, error);
+      return { take: await fallback.take(key, config, weight, nowMs), served: fallback };
+    }
+  }
+
+  /**
+   * Returns a slot to whichever store granted it.
+   *
+   * **The store that served the take is the store that gets the refund**, never "the current one".
+   * Crediting the fallback for a slot the shared row is holding would leave the row short by one
+   * forever AND hand this process a token it never earned — both buckets wrong, in opposite
+   * directions.
+   *
+   * **A failed refund is swallowed, and the slot stays spent.** The caller is already raising a
+   * refusal, and turning a storage failure into a second, different throw would replace a refusal
+   * the registry knows how to route ("ask the next provider") with one it does not. The cost is a
+   * slot the shared bucket keeps: over-restricting, which is the direction §4.5.6 tolerates.
+   */
+  async function release(
+    served: LimiterStore,
+    key: LimiterKey,
+    weight: number,
+    nowMs: number,
+  ): Promise<void> {
+    try {
+      await (served === shared
+        ? bounded(() => served.refund(key, weight, nowMs))
+        : served.refund(key, weight, nowMs));
+    } catch (error) {
+      degrade(nowMs, 'refund', key, error);
+    }
+  }
 
   return async function throttle(
     providerId: string,
@@ -321,7 +519,10 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
     // The negative balance it can return is deliberately NOT reset to zero: that backlog is exactly
     // what the NEXT call's refill reads, which is what makes concurrent callers space out instead
     // of racing on stale state.
-    const { tokensLeft, waitMs } = await store.take(key, config, weight, nowMs);
+    const {
+      take: { tokensLeft, waitMs },
+      served,
+    } = await acquire(key, config, weight, nowMs);
     if (tokensLeft >= 0) {
       return;
     }
@@ -332,7 +533,7 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       // Refunds `weight`, not 1: a partial refund would leak tokens out of the bucket on every
       // rejected weighted call, tightening the limiter a little more each time until it stopped
       // admitting anything.
-      await store.refund(key, weight, nowMs);
+      await release(served, key, weight, nowMs);
       throw new RateLimitRejectedError(
         providerId,
         `computed wait ${Math.round(waitMs)}ms exceeds the ${MAX_WAIT_MS}ms fairness cap (saturated bucket)`,
@@ -376,7 +577,7 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       const remainingMs = deadlineAtMs - decidedAtMs;
       if (remainingMs <= 0) {
         // Genuine expiry — true for EVERY adapter on the route, so this ends the traversal.
-        await store.refund(key, weight, decidedAtMs);
+        await release(served, key, weight, decidedAtMs);
         throw new DeadlineExceededError(`provider "${providerId}"`, deadlineAtMs);
       }
       // A different fact: time is left, but not through THIS provider's bucket. Ask the next one.
@@ -387,7 +588,7 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       // the traversal for every adapter behind this one. Refusing here instead keeps the fact
       // per-provider, which is this class's entire reason to exist.
       if (remainingMs - waitMs < MIN_POST_WAIT_REMAINDER_MS) {
-        await store.refund(key, weight, decidedAtMs);
+        await release(served, key, weight, decidedAtMs);
         throw new DeadlineWouldExceedError(
           providerId,
           waitMs,

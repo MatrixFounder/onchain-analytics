@@ -115,7 +115,7 @@ export { assertMergeParticipantsAreFree } from './adapters/types.js';
 export { routes, adapterRegistrations } from './providers.config.js';
 
 export { safeFetch, assertAllowedHost } from './net/safe-fetch.js';
-export { throttle } from './net/rate-limit.js';
+export { throttle, createThrottle, type Throttle, type ThrottleDeps } from './net/rate-limit.js';
 // Task 014-17 — the bucket seam and its key; task 014-18 — the two shared implementations behind
 // it. Exported because the limiter's store is injected from outside `core` (the process that picks
 // the storage axis is `mcp-server`'s entry point) and because `scopedProviderId` is the one
