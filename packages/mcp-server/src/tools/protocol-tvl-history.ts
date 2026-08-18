@@ -4,10 +4,11 @@ import { WindowChangeSchema } from './window-change.js';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -30,6 +31,7 @@ export const ProtocolTvlHistoryInputSchema = z
     protocolSlug: z.string().min(1).max(128),
     days: z.number().int().min(1).max(MAX_DAYS).optional(),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict();
 export type ProtocolTvlHistoryInput = z.infer<typeof ProtocolTvlHistoryInputSchema>;
 
@@ -76,11 +78,17 @@ export async function protocolTvlHistoryHandler(
   const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const days = input.days ?? DEFAULT_DAYS;
 
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
     chain,
-    protocolSlug: input.protocolSlug,
-    days,
-  });
+    {
+      chain,
+      protocolSlug: input.protocolSlug,
+      days,
+    },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   const parsed = ProtocolTvlHistoryOutputSchema.safeParse(outcome.output);

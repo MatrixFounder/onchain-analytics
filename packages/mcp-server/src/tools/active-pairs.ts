@@ -7,10 +7,11 @@ import {
   type CapabilityResolver,
 } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -42,6 +43,7 @@ export const ActivePairsInputSchema = z
     chain: SUPPORTED_CHAIN,
     limit: z.number().int().positive().max(MAX_LIMIT).optional(),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict();
 export type ActivePairsInput = z.infer<typeof ActivePairsInputSchema>;
 
@@ -137,7 +139,7 @@ export async function activePairsHandler(
   const limit = input.limit ?? DEFAULT_LIMIT;
   const args: Record<string, unknown> = { chain, limit };
 
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, args);
+  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, args, input.deadlineMs);
   if (!outcome.ok) return outcome;
 
   // Adversarial cycle 1, fix I: `outcome.output` (the adapter's `Pool[]`) is validated exactly

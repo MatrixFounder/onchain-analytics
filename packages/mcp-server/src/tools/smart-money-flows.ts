@@ -12,10 +12,11 @@ import {
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -42,6 +43,7 @@ export const SmartMoneyFlowsInputSchema = z
     chain: SUPPORTED_CHAIN,
     tokenAddress: z.string().min(1).max(MAX_ADDRESS_LENGTH),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict()
   .superRefine((val, ctx) => {
     if (val.tokenAddress.length > MAX_ADDRESS_LENGTH) {
@@ -116,10 +118,16 @@ export async function smartMoneyFlowsHandler(
   // cache-hit path that exists precisely to avoid paying twice.
   const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const tokenAddress = normalizeAddress(chain, input.tokenAddress);
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
     chain,
-    tokenAddress,
-  });
+    {
+      chain,
+      tokenAddress,
+    },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   const parsed = SmartMoneyFlowsOutputSchema.safeParse(outcome.output);

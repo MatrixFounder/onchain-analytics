@@ -10,10 +10,11 @@ import {
   type Wallet,
 } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -44,6 +45,7 @@ export const WalletBalancesInputSchema = z
     chain: SUPPORTED_CHAIN,
     address: z.string().min(1).max(MAX_ADDRESS_LENGTH),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict()
   .superRefine((val, ctx) => {
     if (val.address.length > MAX_ADDRESS_LENGTH) {
@@ -89,10 +91,16 @@ export async function walletBalancesHandler(
   // that (vdd-multi cycle 5, H-4).
   const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const address = normalizeAddress(chain, input.address);
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
     chain,
-    address,
-  });
+    {
+      chain,
+      address,
+    },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
   // `safeParse`, never `parse` — see `get-token.ts` for why this was the same WI-27 defect under a
   // different spelling. `WalletSchema.balances` is an array, so the per-element scaling was here too.

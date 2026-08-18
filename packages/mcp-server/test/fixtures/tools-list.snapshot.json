@@ -58,6 +58,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -139,6 +145,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -236,6 +248,12 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 100
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -373,6 +391,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -616,6 +640,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -681,6 +711,12 @@
         },
         "includeSeries": {
           "type": "boolean"
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -900,6 +936,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 1825
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -1196,6 +1238,12 @@
           "description": "Floor on this chain's TVL, applied BEFORE ranking. Use it with a change* sort: without a floor the top of a growth ranking is dust doubling from nothing.",
           "type": "number",
           "minimum": 0
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -1377,6 +1425,12 @@
           "minLength": 1,
           "maxLength": 128,
           "description": "DeFiLlama protocol slug, e.g. \"aave-v3\" or the parent \"aave\". A parent slug also surfaces incidents recorded against its versions — see each incident's matchedBy."
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -1560,6 +1614,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -1687,6 +1747,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -1811,6 +1877,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 1825
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -2096,6 +2168,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -2196,6 +2274,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -2283,6 +2367,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -2417,6 +2507,12 @@
         "exhaustive": {
           "default": false,
           "type": "boolean"
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -2528,6 +2624,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -2700,6 +2802,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 500
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [

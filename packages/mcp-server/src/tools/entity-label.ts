@@ -11,10 +11,11 @@ import {
 } from '@onchain-intel/core';
 import { budgetMeta, type BudgetMeta } from './budget-meta.js';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -59,6 +60,7 @@ export const EntityLabelInputSchema = z
     tokenAddress: z.string().min(1).max(MAX_ADDRESS_LENGTH).optional(),
     exhaustive: z.boolean().default(false),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict()
   .superRefine((val, ctx) => {
     if (val.query === undefined && val.tokenAddress === undefined) {
@@ -167,7 +169,7 @@ export async function entityLabelHandler(
     args['tokenAddress'] = normalizeAddress(chain, input.tokenAddress);
   }
 
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, args);
+  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, args, input.deadlineMs);
   if (!outcome.ok) return outcome;
 
   const parsed = EntityLabelOutputSchema.safeParse({

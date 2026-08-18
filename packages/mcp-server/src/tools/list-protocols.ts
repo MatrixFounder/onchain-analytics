@@ -3,10 +3,11 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -42,6 +43,7 @@ export const ListProtocolsInputSchema = z
           'a floor the top of a growth ranking is dust doubling from nothing.',
       ),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict();
 export type ListProtocolsInput = z.infer<typeof ListProtocolsInputSchema>;
 
@@ -115,12 +117,18 @@ export async function listProtocolsHandler(
   const sortedBy = input.sortedBy ?? 'tvl';
   const minTvlUsd = input.minTvlUsd ?? 0;
 
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
     chain,
-    limit,
-    sortedBy,
-    minTvlUsd,
-  });
+    {
+      chain,
+      limit,
+      sortedBy,
+      minTvlUsd,
+    },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   const parsed = ListProtocolsOutputSchema.safeParse(outcome.output);

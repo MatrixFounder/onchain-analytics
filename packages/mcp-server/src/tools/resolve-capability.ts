@@ -1,4 +1,68 @@
-import type { CapabilityResolver, Chain } from '@onchain-intel/core';
+import { z } from 'zod';
+import { capabilityManifests, type CapabilityResolver, type Chain } from '@onchain-intel/core';
+
+/**
+ * The deadline a NETWORK client may send — task 014-23, R-16, `interfaces.md` §5.4.5.
+ *
+ * **A duration, never a moment.** `registry.resolve()`'s fourth parameter is an absolute epoch-ms
+ * instant, and accepting one from the wire would let a remote clock's skew set our spending bound.
+ * The server converts from its own clock at admission.
+ *
+ * **`.int().positive().safe()`, and each of the three earns its place.** A non-integer or unsafe
+ * value would reach the registry's own guard, which reads a malformed number as ABSENCE — i.e. as
+ * the FULL manifest budget, which is more time than the caller asked for. Refusing the shape here
+ * means a client is told its value was unusable instead of quietly receiving the opposite of it.
+ */
+export const DeadlineMsInputSchema = z
+  .number()
+  .int()
+  .positive()
+  .safe()
+  .optional()
+  .describe(
+    'Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.',
+  );
+
+/**
+ * Thrown-shaped refusal for a deadline that would WIDEN the capability's declared budget (AC-12).
+ *
+ * **Refused, not clamped.** Clamping answers under a bound the caller is never told about: they ask
+ * for 120 s, get 15 s of work, and read the shorter answer as the vendor's. The refusal names both
+ * numbers, so the correction is mechanical.
+ *
+ * It is a class rather than a bare string because `refusalClass` is what `request_trace` records,
+ * and `transport/failure-classes.ts` demonstrates that classifying a message back into a class is
+ * not injective. `name` is assigned explicitly, so it survives bundling.
+ */
+export class DeadlineWideningRefusedError extends Error {
+  constructor(
+    readonly capability: string,
+    readonly requestedMs: number,
+    readonly declaredMs: number,
+  ) {
+    super(
+      `deadlineMs ${requestedMs} exceeds the ${declaredMs}ms this capability declares for ` +
+        `${capability} — a caller may narrow the limit, never widen it`,
+    );
+    this.name = 'DeadlineWideningRefusedError';
+  }
+}
+
+/**
+ * Thrown-shaped refusal for a capability with no manifest row.
+ *
+ * **Why this refuses rather than ignoring the requested deadline.** Ignoring it would apply the full
+ * budget — more time than the caller asked for — which is the widening R-16.2 forbids, arrived at by
+ * omission instead of by request. Every routed capability has a row
+ * (`packages/core/test/capability-manifest.test.ts`), so this is unreachable today and says so
+ * loudly if that stops being true.
+ */
+export class CapabilityManifestMissingError extends Error {
+  constructor(readonly capability: string) {
+    super(`no capability manifest declares a deadline for ${capability}`);
+    this.name = 'CapabilityManifestMissingError';
+  }
+}
 
 /**
  * `_meta.cache` shape every one of the 4 new M1 tools attaches to its MCP response (ARCHITECTURE.md
@@ -162,9 +226,41 @@ export async function resolveCapability(
   capability: string,
   chain: Chain,
   args: Record<string, unknown>,
+  /**
+   * The caller's own bound, in MILLISECONDS (task 014-23, AC-12). Absent means the capability's
+   * declared budget, which is what every caller got before this task.
+   *
+   * **Deliberately NOT part of `args`.** `args` is what the argument hash — and therefore the cache
+   * key — is built from. Two callers asking the same question with different patience must share a
+   * cache entry; folding the deadline in would give them separate ones and buy a second vendor call
+   * for a difference the vendor never saw.
+   */
+  requestedDeadlineMs?: number,
 ): Promise<ResolveOutcome> {
+  // The boundary, and it is here because this is the single place tools reach the registry
+  // (`interfaces.md` §5.4.5). The registry keeps its own `Math.min` as a backstop; both read
+  // `capabilityManifests`, so the boundary and the backstop cannot disagree about the ceiling.
+  let requestedDeadlineAtMs: number | undefined;
+  if (requestedDeadlineMs !== undefined) {
+    const declared = capabilityManifests[capability]?.deadlineMs;
+    const refusal =
+      declared === undefined
+        ? new CapabilityManifestMissingError(capability)
+        : requestedDeadlineMs > declared
+          ? new DeadlineWideningRefusedError(capability, requestedDeadlineMs, declared)
+          : undefined;
+    // AC-12's second half: the call is NOT STARTED. The refusal is returned before `resolve()`, so
+    // no adapter is entered, no cache slot is read and no credit can be reserved.
+    if (refusal !== undefined) {
+      return { ok: false, reason: refusal.message, refusalClass: refusal.name };
+    }
+    // Converted from OUR clock, once. A duration on the wire and a moment in the registry is the
+    // whole reason this conversion exists rather than a pass-through.
+    requestedDeadlineAtMs = Date.now() + requestedDeadlineMs;
+  }
+
   try {
-    const resolution = await registry.resolve(capability, chain, args);
+    const resolution = await registry.resolve(capability, chain, args, requestedDeadlineAtMs);
     return {
       ok: true,
       output: resolution.result,

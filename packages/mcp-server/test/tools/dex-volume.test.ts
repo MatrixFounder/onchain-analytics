@@ -208,9 +208,12 @@ describe('onchain_dex_volume — schemas (R-69a)', () => {
     // must stay a `z.object` with a statically known field set (no transform, no `z.record`),
     // because that is what the SDK can render at all. `.shape` is used here only as the cheapest
     // way to observe that — it is no longer how the schema reaches `registerTool`.
+    // `deadlineMs` joined in task 014-23: every tool that resolves a capability accepts the
+    // caller's own bound, and the field set is asserted whole so the addition had to be seen.
     expect(Object.keys(DexVolumeInputSchema.shape).sort()).toEqual([
       'chain',
       'days',
+      'deadlineMs',
       'includeSeries',
     ]);
     expect(Object.keys(DexVolumeOutputSchema.shape)).toContain('gapDays');

@@ -1,7 +1,12 @@
 import { canonicalizeChain, ChainInputSchema } from '@onchain-intel/core';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
-import { resolveCapability, type MergedCacheMeta, type TimingMeta } from './resolve-capability.js';
+import {
+  DeadlineMsInputSchema,
+  resolveCapability,
+  type MergedCacheMeta,
+  type TimingMeta,
+} from './resolve-capability.js';
 import { defineTool } from './registry.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -73,6 +78,7 @@ export const DashPlatformHistoryInputSchema = z
      * which this task is forbidden to rewrite. */
     limit: z.number().int().min(1).max(MAX_LIMIT).optional(),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict();
 export type DashPlatformHistoryInput = z.infer<typeof DashPlatformHistoryInputSchema>;
 
@@ -238,7 +244,13 @@ export async function dashPlatformHistoryHandler(
   const limit = input.limit ?? DEFAULT_LIMIT;
   const capability = SERIES_CAPABILITY[input.series];
 
-  const outcome = await resolveCapability(ctx.registry, capability, chain, { chain, limit });
+  const outcome = await resolveCapability(
+    ctx.registry,
+    capability,
+    chain,
+    { chain, limit },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return { ...outcome, capability };
 
   const points = (Array.isArray(outcome.output) ? outcome.output : []) as RawSnapshot[];

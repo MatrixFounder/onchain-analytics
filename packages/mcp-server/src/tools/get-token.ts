@@ -10,10 +10,11 @@ import {
   type Token,
 } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -51,6 +52,7 @@ export const GetTokenInputSchema = z
     chain: SUPPORTED_CHAIN,
     address: z.string().min(1).max(MAX_ADDRESS_LENGTH),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict()
   .superRefine((val, ctx) => {
     if (val.address.length > MAX_ADDRESS_LENGTH) {
@@ -114,10 +116,16 @@ export async function getTokenHandler(
   // registry made the two disagree silently.
   const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
   const address = normalizeAddress(chain, input.address);
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
     chain,
-    address,
-  });
+    {
+      chain,
+      address,
+    },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
   // `safeParse`, never `parse` (WI-27, adversarial cycle 2). This line used to be `.parse`, so a
   // provider result that violated the contract threw a ZodError out of the handler — and the SDK's

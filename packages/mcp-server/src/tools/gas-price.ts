@@ -3,17 +3,21 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
 const CAPABILITY = 'gas.price';
 
 /** Input for `onchain_gas_price` (WI-51) — a chain and nothing else. */
-export const GasPriceInputSchema = z.object({ chain: ChainInputSchema }).strict();
+export const GasPriceInputSchema = z
+  .object({ chain: ChainInputSchema })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
+  .strict();
 export type GasPriceInput = z.infer<typeof GasPriceInputSchema>;
 
 /**
@@ -90,7 +94,13 @@ export async function gasPriceHandler(
   ctx: GasPriceContext,
 ): Promise<GasPriceOutcome> {
   const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, { chain });
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
+    chain,
+    { chain },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   const parsed = GasPriceOutputSchema.safeParse(outcome.output);

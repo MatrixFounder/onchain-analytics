@@ -58,8 +58,7 @@ repository has one under `docs/onchain-analytics/raw/`.
 A call to `onchain_active_pairs` on `base` is refused before any HTTP request:
 
 ```
-capability 'pairs.active' is not available on chain 'base'.
-Available on: ethereum, berachain, solana.
+capability 'pairs.active' is not available on chain 'base'. Available on: ethereum, berachain, solana. Available on 'base' instead: chain.transactions, chain.tvl, chain.tvl.history, dex.volume.history, entity.labels, gas.price, protocol.incidents, protocol.list, protocol.tvl, protocol.tvl.history, … (+6 more).
 ```
 
 The refusal states an absence at the vendor. The vendor answers on that chain.

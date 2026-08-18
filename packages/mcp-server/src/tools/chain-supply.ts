@@ -3,10 +3,11 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -17,7 +18,10 @@ const CAPABILITY = 'chain.supply';
  *
  * Chain and nothing else: supply is a property of the chain itself, not of an address or a contract.
  */
-export const ChainSupplyInputSchema = z.object({ chain: ChainInputSchema }).strict();
+export const ChainSupplyInputSchema = z
+  .object({ chain: ChainInputSchema })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
+  .strict();
 export type ChainSupplyInput = z.infer<typeof ChainSupplyInputSchema>;
 
 /**
@@ -65,7 +69,13 @@ export async function chainSupplyHandler(
   // Canonicalize before `args`, against the registry THIS `CapabilityRegistry` gates on — the same
   // rule every other chain-taking tool follows (data-model.md §4.2.2).
   const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, { chain });
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
+    chain,
+    { chain },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   // `safeParse`, never `parse`: a provider result that fails the contract is reported as

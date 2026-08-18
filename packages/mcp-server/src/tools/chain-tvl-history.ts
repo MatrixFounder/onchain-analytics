@@ -4,10 +4,11 @@ import { WindowChangeSchema } from './window-change.js';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -32,6 +33,7 @@ export const ChainTvlHistoryInputSchema = z
      * from the clock, because the current day is not published until it closes. */
     days: z.number().int().min(1).max(MAX_DAYS).optional(),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict();
 export type ChainTvlHistoryInput = z.infer<typeof ChainTvlHistoryInputSchema>;
 
@@ -90,7 +92,13 @@ export async function chainTvlHistoryHandler(
   // would split the cache and duplicate the upstream fetch.
   const days = input.days ?? DEFAULT_DAYS;
 
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, { chain, days });
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
+    chain,
+    { chain, days },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   const parsed = ChainTvlHistoryOutputSchema.safeParse(outcome.output);

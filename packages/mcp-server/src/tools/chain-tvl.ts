@@ -3,10 +3,11 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -21,7 +22,10 @@ const CAPABILITY = 'chain.tvl';
  * them would mean a parameter that silently changes what every other field means — the worst kind
  * of contract overloading.
  */
-export const ChainTvlInputSchema = z.object({ chain: ChainInputSchema }).strict();
+export const ChainTvlInputSchema = z
+  .object({ chain: ChainInputSchema })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
+  .strict();
 export type ChainTvlInput = z.infer<typeof ChainTvlInputSchema>;
 
 /**
@@ -57,7 +61,13 @@ export async function chainTvlHandler(
   // Against the registry THIS `CapabilityRegistry` gates on, never a second copy — see
   // `get-token.ts` for both reasons (vdd-multi cycle 5, H-4).
   const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, { chain });
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
+    chain,
+    { chain },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   // `safeParse`, never `parse` — a provider result that fails the contract is reported as

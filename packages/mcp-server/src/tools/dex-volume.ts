@@ -3,10 +3,11 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -32,6 +33,7 @@ export const DexVolumeInputSchema = z
      * what the question needs. */
     includeSeries: z.boolean().optional(),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict();
 export type DexVolumeInput = z.infer<typeof DexVolumeInputSchema>;
 
@@ -130,11 +132,17 @@ export async function dexVolumeHandler(
   const days = input.days ?? DEFAULT_DAYS;
   const includeSeries = input.includeSeries ?? true;
 
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
     chain,
-    days,
-    includeSeries,
-  });
+    {
+      chain,
+      days,
+      includeSeries,
+    },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   // `safeParse`, never `parse` — a provider result that fails the contract is reported as

@@ -2,10 +2,11 @@ import { z } from 'zod';
 import { defineTool } from './registry.js';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -23,6 +24,7 @@ export const ProtocolIncidentsInputSchema = z
           "surfaces incidents recorded against its versions — see each incident's matchedBy.",
       ),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict();
 export type ProtocolIncidentsInput = z.infer<typeof ProtocolIncidentsInputSchema>;
 
@@ -105,9 +107,15 @@ export async function protocolIncidentsHandler(
 ): Promise<ProtocolIncidentsOutcome> {
   // Protocol-scoped, not chain-scoped. `ethereum` is the structural chain argument the registry's
   // coverage gate needs; it selects nothing here — the feed is global.
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, 'ethereum', {
-    protocolSlug: input.protocolSlug,
-  });
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
+    'ethereum',
+    {
+      protocolSlug: input.protocolSlug,
+    },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   const parsed = ProtocolIncidentsOutputSchema.safeParse(outcome.output);

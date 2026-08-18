@@ -3,10 +3,11 @@ import { defineTool } from './registry.js';
 import { z } from 'zod';
 import type { CapabilityResolver } from '@onchain-intel/core';
 import {
+  DeadlineMsInputSchema,
+  metaFrom,
   resolveCapability,
   type CacheMeta,
   type TimingMeta,
-  metaFrom,
 } from './resolve-capability.js';
 import { contractViolation } from './contract-violation.js';
 
@@ -35,6 +36,7 @@ export const ProtocolTvlInputSchema = z
     chain: SUPPORTED_CHAIN,
     protocolSlug: z.string().min(1).max(128),
   })
+  .extend({ deadlineMs: DeadlineMsInputSchema })
   .strict();
 export type ProtocolTvlInput = z.infer<typeof ProtocolTvlInputSchema>;
 
@@ -139,10 +141,16 @@ export async function protocolTvlHandler(
   //
   // Resolved against `ctx.registry`, never the default — see `get-token.ts` (vdd-multi cycle 5, H-4).
   const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
-  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, {
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
     chain,
-    protocolSlug: input.protocolSlug,
-  });
+    {
+      chain,
+      protocolSlug: input.protocolSlug,
+    },
+    input.deadlineMs,
+  );
   if (!outcome.ok) return outcome;
 
   const parsed = ProtocolTvlOutputSchema.safeParse(outcome.output);
