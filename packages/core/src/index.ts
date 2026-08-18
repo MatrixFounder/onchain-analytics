@@ -115,7 +115,18 @@ export { assertMergeParticipantsAreFree } from './adapters/types.js';
 export { routes, adapterRegistrations } from './providers.config.js';
 
 export { safeFetch, assertAllowedHost } from './net/safe-fetch.js';
-export { throttle, createThrottle, type Throttle, type ThrottleDeps } from './net/rate-limit.js';
+export {
+  throttle,
+  createThrottle,
+  // Task 014-20, R-9.4 — the operator half of a limiter refusal. Exported so the gate that proves
+  // it never reaches a client (`mcp-server`'s AC-47 suite) builds the phrase from the SAME renderer
+  // the refusal uses: a hand-typed copy in the test would stop matching the day the format moved,
+  // and the check that stopped matching is the one that goes green.
+  renderBucketState,
+  type LimiterBucketState,
+  type Throttle,
+  type ThrottleDeps,
+} from './net/rate-limit.js';
 // Task 014-17 — the bucket seam and its key; task 014-18 — the two shared implementations behind
 // it. Exported because the limiter's store is injected from outside `core` (the process that picks
 // the storage axis is `mcp-server`'s entry point) and because `scopedProviderId` is the one

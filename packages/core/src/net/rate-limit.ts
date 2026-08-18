@@ -204,6 +204,42 @@ function realStoreTimer(ms: number): LimiterStoreTimer {
 }
 
 /**
+ * What the bucket held when it refused — R-9.4's «остаток и потолок» (task 014-20).
+ *
+ * **Why the refusal carries it at all.** Before the shared limiter, a saturated bucket was a fact
+ * about one process and an operator could reproduce it by looking at that process. With two sessions
+ * against one row, "the wait was 40 s" says nothing about WHY: a caller cannot tell a bucket
+ * configured too tight from a bucket someone else drained, and those call for opposite responses —
+ * raise the declared rate, or find the other tenant.
+ *
+ * **Why the rate is here beside the two numbers R-9.4 names.** A remainder without a refill rate
+ * does not say when it clears: `-40` against 2/s is twenty seconds and against 0.05/s is thirteen
+ * minutes. The requirement asks for the remainder and the ceiling; the rate is what makes the pair
+ * actionable rather than merely present.
+ *
+ * **This is the OPERATOR half and it never reaches a client** (AC-47). It travels inside the
+ * attempt list, which `toClientText` cuts before the wire (`transport/failure-classes.ts`).
+ */
+export interface LimiterBucketState {
+  /** Tokens left after this caller's weight. Negative is the backlog — R-9.4's «остаток». */
+  readonly remaining: number;
+  /** What the bucket refills to — R-9.4's «потолок». */
+  readonly ceiling: number;
+  /** Tokens per second, so the remainder converts into a duration. */
+  readonly refillPerSec: number;
+}
+
+/** The one rendering of {@link LimiterBucketState}, so both refusals say it identically. */
+export function renderBucketState(bucket: LimiterBucketState): string {
+  // Rounded to a tenth: the balance is a float and a caller reading `-1.0000000000000002` learns
+  // nothing the tenth does not already tell them.
+  return (
+    `bucket remaining ${Math.round(bucket.remaining * 10) / 10} of ceiling ${bucket.ceiling} ` +
+    `at ${bucket.refillPerSec}/s`
+  );
+}
+
+/**
  * Thrown by `throttle()` for either of two DISTINCT reasons — both are misconfiguration/overload
  * conditions this module refuses to silently paper over:
  *
@@ -226,8 +262,18 @@ export class RateLimitRejectedError extends Error {
   constructor(
     public readonly providerId: string,
     reason: string,
+    /**
+     * Present on the saturation branch and absent on the two misconfiguration branches (task
+     * 014-20, R-9.4). Absent is not "unknown": `refillPerSec <= 0` and an unsatisfiable `weight` are
+     * refused BEFORE any bucket is touched, so there is no state to report and inventing one would
+     * describe a bucket that was never read.
+     */
+    public readonly bucket?: LimiterBucketState,
   ) {
-    super(`throttle: rejected for provider "${providerId}": ${reason}`);
+    super(
+      `throttle: rejected for provider "${providerId}": ${reason}` +
+        (bucket === undefined ? '' : ` (${renderBucketState(bucket)})`),
+    );
     this.name = 'RateLimitRejectedError';
   }
 }
@@ -269,15 +315,21 @@ export class DeadlineWouldExceedError extends Error {
     public readonly remainingMs: number,
     public readonly minRemainderMs: number,
     public readonly phase: 'predicted' | 'observed' = 'predicted',
+    /** R-9.4, task 014-20 — see {@link LimiterBucketState}. Both phases carry it: the observed one
+     * describes the bucket the caller actually waited on, which is the state an operator would
+     * otherwise have to reconstruct from a wait duration. */
+    public readonly bucket?: LimiterBucketState,
   ) {
+    const state = bucket === undefined ? '' : `; ${renderBucketState(bucket)}`;
     super(
       phase === 'predicted'
         ? `throttle: rejected for provider "${providerId}": computed wait ${Math.round(computedWaitMs)}ms ` +
             `would leave ${Math.round(remainingMs - computedWaitMs)}ms of the ${Math.round(remainingMs)}ms ` +
-            `left before the call deadline — under the ${minRemainderMs}ms a request needs to be worth issuing`
+            `left before the call deadline — under the ${minRemainderMs}ms a request needs to be worth ` +
+            `issuing${state}`
         : `throttle: rejected for provider "${providerId}": waited ${Math.round(computedWaitMs)}ms and only ` +
             `${Math.round(remainingMs)}ms of the call deadline is left — under the ${minRemainderMs}ms a ` +
-            `request needs to be worth issuing (the wait overran its computed duration)`,
+            `request needs to be worth issuing (the wait overran its computed duration)${state}`,
     );
     this.name = 'DeadlineWouldExceedError';
   }
@@ -527,6 +579,15 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       return;
     }
 
+    // R-9.4 — what the bucket held when it refused, carried on every refusal below. Built once,
+    // from the same take the wait was computed from, so no refusal can describe a different bucket
+    // than the one that decided it.
+    const bucket: LimiterBucketState = {
+      remaining: tokensLeft,
+      ceiling: config.capacity,
+      refillPerSec: config.refillPerSec,
+    };
+
     if (waitMs > MAX_WAIT_MS) {
       // Refund the reservation — this call will never actually wait/consume its slot, so it must
       // not permanently worsen the backlog for whoever calls next (adversarial cycle 2, fix 7).
@@ -537,6 +598,7 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       throw new RateLimitRejectedError(
         providerId,
         `computed wait ${Math.round(waitMs)}ms exceeds the ${MAX_WAIT_MS}ms fairness cap (saturated bucket)`,
+        bucket,
       );
     }
 
@@ -594,6 +656,8 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
           waitMs,
           remainingMs,
           MIN_POST_WAIT_REMAINDER_MS,
+          'predicted',
+          bucket,
         );
       }
     }
@@ -625,6 +689,7 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
           observedRemainingMs,
           MIN_POST_WAIT_REMAINDER_MS,
           'observed',
+          bucket,
         );
       }
     }

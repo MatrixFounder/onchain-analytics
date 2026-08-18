@@ -394,7 +394,14 @@ describe('call deadline — two typed refusals, one per fact (task 012-7)', () =
    * be red before it. Its power is shown by mutation (any rewording of the saturation branch, or
    * letting the new 4th parameter reach that branch, kills the string equality). The other half of
    * R-146b is the 17 cases above, which this task did not edit. */
-  it('TC-UNIT-12: with no deadline the saturation rejection is byte-for-byte what it was', async () => {
+  /**
+   * **The pinned string changed once, in task 014-20, and deliberately.** R-9.4 requires a limiter
+   * refusal to name the bucket's remainder and its ceiling: before the shared limiter a saturated
+   * bucket was a fact about one process, and with two sessions against one row "the wait was 40 s"
+   * cannot tell a bucket configured too tight from a bucket another tenant drained. The prefix —
+   * everything R-146b pinned — is unchanged; the parenthetical is the addition.
+   */
+  it('TC-UNIT-12: with no deadline the saturation rejection names the bucket and nothing else', async () => {
     const clock = fakeClock();
     const throttle = createThrottle(clock);
     const config = { capacity: 1, refillPerSec: 0.001 };
@@ -407,8 +414,15 @@ describe('call deadline — two typed refusals, one per fact (task 012-7)', () =
     expect(error).toBeInstanceOf(RateLimitRejectedError);
     expect((error as Error).message).toBe(
       'throttle: rejected for provider "saturated-provider": computed wait 1000000ms exceeds the ' +
-        '30000ms fairness cap (saturated bucket)',
+        '30000ms fairness cap (saturated bucket) (bucket remaining -1 of ceiling 1 at 0.001/s)',
     );
+    // The same two numbers as FIELDS, because a message is for an operator and a field is what a
+    // caller can act on without parsing prose.
+    expect((error as RateLimitRejectedError).bucket).toStrictEqual({
+      remaining: -1,
+      ceiling: 1,
+      refillPerSec: 0.001,
+    });
     expect(clock.wait).not.toHaveBeenCalled();
   });
 });

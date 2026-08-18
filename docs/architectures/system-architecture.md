@@ -3462,14 +3462,14 @@ spend onto the paid fallback provider. Refusing the call turns a store outage in
 **How a deadline ends a wait (R-9.1, AC-21).** The wait is refused before it starts, never aborted
 part-way through.
 
-1. `throttle` computes `waitMs` from the bucket deficit
-   (`packages/core/src/net/rate-limit.ts:307`, `const waitMs = (-bucket.tokens / config.refillPerSec) * 1000;`).
+1. The store computes `waitMs` from the bucket deficit
+   (`packages/core/src/net/limiter-store.ts:98`, `export function waitMsFor(tokensLeft, refillPerSec)`).
    Postcondition: with a shared bucket that deficit includes other processes' consumption.
 2. A wait that would leave less than `MIN_POST_WAIT_REMAINDER_MS` is refused
-   (`packages/core/src/net/rate-limit.ts:358`, `if (remainingMs - waitMs < MIN_POST_WAIT_REMAINDER_MS) {`).
+   (`packages/core/src/net/rate-limit.ts:652`, `if (remainingMs - waitMs < MIN_POST_WAIT_REMAINDER_MS) {`).
    Postcondition: the caller leaves the limiter on its own deadline rather than on `MAX_WAIT_MS`.
 3. After `await wait(waitMs)` the same test runs against a fresh clock sample
-   (`packages/core/src/net/rate-limit.ts:388`, `const observedRemainingMs = deadlineAtMs - now();`).
+   (`packages/core/src/net/rate-limit.ts:684`, `const observedRemainingMs = deadlineAtMs - now();`).
    Postcondition: a wait that overran its prediction is refused rather than issued.
 
 **Why two principals on one bucket receive different verdicts.** Step 2 reads this caller's
@@ -3480,10 +3480,31 @@ new mechanism; the store changes only which deficit step 1 reads.
 independently, in one process and across processes, so an active tenant can outpace a quiet one.
 With one token in phase 0 the case is unreachable.
 
-**The refusal names the remainder and the ceiling** (R-9.4). `DeadlineWouldExceedError`'s message
-already does (`packages/core/src/net/rate-limit.ts:179-187`). R-31 splits the rendering: this text
-is the operator one, and the client rendering carries neither the provider walk nor operator
-numbers.
+**The refusal names the remainder and the ceiling** (R-9.4). R-31 splits the rendering: that text is
+the operator one, and the client rendering carries neither the provider walk nor operator numbers.
+
+**An earlier revision of this paragraph read the requirement against the wrong pair, and task 014-20
+corrected it.** It said `DeadlineWouldExceedError`'s message "already does" — that message named the
+DEADLINE's remaining milliseconds and the post-wait floor. R-9.4's «остаток и потолок» are the
+LIMITER's, as the rendering table in task 014-20 spells out: the tokens the bucket has left and the
+ceiling it refills to. The two readings are not close. The deadline pair is a fact about this
+caller's own budget, and it was already on the wire-safe side of the split. The bucket pair is a fact
+about shared state: it is the one an operator needs, and the one AC-47 must keep off the wire.
+
+**Applied.** `LimiterBucketState` (`packages/core/src/net/rate-limit.ts:223`) carries
+`{remaining, ceiling, refillPerSec}` on both limiter refusals, as a field and through one renderer
+(`renderBucketState`, line 233) so the two say it identically. The rate joins the two numbers the
+requirement names because a remainder without one does not convert into a duration: −40 against 2/s
+is twenty seconds and against 0.05/s is thirteen minutes.
+
+**Why the pair is on the refusal at all, now that the bucket is shared.** Before T-014 a saturated
+bucket was a fact about one process and an operator could reproduce it by looking at that process.
+With two sessions against one row, "the wait was 40 s" cannot distinguish a bucket configured too
+tight from a bucket another tenant drained — and those call for opposite responses.
+
+**The two misconfiguration refusals carry no bucket, and absence is not "unknown".**
+`refillPerSec <= 0` and an unsatisfiable `weight` are refused before any bucket is read, so there is
+no state to report; inventing one would describe a bucket nobody looked at.
 
 #### 3.4.5. Where the network profile changes an existing invariant
 

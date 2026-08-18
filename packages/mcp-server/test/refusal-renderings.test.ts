@@ -2,7 +2,13 @@ import { request as httpRequest } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { CapabilityRegistry, adapterRegistrations, routes } from '@onchain-intel/core';
+import {
+  CapabilityRegistry,
+  adapterRegistrations,
+  renderBucketState,
+  routes,
+  type LimiterBucketState,
+} from '@onchain-intel/core';
 import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
 import { EnvSchema } from '../src/env.js';
 import { createDiagnostics, type Diagnostics } from '../src/engine/diagnostics.js';
@@ -42,6 +48,29 @@ const OPERATOR_TEXT =
   `${TRAVERSAL_MARKER}blockscout (no labels for this address), ` +
   'nansen (nansen budget gate refused: budget exceeded for provider=nansen: ' +
   'need 100, used 24950, ceiling 25000; NANSEN_API_KEY was accepted)';
+
+/**
+ * A limiter refusal as it actually arrives — task 014-20's addition to this gate.
+ *
+ * R-9.4 makes the refusal name the bucket's remainder and its ceiling, and AC-47 forbids both on the
+ * wire. The pair is only satisfiable by the split this file measures, which is why the limiter text
+ * joins the budget one here rather than being asserted structurally somewhere else.
+ *
+ * **The numbers are deliberately unmistakable.** A real ceiling of `5` is unsearchable in a JSON
+ * payload full of fives; `4242` and `777.7` appear nowhere else, so a substring that survives is
+ * evidence rather than coincidence.
+ */
+const LIMITER_BUCKET: LimiterBucketState = {
+  remaining: -777.7,
+  ceiling: 4242,
+  refillPerSec: 0.5,
+};
+
+const LIMITER_OPERATOR_TEXT =
+  'capability deadline exceeded: entity.labels on ethereum' +
+  `${TRAVERSAL_MARKER}blockscout (throttle: rejected for provider "blockscout": computed wait ` +
+  '3000ms would leave 3000ms of the 6000ms left before the call deadline — under the 5000ms a ' +
+  `request needs to be worth issuing; ${renderBucketState(LIMITER_BUCKET)})`;
 
 /** The same shape with NO budget anywhere — the plain traversal case. */
 const PLAIN_OPERATOR_TEXT =
@@ -87,7 +116,7 @@ function channel(store = createDiagnosticsStore(harness.engine)): Diagnostics {
 }
 
 /** A session server whose one tool refuses with the full operator text, through `defineTool`. */
-function refusingServer(diagnostics: Diagnostics): McpServer {
+function refusingServer(diagnostics: Diagnostics, reason: string = OPERATOR_TEXT): McpServer {
   const spec = defineTool({
     name: 'onchain_probe',
     title: 'Probe',
@@ -96,7 +125,7 @@ function refusingServer(diagnostics: Diagnostics): McpServer {
     outputSchema: z.object({ note: z.string() }),
     capability: 'entity.labels',
     needs: [],
-    handler: () => ({ ok: false, reason: OPERATOR_TEXT }),
+    handler: () => ({ ok: false, reason }),
   });
   const server = new McpServer({ name: 'refusal-renderings', version: '0.0.0-test' });
   // A real `ToolContext`, not `as never`: the cast used to hide exactly the key stage 6 makes
@@ -123,10 +152,11 @@ const acceptsRole =
 async function listen(
   overrides: Partial<Parameters<typeof startHttpTransport>[0]> = {},
   role: Role = 'user',
+  reason: string = OPERATOR_TEXT,
 ): Promise<RunningHttpTransport> {
   const diagnostics = channel();
   running = await startHttpTransport({
-    createSessionServer: () => refusingServer(diagnostics),
+    createSessionServer: () => refusingServer(diagnostics, reason),
     authenticate: acceptsRole(role),
     bind: '127.0.0.1',
     port: 0,
@@ -236,6 +266,33 @@ describe('TC-E2E-01 / AC-47: no operator detail on the wire, at any role', () =>
       // The numbers are gone with it — an operator's remaining credits and ceiling.
       expect(toolRefusal).not.toContain('24950');
       expect(toolRefusal).not.toContain('25000');
+    });
+
+    /**
+     * TC-UNIT-05 of task 014-20, run end to end because that is where AC-47 is stated: "no response
+     * on the network transport carries operator detail — regardless of role".
+     *
+     * The pair R-9.4 and AC-47 make is only satisfiable by the split: the refusal MUST name the
+     * bucket's remainder and ceiling for the operator, and MUST NOT for the client. A limiter that
+     * named neither would satisfy AC-47 and fail R-9.4; one that named both everywhere would do the
+     * reverse. Both halves are asserted — here and in `core`'s `limiter-deadline-wait.test.ts`.
+     */
+    it(`${role}: a limiter refusal reaches the client without its bucket remainder or ceiling`, async () => {
+      const transport = await listen({}, role, LIMITER_OPERATOR_TEXT);
+      const toolRefusal = await callRefusingTool(transport);
+
+      expect(toolRefusal).not.toContain(String(LIMITER_BUCKET.ceiling));
+      expect(toolRefusal).not.toContain('777');
+      // The rendered phrase as a whole, from the SAME renderer the refusal uses — so a change to
+      // its format cannot slip past this by making the substrings above stop matching.
+      expect(toolRefusal).not.toContain(renderBucketState(LIMITER_BUCKET));
+      expect(operatorTokensIn(toolRefusal)).toStrictEqual([]);
+
+      // And the client is still told something true and useful: what it asked for, and the id that
+      // resolves to the full text. A refusal scrubbed into silence would satisfy AC-47 by saying
+      // nothing, which is the failure mode this assertion exists to keep out.
+      expect(toolRefusal).toContain('capability deadline exceeded: entity.labels on ethereum');
+      expect(toolRefusal).toMatch(/\(event 01[0-9A-HJKMNP-TV-Z]{24}\)/);
     });
   }
 
