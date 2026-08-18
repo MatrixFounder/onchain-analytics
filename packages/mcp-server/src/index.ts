@@ -267,7 +267,6 @@ async function main(): Promise<void> {
   // The `http` axis. `createServer` is called per request here — task 014-10 makes it per session —
   // and the process-wide dependencies assembled above are what every one of them receives.
   const { httpBind, httpResponseTimeoutMs, sessionMax, sessionIdleMs } = withDeclaredDefaults(env);
-  void httpResponseTimeoutMs; // task 014-23 applies it to the response window
   const port = env.ONCHAIN_HTTP_PORT;
   if (port === undefined) {
     // §10.3 declares no default port. An unset value is not a port — it is a decision nobody made,
@@ -308,6 +307,10 @@ async function main(): Promise<void> {
     // at start rather than a session evicted mid-request.
     sessionMax,
     sessionIdleMs,
+    // Task 014-23. The server's own response clock, independent of the client: a caller that never
+    // closes its request otherwise holds a session slot until the idle sweeper takes it, and the
+    // sweeper is the bigger hammer — it closes the session, not just the response.
+    responseTimeoutMs: httpResponseTimeoutMs,
     // Both perimeter lists come from `EnvSchema`, already parsed into arrays there so that this
     // reader and the SDK's read one value rather than two splits of one string (R-12.1, R-12.2).
     ...(env.ONCHAIN_ALLOWED_HOSTS ? { allowedHosts: env.ONCHAIN_ALLOWED_HOSTS } : {}),

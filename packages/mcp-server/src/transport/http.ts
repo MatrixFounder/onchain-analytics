@@ -12,7 +12,11 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { TokenLookupRow } from '../auth/identity-types.js';
 import { principalFromToken, toAuthInfo } from '../auth/principal.js';
 import type { Diagnostics } from '../engine/diagnostics.js';
-import { DEFAULT_SESSION_IDLE_MS, DEFAULT_SESSION_MAX } from '../env.js';
+import {
+  DEFAULT_HTTP_RESPONSE_TIMEOUT_MS,
+  DEFAULT_SESSION_IDLE_MS,
+  DEFAULT_SESSION_MAX,
+} from '../env.js';
 import {
   assertIdleTimeoutClearsManifest,
   createSessionManager,
@@ -92,6 +96,24 @@ export interface HttpTransportDeps {
    */
   readonly sessionMax?: number;
   readonly sessionIdleMs?: number;
+  /**
+   * How long ONE HTTP response may stay open before the server closes it on its own clock — task
+   * 014-23, R-16.3, `ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS`.
+   *
+   * **A different number from `deadlineMs`, and a different question.** `deadlineMs` bounds what a
+   * call may SPEND; this bounds how long a response may stay open. A client that never closes its
+   * request otherwise holds a session slot until the idle sweeper takes it — two clocks for two
+   * cases, and this is the one that measures a single response.
+   *
+   * **Closing the response does NOT cancel the call** (`interfaces.md` §5.4.5, R-17). A paid call
+   * the vendor accepted runs to completion, its result is cached and `usage` records the spend; the
+   * client sees a closed connection and its retry is served from that cache. Cancelling instead
+   * would throw away an answer the credits were already spent on.
+   *
+   * Defaults to what `withDeclaredDefaults` applies, so a bare transport in a test gets the SHIPPED
+   * number rather than a second one that could drift from it.
+   */
+  readonly responseTimeoutMs?: number;
   /** The clock the idle sweep measures against. Injectable so no test waits for real time. */
   readonly now?: () => number;
   /** Passed through to the sweeper; a test uses it to hold the timer handle. */
@@ -238,6 +260,71 @@ export const DEFAULT_MCP_PATH = '/mcp';
 export const ALLOWED_METHODS = Object.freeze(['GET', 'POST', 'DELETE']);
 
 /**
+ * Startup assertion (task 014-23): the response timeout must fire BEFORE the idle sweeper.
+ *
+ * **Why the order matters rather than only the values.** Both clocks can end a request that is
+ * taking too long, and they end different amounts of it. The response timeout closes one response;
+ * the session survives and the client's retry is served from the cache the completed call filled.
+ * The sweeper closes the session — its transport, its `McpServer`, and every stream it owns — so a
+ * retry has to `initialize` again. Configured the other way round, the sweeper always wins and the
+ * response timeout is a setting that never runs.
+ *
+ * Strictly greater, not greater-or-equal: at equality the winner is decided by which timer the
+ * runtime happens to fire first, and a configuration whose behaviour depends on that is not a
+ * configuration anybody chose.
+ */
+/**
+ * Runs one dispatch under the server's own response clock (task 014-23, R-16.3).
+ *
+ * **It closes the RESPONSE and nothing else** (`interfaces.md` §5.4.5, R-17). The in-flight call is
+ * not cancelled, not signalled and not awaited: a paid call the vendor accepted runs to completion,
+ * writes its cache entry and records its spend, and the client's retry is served from that cache.
+ * Cancelling would discard an answer the credits were already spent on — which is exactly the
+ * trade task 014-24 exists to refuse.
+ *
+ * **`destroy`, not `end`.** The SDK owns this response and may still be writing an SSE stream onto
+ * it; ending it politely would leave the SDK writing into a half-closed channel it believes is
+ * healthy. Destroying it is what the client observes as the closed connection §5.4.5 describes, and
+ * the SDK's own `send()` failure afterwards is reported on its `onerror` — the path that already
+ * exists for a client that simply went away.
+ *
+ * **The timer is cleared on every exit**, including a throw: a per-request timer that outlived its
+ * request would be a leak on the hottest path this file has, one handle per request.
+ */
+async function withResponseTimeout(
+  res: ServerResponse,
+  timeoutMs: number,
+  run: () => Promise<void>,
+): Promise<void> {
+  const timer = setTimeout(() => {
+    if (res.writableEnded || res.destroyed) return;
+    console.error(
+      `onchain-intel-mcp-server: http transport: response timeout after ${String(timeoutMs)}ms — ` +
+        `closing the response; the call itself runs to completion and its result is cached (R-17)`,
+    );
+    res.destroy();
+  }, timeoutMs);
+  // Unref'd so a pending response clock cannot hold the process open at shutdown; the listener's own
+  // close path is what ends the process, and this timer must not vote on it.
+  timer.unref?.();
+  try {
+    await run();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function assertResponseTimeoutFitsIdle(responseTimeoutMs: number, idleMs: number): void {
+  if (idleMs > responseTimeoutMs) return;
+  throw new Error(
+    `ONCHAIN_SESSION_IDLE_MS is ${String(idleMs)} ms and ONCHAIN_HTTP_RESPONSE_TIMEOUT_MS is ` +
+      `${String(responseTimeoutMs)} ms — the idle sweeper would evict the session before the ` +
+      `response timeout could close the response, so the response timeout would never run ` +
+      `(interfaces.md §5.4.5)`,
+  );
+}
+
+/**
  * Raises the listener and answers MCP over it.
  *
  * **One server and one transport per REQUEST, and that is the stub.** The SDK's stateless mode is
@@ -252,12 +339,20 @@ export const ALLOWED_METHODS = Object.freeze(['GET', 'POST', 'DELETE']);
 export async function startHttpTransport(deps: HttpTransportDeps): Promise<RunningHttpTransport> {
   const path = deps.path ?? DEFAULT_MCP_PATH;
   const idleMs = deps.sessionIdleMs ?? DEFAULT_SESSION_IDLE_MS;
+  const responseTimeoutMs = deps.responseTimeoutMs ?? DEFAULT_HTTP_RESPONSE_TIMEOUT_MS;
 
   // **Before anything is bound** (task 014-13, §3.4.2). The assertion lives here rather than in
   // `index.ts` so that no caller can raise this transport without it: a timeout below the longest
   // declared deadline evicts a session whose own request is still running, and the only way to make
   // that unreachable is to make the listener unreachable without the check.
   assertIdleTimeoutClearsManifest(idleMs);
+  // Task 014-23. Two operator-set clocks can be ordered so that the weaker one never runs: the idle
+  // sweeper closes the SESSION — transport, `McpServer` and every stream it owns — while the
+  // response timeout closes ONE response and leaves the session usable for the client's retry. With
+  // the shipped defaults (900 000 idle against 360 000) the gentler mechanism fires first; the pair
+  // is checked because both numbers are `.env` settings and a silently disabled mechanism is the
+  // shape this project keeps paying for.
+  assertResponseTimeoutFitsIdle(responseTimeoutMs, idleMs);
 
   /**
    * `sessionId` → the pair that serves it, plus the two timestamps the sweep reads.
@@ -279,7 +374,7 @@ export async function startHttpTransport(deps: HttpTransportDeps): Promise<Runni
   let perimeter: Perimeter | null = null;
 
   const listener = createHttpServer((req: IncomingMessage, res: ServerResponse) => {
-    void handle(req, res, path, deps, sessions, perimeter);
+    void handle(req, res, path, deps, sessions, perimeter, responseTimeoutMs);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -365,6 +460,7 @@ async function handle(
   deps: HttpTransportDeps,
   sessions: SessionManager,
   perimeter: Perimeter | null,
+  responseTimeoutMs: number,
 ): Promise<void> {
   // **Admission is pinned HERE** (task 014-30, `OD-014-30-13`, R-27.5) — the first statement of the
   // first function this process runs for an inbound request, before the perimeter check, before the
@@ -508,7 +604,9 @@ async function handle(
       // per-session field a request writes, and R-25.2 is why it stays that way.
       sessions.touch(sessionId);
       attachPrincipal(req, decision.principal, receivedAtMs);
-      await existing.transport.handleRequest(req, res, body.value);
+      await withResponseTimeout(res, responseTimeoutMs, () =>
+        existing.transport.handleRequest(req, res, body.value),
+      );
       return;
     }
 
@@ -577,7 +675,9 @@ async function handle(
 
     await server.connect(transport);
     attachPrincipal(req, decision.principal, receivedAtMs);
-    await transport.handleRequest(req, res, body.value);
+    await withResponseTimeout(res, responseTimeoutMs, () =>
+      transport.handleRequest(req, res, body.value),
+    );
   } catch (error) {
     // The SDK answers most protocol errors itself; this covers the rest. The message is not
     // rendered to the client — an error text from inside the process is an operator detail (R-20).
