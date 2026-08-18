@@ -1,4 +1,5 @@
 import type { VendorSpendReporter } from '../cache/vendor-spend.js';
+import { normalizeAllowlistEntry } from '../net/safe-fetch.js';
 import type { TokenBucketConfig } from '../net/rate-limit.js';
 import type { Chain } from '../types/chain.js';
 import type { ChainInfo } from '../chain/registry-core.js';
@@ -228,6 +229,24 @@ export function assertValidAdapterRegistrations(registrations: AdapterRegistrati
           `adapter registration '${id}' does not declare '${field}': expected one of ` +
             `${allowed.join(' | ')}, got ${JSON.stringify(value)} ` +
             `(ADR-002 D8/D9, task 012-2 — a rank that can be omitted is a rank that gets defaulted)`,
+        );
+      }
+    }
+
+    // The SSRF allowlist, checked at START rather than at the first outgoing call (task 014-21,
+    // R-10.4). `hosts` is an unconstrained `string[]` and nothing else reads it before `safeFetch`
+    // does, so an entry that no URL can ever equal — a path, a scheme, userinfo — used to make the
+    // adapter refuse every call it makes, with `SsrfBlockedError` naming the TARGET rather than the
+    // typo. A misconfiguration wearing the clothes of a security decision is the one shape this
+    // project keeps paying for; here it is a start-up failure naming the entry.
+    for (const entry of registration.hosts ?? []) {
+      try {
+        normalizeAllowlistEntry(entry);
+      } catch (error) {
+        throw new Error(
+          `adapter registration '${id}' has an unusable SSRF allowlist entry: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
         );
       }
     }

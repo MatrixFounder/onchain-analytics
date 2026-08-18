@@ -114,7 +114,16 @@ export { assertMergeParticipantsAreFree } from './adapters/types.js';
 
 export { routes, adapterRegistrations } from './providers.config.js';
 
-export { safeFetch, assertAllowedHost } from './net/safe-fetch.js';
+export {
+  safeFetch,
+  assertAllowedHost,
+  // Task 014-21 — the two halves of the comparison, exported because the allowlist is DATA
+  // (`AdapterRegistration.hosts`) and a caller building one from a curated URL list must reach the
+  // same normaliser the check uses. A second normaliser is a second answer to keep in step.
+  allowlistAuthority,
+  normalizeAllowlistEntry,
+  AllowlistEntryInvalidError,
+} from './net/safe-fetch.js';
 export {
   throttle,
   createThrottle,
@@ -162,6 +171,9 @@ export {
 // these two. The export is still justified by the registry's own use and by the tests that construct
 // them; a tool layer that acts on the distinction is a change nobody has made.
 export { DeadlineExceededError } from './net/safe-fetch.js';
+// Task 014-21, AC-10 — the redirect cap as its own class. On `PASS_THROUGH_TRANSPORT_ERRORS`, so an
+// adapter's wrapper no longer flattens it to the bare string `"Error"` on the way to an operator.
+export { RedirectLimitExceededError } from './net/safe-fetch.js';
 export { DeadlineWouldExceedError } from './net/rate-limit.js';
 
 // The cache-TTL policy (WI-28). `.AGENTS.md` listed `ttlFor` among the symbols deliberately NOT

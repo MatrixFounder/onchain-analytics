@@ -11,7 +11,12 @@ import type { CapabilityRoute, ProviderAdapter } from '../src/adapters/types.js'
 import type { CapabilityManifest } from '../src/capability-manifest.js';
 import { CapabilityNotCoveredOnChainError } from '../src/chain/errors.js';
 import { deriveArgsHash } from '../src/net/args-hash.js';
-import { DeadlineExceededError, SafeFetchTimeoutError } from '../src/net/safe-fetch.js';
+import {
+  DeadlineExceededError,
+  RedirectLimitExceededError,
+  SafeFetchTimeoutError,
+  isPassThroughTransportError,
+} from '../src/net/safe-fetch.js';
 import {
   createThrottle,
   DeadlineWouldExceedError,
@@ -853,36 +858,51 @@ describe('WI-36 — the two wrapping adapters no longer flatten typed transport 
     expect((thrown as Error).message).not.toContain('?');
   });
 
-  it('a NON-listed transport failure is still wrapped — the fix did not open the channel', async () => {
-    // The other direction, and the one that would be a security regression rather than a defect:
-    // `isPassThroughTransportError` must not become "rethrow anything the transport threw".
-    // `safeFetch` raises a plain `Error` for a redirect chain that exceeds the cap, and its message
-    // is built from the URL — redacted there, but the class is untyped, so the adapter's wrapper is
-    // what the caller must still get.
+  /** Drives `blockscout` at a `Location` of the test's choosing, and returns whatever it throws. */
+  async function blockscoutFollowing(location: string): Promise<unknown> {
     const throttle = createThrottle({ now: Date.now, wait: () => Promise.resolve() });
     const adapter = createBlockscoutAdapter({
       env: { BLOCKSCOUT_PRO_API_KEY: SECRET },
       throttle,
-      fetchImpl: () =>
-        Promise.resolve(
-          new Response(null, {
-            status: 302,
-            headers: { location: 'https://mcp.blockscout.com/v1/loop' },
-          }),
-        ),
+      fetchImpl: () => Promise.resolve(new Response(null, { status: 302, headers: { location } })),
     });
+    return adapter.fetch('entity.labels', { chain: CHAIN, tokenAddress: BINANCE }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+  }
 
-    const thrown = await adapter
-      .fetch('entity.labels', { chain: CHAIN, tokenAddress: BINANCE })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+  it('a NON-listed transport failure is still wrapped — the fix did not open the channel', async () => {
+    // The other direction, and the one that would be a security regression rather than a defect:
+    // `isPassThroughTransportError` must not become "rethrow anything the transport threw".
+    //
+    // **The example moved in task 014-21**, and the move is the interesting part. This case used to
+    // drive a redirect LOOP, because the cap was one of `safeFetch`'s untyped throws. 014-21 typed
+    // it (AC-10), so it now passes through — and if the example had been left alone this test would
+    // have gone red for the reason its own comment forbids. The non-https redirect target is still
+    // untyped, so it is what carries the property now.
+    const thrown = await blockscoutFollowing('http://mcp.blockscout.com/v1/loop');
 
     expect(thrown).toBeInstanceOf(Error);
     expect(thrown).not.toBeInstanceOf(DeadlineExceededError);
+    expect(isPassThroughTransportError(thrown)).toBe(false);
     expect((thrown as Error).message).toContain('blockscout: transport failure');
     expect((thrown as Error).message).not.toContain(SECRET);
+  });
+
+  it('AC-10: the redirect cap now reaches the caller as its own class, not as `(Error)`', async () => {
+    // The behavioural half of AC-10, measured through an ADAPTER rather than on `safeFetch` alone:
+    // the defect was never the throw, it was that `blockscout`'s wrapper re-messaged it by
+    // `error.name` — `"Error"` for a plain one — so an operator could not tell a vendor-side
+    // redirect loop from a vendor 500.
+    const thrown = await blockscoutFollowing('https://mcp.blockscout.com/v1/loop');
+
+    expect(thrown).toBeInstanceOf(RedirectLimitExceededError);
+    expect((thrown as RedirectLimitExceededError).limit).toBe(3);
+    expect((thrown as Error).message).not.toContain('transport failure');
+    expect((thrown as Error).message).not.toContain(SECRET);
+    // The class redacts its own context, which is what put it on the pass-through list at all.
+    expect((thrown as Error).message).not.toContain('?');
   });
 });
 

@@ -36,7 +36,13 @@ const RATE_LIMIT = REGISTRATION.rateLimit;
  * a silent widening of the perimeter — and `ChainInfoSchema` now rejects such rows at load anyway,
  * so this is the second of two gates, not the only one. */
 function hostOf(url: string): string {
-  return new URL(url).hostname;
+  // The AUTHORITY, not the hostname (task 014-21, AC-9): `URL.host` keeps a non-default port and
+  // drops `:443`. This value is both the SSRF allowlist entry and the string an error message
+  // names, and `assertAllowedHost` now compares authorities — so a curated `rpcHosts` endpoint on a
+  // non-default port would, with `.hostname` here, build an allowlist that refuses the very
+  // endpoint it was derived from. None of the 34 registry rows carries a port today; this is what
+  // keeps that from becoming a condition nobody wrote down.
+  return new URL(url).host;
 }
 
 /** Optional constructor dependencies (injectable — same DI convention as the 003-4 adapters:

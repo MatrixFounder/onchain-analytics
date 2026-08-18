@@ -1,5 +1,5 @@
-/** Thrown by `assertAllowedHost`/`safeFetch` when a hostname is outside an adapter's own
- * SSRF allowlist (R-25). Never carries the full URL/query — just the hostname, which is not a
+/** Thrown by `assertAllowedHost`/`safeFetch` when an authority is outside an adapter's own
+ * SSRF allowlist (R-25). Never carries the full URL/query — just the authority, which is not a
  * secret and is the only piece needed to diagnose a misconfigured allowlist. */
 export class SsrfBlockedError extends Error {
   constructor(public readonly hostname: string) {
@@ -9,16 +9,108 @@ export class SsrfBlockedError extends Error {
 }
 
 /**
+ * Thrown when the allowlist itself is malformed — task 014-21, R-10.4.
+ *
+ * **Why a configuration error and not a silent refusal.** An entry the parser cannot read as a bare
+ * authority can never match anything, so the adapter carrying it refuses every call it makes, with
+ * `SsrfBlockedError` naming the target rather than the typo. That is a misconfiguration wearing the
+ * clothes of a security decision. `AdapterRegistration.hosts` is an unconstrained `string[]`
+ * (`adapters/types.ts`) and no load-time check reads it, so the first reader is this one.
+ */
+export class AllowlistEntryInvalidError extends Error {
+  constructor(
+    public readonly entry: string,
+    reason: string,
+    options?: { cause?: unknown },
+  ) {
+    super(
+      `allowlist entry is not a bare host[:port]: ${JSON.stringify(entry)} — ${reason}`,
+      options,
+    );
+    this.name = 'AllowlistEntryInvalidError';
+  }
+}
+
+/**
+ * The string a host comparison is made ON: the hostname, plus the port when it is not the scheme's
+ * default (task 014-21, R-10.1, AC-9).
+ *
+ * **Why the authority and not the hostname.** `URL.hostname` DISCARDS the port. Comparing it means
+ * `https://api.llama.fi:8443/` passes an allowlist that says `api.llama.fi` — measured on Node
+ * v24.15.0 — and, because the redirect loop's cross-host test compared the same field, such a hop
+ * was also not treated as a host change, so `Authorization` and every `*-api-key` header travelled
+ * to that port. The initial URL of every adapter is a compiled constant, so the port is chosen by
+ * whoever controls an allowlisted vendor's `Location` header — a compromised vendor, or an ordinary
+ * open redirect on one — not by the remote caller. `URL.host` keeps a non-default port and drops
+ * `:443`, which is exactly what AC-9 asks for: `https://host` and `https://host:443` compare as one.
+ *
+ * **What the WHATWG parser already does, so this function does not repeat it.** Measured on Node
+ * v24.15.0: the host is ASCII-lowercased (`API.LLAMA.FI` → `api.llama.fi`), IDN goes through IDNA
+ * ToASCII (a Cyrillic `а` becomes `xn--pi-6kc…`, which then misses the allowlist), IPv6 is
+ * canonicalised inside brackets (`[0:0:...:1]` → `[::1]`), IPv4 shorthand is expanded (`0x7f.1` →
+ * `127.0.0.1`), and userinfo never reaches `host` at all. Re-implementing any of that here would be
+ * a second normaliser to keep in step with the first.
+ *
+ * **A trailing dot is deliberately NOT stripped.** `api.llama.fi.` and `api.llama.fi` are distinct
+ * to the parser, so a dotted target MISSES the allowlist and is refused — the gate fails closed.
+ * Normalising it would be a new legal answer that widens what the gate accepts (memory M6), and it
+ * would widen a second comparison too: the cross-host header strip below would stop seeing `host.`
+ * as a different host, so a redirect that today loses its credential header would carry it forward.
+ * A refusal we can explain is worth more than a match we would have to defend.
+ */
+export function allowlistAuthority(hostOrUrl: string): string {
+  const candidate = hostOrUrl.includes('://') ? hostOrUrl : `https://${hostOrUrl}`;
+  return new URL(candidate).host;
+}
+
+/**
+ * Canonicalises ONE allowlist entry, refusing anything that is not a bare `host[:port]`.
+ *
+ * A path, a query or a fragment in an entry is refused rather than silently dropped: `api.x.com/v1`
+ * parses to the authority `api.x.com`, so accepting it would grant the whole host to an entry whose
+ * author believed they had granted one prefix.
+ */
+export function normalizeAllowlistEntry(entry: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(entry.includes('://') ? entry : `https://${entry}`);
+  } catch (error) {
+    throw new AllowlistEntryInvalidError(entry, 'it is not a parseable host', { cause: error });
+  }
+  if (parsed.pathname !== '/' || parsed.search !== '' || parsed.hash !== '') {
+    throw new AllowlistEntryInvalidError(
+      entry,
+      'it carries a path, query or fragment, which an authority comparison cannot honour',
+    );
+  }
+  if (parsed.username !== '' || parsed.password !== '') {
+    throw new AllowlistEntryInvalidError(entry, 'it carries userinfo, which is never compared');
+  }
+  if (parsed.host === '') {
+    throw new AllowlistEntryInvalidError(entry, 'it has no host');
+  }
+  return parsed.host;
+}
+
+/**
  * Transport-agnostic host check (ARCHITECTURE.md §2.1/§7.3 — designed for future non-HTTP
  * transports too, e.g. a future live gRPC channel for `dash-platform`, though only `safeFetch`
  * actually calls it in M1). `allowlist` is always the ONE calling adapter's own `hosts` list
  * (`AdapterRegistration.hosts`), never a merged/global allowlist (R-25 per-adapter isolation).
  *
- * @throws {SsrfBlockedError} if `hostname` is not in `allowlist`.
+ * **Both sides are normalised, and that is task 014-21's second half.** The caller's side comes out
+ * of `new URL(...)` already canonical; the allowlist side is hand-written data with no schema and no
+ * load-time gate behind it, so an entry typed as `API.Nansen.ai` or `api.nansen.ai:443` would match
+ * NOTHING and the adapter would refuse every call it makes — a typo indistinguishable, from the
+ * outside, from a security decision. Normalising here makes the two sides one comparison.
+ *
+ * @throws {SsrfBlockedError} if `authority` is not in `allowlist`.
+ * @throws {AllowlistEntryInvalidError} if an entry is not a bare `host[:port]`.
  */
-export function assertAllowedHost(hostname: string, allowlist: string[]): void {
-  if (!allowlist.includes(hostname)) {
-    throw new SsrfBlockedError(hostname);
+export function assertAllowedHost(authority: string, allowlist: string[]): void {
+  const wanted = allowlistAuthority(authority);
+  if (!allowlist.some((entry) => normalizeAllowlistEntry(entry) === wanted)) {
+    throw new SsrfBlockedError(authority);
   }
 }
 
@@ -174,6 +266,38 @@ export class DeadlineExceededError extends Error {
   }
 }
 
+/**
+ * Thrown when a redirect chain exceeds `MAX_REDIRECTS` — task 014-21, R-10.3, AC-10.
+ *
+ * **Why a class and not the plain `Error` this was.** `isPassThroughTransportError` is the single
+ * predicate every adapter's `catch` asks, and it answers on class. An untyped throw answered `false`
+ * for the two adapters that wrap (`blockscout`, `blockchain-info`), which re-message a failure by
+ * `error.name` — and `name` on a plain `Error` is literally the string `"Error"`. So a redirect loop
+ * arrived at an operator as `blockscout: transport failure from mcp.blockscout.com (Error)`,
+ * indistinguishable from a vendor 500, with the only surviving detail on a `.cause` nobody reads.
+ * The redirect cap and a vendor's bad day call for opposite responses: one is a vendor-side loop or
+ * an open redirect to chase, the other is a retry.
+ *
+ * `url` is the REDACTED form (no query string) — see `redactUrl`. Consistent with `SsrfBlockedError`,
+ * which has carried a bare hostname on this list since M1: the traversal these messages land in is
+ * cut before the wire (`transport/failure-classes.ts`).
+ */
+export class RedirectLimitExceededError extends Error {
+  public readonly url: string;
+  constructor(
+    public readonly limit: number,
+    url: string,
+  ) {
+    // Redacted HERE, not by the caller — the property WI-36 requires of every class on the
+    // pass-through list is that it redacts its OWN context at construction. A class that trusted its
+    // call site would be safe exactly as long as every future call site remembered.
+    const safe = redactUrl(url);
+    super(`safeFetch: exceeded ${limit} redirects following ${safe}`);
+    this.url = safe;
+    this.name = 'RedirectLimitExceededError';
+  }
+}
+
 /** Thrown when a response's advertised `Content-Length` exceeds `maxResponseBytes` — rejected
  * BEFORE the caller ever reads the body (`.json()`/`.text()`).
  *
@@ -230,6 +354,7 @@ export const PASS_THROUGH_TRANSPORT_ERRORS = [
   SafeFetchTimeoutError,
   DeadlineExceededError,
   SafeFetchResponseTooLargeError,
+  RedirectLimitExceededError,
 ] as const;
 
 /**
@@ -605,7 +730,9 @@ export async function safeFetch(
   }
 
   let currentUrl = url;
-  let currentHostname = initialUrl.hostname;
+  // The AUTHORITY, not the hostname — `URL.host` keeps a non-default port and drops `:443`
+  // (task 014-21, AC-9). See `allowlistAuthority` for what changing this field closed.
+  let currentHostname = initialUrl.host;
   let currentOpts: RequestInit = opts;
   let redirectsFollowed = 0;
 
@@ -675,7 +802,7 @@ export async function safeFetch(
     void response.body?.cancel().catch(() => undefined);
 
     if (redirectsFollowed >= MAX_REDIRECTS) {
-      throw new Error(`safeFetch: exceeded ${MAX_REDIRECTS} redirects following ${redactUrl(url)}`);
+      throw new RedirectLimitExceededError(MAX_REDIRECTS, url);
     }
 
     // Resolve a relative Location against the current hop's URL, exactly like a real browser
@@ -687,11 +814,15 @@ export async function safeFetch(
       );
     }
 
-    if (nextUrl.hostname !== currentHostname) {
+    // Compared on the AUTHORITY too, and the two must move together: with the allowlist checking
+    // `host` and this checking `hostname`, a hop to another PORT on an allowlisted host would be
+    // refused on the next iteration but would already have been handed the credential headers on
+    // this one. A port change is a host change as far as a secret is concerned.
+    if (nextUrl.host !== currentHostname) {
       currentOpts = { ...currentOpts, headers: stripCrossHostHeaders(currentOpts.headers) };
     }
     currentUrl = nextUrl.toString();
-    currentHostname = nextUrl.hostname;
+    currentHostname = nextUrl.host;
     redirectsFollowed += 1;
   }
 }

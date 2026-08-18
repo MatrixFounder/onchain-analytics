@@ -6,6 +6,7 @@ import {
   PASS_THROUGH_TRANSPORT_ERRORS,
   safeFetch,
   SafeFetchResponseTooLargeError,
+  RedirectLimitExceededError,
   SafeFetchTimeoutError,
   SsrfBlockedError,
 } from '../src/net/safe-fetch.js';
@@ -935,6 +936,9 @@ describe('WI-36 — every pass-through transport error redacts its own context',
       'SafeFetchResponseTooLargeError',
       new SafeFetchResponseTooLargeError(URL_WITH_SECRET, 99_999_999, 1024),
     ],
+    // Task 014-21 joined the list. Handed the RAW credential-bearing URL on purpose: the class
+    // redacts at construction, so a future call site that forgets `redactUrl` cannot leak through it.
+    ['RedirectLimitExceededError', new RedirectLimitExceededError(3, URL_WITH_SECRET)],
   ];
 
   it('the list is the one the module exports, and it is not empty', () => {
@@ -981,9 +985,16 @@ describe('WI-36 — every pass-through transport error redacts its own context',
       .sort();
 
     const listed = PASS_THROUGH_TRANSPORT_ERRORS.map((constructor) => constructor.name);
-    /** Exported error classes deliberately NOT on the list — empty today, and that is the point:
-     * the moment it stops being empty, somebody wrote a reason here. */
-    const DELIBERATELY_WRAPPED: string[] = [];
+    /** Exported error classes deliberately NOT on the list — the moment it stops being empty,
+     * somebody wrote a reason here. */
+    const DELIBERATELY_WRAPPED: string[] = [
+      // Task 014-21. `AllowlistEntryInvalidError` is a CONFIGURATION error, not a transport one: it
+      // says an entry in `AdapterRegistration.hosts` is not a bare `host[:port]`, which is a defect
+      // in our own repository and identical for every call the adapter will ever make. Passing it
+      // through would hand a caller a permanent failure dressed as a per-request one; wrapped, it
+      // reaches an operator as that adapter failing, which is what it is.
+      'AllowlistEntryInvalidError',
+    ];
 
     expect(exportedErrorClasses.length).toBeGreaterThan(0);
     expect(
