@@ -3351,14 +3351,23 @@ constructs one `Throttle` over the profile's store and threads it into the ten a
 the shape `budgetStore` already has. The injection point is unchanged. What changes is that
 production stops taking the default.
 
-**That wiring is task 014-19's, not 014-18's, and the ordering is a safety condition rather than a
-preference.** 014-18 ships both stores and the interface between them. The degradation block below owes three things: `emit`, the per-call
-timeout and the cooldown. Until they exist, a process wired to a shared store turns a Postgres
-hiccup into a service outage — the alternative this section rejects two paragraphs down.
+**The ordering was a safety condition rather than a preference.** 014-18 shipped both stores and the
+interface between them, and left production on the in-process bucket. The degradation block below
+owes three things: `emit`, the per-call timeout and the cooldown. A process wired to a shared store
+without them turns a Postgres hiccup into a service outage — the alternative this section rejects
+two paragraphs down.
 
-So after 014-18 the shared limiter is _available_ and production still runs the in-process bucket. A
-reader must not take that state for "R-7 is satisfied": AC-4 and AC-5 are met by the STORES, measured
-in `packages/core/test/limiter-cross-process.test.ts`, and R-7 closes when 014-19 wires them.
+**Applied by task 014-19.** `index.ts` resolves the storage axis through `createStateStores`, builds
+ONE `Throttle` over its limiter with the degradation port on top, and threads it into the ten
+adapters that throttle. `packages/mcp-server/test/limiter-wiring.test.ts` is the gate. Membership is
+derived from which adapters declare the seam, so an eleventh fails on the day it is written. One
+behavioural case proves the handed limiter is the one a capability walk actually reaches.
+
+**The same commit moved the cache and the credit ledger onto the axis, and that was a defect rather
+than a refinement.** The entry point took `createCacheStore`/`createBudgetStore` unconditionally —
+the SQLite pair — so a `network` process kept `cache_entries` and `usage` in a local file while
+migration 002 had created both in Postgres and nothing wrote there. Two such processes each held the
+full daily Nansen cap. Filed as L-17.
 
 **The concurrency guarantee is restated, not preserved.** `createThrottle`'s docstring rests on
 "refill + consume + decide is one wholly SYNCHRONOUS step", which is a property of a `Map` in one
@@ -3387,6 +3396,14 @@ follow, and both are testable:
 1. Every store call carries its own timeout, bounded so that a failing store cannot consume the
    caller's post-wait floor: applied `1_000` ms, one fifth of `MIN_POST_WAIT_REMAINDER_MS`.
    Postcondition: a store failure costs the caller less time than the floor it must still clear.
+
+   **A hang is the failure a `try`/`catch` does not cover, and it is the one this bound exists for.**
+   A throwing store costs a caller nothing; a store that never answers parks every throttling call
+   in the process for the length of the outage. The deadline is injectable
+   (`ThrottleDeps.storeTimer`), so the mechanism is measured without a real timer. It is cancelled
+   on every path: a leaked timer per call would be a slow leak in the hottest path this module
+   has.
+
 2. On failure the process falls back to an in-process bucket at the **declared** ceiling for that
    provider. Postcondition: the call is neither admitted unlimited nor refused.
 3. The process writes one `limiter.degraded` row to `diagnostics` (data-model.md §4.5.8).
@@ -3420,6 +3437,21 @@ follow, and both are testable:
 
 4. The process stops calling the store for a cooldown before retrying — applied `60_000` ms,
    measured: none. Postcondition: a store outage is not paid for once per call by every caller.
+
+   **What it costs, stated rather than left to be discovered.** Up to a minute of per-process
+   limiting after the store has recovered. That is the same direction as degradation itself, so the
+   cooldown widens a window already accepted and opens no new kind of hole.
+
+   **Recovery is not a step.** The degraded mark is an instant, and an instant in the past is not
+   degradation, so the first call after the cooldown simply speaks to the store again. There is no
+   recovery EVENT: `DIAGNOSTIC_EVENTS` is closed behind a `CHECK` (`data-model.md` §4.5.8) and has
+   no member for one, so a return to shared state is visible only as `limiter.degraded` rows
+   stopping. Recorded as a residual rather than taken, because widening that vocabulary is a schema
+   change four other writers share.
+
+   **The event is announced on the TRANSITION, not on every degraded call**, or an outage would
+   write a row per request and drown the eight events §4.5.8 declares. A second event follows only
+   after the cooldown expires and the retry fails again, which is a new fact: the outage continues.
 
 **What degradation buys, stated exactly.** Each process holds itself to the declared ceiling. The
 **sum** across processes may exceed it.

@@ -8,7 +8,10 @@ import {
   assertMergeParticipantsAreFree,
   createStateClient,
   createSqliteStateClient,
+  createStateStores,
+  createThrottle,
   setCacheStatsDebug,
+  type StateClient,
 } from '@onchain-intel/core';
 import { loadEnv, toProcessEnv, withDeclaredDefaults, type Env } from './env.js';
 import {
@@ -99,15 +102,24 @@ async function main(): Promise<void> {
   // authenticates every request exactly as `network` does, and is explicitly "not an authentication
   // exception" — a debugging combination that skipped the token would be the one configuration whose
   // refusal path never runs.
+  //
+  // ONE write-capable client per process, on whichever engine the storage axis names. The identity
+  // repositories and the three state stores below both take it, which is what `pg/stores.ts` means
+  // by "the three stores of the Postgres axis must share ONE client": two clients would be two
+  // pools, two roles' worth of connections, and a `providers` bootstrap the other pool cannot see.
   const pepper = env.ONCHAIN_TOKEN_HASH_SALT;
+  let stateClient: StateClient | undefined;
+  const engineClient = (): StateClient => {
+    stateClient ??=
+      profile.storage === 'postgres'
+        ? createStateClient({ env: rawEnv })
+        : createSqliteStateClient({ env: rawEnv });
+    return stateClient;
+  };
   const identity =
     profile.transport === 'http' && pepper !== undefined
       ? (() => {
-          const engine = createEngineStore(
-            profile.storage === 'postgres'
-              ? createStateClient({ env: rawEnv })
-              : createSqliteStateClient({ env: rawEnv }),
-          );
+          const engine = createEngineStore(engineClient());
           return {
             engine,
             tokens: createTokenStore({ engine, pepper, now: () => Date.now() }),
@@ -174,10 +186,49 @@ async function main(): Promise<void> {
   // the constant answers; on http an absent principal is refused rather than defaulted, because the
   // constant is `role: 'admin'` and a default there would be a privilege escalation wearing the
   // clothes of a fallback.
+  // The storage axis, resolved once (task 014-39's factory, wired by task 014-19). Before this the
+  // process took `createCacheStore`/`createBudgetStore` unconditionally — the SQLite ones — so a
+  // `network` profile kept its cache, its credit ledger and its limiter in a local file while the
+  // migration had created all three in Postgres and nothing wrote there. Two `network` processes
+  // then each held the full daily Nansen cap and the full vendor rate (L-17).
+  //
+  // The Postgres arm shares the client built above; the SQLite arm builds its three stores over
+  // `DATA_DIR/cache.sqlite3` and takes no client at all.
+  const stores = createStateStores({
+    storage: profile.storage,
+    ...(profile.storage === 'postgres' ? { client: engineClient() } : {}),
+  });
+
+  // ONE limiter for the process, over the axis's bucket store (task 014-18) with task 014-19's
+  // degradation port on top. `index.ts` is the only place that can build it: the module singleton
+  // in `core` is constructed at import time and therefore cannot know the deployment profile.
+  const throttle = createThrottle({
+    store: stores.limiter,
+    emit: (event, detail) => {
+      // `void`, not `await` (`system-architecture.md` §3.4.4): degradation is already the slow path,
+      // and awaiting a write here would add the store's latency to a call that just failed to reach
+      // a store. `severity: 'warn'` — the process is still serving, at a narrower ceiling.
+      void diagnostics
+        .emit(event, {
+          severity: 'warn',
+          provider: typeof detail['providerId'] === 'string' ? detail['providerId'] : null,
+          detail,
+        })
+        .catch(() => {
+          // `createDiagnostics.emit` reports a store failure on stderr itself and never rethrows, so
+          // the only way to land here is stderr failing too. There is no third channel to name it on,
+          // and throwing out of a limiter's side effect would take down the request that triggered it.
+        });
+    },
+  });
+
   const runtime = createSharedRuntime({
     env,
     version,
     diagnostics,
+    throttle,
+    budgetStoreFactory: () => stores.budget,
+    cacheStoreFactory: () => stores.cache,
     // Task 014-30. Built on the SAME condition as the stored diagnostics channel: both tables live
     // in the engine, so the profile that has no engine has neither. On the local profile the row is
     // not written and nothing is lost — `request_trace` does not exist there either.

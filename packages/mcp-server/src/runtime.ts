@@ -19,6 +19,7 @@ import {
   type BudgetStore,
   type CacheStore,
   type ProviderAdapter,
+  type Throttle,
 } from '@onchain-intel/core';
 import { toProcessEnv, type Env } from './env.js';
 import { createDiagnostics, type Diagnostics } from './engine/diagnostics.js';
@@ -76,6 +77,18 @@ export interface SharedRuntimeDeps {
   readonly principals?: PrincipalResolver;
   /** Supplies `routeDisclosureMode` on the request path (task 014-16). Absent on the local axis. */
   readonly accessProfiles?: AccessProfileReader;
+  /**
+   * The ONE limiter every throttling adapter uses (task 014-19, R-7, R-8).
+   *
+   * **Why it is threaded rather than imported.** `core`'s module singleton is built at import time
+   * and therefore cannot know the deployment profile, so an adapter that falls back to it holds a
+   * bucket private to this process — the state R-7 exists to end. `index.ts` builds one over the
+   * profile's storage axis and hands it here; ten adapters receive the same instance.
+   *
+   * Absent, every adapter takes that singleton, which is exactly today's behaviour and what every
+   * test in this package wants.
+   */
+  readonly throttle?: Throttle;
 }
 
 export interface SharedRuntime {
@@ -98,10 +111,15 @@ export interface SharedRuntime {
  * missing `budgetStore` at the production construction site is a compile error, never a runtime
  * throw discovered only when a paid capability is first called.
  */
-function createProductionNansenAdapter(env: Env, budgetStore: BudgetStore): ProviderAdapter {
+function createProductionNansenAdapter(
+  env: Env,
+  budgetStore: BudgetStore,
+  throttle?: Throttle,
+): ProviderAdapter {
   return createNansenAdapter({
     env: toProcessEnv(env),
     budgetStore,
+    ...(throttle === undefined ? {} : { throttle }),
     ...(env.NANSEN_VELOCITY_CREDITS_PER_MIN !== undefined
       ? { velocityCap: env.NANSEN_VELOCITY_CREDITS_PER_MIN }
       : {}),
@@ -147,25 +165,30 @@ function buildRegistry(
   env: Env,
   budgetStore: BudgetStore,
   cacheStoreFactory: () => CacheStore,
+  throttle?: Throttle,
 ): CapabilityRegistry {
+  // Spread rather than passed as `throttle: throttle` — `exactOptionalPropertyTypes` refuses an
+  // explicit `undefined` where the field is optional, and the two are not the same thing: absent
+  // means "take the module singleton", which is what a test that injects nothing is asking for.
+  const limiter = throttle === undefined ? {} : { throttle };
   const adapters = new Map<string, ProviderAdapter>([
-    ['coingecko', createCoingeckoAdapter({ env: toProcessEnv(env) })],
-    ['dexscreener', createDexscreenerAdapter()],
-    ['defillama', createDefillamaAdapter()],
-    ['rpc-evm', createRpcEvmAdapter()],
-    ['rpc-solana', createRpcSolanaAdapter()],
+    ['coingecko', createCoingeckoAdapter({ env: toProcessEnv(env), ...limiter })],
+    ['dexscreener', createDexscreenerAdapter({ ...limiter })],
+    ['defillama', createDefillamaAdapter({ ...limiter })],
+    ['rpc-evm', createRpcEvmAdapter({ ...limiter })],
+    ['rpc-solana', createRpcSolanaAdapter({ ...limiter })],
     ['dash-platform', createDashPlatformAdapter()],
-    ['platform-explorer', createPlatformExplorerAdapter()],
+    ['platform-explorer', createPlatformExplorerAdapter({ ...limiter })],
     ['dune', createDuneAdapter()],
     // R-79(a): the VALIDATED env, like every other secret-bearing adapter. It used to be built with
     // no `env` at all, so `deps.env ?? process.env` fell back to the raw process environment and the
     // one secret TASK-008 introduced was the only one bypassing `EnvSchema` (vdd-multi i2, sec M-4).
-    ['blockscout', createBlockscoutAdapter({ env: toProcessEnv(env) })],
+    ['blockscout', createBlockscoutAdapter({ env: toProcessEnv(env), ...limiter })],
     // TASK-009: no `env` argument, and that is the whole configuration story — this adapter has no
     // secret to validate, because the vendor offers no key for the surfaces it reads.
-    ['blockchain-info', createBlockchainInfoAdapter()],
-    ['pg-history', createPgHistoryAdapter({ env: toProcessEnv(env) })],
-    ['nansen', createProductionNansenAdapter(env, budgetStore)],
+    ['blockchain-info', createBlockchainInfoAdapter({ ...limiter })],
+    ['pg-history', createPgHistoryAdapter({ env: toProcessEnv(env), ...limiter })],
+    ['nansen', createProductionNansenAdapter(env, budgetStore, throttle)],
   ]);
   return new CapabilityRegistry(routes, adapters, cacheStoreFactory());
 }
@@ -179,7 +202,12 @@ function buildRegistry(
  */
 export function createSharedRuntime(deps: SharedRuntimeDeps): SharedRuntime {
   const budgetStore = (deps.budgetStoreFactory ?? createBudgetStore)();
-  const registry = buildRegistry(deps.env, budgetStore, deps.cacheStoreFactory ?? createCacheStore);
+  const registry = buildRegistry(
+    deps.env,
+    budgetStore,
+    deps.cacheStoreFactory ?? createCacheStore,
+    deps.throttle,
+  );
   // Process-wide, like the registry and the ledger: the channel is a property of the installation,
   // and a per-session one would give each client its own idea of what an operator can read.
   const diagnostics = deps.diagnostics ?? createDiagnostics({ store: null, now: () => Date.now() });

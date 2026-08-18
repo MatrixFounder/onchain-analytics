@@ -27,12 +27,19 @@ let cacheStoreBuilds = 0;
 let budgetStoreBuilds = 0;
 let sessionServers: McpServer[] = [];
 
-/** A `CacheStore` that answers "nothing cached" — enough for a `tools/list` and a `ping`. */
-const inertCacheStore = (): CacheStore =>
-  ({
-    get: () => Promise.resolve({ hit: false }),
-    set: () => Promise.resolve(),
-  }) as unknown as CacheStore;
+/**
+ * A `CacheStore` that answers "nothing cached" — enough for a `tools/list` and a `ping`.
+ *
+ * **`get` resolves to `undefined`, and the shape matters.** The registry decides hit vs miss on
+ * truthiness (`adapters/cache-store.ts`: "`get()` returning `undefined` means no usable entry"), so
+ * the `{ hit: false }` this used to return read as a HIT carrying no value. Nothing here noticed —
+ * neither `tools/list` nor `ping` resolves a capability — but the same helper copied into a case
+ * that does would short-circuit every walk and measure nothing (caught in task 014-19).
+ */
+const inertCacheStore = (): CacheStore => ({
+  get: () => Promise.resolve(undefined),
+  set: () => Promise.resolve(),
+});
 
 const inertBudgetStore = (): BudgetStore => ({}) as unknown as BudgetStore;
 
