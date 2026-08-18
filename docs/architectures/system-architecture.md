@@ -3304,27 +3304,39 @@ is load-bearing.
 #### 3.4.4. The shared vendor limiter (R-7, R-8, R-9)
 
 **What moves:** the bucket state, and nothing else.
-`packages/core/src/net/rate-limit.ts:255` (`const buckets = new Map<string, BucketState>();`) is
-replaced by a `LimiterStore` reading and writing `provider_buckets` (data-model.md §4.5.6).
+The `Map<string, BucketState>` that `rate-limit.ts` held is replaced by a `LimiterStore` reading and
+writing `provider_buckets` (data-model.md §4.5.6).
+
+**Applied by task 014-18.** The map did not disappear — it moved behind the interface as
+`createInProcessLimiterStore` (`packages/core/src/net/limiter-store.ts:164`), because R-7.7 degrades
+to exactly that bucket and deleting it would have meant writing it again for 014-19. `createThrottle`
+builds it when no store is injected, so a call site that changes nothing keeps today's behaviour.
 
 **What does not move.**
 
-- The signature: `packages/core/src/net/rate-limit.ts:37-42`, `export type Throttle = (` keeps
+- The signature: `packages/core/src/net/rate-limit.ts:52`, `export type Throttle = (` keeps
   `(providerId, config, weight?, deadlineAtMs?) => Promise<void>` (R-7.5).
 - The three refusal classes (R-7.6): `RateLimitRejectedError` (misconfiguration or a saturated
   bucket), `DeadlineExceededError` (our time is up for every adapter), `DeadlineWouldExceedError`
   (not through this bucket — ask the next provider).
 - The two numbers (R-9.2): `MAX_WAIT_MS = 30_000`
-  (`packages/core/src/net/rate-limit.ts:57`) and `MIN_POST_WAIT_REMAINDER_MS = 5_000`
-  (`packages/core/src/net/rate-limit.ts:110`).
+  (`packages/core/src/net/rate-limit.ts:67`) and `MIN_POST_WAIT_REMAINDER_MS = 5_000`
+  (`packages/core/src/net/rate-limit.ts:120`).
 - The wait itself: a caller sleeps in its own process. Only the accounting is shared.
 
-**The key is `(providerId, scopeKey)` and the provider declares the scope** (R-7.3). `scopeKey`
-reaches the limiter through `TokenBucketConfig`, which is already a per-call argument at every call
-site: `packages/core/src/adapters/rpc-evm/index.ts:181`,
-`await throttle('rpc-evm', RATE_LIMIT, 1, deadlineAtMs);`, inside a function that already holds the
-`ChainInfo` it needs. Absent, the value stored is `''` — one bucket per provider (R-7.4, AC-40).
-`rpc-evm` is the only declarant, with the chain slug (R-7.4a, AC-42).
+**The key is `(providerId, scopeKey)` and the provider declares the scope** (R-7.3). Absent, the
+value stored is `''` — one bucket per provider (R-7.4, AC-40). `rpc-evm` is the only declarant, with
+the chain slug (R-7.4a, AC-42).
+
+**How the scope reaches the limiter, as applied by task 014-17.** This section proposed
+`TokenBucketConfig`; what shipped composes the scope INTO the first argument — `scopedProviderId`
+and `limiterKeyOf` (`packages/core/src/net/limiter-store.ts`), so `rpc-evm` calls
+`throttle(scopedProviderId('rpc-evm', chain.slug), RATE_LIMIT, 1, deadlineAtMs)` and the store
+splits the pair back out. Both routes satisfy R-7.3, and data-model.md §4.5.6 says as much: "the
+field's name is the interface designer's choice; the storage key is `(provider, scope_key)` either
+way". The composed id was chosen because widening `TokenBucketConfig` would have edited every
+declaration of a per-provider rate to express a fact concerning one provider. The separator is `#`,
+which appears in no adapter id and no CAIP-2 slug, so the composition is injective.
 
 **The injection point is preserved and is already gated** (R-8.1). Ten adapters import the limiter
 and resolve it through `deps.throttle ?? productionThrottle` at eleven sites — nine adapter modules
@@ -3333,11 +3345,20 @@ dependency injection point. `packages/core/test/throttle-seam.test.ts` requires 
 importing the limiter, so a regression here fails a test that already exists.
 
 **What changes at the production call site.** Today an adapter falls back to the module singleton
-(`packages/core/src/net/rate-limit.ts:409`, `export const throttle: Throttle = createThrottle();`),
+(`packages/core/src/net/rate-limit.ts:445`, `export const throttle: Throttle = createThrottle();`),
 which is built at import time and therefore cannot know the deployment profile. `index.ts`
 constructs one `Throttle` over the profile's store and threads it into the ten adapter factories —
-the shape `budgetStore` already has (`packages/mcp-server/src/index.ts:161-163`). The injection
-point is unchanged. What changes is that production stops taking the default.
+the shape `budgetStore` already has. The injection point is unchanged. What changes is that
+production stops taking the default.
+
+**That wiring is task 014-19's, not 014-18's, and the ordering is a safety condition rather than a
+preference.** 014-18 ships both stores and the interface between them. The degradation block below owes three things: `emit`, the per-call
+timeout and the cooldown. Until they exist, a process wired to a shared store turns a Postgres
+hiccup into a service outage — the alternative this section rejects two paragraphs down.
+
+So after 014-18 the shared limiter is _available_ and production still runs the in-process bucket. A
+reader must not take that state for "R-7 is satisfied": AC-4 and AC-5 are met by the STORES, measured
+in `packages/core/test/limiter-cross-process.test.ts`, and R-7 closes when 014-19 wires them.
 
 **The concurrency guarantee is restated, not preserved.** `createThrottle`'s docstring rests on
 "refill + consume + decide is one wholly SYNCHRONOUS step", which is a property of a `Map` in one
@@ -3348,6 +3369,15 @@ follow, and both are testable:
 - **The clock sample must be taken after the store returns, not before.** Today the whole decision
   reads one `nowMs` taken before any work. A sample taken before a round trip is stale by that round
   trip's duration, and it feeds `remainingMs`, which decides `DeadlineWouldExceedError`.
+
+  **Applied as TWO samples, not one moved.** The bucket still gets the instant taken before the
+  call, because refill, spend and the wait they imply must read one sample or the arithmetic
+  contradicts itself. The deadline gets a second, read after the store answers.
+
+  Pinned by `limiter-cross-process.test.ts`, "the deadline is decided against a clock read AFTER the
+  store answered". A store that consumes 2 000 ms of a 6 000 ms budget must refuse a 500 ms wait,
+  and does not under the single-sample reading.
+
 - **The post-wait re-check keeps its reason and gains a second one.** It exists because a timer may
   fire late (`packages/core/src/net/rate-limit.ts:387-398`); with a shared bucket the wait can also
   be wrong because another process consumed the tokens this one was waiting for.

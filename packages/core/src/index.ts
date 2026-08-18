@@ -116,19 +116,29 @@ export { routes, adapterRegistrations } from './providers.config.js';
 
 export { safeFetch, assertAllowedHost } from './net/safe-fetch.js';
 export { throttle } from './net/rate-limit.js';
-// Task 014-17 — the bucket seam and its key. Exported because the limiter's store is injected from
-// outside `core` on the Postgres axis (task 014-18) and because `scopedProviderId` is the one
+// Task 014-17 — the bucket seam and its key; task 014-18 — the two shared implementations behind
+// it. Exported because the limiter's store is injected from outside `core` (the process that picks
+// the storage axis is `mcp-server`'s entry point) and because `scopedProviderId` is the one
 // composition a splitting adapter is allowed to perform.
+//
+// `createSqliteLimiterStore` is on the surface beside `createStateStores` for the same reason
+// `createBudgetStore` is: a `local`-profile process builds its stores one at a time.
 export {
   DEFAULT_SCOPE_KEY,
   SCOPE_SEPARATOR,
   createInProcessLimiterStore,
   limiterKeyOf,
   scopedProviderId,
+  waitMsFor,
   type LimiterKey,
   type LimiterTake,
   type LimiterStore,
 } from './net/limiter-store.js';
+export {
+  createSqliteLimiterStore,
+  SqliteLimiterStore,
+  type SqliteLimiterStoreOptions,
+} from './cache/limiter-store.js';
 // task 012-7 — the two NETWORK-layer deadline outcomes. Exported for the reason the classes are two
 // and not one: the registry (012-8) tells them apart with `instanceof` — `DeadlineExceededError`
 // ends the traversal, `DeadlineWouldExceedError` moves it to the next adapter.
@@ -275,19 +285,20 @@ export { createSqliteStateClient, toSqliteDialect } from './sqlite/state-client.
 // alone would also be a caller deciding the DSN and the bootstrap order for itself, which is what
 // the factory exists to hold.
 //
-// `LimiterOperatorNotImplementedError` is on the surface deliberately, and it is the only class
-// here that is: task 014-19's degradation path has to tell "the store is unreachable" (degrade to
-// the in-process bucket) from "this axis has no slot operator yet" (a defect, not an outage), and
-// `instanceof` across the package boundary is the only way to tell them apart without parsing a
-// message.
+// **`LimiterOperatorNotImplementedError` and `LimiterSlot` were retired by task 014-18.** Both
+// existed to keep one distinction alive while the slot operator was unwritten: task 014-19's
+// degradation path must tell "the store is unreachable" (degrade to the in-process bucket) from
+// "this axis has no operator yet" (a defect, not an outage). 014-18 wrote the operator on both
+// axes, so the second half of that distinction has no referent — and a class nothing throws is a
+// check that reads as a guarantee while guarding nothing. What 014-19 needs instead is on the
+// surface already: `StateStores.limiter` is a `LimiterStore`, and every throw it can now produce is
+// a storage failure, which is exactly the condition R-7.7 degrades on.
 export {
   createStateStores,
   type StateStores,
   type StorageAxis,
-  type LimiterSlot,
   type CreateStateStoresOptions,
 } from './pg/stores.js';
-export { LimiterOperatorNotImplementedError } from './pg/limiter-store.js';
 // The write-capable client itself: the engine repositories of task 014-03 take THIS client, not the
 // read-only one, and they live in `mcp-server`.
 export {

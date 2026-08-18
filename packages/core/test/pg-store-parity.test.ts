@@ -11,7 +11,7 @@ import { SqliteCacheStore } from '../src/cache/sqlite-store.js';
 import { adapterRegistrations } from '../src/providers.config.js';
 import { PgBudgetStore } from '../src/pg/budget-store.js';
 import { PgCacheStore } from '../src/pg/cache-store.js';
-import { LimiterOperatorNotImplementedError, PgLimiterStore } from '../src/pg/limiter-store.js';
+import { PgLimiterStore } from '../src/pg/limiter-store.js';
 import {
   createStateClient,
   STATE_TABLES,
@@ -21,6 +21,7 @@ import {
   type StateClient,
 } from '../src/pg/state-client.js';
 import { createStateStores } from '../src/pg/stores.js';
+import type { LimiterStore } from '../src/net/limiter-store.js';
 
 /**
  * Task 014-39 — the Postgres axis measured against the SQLite axis, with no database anywhere.
@@ -57,20 +58,33 @@ const PROVIDER = 'nansen';
 /** A provider that is registered (so the foreign key resolves) and never written to. */
 const QUIET_PROVIDER = 'dune';
 const DAY = 1_770_000_000_000;
+/** The bucket every limiter case below shares: two tokens, one back every 500 ms. */
+const RATE = { capacity: 2, refillPerSec: 2 };
 const WINDOW = 1_770_003_600_000;
 
 /**
- * The three declared substitutions of §4.2.4, applied backwards, plus `$n` → `@pn`.
+ * The three declared substitutions of §4.2.4 plus §4.5.6's, applied backwards, plus `$n` → `@pn`.
  *
  * The parameter rewrite is a binding detail, not a dialect one: Postgres numbers its parameters and
  * SQLite's anonymous `?` binds by order of appearance, which would silently misalign every
  * statement that names one parameter twice — and the canonical reservation names `$3`, `$4` and
  * `$5` two or three times each. `@pn` is SQLite's named form and preserves the numbering exactly.
+ *
+ * **`LEAST` → `MIN` is §4.5.6's own substitution, and it is here because the limiter arrived**
+ * (task 014-18). §4.2.4 declares three because it speaks for the four COUNTER tables; the bucket
+ * statement is a §4.5 table with a dialect difference stated in its own subsection — scalar minimum
+ * is `LEAST` in Postgres and `MIN` in SQLite, and it is the exact mirror of the `GREATEST`/`MAX`
+ * line above it.
+ *
+ * **Nothing is stripped, and that is why the casts are `CAST(x AS t)`.** A translation that erased
+ * `::double precision` would be executing a statement the shipped one only resembles. SQLite parses
+ * the standard form, so the text below runs unedited on both engines.
  */
 function toSqliteDialect(sql: string): string {
   return sql
     .replace(/\bonchain\./g, '')
     .replace(/\bGREATEST\s*\(/gi, 'MAX(')
+    .replace(/\bLEAST\s*\(/gi, 'MIN(')
     .replace(/\$(\d+)/g, '@p$1');
 }
 
@@ -820,16 +834,24 @@ describe('the axis factory and the limiter slot', () => {
     await cache.set(PROVIDER, 'token.price', 'd'.repeat(64), { price: 3 }, 60);
     expect((await cache.get(PROVIDER, 'token.price', 'd'.repeat(64)))?.value).toEqual({ price: 3 });
     expect(await budget.getUsage(PROVIDER, DAY)).toBe(0);
-    expect(stores.limiter.kind).toBe('store');
+    // Task 014-18 retired the `LimiterSlot` union: the axis hands back the interface itself, which
+    // is the type `createThrottle` accepts, so wiring is an assignment and not a translation.
+    const limiter: LimiterStore = stores.limiter;
+    expect(
+      await limiter.take({ providerId: PROVIDER, scopeKey: '' }, RATE, 1, 1_000),
+    ).toStrictEqual({ tokensLeft: 1, waitMs: 0 });
   });
 
-  it('the sqlite axis yields the shipped implementations and names the missing limiter', () => {
+  it('the sqlite axis yields a limiter too, and it is not the in-process map', async () => {
     const stores = createStateStores({ storage: 'sqlite', dbPath: join(dir, 'cache.sqlite3') });
-    expect(stores.limiter).toEqual({
-      kind: 'absent',
-      reason: 'SqliteLimiterStore is not written yet; the limiter still uses its in-process bucket',
-      owner: 'task 014-18',
-    });
+    const limiter: LimiterStore = stores.limiter;
+    await limiter.take({ providerId: PROVIDER, scopeKey: '' }, RATE, 1, 1_000);
+    // The bucket is a ROW, and a second store over the same file reads it. That is the whole of
+    // R-7 in one assertion: the in-process map would have handed this caller a full bucket.
+    const second = createStateStores({ storage: 'sqlite', dbPath: join(dir, 'cache.sqlite3') });
+    expect(
+      await second.limiter.take({ providerId: PROVIDER, scopeKey: '' }, RATE, 1, 1_000),
+    ).toStrictEqual({ tokensLeft: 0, waitMs: 0 });
   });
 
   it('an option belonging to the other axis is refused, never ignored', () => {
@@ -841,18 +863,94 @@ describe('the axis factory and the limiter slot', () => {
     );
   });
 
-  it('the limiter slot operator is task 014-18, and says so as a distinguishable class', () => {
-    const limiter = new PgLimiterStore({ client: harness.client() });
-    let thrown: unknown;
-    try {
-      void limiter.takeTokens(PROVIDER, '', 10, 1, Date.now(), 5);
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(LimiterOperatorNotImplementedError);
-    // R-7.7's fallback catches a store FAILURE; this must not be mistaken for one, or the process
-    // would degrade silently and forever instead of naming an unwritten operator.
-    expect((thrown as Error).message).toContain('task 014-18');
-    expect(thrown).not.toBeInstanceOf(TypeError);
+  /**
+   * Task 014-18's slot operator, executed — the shipped Postgres text against the reversed dialect.
+   *
+   * **What this measures and what it cannot.** The arithmetic: the refill term, the `LEAST` clamp
+   * at capacity, the spend, the negative balance and the `RETURNING` that carries it back. Not the
+   * row lock the conflict action takes, which is the cross-process argument and is measured by
+   * TC-E2E-03/04 against a live Postgres (excluded from CI by R-21).
+   */
+  describe('the slot operator on the Postgres axis', () => {
+    const KEY = { providerId: PROVIDER, scopeKey: '' };
+    const limiterOn = (client: StateClient): PgLimiterStore => new PgLimiterStore({ client });
+
+    beforeEach(() => {
+      harness.db.prepare(`INSERT INTO providers (id, kind) VALUES (?, 'paid')`).run(PROVIDER);
+    });
+
+    it('spends from a full bucket, then from what the first call left', async () => {
+      const limiter = limiterOn(harness.client());
+      expect(await limiter.take(KEY, RATE, 1, 1_000)).toStrictEqual({ tokensLeft: 1, waitMs: 0 });
+      expect(await limiter.take(KEY, RATE, 1, 1_000)).toStrictEqual({ tokensLeft: 0, waitMs: 0 });
+      // Third call at the SAME instant: nothing refilled, so the bucket goes into backlog and the
+      // caller is handed the wait that backlog implies.
+      expect(await limiter.take(KEY, RATE, 1, 1_000)).toStrictEqual({
+        tokensLeft: -1,
+        waitMs: 500,
+      });
+    });
+
+    it('refills by elapsed time and never past capacity', async () => {
+      const limiter = limiterOn(harness.client());
+      await limiter.take(KEY, RATE, 2, 1_000); // bucket: 0
+      // 500 ms at 2/sec earns exactly one token.
+      expect(await limiter.take(KEY, RATE, 1, 1_500)).toStrictEqual({ tokensLeft: 0, waitMs: 0 });
+      // An hour of idling earns thousands and the clamp keeps two, so one call still leaves one.
+      expect(await limiter.take(KEY, RATE, 1, 3_601_500)).toStrictEqual({
+        tokensLeft: 1,
+        waitMs: 0,
+      });
+    });
+
+    it('a clock that steps backwards charges nobody for time that did not pass', async () => {
+      const limiter = limiterOn(harness.client());
+      await limiter.take(KEY, RATE, 2, 10_000);
+      // `Date.now()` is a wall clock and an NTP correction moves it back. Unclamped, the refill
+      // term would go NEGATIVE and this caller would be charged for the correction.
+      expect(await limiter.take(KEY, RATE, 1, 9_000)).toStrictEqual({
+        tokensLeft: -1,
+        waitMs: 500,
+      });
+    });
+
+    it('a refund adds the weight back and does not move last_refill_ms', async () => {
+      const limiter = limiterOn(harness.client());
+      await limiter.take(KEY, RATE, 2, 1_000);
+      await limiter.refund(KEY, 2, 9_000);
+      const row = harness.db
+        .prepare(`SELECT tokens, last_refill_ms, updated_at FROM provider_buckets`)
+        .get() as { tokens: number; last_refill_ms: number; updated_at: number };
+      expect(row.tokens).toBe(2);
+      // Moving it would discard the interval since the take, and the next caller's refill would
+      // start from the wrong place — a limiter that quietly tightens on every refusal.
+      expect(row.last_refill_ms).toBe(1_000);
+      expect(row.updated_at).toBe(9_000);
+    });
+
+    it('a refund for a bucket that was never taken writes nothing', async () => {
+      const limiter = limiterOn(harness.client());
+      await limiter.refund({ providerId: QUIET_PROVIDER, scopeKey: '' }, 1, 9_000);
+      expect(harness.db.prepare(`SELECT count(*) AS n FROM provider_buckets`).get()).toStrictEqual({
+        n: 0,
+      });
+    });
+
+    it('waits for the bootstrap barrier before writing a row that references it', async () => {
+      let release = (): void => {};
+      const ready = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const limiter = new PgLimiterStore({ client: harness.client(), ready });
+      const before = harness.statements.length;
+      const pending = limiter.take(KEY, RATE, 1, 1_000);
+      await Promise.resolve();
+      // `provider_buckets.provider` is the only cross-group foreign key of §4.5. A bucket written
+      // before the twelve registry rows land is a refusal R-7.7 would read as a storage outage.
+      expect(harness.statements.length).toBe(before);
+      release();
+      await pending;
+      expect(harness.statements.length).toBeGreaterThan(before);
+    });
   });
 });

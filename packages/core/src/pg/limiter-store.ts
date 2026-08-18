@@ -1,85 +1,127 @@
+import type { TokenBucketConfig } from '../net/rate-limit.js';
+import {
+  waitMsFor,
+  type LimiterKey,
+  type LimiterStore,
+  type LimiterTake,
+} from '../net/limiter-store.js';
 import type { StateClient } from './state-client.js';
-
-/**
- * Thrown by the slot operator that task 014-18 owns and this task deliberately does not write.
- *
- * **Why a class of its own rather than a plain `Error`.** R-7.7 degrades the limiter to an
- * in-process bucket when its STORE fails, and that fallback is reached by catching a throw
- * (`system-architecture.md` §3.4.4, task 014-19). An anonymous throw from an unwritten operator
- * would land in that catch and be indistinguishable from a Postgres outage: the process would
- * announce a degraded limiter, write a `limiter.degraded` diagnostics row, and keep running against
- * a per-process ceiling forever — a green path that never names the real reason (L-10). A named
- * class lets 014-19 tell "the store is unreachable" from "this axis has no operator yet", and lets
- * a test assert on the difference.
- */
-export class LimiterOperatorNotImplementedError extends Error {
-  constructor(readonly member: string) {
-    super(
-      `PgLimiterStore.${member}() is not implemented — the atomic slot operator is task 014-18 ` +
-        `(data-model.md §4.5.6). This is NOT a storage failure: R-7.7's in-process fallback must ` +
-        `not treat it as one.`,
-    );
-    this.name = 'LimiterOperatorNotImplementedError';
-  }
-}
 
 /** Constructor options for `PgLimiterStore`. */
 export interface PgLimiterStoreOptions {
   /** The write-capable client (`createStateClient`) — the same one the cache and budget stores of
    * this axis take, so all three share one pool and one role. */
   client: StateClient;
+  /**
+   * The `providers` bootstrap barrier — `PgBudgetStore.ready`, which `pg/stores.ts` passes.
+   *
+   * `provider_buckets.provider` is the only cross-group foreign key of §4.5, so a bucket written
+   * before the twelve registry rows land is a foreign-key refusal — and R-7.7 would read that
+   * refusal as a storage failure and degrade the process to a per-process ceiling. Omitted, this
+   * resolves immediately, which is correct for a caller that has already bootstrapped.
+   */
+  ready?: Promise<void>;
+}
+
+interface TokensRow {
+  tokens: number;
 }
 
 /**
- * The Postgres axis's limiter store: its client and its place in the axis (`system-architecture.md`
- * §3.4.4, `data-model.md` §4.5.6). The atomic slot operator is task 014-18 and is NOT written here.
+ * The limiter's bucket state on the Postgres axis — task 014-18, R-7.1/R-7.2, `data-model.md`
+ * §4.5.6. Two `network` processes against one Postgres share one ceiling (AC-4), and the bucket
+ * outlives either of them (AC-5).
  *
- * **What this task delivers and what it withholds.** The class exists so the axis table of §3.4.8
- * has a third row that resolves to something, and so 014-18 lands one method into an already-wired
- * store rather than a new file plus its wiring. The operator itself is withheld because writing it
- * would mean writing the statement of §4.5.6 — refill, consume and read in one
- * `INSERT … ON CONFLICT … RETURNING` — together with the `LEAST`/`MIN` dialect split, the clock
- * sample that must be taken AFTER the store answers, and the post-wait re-check. That is a design
- * another task owns, and a plausible-looking guess at it would be the worst of the three possible
- * outcomes: a limiter that runs and is wrong.
+ * **Why the statement is written out here rather than reused from the SQLite store.** §4.5.6 fixes
+ * the key, the columns and the arithmetic and leaves the scalar minimum to the dialect: `LEAST`
+ * here, `MIN` there. Everything else is character-for-character the same decision, and the two
+ * texts are compared by a test rather than by a reader's memory.
  *
- * **Why `provider_buckets` needs no bootstrap here.** `provider_buckets.provider` references
+ * **Why `client.query` and not `client.transaction`.** Both operations are ONE statement, and one
+ * statement in Postgres is already atomic. A `BEGIN`/`COMMIT` around it would take a connection out
+ * of the pool for the duration and buy nothing — the refill, the spend and the read are inside the
+ * upsert precisely so no transaction has to hold them together.
+ *
+ * **Why `provider_buckets` needs no bootstrap of its own.** `provider_buckets.provider` references
  * `onchain.providers`, whose twelve rows `PgBudgetStore` upserts at construction. `pg/stores.ts`
- * builds the two together, which is what makes that ordering a property of the axis rather than of
- * a call site.
+ * builds the two together and hands that promise here, which is what makes the ordering a property
+ * of the axis rather than of a call site.
  */
-export class PgLimiterStore {
+export class PgLimiterStore implements LimiterStore {
   private readonly client: StateClient;
+  private readonly ready: Promise<void>;
 
   constructor(options: PgLimiterStoreOptions) {
     this.client = options.client;
+    this.ready = options.ready ?? Promise.resolve();
   }
 
   /**
    * Refills, consumes and reads one bucket in a single statement, returning the tokens left after
    * this caller's `weight` was taken (negative means a backlog the next caller waits out).
    *
-   * **Not implemented — task 014-18.** The parameter list is fixed here because it is already fixed
-   * elsewhere: it is the parameter list of the statement in `data-model.md` §4.5.6 (`$3` capacity,
-   * `$4` weight, `$5` now, `$6` `refillPerSec`) keyed by `(provider, scope_key)` per R-7.3, with
-   * `scopeKey` defaulting to `''` — one bucket per provider (R-7.4). Declaring it now is what keeps
-   * 014-18 to a body, and keeps this class from being a name with no shape.
+   * **Every parameter is cast explicitly, and in `CAST(x AS t)` form rather than `x::t`.** Postgres
+   * infers a parameter's type from its context, and `$3 - $4` in the `VALUES` list has no context to
+   * infer from — it refuses the statement with "could not determine data type of parameter". The
+   * casts also pin the arithmetic: `tokens` is `DOUBLE PRECISION` and `last_refill_ms` is `BIGINT`.
    *
-   * `client` is held for that task and used by nothing yet; the reference below is what makes that
-   * a stated fact rather than an unused field a future reader would delete.
+   * The FORM matters as much as the casts. `::` is Postgres-only syntax, while `CAST(x AS t)` is
+   * standard and SQLite parses it (applying its own affinity, which is the same intent). That is
+   * what lets `pg-store-parity.test.ts` execute THIS text — not a paraphrase of it — against an
+   * in-memory engine, so the statement's arithmetic is measured in a suite that R-21 forbids to
+   * reach a database.
+   *
+   * **`GREATEST(0, …)` on the elapsed interval** is the clamp the in-process bucket has always
+   * applied. See the SQLite twin for the argument; it is the same one, and the two statements carry
+   * it or neither does.
    */
-  takeTokens(
-    provider: string,
-    scopeKey: string,
-    capacityTokens: number,
+  async take(
+    key: LimiterKey,
+    config: TokenBucketConfig,
     weight: number,
     nowMs: number,
-    refillPerSec: number,
-  ): Promise<number> {
-    // The parameters are referenced rather than underscored away: each one is already fixed by the
-    // statement in §4.5.6, and a tidy-up that trimmed the signature to `()` would leave 014-18 to
-    // re-derive it from the document. One expression, no behaviour.
-    void [this.client, provider, scopeKey, capacityTokens, weight, nowMs, refillPerSec];
-    throw new LimiterOperatorNotImplementedError('takeTokens');
+  ): Promise<LimiterTake> {
+    // The foreign-key target must exist before the row that references it — see `ready`.
+    await this.ready;
+    const rows = await this.client.query<TokensRow>(
+      `INSERT INTO onchain.provider_buckets (provider, scope_key, tokens, last_refill_ms, updated_at)
+       VALUES ($1, $2,
+               CAST($3 AS DOUBLE PRECISION) - CAST($4 AS DOUBLE PRECISION),
+               CAST($5 AS BIGINT), CAST($5 AS BIGINT))
+       ON CONFLICT (provider, scope_key) DO UPDATE SET
+         tokens = LEAST(CAST($3 AS DOUBLE PRECISION),
+                        onchain.provider_buckets.tokens
+                        + GREATEST(0, CAST($5 AS BIGINT) - onchain.provider_buckets.last_refill_ms)
+                          / 1000.0 * CAST($6 AS DOUBLE PRECISION))
+                  - CAST($4 AS DOUBLE PRECISION),
+         last_refill_ms = CAST($5 AS BIGINT),
+         updated_at = CAST($5 AS BIGINT)
+       RETURNING tokens`,
+      [key.providerId, key.scopeKey, config.capacity, weight, nowMs, config.refillPerSec],
+    );
+    const row = rows[0];
+    // An upsert's `RETURNING` answers for both branches, so no row means the statement did not run.
+    // This module has no reading of that state and refuses rather than papering over it with a full
+    // bucket — which is the one wrong answer, because it admits the call.
+    if (row === undefined) {
+      throw new Error(
+        `PgLimiterStore: the bucket statement returned no row for ` +
+          `(${key.providerId}, ${key.scopeKey}) — the limiter has no state to decide on`,
+      );
+    }
+    const tokensLeft = Number(row.tokens);
+    return { tokensLeft, waitMs: waitMsFor(tokensLeft, config.refillPerSec) };
+  }
+
+  /** The refund (§4.5.6, "The refund is a second statement") — `tokens` only. See
+   * `LimiterStore.refund` for why `last_refill_ms` must not move and why this is not an upsert. */
+  async refund(key: LimiterKey, weight: number, nowMs: number): Promise<void> {
+    await this.ready;
+    await this.client.query(
+      `UPDATE onchain.provider_buckets
+          SET tokens = tokens + CAST($3 AS DOUBLE PRECISION), updated_at = CAST($4 AS BIGINT)
+        WHERE provider = $1 AND scope_key = $2`,
+      [key.providerId, key.scopeKey, weight, nowMs],
+    );
   }
 }

@@ -1,6 +1,8 @@
 import type { CacheStore } from '../adapters/cache-store.js';
 import type { AdapterRegistration } from '../adapters/types.js';
 import { createBudgetStore, type BudgetStore } from '../cache/budget-store.js';
+import { createSqliteLimiterStore } from '../cache/limiter-store.js';
+import type { LimiterStore } from '../net/limiter-store.js';
 import { LruHotLayer } from '../cache/lru.js';
 import { createCacheStore, TwoLevelStore } from '../cache/two-level-store.js';
 import { PgBudgetStore } from './budget-store.js';
@@ -28,35 +30,25 @@ import { createStateClient, type StateClient } from './state-client.js';
 export type StorageAxis = 'sqlite' | 'postgres';
 
 /**
- * The limiter's place in the axis — a two-variant union, and a union rather than
- * `PgLimiterStore | undefined` on purpose.
+ * **The `LimiterSlot` union was retired by task 014-18.** It existed because one axis had a store
+ * whose operator was unwritten and the other had no store at all, and it spelled that absence out
+ * so "no limiter" could not be read as "no limit" by accident. Both axes now have a limiter whose
+ * operator runs, so the union's second arm had no producer left — and a discriminant nobody can
+ * reach is a check that reads as a guarantee while guarding nothing.
  *
- * **Why an absence is spelled out instead of being left absent.** `undefined` at a call site reads
- * as "no limiter", and "no limiter" is one `if` away from "no limit" — the L-10 shape this project
- * has already paid for twice (a confident empty answer taken as a safe one). A consumer must
- * discriminate on `kind`, so the case where no limiter exists cannot be reached by accident, and
- * whoever reaches it is handed the id of the task that closes it.
+ * What replaced it is the interface itself: `StateStores.limiter` is a `LimiterStore`, the same
+ * type `createThrottle` accepts, so wiring the axis into the limiter is an assignment rather than a
+ * translation.
  */
-export type LimiterSlot =
-  | {
-      readonly kind: 'store';
-      readonly store: PgLimiterStore;
-      /** The slot operator (`takeTokens`) is not written yet; the store throws
-       * `LimiterOperatorNotImplementedError` until this task lands it. */
-      readonly operatorOwner: 'task 014-18';
-    }
-  | {
-      readonly kind: 'absent';
-      readonly reason: string;
-      readonly owner: 'task 014-18';
-    };
 
 /** The trio one axis resolves to. `cache` and `budget` satisfy the interfaces that already existed
  * (`adapters/cache-store.ts:25`, `cache/budget-store.ts:46`) — this factory changes neither. */
 export interface StateStores {
   readonly cache: CacheStore;
   readonly budget: BudgetStore;
-  readonly limiter: LimiterSlot;
+  /** The shared bucket store of this axis (task 014-18, R-7). Handed to `createThrottle` as its
+   * `store` dependency — see `net/rate-limit.ts`. */
+  readonly limiter: LimiterStore;
 }
 
 export interface CreateStateStoresOptions {
@@ -114,11 +106,10 @@ export function createStateStores(options: CreateStateStoresOptions): StateStore
         new LruHotLayer(options.maxHotEntries, options.maxHotBytes),
       ),
       budget,
-      limiter: {
-        kind: 'store',
-        store: new PgLimiterStore({ client }),
-        operatorOwner: 'task 014-18',
-      },
+      // The same `ready` barrier the cache store takes, and for the same reason: `provider_buckets`
+      // references `providers`, and a bucket written before the bootstrap lands is a foreign-key
+      // refusal that R-7.7 would read as a storage failure.
+      limiter: new PgLimiterStore({ client, ready: budget.ready }),
     };
   }
 
@@ -135,10 +126,9 @@ export function createStateStores(options: CreateStateStoresOptions): StateStore
       maxHotBytes: options.maxHotBytes,
     }),
     budget: createBudgetStore({ dbPath: options.dbPath, providers: options.providers }),
-    limiter: {
-      kind: 'absent',
-      reason: 'SqliteLimiterStore is not written yet; the limiter still uses its in-process bucket',
-      owner: 'task 014-18',
-    },
+    limiter: createSqliteLimiterStore({
+      dbPath: options.dbPath,
+      providers: options.providers,
+    }),
   };
 }

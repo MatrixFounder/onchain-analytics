@@ -3,7 +3,7 @@ import { DeadlineExceededError } from './safe-fetch.js';
 /**
  * Per-provider token-bucket configuration (D4/R-26, `providers.config.ts`'s `rateLimit` field).
  */
-import type { LimiterStore } from './limiter-store.js';
+import { createInProcessLimiterStore, limiterKeyOf, type LimiterStore } from './limiter-store.js';
 
 export interface TokenBucketConfig {
   capacity: number;
@@ -16,9 +16,12 @@ export interface ThrottleDeps {
   now?: () => number;
   wait?: (ms: number) => Promise<void>;
   /**
-   * The shared bucket store (task 014-17, R-7, R-8). Absent means the in-process map below, which
-   * is what every call site gets today — the seam is declared here so task 014-18 lands one
-   * implementation rather than one implementation plus its wiring.
+   * Where the bucket lives (task 014-17's seam, task 014-18's implementations; R-7, R-8).
+   *
+   * Absent means `createInProcessLimiterStore()` — one map, one process, which is exactly today's
+   * behaviour and what every unit test in this package wants. `createStateStores` hands the axis's
+   * shared store here instead, and from that point two processes against one `DATA_DIR` (or one
+   * Postgres) hold ONE ceiling between them rather than one each.
    *
    * **Injectable, exactly as the clock is** (R-8): the limiter's dependency is a parameter and never
    * a module-level singleton, so a test can substitute a failing store and observe R-7.7's
@@ -52,11 +55,6 @@ export type Throttle = (
   weight?: number,
   deadlineAtMs?: number,
 ) => Promise<void>;
-
-interface BucketState {
-  tokens: number;
-  lastRefillMs: number;
-}
 
 function defaultWait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -202,38 +200,50 @@ export class DeadlineWouldExceedError extends Error {
 }
 
 /**
- * Builds a `throttle(providerId, config)` function with its own isolated per-`providerId` bucket
- * state (a factory, not a shared module singleton — mirrors the `CapabilityRegistry`/`CacheStore`
- * "factory, not singleton" principle, ARCHITECTURE.md §8). Tests call this directly with an
- * injected `now`/`wait` to get deterministic, real-timer-free assertions; the module-level
- * `throttle` export below is the production singleton (real clock/timers), built by calling this
- * with no overrides.
+ * Builds a `throttle(providerId, config)` function over one bucket STORE (a factory, not a shared
+ * module singleton — mirrors the `CapabilityRegistry`/`CacheStore` "factory, not singleton"
+ * principle, ARCHITECTURE.md §8). Tests call this directly with an injected `now`/`wait` to get
+ * deterministic, real-timer-free assertions; the module-level `throttle` export below is the
+ * production singleton (real clock/timers, in-process bucket), built by calling this with no
+ * overrides.
  *
- * Token-bucket algorithm: each `providerId` gets its own bucket, starting full (`capacity`
- * tokens). On every call, the bucket is refilled by `elapsedSeconds * refillPerSec` (capped at
- * `capacity`) based on time elapsed since its last check, then one token is unconditionally
- * consumed. If the resulting balance is still `>= 0`, the call proceeds immediately; otherwise it
- * waits exactly as long as needed for that deficit to refill (`-tokens / refillPerSec` seconds).
+ * Token-bucket algorithm: each `(providerId, scopeKey)` pair gets its own bucket, starting full
+ * (`capacity` tokens). On every call, the bucket is refilled by `elapsedSeconds * refillPerSec`
+ * (capped at `capacity`) based on time elapsed since its last check, then `weight` tokens are
+ * unconditionally consumed. If the resulting balance is still `>= 0`, the call proceeds
+ * immediately; otherwise it waits exactly as long as needed for that deficit to refill
+ * (`-tokens / refillPerSec` seconds).
  *
- * **Concurrency-safety (adversarial cycle 1, fix C — findings merged).** The refill + consume +
- * decide-whether-to-wait step above is entirely SYNCHRONOUS — there is no `await` anywhere before
- * it fully commits the bucket's new state. This is what makes N concurrent same-`providerId`
- * callers (e.g. `await Promise.all([throttle(id, cfg), throttle(id, cfg), throttle(id, cfg)])`)
- * space out into distinct, cascading wait durations instead of racing on stale state: JS's
- * single-threaded execution model guarantees a batch of concurrent calls run their synchronous
- * prefixes back-to-back, in order, with no interleaving — the Nth call's math always sees the
- * (N-1)th call's fully-committed bucket, never a half-updated one.
+ * **Where that arithmetic runs moved in task 014-18, and the arithmetic did not.** It is one
+ * `store.take()` now, so the same three lines serve a `Map`, a SQLite row and a Postgres row —
+ * `net/limiter-store.ts` states why a store may not offer a read/write pair instead.
  *
- * The PREVIOUS implementation broke exactly this guarantee: on the "must wait" path, it computed
+ * **Concurrency-safety (adversarial cycle 1, fix C — findings merged; restated for the store).**
+ * N concurrent same-bucket callers must space out into distinct, cascading waits rather than race
+ * on stale state. Two facts now carry that, one per topology:
+ *
+ * - **Within one process** it is still the synchronous prefix. `throttle` reaches `store.take()`
+ *   with no `await` before it, and both in-process implementations commit their new state
+ *   SYNCHRONOUSLY — the map assignment, and `better-sqlite3`'s statement — before the promise they
+ *   return exists. JS's single-threaded model then guarantees the Nth caller's math sees the
+ *   (N-1)th caller's committed bucket. A store that awaited I/O before committing would forfeit
+ *   this, which is why the interface specifies one operation and not three.
+ * - **Across processes** it is the statement. §4.5.6's `INSERT … ON CONFLICT … RETURNING` refills,
+ *   spends and reads inside one engine-level atom, so two processes cannot both read the same
+ *   tokens and both proceed. That is the failure R-7 exists to end, and no amount of care in this
+ *   file could have ended it: the bucket was per-process.
+ *
+ * The PREVIOUS implementation broke the first guarantee: on the "must wait" path, it computed
  * `waitMs` from the CURRENT `tokens` value but deferred the actual state commit
  * (`bucket.tokens = 0; bucket.lastRefillMs = now()`) until AFTER `await wait(waitMs)` resolved.
  * Two callers arriving back-to-back while the first was still waiting would both read the SAME
  * pre-wait `tokens` value and compute the IDENTICAL `waitMs` — never spacing out. The fix: `tokens`
- * is allowed to go NEGATIVE and is committed synchronously, immediately, on every call (never
- * reset back to `0` after a real wait resolves) — each subsequent caller's synchronous math then
- * immediately accounts for every still-outstanding reservation ahead of it, so wait durations
- * correctly accumulate (e.g. 0ms, 500ms, 1000ms, ... for successive callers against a
- * 1-capacity/2-per-second bucket) with no explicit queue/mutex object needed.
+ * is allowed to go NEGATIVE and is committed immediately, on every call (never reset back to `0`
+ * after a real wait resolves) — each subsequent caller's math then accounts for every
+ * still-outstanding reservation ahead of it, so wait durations correctly accumulate (e.g. 0ms,
+ * 500ms, 1000ms, ... for successive callers against a 1-capacity/2-per-second bucket) with no
+ * explicit queue/mutex object needed. Both stored implementations keep that property: the negative
+ * balance is what `provider_buckets.tokens` holds, and the column is `REAL` for exactly this reason.
  *
  * **The call deadline (task 012-7, R-146/AC-9), when `deadlineAtMs` is passed.** The wait used to be
  * unconditional up to `MAX_WAIT_MS`, so a call with a 15 s capability budget could sleep 30 s inside
@@ -256,15 +266,21 @@ export class DeadlineWouldExceedError extends Error {
  * equality AND every wait leaving a sliver — the caller then woke with no budget and produced the
  * TERMINAL class one layer down. `MIN_POST_WAIT_REMAINDER_MS` carries that whole argument.
  *
- * Both refusals refund the reservation (`bucket.tokens += weight`) exactly like the `MAX_WAIT_MS`
- * branch above them: a call that never waits must not leave its slot spent for whoever calls next.
- * The refusal decision reads the SAME `nowMs` sample as the refill and the spend, so it adds no
- * `await` before the bucket state is committed and the concurrency guarantee above still holds.
+ * Both refusals refund the reservation (`store.refund`) exactly like the `MAX_WAIT_MS` branch above
+ * them: a call that never waits must not leave its slot spent for whoever calls next.
+ *
+ * **They decide against a clock sampled AFTER the store answered**, not against the bucket's own
+ * instant (`system-architecture.md` §3.4.4). The bucket's arithmetic needs one sample to be
+ * self-consistent; the deadline needs the CURRENT time, and a shared store puts a round trip
+ * between the two. Deciding "there is time left" on a sample taken before that trip is how a
+ * caller is admitted to a wait its budget no longer covers.
  */
 export function createThrottle(deps: ThrottleDeps = {}): Throttle {
   const now = deps.now ?? Date.now;
   const wait = deps.wait ?? defaultWait;
-  const buckets = new Map<string, BucketState>();
+  // Omitted means one map in one process — today's behaviour, kept as the default so no existing
+  // call site changes meaning by standing still (R-7.7 also degrades to exactly this store).
+  const store = deps.store ?? createInProcessLimiterStore();
 
   return async function throttle(
     providerId: string,
@@ -297,38 +313,41 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
     }
 
     const nowMs = now();
-    let bucket = buckets.get(providerId);
+    // The pair the bucket is keyed on. A provider that declares no split composes nothing, so this
+    // is `(providerId, '')` for twelve of the thirteen registrations (`net/limiter-store.ts`).
+    const key = limiterKeyOf(providerId);
 
-    if (!bucket) {
-      bucket = { tokens: config.capacity, lastRefillMs: nowMs };
-      buckets.set(providerId, bucket);
-    } else {
-      const elapsedSec = Math.max(0, (nowMs - bucket.lastRefillMs) / 1000);
-      bucket.tokens = Math.min(config.capacity, bucket.tokens + elapsedSec * config.refillPerSec);
-      bucket.lastRefillMs = nowMs;
-    }
-
-    bucket.tokens -= weight;
-    if (bucket.tokens >= 0) {
+    // Refill, consume and read — ONE operation, and the reason the interface offers no other shape.
+    // The negative balance it can return is deliberately NOT reset to zero: that backlog is exactly
+    // what the NEXT call's refill reads, which is what makes concurrent callers space out instead
+    // of racing on stale state.
+    const { tokensLeft, waitMs } = await store.take(key, config, weight, nowMs);
+    if (tokensLeft >= 0) {
       return;
     }
 
-    // Deliberately NOT reset to 0 here (see docstring above) — the negative backlog left in
-    // `bucket.tokens` is exactly what the NEXT call's synchronous refill computation reads, which
-    // is what makes concurrent callers space out instead of racing on stale state.
-    const waitMs = (-bucket.tokens / config.refillPerSec) * 1000;
     if (waitMs > MAX_WAIT_MS) {
       // Refund the reservation — this call will never actually wait/consume its slot, so it must
       // not permanently worsen the backlog for whoever calls next (adversarial cycle 2, fix 7).
       // Refunds `weight`, not 1: a partial refund would leak tokens out of the bucket on every
       // rejected weighted call, tightening the limiter a little more each time until it stopped
       // admitting anything.
-      bucket.tokens += weight;
+      await store.refund(key, weight, nowMs);
       throw new RateLimitRejectedError(
         providerId,
         `computed wait ${Math.round(waitMs)}ms exceeds the ${MAX_WAIT_MS}ms fairness cap (saturated bucket)`,
       );
     }
+
+    // **A SECOND clock sample, taken after the store answered** (`system-architecture.md` §3.4.4).
+    // `nowMs` above is the bucket's instant: refill, spend and the wait it implies must all read one
+    // sample, or the arithmetic is internally inconsistent. The deadline is a different question
+    // asked at a different time — and with a shared store, `store.take` is a round trip, so a
+    // pre-call sample overstates the budget by however long that trip took. Admitting a wait on the
+    // strength of a stale sample is how a caller wakes with less than `MIN_POST_WAIT_REMAINDER_MS`
+    // and produces the TERMINAL class one layer down, which is the outcome the floor exists to
+    // avoid. On the in-process store the two samples are the same instant and this costs nothing.
+    const decidedAtMs = now();
 
     // The call deadline (task 012-7, R-146/AC-9). TWO conditions, never one — see
     // `DeadlineWouldExceedError` for why merging them reproduces H-1 one floor down.
@@ -354,10 +373,10 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
     // `nowMs`, not a fresh `now()`: the entire decision (refill, spend, wait-or-refuse) reads ONE
     // clock sample, which is the premise of this function's concurrency guarantee.
     if (deadlineAtMs !== undefined) {
-      const remainingMs = deadlineAtMs - nowMs;
+      const remainingMs = deadlineAtMs - decidedAtMs;
       if (remainingMs <= 0) {
         // Genuine expiry — true for EVERY adapter on the route, so this ends the traversal.
-        bucket.tokens += weight;
+        await store.refund(key, weight, decidedAtMs);
         throw new DeadlineExceededError(`provider "${providerId}"`, deadlineAtMs);
       }
       // A different fact: time is left, but not through THIS provider's bucket. Ask the next one.
@@ -368,7 +387,7 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       // the traversal for every adapter behind this one. Refusing here instead keeps the fact
       // per-provider, which is this class's entire reason to exist.
       if (remainingMs - waitMs < MIN_POST_WAIT_REMAINDER_MS) {
-        bucket.tokens += weight;
+        await store.refund(key, weight, decidedAtMs);
         throw new DeadlineWouldExceedError(
           providerId,
           waitMs,
@@ -393,9 +412,9 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
     //
     // **No refund, deliberately** — and this is the one refusal that must not. The other two never
     // waited, so their reservation was never earned by elapsed time; this one slept the full
-    // `waitMs`, and the deficit it left in `bucket.tokens` is repaid by the lazy refill the next
-    // caller performs from `lastRefillMs`. Adding the token back as well would credit the bucket
-    // twice for one interval and let it admit more than `refillPerSec` allows.
+    // `waitMs`, and the deficit it left in the bucket is repaid by the lazy refill the next caller
+    // performs from `last_refill_ms`. Adding the token back as well would credit the bucket twice
+    // for one interval and let it admit more than `refillPerSec` allows.
     if (deadlineAtMs !== undefined) {
       const observedRemainingMs = deadlineAtMs - now();
       if (observedRemainingMs < MIN_POST_WAIT_REMAINDER_MS) {
@@ -413,9 +432,14 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
 
 /**
  * Production default (ARCHITECTURE.md §3.2 `net/rate-limit.ts` — the exported flat `throttle`
- * call site future adapters use): a single shared in-process bucket-state instance, real
- * `Date.now`/`setTimeout` (in-memory, one process, no persistence needed in M1 — §3.2/§8). Tests
+ * call site every adapter uses): one in-process bucket store, real `Date.now`/`setTimeout`. Tests
  * should prefer `createThrottle({ now, wait })` for an isolated, real-timer-free instance instead
  * of this singleton.
+ *
+ * **This singleton is still per-process, and task 014-18 did not change that** — it made the change
+ * POSSIBLE. Sharing the ceiling is `createThrottle({ store })` with the axis's store from
+ * `createStateStores`, which is a wiring decision at the process entry point rather than a property
+ * of this module. Until that wiring lands (task 014-19 carries it, together with the degradation
+ * path), an adapter importing this constant gets exactly the limiter it always had.
  */
 export const throttle: Throttle = createThrottle();

@@ -1219,12 +1219,17 @@ balance is a computed float, not an exact value we received from anyone.
 
 ```sql
 INSERT INTO onchain.provider_buckets (provider, scope_key, tokens, last_refill_ms, updated_at)
-VALUES ($1, $2, $3 - $4, $5, $5)
+VALUES ($1, $2,
+        CAST($3 AS DOUBLE PRECISION) - CAST($4 AS DOUBLE PRECISION),
+        CAST($5 AS BIGINT), CAST($5 AS BIGINT))
 ON CONFLICT (provider, scope_key) DO UPDATE SET
-  tokens = LEAST($3, onchain.provider_buckets.tokens
-                     + ($5 - onchain.provider_buckets.last_refill_ms) / 1000.0 * $6) - $4,
-  last_refill_ms = $5,
-  updated_at = $5
+  tokens = LEAST(CAST($3 AS DOUBLE PRECISION),
+                 onchain.provider_buckets.tokens
+                 + GREATEST(0, CAST($5 AS BIGINT) - onchain.provider_buckets.last_refill_ms)
+                   / 1000.0 * CAST($6 AS DOUBLE PRECISION))
+           - CAST($4 AS DOUBLE PRECISION),
+  last_refill_ms = CAST($5 AS BIGINT),
+  updated_at = CAST($5 AS BIGINT)
 RETURNING tokens;
 ```
 
@@ -1232,6 +1237,23 @@ RETURNING tokens;
 
 - **Dialect difference:** scalar minimum is `LEAST` in Postgres and `MIN` in SQLite. The statement
   text is per dialect; the key, the columns and the arithmetic are identical.
+
+**Two details were added by task 014-18, which wrote the statement.** Each closes a hole the first
+rendering left open, and neither changes what the statement is for.
+
+1. **`GREATEST(0, …)` on the elapsed interval** (`MAX(0, …)` in SQLite). `$5` is `Date.now()`, a
+   wall clock, and an NTP correction steps it backwards. Unclamped, the refill term goes negative
+   and the statement CHARGES the caller for time that did not pass. That over-restricts rather than
+   over-admits, so it was never a money defect. It would still be a difference between the shared
+   limiter and the bucket R-7.7 degrades to, which has always clamped
+   (`Math.max(0, nowMs - bucket.lastRefillMs)`) — and that is the one place a difference must not
+   be.
+2. **Every parameter is cast, in `CAST(x AS t)` form rather than `x::t`.** Postgres infers a
+   parameter's type from context and `$3 - $4` has none — it refuses the statement with "could not
+   determine data type of parameter". The standard form was chosen over `::` because SQLite parses
+   it too, which is what lets `packages/core/test/pg-store-parity.test.ts` execute this exact text
+   against an in-memory engine rather than a paraphrase of it (R-21 forbids a database in CI).
+
 - **SQLite requires `RETURNING`, available since 3.35.** Measured 2026-08-12: `better-sqlite3` in
   this repo reports `sqlite_version() = 3.49.2`.
 - **The SQLite path wraps the statement in `db.transaction(fn).immediate()`,** the same discipline
@@ -1241,12 +1263,28 @@ RETURNING tokens;
 (`tokens = tokens + $4`). Between the two statements another process can observe a more negative
 bucket. That over-restricts and never over-admits, which is the direction a vendor ceiling tolerates.
 
-**The `throttle` signature is unchanged** (R-7.5): `packages/core/src/net/rate-limit.ts:37-42`
+```sql
+UPDATE onchain.provider_buckets
+   SET tokens = tokens + CAST($3 AS DOUBLE PRECISION), updated_at = CAST($4 AS BIGINT)
+ WHERE provider = $1 AND scope_key = $2;
+```
+
+- **`UPDATE`, never an upsert.** A refund with no row is a refund for a slot nobody took, and this
+  call carries no capacity to seed a row with.
+- **`last_refill_ms` is not in the `SET` list, deliberately.** It marks the instant the bucket was
+  last brought forward. Moving it here would discard the interval since that instant, so the next
+  caller's refill would start from the wrong place — a limiter that quietly tightens on every
+  refusal. `updated_at` moves, because it is an audit column and this is a write.
+- **It is not `take` with a negative weight.** A refund must neither refill nor clamp: routed
+  through the upsert it would re-apply `LEAST(capacity, …)` and could hand back a token the elapsed
+  time had not earned.
+
+**The `throttle` signature is unchanged** (R-7.5): `packages/core/src/net/rate-limit.ts:52`
 (`export type Throttle = (`) keeps `(providerId, config, weight?, deadlineAtMs?) => Promise<void>`.
-The scope value reaches the store through `TokenBucketConfig`, which is already a per-call argument
-at `packages/core/src/adapters/rpc-evm/index.ts:181`
-(`await throttle('rpc-evm', RATE_LIMIT, 1, deadlineAtMs);`). The field's name is the interface
-designer's choice; the storage key is `(provider, scope_key)` either way.
+This section proposed carrying the scope in `TokenBucketConfig`. Task 014-17 composed it into the
+FIRST argument instead (`scopedProviderId` / `limiterKeyOf`, separator `#`), so no per-provider rate
+declaration had to be edited to express a fact concerning one provider. The field's name was always
+the interface designer's choice; the storage key is `(provider, scope_key)` either way.
 
 **Degradation on storage failure writes no row here** (R-7.7). The process falls back to the
 in-process bucket and writes a `limiter.degraded` diagnostics row (§4.5.8, AC-45).
