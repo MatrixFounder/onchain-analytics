@@ -14,6 +14,8 @@ import type { AccessProfileReader } from '../auth/access-profile.js';
 import { principalFor, type Principal, type PrincipalResolver } from '../auth/principal.js';
 import type { Diagnostics } from '../engine/diagnostics.js';
 import { toClientText } from '../transport/failure-classes.js';
+import { detectEscalation } from './escalation.js';
+import { vendorSpendColumns } from './vendor-spend-columns.js';
 import {
   DEFAULT_META_VIEW,
   applyRouteDisclosure,
@@ -562,6 +564,47 @@ export function defineTool<
           // what the handler reported resolving (task 014-30, `OD-014-30-12`). `null` only for the
           // two tools that resolve no capability at all.
           const resolvedCapability = definition.capability ?? outcome.capability ?? null;
+
+          /**
+           * **Task 014-28 — the escalation, announced beside the row it is recorded on.**
+           *
+           * Emitted at COMPLETION rather than mid-walk: mid-walk the process knows only the
+           * reservation, and the vendor's own headers are reconciled afterwards — so an event
+           * released there would disagree with the trace row about the amount. Both read the same
+           * receipts, and there is no second computation of the number.
+           *
+           * **Both carriers, one condition.** The column says a request escalated; the event says
+           * which pair and at what cost. R-28.2 asks for the fact beside the SPEND, which lives in
+           * `request_trace`; AC-43 asks for it in an OBSERVED channel, which `diagnostics` is.
+           *
+           * **The event rate is bounded by the paid-call ceilings**, not by request volume: it fires
+           * only where a paid source was entered, and `NANSEN_MAX_CALLS_PER_MIN` /
+           * `NANSEN_VELOCITY_CREDITS_PER_MIN` already bound that. This is why a row per escalating
+           * request does not drown the eight-event vocabulary the way a per-call `limiter.degraded`
+           * would have (task 014-19).
+           */
+          const escalation = detectEscalation(walks);
+          if (escalation !== null) {
+            const spent = vendorSpendColumns(receipts).columns;
+            await ctx.diagnostics?.emit('source.escalated_to_paid', {
+              severity: 'info',
+              capability: escalation.capability,
+              provider: escalation.to,
+              traceId,
+              principalId: principal.principalId,
+              detail: {
+                capability: escalation.capability,
+                chain: escalation.chain,
+                from: escalation.from,
+                to: escalation.to,
+                // The SAME receipts the row collapses. Null where the paid source was entered and
+                // committed nothing — an escalation that spent nothing is still an escalation.
+                vendorProvider: spent.vendorProvider,
+                vendorCredits: spent.vendorCredits,
+                vendorCalls: spent.vendorCalls,
+              },
+            });
+          }
 
           /**
            * Writes the row and returns the client's result unchanged.

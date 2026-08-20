@@ -87,7 +87,7 @@ export interface BudgetMeta {
  * a network request, so the cost is not measurable next to the request that preceded it. A pure
  * cache hit enters nobody and does not reach this function at all.
  */
-function isPaidProvider(providerId: string): boolean {
+export function isPaidProvider(providerId: string): boolean {
   return adapterRegistrations.some((r) => r.id === providerId && r.tier === 'paid');
 }
 

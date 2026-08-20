@@ -1,4 +1,5 @@
 import type { CapabilityWalk, VendorSpendRecord } from '@onchain-intel/core';
+import { detectEscalation } from './escalation.js';
 import type { Principal } from '../auth/principal.js';
 import type {
   RequestTraceOutcome,
@@ -150,10 +151,11 @@ export interface BuiltRequestTraceRow {
 /**
  * Builds the row. Every field is either observed or explicitly `null` — nothing is guessed.
  *
- * **`escalatedToPaid` is a constant `0` here, and that is task 014-28's field, not this one's.**
- * The presence of a spend receipt is NOT evidence of paidness: `ADR-003` D6 extends the call counter
- * to any provider, after which a route of two free adapters produces receipts. Paidness has one
- * classification and it reads `AdapterRegistration.tier`.
+ * **`escalatedToPaid` is DERIVED FROM THE WALKS, never from the receipts** (task 014-28). The
+ * presence of a spend receipt is NOT evidence of paidness: `ADR-003` D6 extends the call counter to
+ * any provider, after which a route of two free adapters produces receipts. Paidness has one
+ * classification and it reads `AdapterRegistration.tier` — see `escalation.ts`, whose detector is
+ * the only reader of that classification on this path.
  *
  * **`triedJson` carries the ordered walk, and is `null` only when there was none.** A request that
  * resolved no capability — `onchain_ping`, `onchain_list_chains`, or a refusal before a route was
@@ -189,7 +191,7 @@ export function buildRequestTraceRow(input: RequestTraceRowInput): BuiltRequestT
       servedFrom: servedFromOf(input.ok, input.cacheStatus, input.receipts),
       cacheAgeMs: input.cacheStatus === 'hit' ? (input.cacheAgeMs ?? null) : null,
       ...spend.columns,
-      escalatedToPaid: 0,
+      escalatedToPaid: detectEscalation(input.walks) === null ? 0 : 1,
       // JSON as TEXT (DB-SCHEMA §1.4). Operator-side by construction: it names adapters and their
       // order, which R-20.3 and R-31.4 keep out of the client rendering — the ledger is not that.
       triedJson: input.walks.length === 0 ? null : JSON.stringify(input.walks),

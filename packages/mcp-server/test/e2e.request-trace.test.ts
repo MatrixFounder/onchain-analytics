@@ -150,7 +150,10 @@ describe('TC-E2E-01: served_from names what answered', () => {
     expect(rows()[0]?.['cache_age_ms']).toBeNull();
     // The walk is recorded, and its ids are the ones the traversal entered.
     expect(JSON.parse(String(rows()[0]?.['tried_json']))).toStrictEqual([
-      { capability: 'chain.tvl', tried: [{ adapterId: 'defillama' }] },
+      // `chain` joined the walk in task 014-28: the escalation event names the network, and
+      // `resolve()` already has it — reconstructing it from a tool's raw input would read an alias
+      // the registry has since canonicalised.
+      { capability: 'chain.tvl', chain: 'ethereum', tried: [{ adapterId: 'defillama' }] },
     ]);
     // The args hash is the resolver's, not a recomputation from the tool's raw input.
     expect(String(rows()[0]?.['args_hash'])).toHaveLength(64);

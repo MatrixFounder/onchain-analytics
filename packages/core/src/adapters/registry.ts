@@ -1831,6 +1831,12 @@ export interface CapabilityCall {
  */
 export interface CapabilityWalk {
   readonly capability: string;
+  /**
+   * The chain the walk was for (task 014-28). The `source.escalated_to_paid` event names it, and
+   * `resolve()` already receives it — so it travels with the walk rather than being reconstructed
+   * from a tool's raw input, where chain aliases have not yet been canonicalised.
+   */
+  readonly chain: string;
   readonly tried: readonly { readonly adapterId: string; readonly reason?: string }[];
 }
 
@@ -1899,6 +1905,7 @@ export function bindCallObserver(
             // Ids only: a source that ANSWERED left the registry no reason to record.
             report({
               capability,
+              chain,
               tried: (resolution.attempted ?? []).map((adapterId) => ({ adapterId })),
             });
             return resolution;
@@ -1910,6 +1917,7 @@ export function bindCallObserver(
             if (Array.isArray(tried)) {
               report({
                 capability,
+                chain,
                 tried: tried.map((t) => ({ adapterId: t.adapterId, reason: t.reason })),
               });
             }

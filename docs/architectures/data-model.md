@@ -1502,6 +1502,18 @@ TypeScript literal, not a table.
 | `tool.refused`             | a tool execution failed; `detail_json` holds the full text         | R-31.1      |
 | `retention.cleanup`        | a retention job finished                                           | R-32.3      |
 
+**This condition won, and R-28.1's own wording did not** (`OQ-014-28-A`, owner decision 2026-08-20).
+R-28.1 says "the free source was EXHAUSTED", which this engine cannot observe: `blockscout`'s PRO key
+meters credits at the VENDOR, no counter for it exists here, and `ADR-003` assigns that counter to
+T-015. Under that reading the mechanism would ship and never fire, leaving AC-43 green over a dead
+feature. The condition above — entered, then a paid source entered — is what both carriers use:
+`request_trace.escalated_to_paid` and this event. `docs/TASK.md` R-28.1 keeps its wording; this is
+the reading it is implemented under.
+
+**A paid source entered and then FAILED still counts.** The rule is "entered", the same one
+`paidProviderToReport` applies: an entered source can have committed a reservation. Whether it
+answered is a different column.
+
 **Why the vocabulary is compiled rather than free text.** An event name invented at runtime makes
 AC-48's query impossible to write, and the same three reasons §4.2.1 gives for the chain registry
 apply: the offline gate, CI determinism, and a reviewable diff.

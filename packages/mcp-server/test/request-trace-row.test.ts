@@ -229,6 +229,7 @@ describe('the assembled row', () => {
         walks: [
           {
             capability: 'entity.labels',
+            chain: 'ethereum',
             tried: [{ adapterId: 'blockscout', reason: 'no labels' }, { adapterId: 'nansen' }],
           },
         ],
@@ -237,6 +238,7 @@ describe('the assembled row', () => {
     expect(JSON.parse(record.triedJson!)).toStrictEqual([
       {
         capability: 'entity.labels',
+        chain: 'ethereum',
         tried: [{ adapterId: 'blockscout', reason: 'no labels' }, { adapterId: 'nansen' }],
       },
     ]);
