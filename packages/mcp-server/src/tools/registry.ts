@@ -450,6 +450,15 @@ export function defineTool<
              * `RequestMetaSchema` is `$loose`, so a declared key reaches us untouched. */
             _meta?: Record<string, unknown>;
             sessionId?: string;
+            /**
+             * The SDK's per-request abort (task 014-24, R-17). It is READ here and forwarded
+             * NOWHERE — see the check below for why that absence is the design.
+             *
+             * The runtime object has always carried it (`@modelcontextprotocol/sdk`'s
+             * `protocol.js`); this annotation is what made it a type error rather than a value
+             * nobody happened to use.
+             */
+            signal?: AbortSignal;
           },
         ) => {
           // **The interception point** (task 014-15, `system-architecture.md` §3.4.3 names this
@@ -505,6 +514,45 @@ export function defineTool<
             onWalk: (walk) => walks.push(walk),
             onVendorSpend: (receipt) => receipts.push(receipt),
           });
+
+          /**
+           * **Task 014-24 — a call not yet started is not started, and one already started is not
+           * cancelled.** Both halves of R-17 are decided by this one placement.
+           *
+           * The abort is read HERE, before the handler, and is deliberately not forwarded past this
+           * line: no `signal` reaches `ToolContext`, `registry.resolve()` or `safeFetch`. So a call
+           * that has begun runs to completion — it writes its cache entry, reconciles its vendor
+           * spend and appends its `request_trace` row — because credits are spent the moment the
+           * vendor ACCEPTS the call, and cancelling on our side does not return them: it discards an
+           * answer that was already paid for, and the next caller pays again for the same one.
+           *
+           * **No trace row for a call that never ran** (task 014-24, "a call not started leaves no
+           * completion and no trace row"). This returns BEFORE `withTrace`, so nothing is billed for
+           * work nobody did.
+           *
+           * **What actually fires this, stated rather than assumed.** The SDK aborts a request's
+           * controller when the TRANSPORT closes or when the client sends `notifications/cancelled`
+           * for that id — not on every dropped TCP connection of a single POST. So this branch is
+           * the session-is-gone case, and a client that merely hung up mid-response is covered by
+           * the other half: its call finishes and its retry is served from the cache.
+           */
+          if (extra.signal?.aborted === true) {
+            writeStderrLine(
+              `tool boundary: ${definition.name} was aborted before it started — the call is not ` +
+                `begun and no trace row is written (R-17)`,
+            );
+            // Through `toClientText` like every other refusal this wrapper renders, even though
+            // this text is a fixed literal with nothing operator-shaped in it. The gate in
+            // `contract-violation.test.ts` requires it of EVERY refusal here, and an exemption
+            // argued from "this particular string is safe" is how the next one gets argued too.
+            return toCallToolResult(
+              {
+                ok: false,
+                reason: toClientText('the request was cancelled before the call began', null),
+              },
+              view,
+            );
+          }
 
           const outcome = await definition.handler(
             input,
