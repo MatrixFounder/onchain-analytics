@@ -89,9 +89,9 @@ const ROUTES: CapabilityRoute[] = [
  * of that parameter being injectable.
  */
 const MANIFESTS = {
-  'smart-money.flows': { shape: 'point', ttlSeconds: 300, deadlineMs: 60_000 },
-  'chain.tvl': { shape: 'point', ttlSeconds: 300, deadlineMs: 15_000 },
-  'legacy.thing': { shape: 'point', ttlSeconds: 300, deadlineMs: 15_000 },
+  'smart-money.flows': { shape: 'point', ttlSeconds: 300, deadlineMs: 60_000, shareable: true },
+  'chain.tvl': { shape: 'point', ttlSeconds: 300, deadlineMs: 15_000, shareable: true },
+  'legacy.thing': { shape: 'point', ttlSeconds: 300, deadlineMs: 15_000, shareable: true },
 } as const;
 
 function registryWith(adapters: Map<string, ProviderAdapter>): CapabilityRegistry {

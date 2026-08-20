@@ -76,7 +76,7 @@ const CAP = 'test.deadline';
 const CHAIN = 'ethereum';
 
 function manifestsFor(deadlineMs: number): Readonly<Record<string, CapabilityManifest>> {
-  return { [CAP]: { shape: 'point', ttlSeconds: 60, deadlineMs } };
+  return { [CAP]: { shape: 'point', ttlSeconds: 60, deadlineMs, shareable: true } };
 }
 
 interface FakeAdapter extends ProviderAdapter {
@@ -737,7 +737,7 @@ describe('the terminal branch catches a SWALLOWED typed error (task 012-8, C-1 b
       new Map([['blockscout', adapter]]),
       undefined,
       null,
-      { 'entity.labels': { shape: 'set', ttlSeconds: 3600, deadlineMs: 50 } },
+      { 'entity.labels': { shape: 'set', ttlSeconds: 3600, deadlineMs: 50, shareable: true } },
     );
 
     const outcome = await outcomeOf(
@@ -1097,7 +1097,7 @@ describe('cycle 2 F-2 — a saturated free bucket does not cancel the paid adapt
       ]),
       undefined,
       null,
-      { [LABELS]: { shape: 'set', ttlSeconds: 3600, deadlineMs: CEILING_MS } },
+      { [LABELS]: { shape: 'set', ttlSeconds: 3600, deadlineMs: CEILING_MS, shareable: true } },
     );
 
     const outcome = await outcomeOf(

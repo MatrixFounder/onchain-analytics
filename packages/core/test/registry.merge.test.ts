@@ -47,7 +47,7 @@ const CHAIN = 'ethereum';
  * manifest rows instead. */
 const CAP = 'test.merge.series';
 const MANIFESTS: Readonly<Record<string, CapabilityManifest>> = {
-  [CAP]: { shape: 'series', ttlSeconds: 60, deadlineMs: 60_000, mergeable: true },
+  [CAP]: { shape: 'series', ttlSeconds: 60, deadlineMs: 60_000, mergeable: true, shareable: true },
 };
 
 /** One canonical-shaped point — the same field names `types/snapshot.ts`'s `Snapshot` schema uses.

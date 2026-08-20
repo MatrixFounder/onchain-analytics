@@ -279,7 +279,7 @@ describe('TC-UNIT-03a — an empty `name` diverges, deliberately, and the NEW ve
 // =============================================================================================
 
 const MANIFESTS: Readonly<Record<string, CapabilityManifest>> = {
-  'legacy.thing': { shape: 'set', ttlSeconds: 60, deadlineMs: 15_000 },
+  'legacy.thing': { shape: 'set', ttlSeconds: 60, deadlineMs: 15_000, shareable: true },
 };
 
 /** An adapter that answers with whatever it is handed, and records that it was asked. */

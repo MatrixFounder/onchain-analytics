@@ -85,8 +85,8 @@ describe('TC-INT-01 — merge activated on a point-shaped (ineligible) capabilit
     // the object) would find eligibility and wrongly NOT throw. This is the "fails when step 3
     // reads the wrong manifest row" case the task file names.
     const manifests: Readonly<Record<string, CapabilityManifest>> = {
-      aaa: { shape: 'series', ttlSeconds: 60, deadlineMs: 1_000, mergeable: true },
-      x: { shape: 'point', ttlSeconds: 60, deadlineMs: 1_000 },
+      aaa: { shape: 'series', ttlSeconds: 60, deadlineMs: 1_000, mergeable: true, shareable: true },
+      x: { shape: 'point', ttlSeconds: 60, deadlineMs: 1_000, shareable: true },
     };
     const adapters = new Map<string, ProviderAdapter>([['a', makeAdapter({ id: 'a' })]]);
 
@@ -113,7 +113,7 @@ describe('TC-INT-01 — merge activated on a point-shaped (ineligible) capabilit
     // every OTHER fixture in this file and is caught ONLY here.
     const routes: CapabilityRoute[] = [{ capability: 'x', adapterIds: ['a'], merge: true }];
     const manifests: Readonly<Record<string, CapabilityManifest>> = {
-      x: { shape: 'series', ttlSeconds: 60, deadlineMs: 1_000 }, // no `mergeable` field at all
+      x: { shape: 'series', ttlSeconds: 60, deadlineMs: 1_000, shareable: true }, // no `mergeable` field at all
     };
     const adapters = new Map<string, ProviderAdapter>([['a', makeAdapter({ id: 'a' })]]);
 
@@ -140,6 +140,7 @@ describe('TC-INT-01 — merge activated on a point-shaped (ineligible) capabilit
         shape: 'point',
         ttlSeconds: 60,
         deadlineMs: 1_000,
+        shareable: true,
         mergeable: true,
       } as unknown as CapabilityManifest,
     };
@@ -161,7 +162,7 @@ describe('TC-INT-02 — merge activated on an eligible series capability constru
   it('does not throw when the manifest row declares mergeable: true', () => {
     const routes: CapabilityRoute[] = [{ capability: 'x', adapterIds: ['a'], merge: true }];
     const manifests: Readonly<Record<string, CapabilityManifest>> = {
-      x: { shape: 'series', ttlSeconds: 60, deadlineMs: 1_000, mergeable: true },
+      x: { shape: 'series', ttlSeconds: 60, deadlineMs: 1_000, mergeable: true, shareable: true },
     };
     const adapters = new Map<string, ProviderAdapter>([['a', makeAdapter({ id: 'a' })]]);
 
@@ -175,7 +176,7 @@ describe('TC-INT-03 — no merge, no eligibility: step 3 is inert on an unactiva
   it('constructs when the route never sets merge at all', () => {
     const routes: CapabilityRoute[] = [{ capability: 'x', adapterIds: ['a'] }];
     const manifests: Readonly<Record<string, CapabilityManifest>> = {
-      x: { shape: 'point', ttlSeconds: 60, deadlineMs: 1_000 },
+      x: { shape: 'point', ttlSeconds: 60, deadlineMs: 1_000, shareable: true },
     };
     const adapters = new Map<string, ProviderAdapter>([['a', makeAdapter({ id: 'a' })]]);
 
@@ -204,8 +205,8 @@ describe('TC-INT-04 — step 2s loop precedes step 3s loop across ALL routes, no
       { capability: 'q', adapterIds: ['b'], policy: BOGUS_POLICY }, // broken ONLY on policy
     ];
     const manifests: Readonly<Record<string, CapabilityManifest>> = {
-      p: { shape: 'point', ttlSeconds: 60, deadlineMs: 1_000 }, // no `mergeable` — ineligible
-      q: { shape: 'point', ttlSeconds: 60, deadlineMs: 1_000 }, // unrelated to route #2's failure
+      p: { shape: 'point', ttlSeconds: 60, deadlineMs: 1_000, shareable: true }, // no `mergeable` — ineligible
+      q: { shape: 'point', ttlSeconds: 60, deadlineMs: 1_000, shareable: true }, // unrelated to route #2's failure
     };
     const adapters = new Map<string, ProviderAdapter>([
       ['a', makeAdapter({ id: 'a' })],
@@ -365,7 +366,7 @@ describe('TC-UNIT-03 — rank: plan for a merging capability equals the routes a
     const ids = ['first', 'second', 'third'];
     const routes: CapabilityRoute[] = [{ capability: 'x', adapterIds: ids, merge: true }];
     const manifests: Readonly<Record<string, CapabilityManifest>> = {
-      x: { shape: 'series', ttlSeconds: 60, deadlineMs: 5_000, mergeable: true },
+      x: { shape: 'series', ttlSeconds: 60, deadlineMs: 5_000, mergeable: true, shareable: true },
     };
     // Every adapter refuses availability — no network, no cache — so the ONLY thing under test is
     // the walk ORDER `resolve()` already builds into `plan` from `route.adapterIds` (unmodified by
@@ -424,7 +425,7 @@ describe('an empty adapterIds on a merge-activated route is not rejected by any 
   it('CapabilityRegistry step 3 does not read adapterIds at all — an eligible manifest still constructs', () => {
     const routes: CapabilityRoute[] = [{ capability: 'x', adapterIds: [], merge: true }];
     const manifests: Readonly<Record<string, CapabilityManifest>> = {
-      x: { shape: 'series', ttlSeconds: 60, deadlineMs: 1_000, mergeable: true },
+      x: { shape: 'series', ttlSeconds: 60, deadlineMs: 1_000, mergeable: true, shareable: true },
     };
     expect(
       () => new CapabilityRegistry(routes, new Map(), undefined, null, manifests),

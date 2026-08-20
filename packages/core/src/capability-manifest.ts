@@ -135,18 +135,37 @@
 /**
  * The fields every manifest row carries, whatever its `shape`.
  *
- * `ttlSeconds` and `deadlineMs` are REQUIRED — a capability that builds and runs without a deadline
- * is exactly the failure UC-1 names, and an optional field "just in case" is how that happens.
- * `shareable` (ADR-003 D5, first read in T-014) and `paidLegMs` are optional; `paidLegMs` is carried
- * ONLY by a capability whose route reaches a `tier: 'paid'` adapter (TC-UNIT-06 enforces both
- * directions — a defensive `paidLegMs` on a free capability fails the suite).
+ * `ttlSeconds`, `deadlineMs` and `shareable` are REQUIRED — a capability that builds and runs
+ * without a deadline is exactly the failure UC-1 names, and an optional field "just in case" is how
+ * that happens. `paidLegMs` is carried ONLY by a capability whose route reaches a `tier: 'paid'`
+ * adapter (TC-UNIT-06 enforces both directions — a defensive `paidLegMs` on a free capability fails
+ * the suite).
  */
 interface CapabilityManifestBase {
   ttlSeconds: number;
   /** ONLY the cancellable part of the call (OD-3) — never the whole call, never the paid leg. */
   deadlineMs: number;
-  /** First reader is ADR-003 D5 (T-014); no consumer exists in T-012. */
-  shareable?: boolean;
+  /**
+   * May one principal be served another's cached result? (ADR-003 D5; task 014-31 gives it values.)
+   *
+   * **The rule: a result is shareable when it does not depend on WHO asked.** A token's price is
+   * shareable. An answer derived from a wallet belonging to the asker is not.
+   *
+   * **REQUIRED, not optional, and that is the change task 014-31 makes.** The default would have to
+   * choose between a leak across principals and a lost cache, and both are expensive — so the choice
+   * is made per row, in writing, or the build fails. `shareable?: boolean` had been declared by T-012
+   * and read by nobody; a field with no reader drifts from reality silently.
+   *
+   * **Every row is `true` today, and the honest reading of that is stated rather than buried.** Not
+   * one capability takes an implicit "the caller's own wallet" — `wallet.balances.native` takes the
+   * address as an ARGUMENT, so two principals asking about the same address are asking the same
+   * question and the answer turns on the argument. What this field buys is therefore not a rule that
+   * fires today: it is that the FIRST capability whose answer depends on the asker has to say so
+   * here, in a diff, instead of inheriting a default nobody chose. The enforcement (part 2) has no
+   * reachable case on today's manifest, and `capability-manifest.test.ts` says so where a reader
+   * looking for coverage would look.
+   */
+  shareable: boolean;
   /** Only where the route reaches a `tier: 'paid'` adapter. */
   paidLegMs?: number;
 }
@@ -259,6 +278,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     shape: 'point',
     // Carried from `cache/ttl.ts` (ARCHITECTURE.md §3.2 row; no rationale comment there).
     ttlSeconds: 60,
+    // shareable: the price of (chain, token) — public market data, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `coingecko`, one attempt). applied: 15_000 — the
     // OWNER's ~15 s tier (OD-2), a ceiling and not a measurement; it would cut 75_000 — the entire
     // redirect tail plus most of the limiter wait — on a route that read it.
@@ -271,6 +292,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // `normalize(): Token`, one canonical token record about one contract address.
     shape: 'point',
     ttlSeconds: 3600,
+    // shareable: the record of (chain, contract) — public chain state, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `coingecko`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
     // **ENFORCED TODAY** — same adapter and same call path as `token.price` (WI-37).
@@ -282,6 +305,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // method), so it is a collection and not a `ts`-ordered run.
     shape: 'set',
     ttlSeconds: 30,
+    // shareable: the active pairs of (chain, limit) — a public listing, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `dexscreener`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
     // **ENFORCED TODAY** — `dexscreener` forwards the deadline to `throttle()` and `safeFetch`
@@ -297,6 +322,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // and its liquidity/volume-style volatility with `protocol.tvl`, not the
     // "new"-freshness-critical `pairs.active` — same 300s bucket."
     ttlSeconds: 300,
+    // shareable: the pools of (chain, limit) — a public listing, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `dexscreener`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
     // **ENFORCED TODAY** — same adapter and same call path as `pairs.active` (WI-37).
@@ -307,6 +334,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // returns `ProtocolTvlResult`, one `tvlUsd`/`totalTvlUsd` pair for one protocol on one chain.
     shape: 'point',
     ttlSeconds: 300,
+    // shareable: the TVL of (chain, protocol slug) — a published aggregate, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
     // **ENFORCED TODAY** — and this is the one `defillama` path with no shared document, so the
@@ -321,6 +350,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // meaningfully faster than a protocol's, so it gets the same 300s bucket as `protocol.tvl`
     // rather than a separately invented number."
     ttlSeconds: 300,
+    // shareable: the TVL of (chain) — a published aggregate, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
     // **ENFORCED TODAY**, by the OTHER of `defillama`'s two mechanisms: `/v2/chains` is a document
@@ -336,6 +367,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // The 300 s bucket is inherited rather than invented: serving a ranking from a fresher window
     // than the per-protocol figures it ranks would let the two disagree inside one conversation.
     ttlSeconds: 300,
+    // shareable: the protocols of (chain, filters) — a published listing, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement.
     // **ENFORCED TODAY** — shared-document path, both documents (WI-37).
@@ -347,6 +380,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // The vendor's step is one day, so a shorter TTL cannot buy a fresher number — and here it
     // would buy a second multi-megabyte download, which is the whole reason this route is narrow.
     ttlSeconds: 3600,
+    // shareable: the TVL series of (chain, protocol slug, window) — published history, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement.
     // **ENFORCED TODAY** — the one `defillama` path with no shared document, so the deadline reaches
@@ -362,6 +397,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // shorter than a day cannot buy a fresher number — it can only buy a second identical download.
     // The same hour `dex.volume.history` uses, for the same reason.
     ttlSeconds: 3600,
+    // shareable: the TVL series of (chain, window) — published history, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement.
     // **ENFORCED TODAY** — shared-document path: the ceiling bounds this caller's WAIT and
@@ -381,6 +418,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // shorter than a day cannot buy a fresher number. It can only buy a second identical 250KB
     // download."
     ttlSeconds: 3600,
+    // shareable: the DEX volume series of (chain, window) — published history, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
     // **ENFORCED TODAY** — shared-document path, same as `chain.tvl`: the ceiling bounds the wait,
@@ -391,6 +430,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // ADR-002 D3 names this one.
     shape: 'set',
     ttlSeconds: 60,
+    // shareable: the balance of (chain, ADDRESS AS AN ARGUMENT) — never "the caller’s own wallet", so the answer turns on the argument and not on who asked. This is the row the rule was written for, and it comes out shareable.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `rpc-evm`/`rpc-solana`, one attempt; the two routes are
     // per-chain alternatives, never a sequence: `chainSupport()` leaves exactly one of them
     // eligible for a given chain). applied: 15_000 — owner ceiling (OD-2), not a measurement;
@@ -408,6 +449,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // ADR-002 D3 names this one.
     shape: 'set',
     ttlSeconds: 3600,
+    // shareable: the holders of (chain, token) — public chain state, identical for every caller.
+    shareable: true,
     // measured envelope: 50_000 (E-HTTP5 — `blockscout`, one attempt: 30_000 + 4 × 5_000).
     // applied: 15_000 — owner ceiling (OD-2), not a measurement; cuts 35_000 — **ENFORCED TODAY**, the
     // route's only adapter `blockscout` forwards the deadline to `throttle()` and to `safeFetch`
@@ -430,6 +473,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
      * inferring freshness from ours, which is the distinction WI-52 required for non-on-chain data.
      */
     ttlSeconds: 3600,
+    // shareable: the incidents of (protocol slug) — an editorial record, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `defillama`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement.
     // **ENFORCED TODAY** — shared-document path, both documents (WI-37): the ceiling bounds this
@@ -455,6 +500,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
      * conversation into hundreds of upstream calls.
      */
     ttlSeconds: 30,
+    // shareable: the gas price of (chain) — public chain state, identical for every caller.
+    shareable: true,
     // measured envelope: 50_000 on the `blockscout` leg (E-HTTP5 — one attempt: 30_000 + 4 × 5_000);
     // the `rpc-evm` leg walks that chain's curated endpoints with `safeFetch`'s 15 s default per hop.
     // applied: 15_000 — owner ceiling (OD-2), not a measurement.
@@ -476,6 +523,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
      * because the FIELDS have different clocks, which is exactly what per-capability TTL is for.
      */
     ttlSeconds: 600,
+    // shareable: the transaction count of (chain) — public chain state, identical for every caller.
+    shareable: true,
     // measured envelope: 50_000 (E-HTTP5 — `blockscout`, one attempt: 30_000 + 4 × 5_000).
     // applied: 15_000 — owner ceiling (OD-2), not a measurement; cuts 35_000. **ENFORCED TODAY**.
     deadlineMs: 15_000,
@@ -487,6 +536,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // target block interval: the value changes ONLY when a block is found, so a shorter TTL cannot
     // buy a fresher number, it can only buy a second identical pair of requests."
     ttlSeconds: 600,
+    // shareable: the supply of (chain) — public chain state, identical for every caller.
+    shareable: true,
     // measured envelope: 50_000 (E-HTTP5 — `blockchain-info`, one attempt: 30_000 + 4 × 5_000).
     // Its `fetch()` issues TWO readings, so the envelope of the whole call is twice that; the
     // cancellable unit the deadline governs is the attempt. applied: 15_000 — owner ceiling
@@ -532,6 +583,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // `dash-platform/index.ts:93` agrees: `normalize(): Snapshot`.
     shape: 'point',
     ttlSeconds: 3600,
+    // shareable: the shielded pool of (chain) — public chain state, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` contributes
     // E-DASH = 0 and grows only when a live gRPC transport lands). applied: 15_000 — **OVERRIDE**
     // of the architecture's ~30_000, not an alignment: the route is single-live-adapter today (see
@@ -545,6 +598,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // `snapshotFromCurrentState({metric: identitiesTotal, …})`; one counter at one height.
     shape: 'point',
     ttlSeconds: 3600,
+    // shareable: the identity count of (chain) — public platform state, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` = E-DASH 0,
     // grows with a live gRPC transport). applied: 15_000 — **OVERRIDE** of the architecture's
     // ~30_000 (single-live-adapter route, see the banner) and the owner's ceiling, not a
@@ -556,6 +611,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // AUDIT: hypothesis `point`, CONFIRMED — single `Snapshot` (`dataContractsTotal`).
     shape: 'point',
     ttlSeconds: 3600,
+    // shareable: the contract count of (chain) — public platform state, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` = E-DASH 0,
     // grows with a live gRPC transport). applied: 15_000 — **OVERRIDE** of the architecture's
     // ~30_000 (single-live-adapter route, see the banner) and the owner's ceiling, not a
@@ -567,6 +624,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // AUDIT: hypothesis `point`, CONFIRMED — single `Snapshot` (`documentsTotal`).
     shape: 'point',
     ttlSeconds: 3600,
+    // shareable: the document count of (chain) — public platform state, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` = E-DASH 0,
     // grows with a live gRPC transport). applied: 15_000 — **OVERRIDE** of the architecture's
     // ~30_000 (single-live-adapter route, see the banner) and the owner's ceiling, not a
@@ -578,6 +637,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // AUDIT: hypothesis `point`, CONFIRMED — single `Snapshot` (`platformTotalCredits`).
     shape: 'point',
     ttlSeconds: 3600,
+    // shareable: the credit totals of (chain) — public platform state, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `platform-explorer` alone; `dash-platform` = E-DASH 0,
     // grows with a live gRPC transport). applied: 15_000 — **OVERRIDE** of the architecture's
     // ~30_000 (single-live-adapter route, see the banner) and the owner's ceiling, not a
@@ -603,6 +664,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // rationale for that 3600s row ("no point polling faster than the existing hourly snapshotter
     // cadence") applies identically to their history counterparts."
     ttlSeconds: 3600,
+    // shareable: the shielded-pool series of (chain, window) — public history, identical for every caller.
+    shareable: true,
     // measured envelope: 140_000 — 90_000 (E-HTTP15, `platform-explorer`) + 50_000 (E-PG,
     // `pg-history`: a limiter wait up to 30_000 plus the 20_000 in-process query bound; no redirect
     // hops). applied: 30_000 — owner ceiling (OD-2), not a measurement; it cuts 110_000.
@@ -628,6 +691,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // Carried from `cache/ttl.ts` — same rationale as the row above (the two `*.history`
     // capabilities are historical views of an already-3600s-bucketed live capability).
     ttlSeconds: 3600,
+    // shareable: the platform series of (chain, window) — public history, identical for every caller.
+    shareable: true,
     // measured envelope: 140_000 — 90_000 (E-HTTP15, `platform-explorer`) + 50_000 (E-PG,
     // `pg-history`: limiter wait up to 30_000 + the 20_000 in-process query bound; not the HTTP
     // template — no hops). applied: 30_000 — owner ceiling (OD-2), not a measurement; it cuts
@@ -652,6 +717,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // 300s fallback, an agent revisiting one address four times across a 25-minute investigation
     // paid 400cr instead of 100cr. 1 hour is still conservative."
     ttlSeconds: 3600,
+    // shareable: the labels of (chain, address or query) — a vendor-published attribution about a PUBLIC address, not about the asker.
+    shareable: true,
     // measured envelope: 140_000 of cancellable work — 50_000 (E-HTTP5, the free `blockscout`
     // attempt the route tries first) + 90_000 (E-HTTP15, nansen's cold-start `/account` budget
     // resync, which runs BEFORE any reservation and is therefore still cancellable).
@@ -678,6 +745,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // 1-hour rolling window, so a short TTL is correct here. (300s coincides with the old fallback
     // — but now by decision, not by omission.) 10cr/miss."
     ttlSeconds: 300,
+    // shareable: the flows of (chain, window) — a vendor aggregate over public addresses, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 of cancellable work (E-HTTP15 — the cold-start `/account` resync;
     // the route has no free adapter in front of nansen, so there is nothing else before the
     // reservation). applied: 60_000 — owner ceiling (OD-2), not a measurement; it cuts 30_000 of
@@ -699,6 +768,8 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // daily-ish quantitative scores, not tick data; caching for 30 minutes costs no meaningful
     // freshness. 6cr/miss."
     ttlSeconds: 1800,
+    // shareable: the risk record of (chain, token) — a vendor assessment of a public contract, identical for every caller.
+    shareable: true,
     // measured envelope: 90_000 of cancellable work (E-HTTP15 — the cold-start `/account` resync;
     // nansen is the only adapter on this route). applied: 60_000 — owner ceiling (OD-2), not a
     // measurement; it cuts 30_000 of that

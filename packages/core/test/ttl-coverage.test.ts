@@ -125,9 +125,11 @@ describe('TTL table covers every routed capability explicitly', () => {
     expect(explicitTtlRows(`  'a.b': {\n    shape: 'point',\n    ttlSeconds: 60,\n  },`)).toEqual([
       'a.b',
     ]);
-    expect(explicitTtlRows(`  'a.b': { shape: 'point', ttlSeconds: 60, deadlineMs: 1 },`)).toEqual([
-      'a.b',
-    ]);
+    expect(
+      explicitTtlRows(
+        `  'a.b': { shape: 'point', ttlSeconds: 60, deadlineMs: 1, shareable: true },`,
+      ),
+    ).toEqual(['a.b']);
     expect(
       explicitTtlRows(`  'a.b': {\n    shape: 'point',\n    deadlineMs: 15_000,\n  },`),
       'a record with no `ttlSeconds` of its own is NOT a row',
@@ -142,19 +144,19 @@ describe('TTL table covers every routed capability explicitly', () => {
     // Executable form of the "NOT reached" table above: asserting the limits keeps the table honest
     // and turns any future widening into a visible edit HERE.
     expect(
-      explicitTtlRows(`/*\n  'a.b': { shape: 'point', ttlSeconds: 60 },\n*/`),
+      explicitTtlRows(`/*\n  'a.b': { shape: 'point', ttlSeconds: 60, shareable: true },\n*/`),
       'LIMIT: a row inside a block comment whose line begins with the quoted key counts as ' +
         'present — the runtime checks are what catch it',
     ).toEqual(['a.b']);
 
     expect(
-      explicitTtlRows(`  // 'a.b': { shape: 'point', ttlSeconds: 60 },`),
+      explicitTtlRows(`  // 'a.b': { shape: 'point', ttlSeconds: 60, shareable: true },`),
       'and the neighbouring form is NOT the same escape: `//` before the key defeats the anchor. ' +
         'Measured — the first draft of the limits table above claimed this one and was wrong.',
     ).toEqual([]);
 
     expect(
-      explicitTtlRows(`  'a.b': { shape: 'point', ttlSeconds: 999_999 },`),
+      explicitTtlRows(`  'a.b': { shape: 'point', ttlSeconds: 999_999, shareable: true },`),
       'LIMIT: presence is checked, never the value (TC-UNIT-01 pins the values)',
     ).toEqual(['a.b']);
 

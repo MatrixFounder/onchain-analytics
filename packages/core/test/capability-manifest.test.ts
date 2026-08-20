@@ -103,7 +103,7 @@ describe('TC-UNIT-04 — no manifest entry carries a routing or pricing key (R-1
     // of a literal and stops, so four directives on one object would leave three "unused" and fail
     // the build for the wrong reason. Each directive is load-bearing in both directions: if the type
     // ever accepts the key, `tsc` reports TS2578 for an unused directive here.
-    const base = { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000 } as const;
+    const base = { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000, shareable: true } as const;
 
     const withChains: CapabilityManifest = {
       ...base,
@@ -495,6 +495,7 @@ describe('TC-UNIT-09/10/11 — `mergeable` lives on `set | series` only (T-013 o
       shape: 'point',
       ttlSeconds: 60,
       deadlineMs: 15_000,
+      shareable: true,
       // @ts-expect-error TC-UNIT-09: excess property on the `point` branch — see comment above.
       mergeable: true,
     };
@@ -509,6 +510,7 @@ describe('TC-UNIT-09/10/11 — `mergeable` lives on `set | series` only (T-013 o
       shape: 'series',
       ttlSeconds: 3600,
       deadlineMs: 30_000,
+      shareable: true,
       mergeable: true,
     };
     expect(seriesWithMergeable.shape).toBe('series');
@@ -685,7 +687,7 @@ describe('TC-UNIT-08 — every deadline number carries a two-number derivation r
       'deadlineMs: 15_000 (line 2): the record says applied: 30000, the code says 15000',
     ]);
 
-    const oneLiner = `  'x': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000 },`;
+    const oneLiner = `  'x': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000, shareable: true },`;
     expect(derivationRecordDefects(oneLiner), 'a collapsed entry').not.toStrictEqual([]);
 
     const ridingOnTheRecordAbove = `  // measured envelope: 140_000; applied: 60_000 — owner ceiling (OD-2), cuts 80_000.\n  deadlineMs: 60_000,\n  paidLegMs: 270_000,`;
@@ -775,9 +777,67 @@ describe('TC-INT-02 — a route with no manifest row fails at CONSTRUCTION', () 
     expect(
       () =>
         new CapabilityRegistry(ROUTES, new Map([['stub', stubAdapter('stub')]]), undefined, null, {
-          'something.else': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000 },
+          'something.else': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000, shareable: true },
         }),
     ).toThrow(MissingCapabilityManifestError);
+  });
+});
+
+describe('task 014-31 / AC-13 — `shareable` has a value on every manifest row', () => {
+  it('TC-UNIT-01: the gate COUNTS the rows; the number 26 appears nowhere in it', () => {
+    // The docstring of this very file said "20 rows" while its own table said 26. A literal drifts
+    // from the table silently, so the denominator is read from the table on every run.
+    const rows = Object.entries(capabilityManifests);
+    const withValue = rows.filter(([, manifest]) => typeof manifest.shareable === 'boolean');
+    expect(withValue).toHaveLength(rows.length);
+    // The population is non-empty, or the equality above would hold over nothing.
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it('TC-UNIT-02: a row without `shareable` does not COMPILE — the build is the gate', () => {
+    // Stated as a compile-time assertion rather than a runtime one, because that is what the task
+    // asks for: the default would have to choose between a leak across principals and a lost cache,
+    // and both are expensive enough that the choice must be explicit. If the directive below ever
+    // reports "unused", `shareable` went back to optional and this guarantee is gone.
+    // The directive sits above the DECLARATION, not above a property: a missing required field is
+    // reported on the object literal itself, unlike an excess property, which is reported on its own
+    // line (TC-UNIT-09 above is the excess-property case and places its directive differently).
+    // @ts-expect-error TC-UNIT-02: `shareable` is required — omitting it must not compile.
+    const missing: CapabilityManifest = {
+      shape: 'point',
+      ttlSeconds: 60,
+      deadlineMs: 15_000,
+    };
+    expect(missing.shape).toBe('point');
+  });
+
+  it('every value carries its derivation in the source, beside the value', () => {
+    // "Рядом с каждым значением — запись, из чего оно выведено." A value with no recorded
+    // derivation is the state this field was already in: declared, unread, and drifting.
+    const source = manifestSource;
+    const undocumented = Object.keys(capabilityManifests).filter((capability) => {
+      const at = source.indexOf(`'${capability}': {`);
+      if (at === -1) return true;
+      const body = source.slice(at, source.indexOf('\n  },', at));
+      return !/\/\/ shareable: .+/.test(body);
+    });
+    expect(undocumented, 'a `shareable` value with no derivation beside it').toStrictEqual([]);
+  });
+
+  it('the enforcement has no reachable case on today’s manifest, and that is recorded here', () => {
+    // Task 014-31 part 2 refuses to serve one principal another's cached result for a NON-shareable
+    // capability. Every row is `true`, so that branch cannot fire today — no capability takes an
+    // implicit "the caller's own wallet"; `wallet.balances.native` takes the address as an argument.
+    // Asserting it means part 2 ships with its own coverage gap NAMED rather than discovered later
+    // by someone reading a green suite as evidence the rule works.
+    const nonShareable = Object.entries(capabilityManifests)
+      .filter(([, manifest]) => manifest.shareable === false)
+      .map(([capability]) => capability);
+    expect(
+      nonShareable,
+      'a non-shareable capability now exists — part 2 gains its first reachable case, and this ' +
+        'assertion must be replaced by one that exercises it',
+    ).toStrictEqual([]);
   });
 });
 
@@ -788,7 +848,7 @@ describe('TC-INT-03 — the fifth parameter is a live injection seam', () => {
       new Map([['stub', stubAdapter('stub')]]),
       undefined,
       null,
-      { 'legacy.thing': { shape: 'set', ttlSeconds: 42, deadlineMs: 1_000 } },
+      { 'legacy.thing': { shape: 'set', ttlSeconds: 42, deadlineMs: 1_000, shareable: true } },
     );
     const answer = await registry.resolve('legacy.thing', 'ethereum', {});
     expect(answer.source).toBe('stub');
@@ -830,7 +890,9 @@ describe('TC-F8-UNIT — a prototype-named capability is a MISSING row, not a fo
         new Map([['stub', stubAdapter('stub')]]),
         undefined,
         null,
-        { 'something.else': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000 } },
+        {
+          'something.else': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000, shareable: true },
+        },
       );
       expect.unreachable(`a route named '${key}' must not build a registry`);
     } catch (error) {
@@ -899,7 +961,7 @@ describe('TC-F8-UNIT — `deadlineMs` is validated, like the caller-supplied dea
           new Map([['stub', stubAdapter('stub')]]),
           undefined,
           null,
-          { 'legacy.thing': { shape: 'point', ttlSeconds: 60, deadlineMs: 1 } },
+          { 'legacy.thing': { shape: 'point', ttlSeconds: 60, deadlineMs: 1, shareable: true } },
         ),
     ).not.toThrow();
   });

@@ -597,7 +597,7 @@ describe('singleflight: a follower may expire, the leader may not be cancelled (
     const args = { chain: 'ethereum', tokenAddress: USDC };
     const route: CapabilityRoute = { capability: 'token.risk', adapterIds: ['nansen'] };
     const manifests: Readonly<Record<string, CapabilityManifest>> = {
-      'token.risk': { shape: 'point', ttlSeconds: 60, deadlineMs: 30_000 },
+      'token.risk': { shape: 'point', ttlSeconds: 60, deadlineMs: 30_000, shareable: true },
     };
     const registry = new CapabilityRegistry(
       [route],
