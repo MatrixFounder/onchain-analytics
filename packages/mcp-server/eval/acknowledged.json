@@ -39,6 +39,26 @@
       "issue": "L-12",
       "since": "2026-08-12",
       "why": "Same endpoint, same 5s hop-ceiling timeout as base and polygon. This row is the DIFFERENT-DAY re-measurement L-12's fix-path item 1 asked for, and it answers that question badly: on 2026-08-11 arbitrum answered the facade in 2.05s once the shared backend was warm, and on 2026-08-12 it timed out on two independent gate runs. The set is widening rather than recovering. Acknowledged so it does not block unrelated work, NOT because it is settled — L-12 now carries the owner decision between routing token.holders to the paid source (L-6 fix-path item 1, a budget call) and retiring the capability."
+    },
+    "arbitrum/pairs.active": {
+      "issue": "L-19",
+      "since": "2026-08-20",
+      "why": "The keyless SEARCH endpoint is a global relevance ranking queried by NATIVE SYMBOL, and the adapter then filters its rows by chainId — so a chain whose ticker does not rank on itself is filtered to nothing. Measured 2026-08-20, 30 rows per response: q=BNB returned 0 of 30 on bsc (all 30 on solana), q=POL 0 of 30 on polygon, q=AVAX 0 of 30 on avalanche. The defect is OLDER than the change that revealed it: until task 014-32a the matrix declared this capability on three chains, all of which happen to rank on themselves, and every other chain was refused before the query ran — L-18's own title names that shape (the gate counted each refusal as a pass). Acknowledged rather than fixed here because the query strategy belongs to task 014-32c, which already owns this adapter's route work; narrowing coverage again to hide it would re-file L-18."
+    },
+    "polygon/pairs.active": {
+      "issue": "L-19",
+      "since": "2026-08-20",
+      "why": "The keyless SEARCH endpoint is a global relevance ranking queried by NATIVE SYMBOL, and the adapter then filters its rows by chainId — so a chain whose ticker does not rank on itself is filtered to nothing. Measured 2026-08-20, 30 rows per response: q=BNB returned 0 of 30 on bsc (all 30 on solana), q=POL 0 of 30 on polygon, q=AVAX 0 of 30 on avalanche. The defect is OLDER than the change that revealed it: until task 014-32a the matrix declared this capability on three chains, all of which happen to rank on themselves, and every other chain was refused before the query ran — L-18's own title names that shape (the gate counted each refusal as a pass). Acknowledged rather than fixed here because the query strategy belongs to task 014-32c, which already owns this adapter's route work; narrowing coverage again to hide it would re-file L-18."
+    },
+    "bsc/pairs.active": {
+      "issue": "L-19",
+      "since": "2026-08-20",
+      "why": "The keyless SEARCH endpoint is a global relevance ranking queried by NATIVE SYMBOL, and the adapter then filters its rows by chainId — so a chain whose ticker does not rank on itself is filtered to nothing. Measured 2026-08-20, 30 rows per response: q=BNB returned 0 of 30 on bsc (all 30 on solana), q=POL 0 of 30 on polygon, q=AVAX 0 of 30 on avalanche. The defect is OLDER than the change that revealed it: until task 014-32a the matrix declared this capability on three chains, all of which happen to rank on themselves, and every other chain was refused before the query ran — L-18's own title names that shape (the gate counted each refusal as a pass). Acknowledged rather than fixed here because the query strategy belongs to task 014-32c, which already owns this adapter's route work; narrowing coverage again to hide it would re-file L-18."
+    },
+    "avalanche/pairs.active": {
+      "issue": "L-19",
+      "since": "2026-08-20",
+      "why": "The keyless SEARCH endpoint is a global relevance ranking queried by NATIVE SYMBOL, and the adapter then filters its rows by chainId — so a chain whose ticker does not rank on itself is filtered to nothing. Measured 2026-08-20, 30 rows per response: q=BNB returned 0 of 30 on bsc (all 30 on solana), q=POL 0 of 30 on polygon, q=AVAX 0 of 30 on avalanche. The defect is OLDER than the change that revealed it: until task 014-32a the matrix declared this capability on three chains, all of which happen to rank on themselves, and every other chain was refused before the query ran — L-18's own title names that shape (the gate counted each refusal as a pass). Acknowledged rather than fixed here because the query strategy belongs to task 014-32c, which already owns this adapter's route work; narrowing coverage again to hide it would re-file L-18."
     }
   }
 }

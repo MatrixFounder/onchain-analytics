@@ -94,7 +94,7 @@ describe('defillama dex.volume.history coverage (task 007-2, R-63)', () => {
 describe('the vendor chain echo, verified live for every covered chain (backlog item 6)', () => {
   const probe = JSON.parse(
     readFileSync(
-      '../../docs/onchain-analytics/raw/defillama-dex-echo-probe-2026-07-28.json',
+      '../../docs/onchain-analytics/raw/defillama-dex-echo-probe-2026-08-20.json',
       'utf8',
     ),
   ) as {

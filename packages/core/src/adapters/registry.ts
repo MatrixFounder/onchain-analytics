@@ -464,7 +464,7 @@ function hintFor(status: CoverageStatus): { hint?: string } {
     case 'unverified':
       // **NOT "no probe was run"**, and the measurement is why. R-33.5 folds two cases into
       // `unverified`: a candidate nobody probed, AND one the vendor routed while never echoing its
-      // identifier on a real row. Measured 2026-08-20, the second case is 18 of 65 routable chains,
+      // identifier on a real row. Measured 2026-08-20, the second case is 16 of 65 routable chains,
       // and no query recovers them — broad searches over eight common tokens returned none of the
       // 18, and the vendor's cross-chain listing endpoints echo 3 to 5 chains between them. Telling
       // an operator "no probe was run" about a chain the probe DID reach is the same class of false

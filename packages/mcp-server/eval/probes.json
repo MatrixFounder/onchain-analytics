@@ -107,7 +107,7 @@
     },
     "gnosis": {
       "family": "evm",
-      "why": "wallet balances but no pairs.active and no paid capabilities — the plain long-tail EVM profile",
+      "why": "wallet balances but no pairs.active and no paid capabilities — the plain long-tail EVM profile. Re-verified 2026-08-20 (task 014-32a): the vendor answers HTTP 400 for this chain segment, so `pairs.active` stays uncovered and the claim holds under the per-chain witness that replaced the three-entry list.",
       "token": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
       "tokenNote": "WXDAI",
       "wallet": "0x0000000000000000000000000000000000000000",
@@ -115,7 +115,7 @@
     },
     "tron": {
       "family": "other",
-      "why": "non-EVM, non-SVM: token+tvl only, NO wallet balances — the case that must report `unsupported`",
+      "why": "non-EVM, non-SVM, NO wallet balances — the case that must report `unsupported` for a wallet. CORRECTED 2026-08-20 (task 014-32a): the old wording said `token+tvl only`, and the per-chain witness refutes it — the vendor routes `tron` and echoes it, so this row now carries `vendors.dexscreener` and DECLARES `pairs.active`. The probe still earns its place: the unsupported case it exists for is the wallet one, which is unchanged.",
       "protocolSlug": "justlend",
       "token": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
       "tokenNote": "USDT TRC20 — non-EVM address format, which is the point of probing it"

@@ -1,14 +1,39 @@
 ---
 id: L-18
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-08-18
 category: logic
 severity: SEV-2
 slug: l-18-the-registry-marks-62-dexscreener-served-chains-as-unsupported
+resolved_at: 2026-08-20
+resolved_by: TASK-014 задача 014-32a (commit pending)
 ---
 
 # L-18 — the registry marks 62 DexScreener-served chains as unsupported, and the live gate counts each refusal as a pass
+
+> **Fixed 2026-08-20** (task 014-32a). `vendors.dexscreener` is no longer a three-entry spot-check:
+> `scripts/gen-dexscreener-chains.ts` witnesses every chain and `sync-chain-registry.ts` takes the
+> column from what it emits. The column went 3 → 49, and `pairs.active` coverage went 3 → 49 chains.
+>
+> **The probe asked two questions, because one is not enough.** Routability (`200` vs `400` on the
+> pair route) and echo (does the vendor ever emit that identifier as `pair.chainId`). A `200` is
+> returned both by a segment holding data and by one holding none, so status alone would have read an
+> empty answer as coverage — the L-10 class, inside the fix for L-18.
+>
+> **Measured 2026-08-20:** 858 candidates (each row's slug plus every alias), two rounds, zero
+> unanswered. 65 chains routable; 49 of them echoed and carry a value; 16 hold `null`.
+>
+> **Those 16 are not a residue of the same defect.** They are refused as `unverified` — "no confirmed
+> vendor identifier" — never as "the vendor does not serve this chain", which is the false sentence
+> this record was filed for. R-33.5 makes the three refusals distinguishable, and the wording was
+> corrected once during the task: the first draft said "no probe was run", which is false for a chain
+> the probe DID reach.
+>
+> **The value is the answering candidate, never the slug.** Four chains answer `400` on their slug and
+> `200` on the vendor's own id — `op-mainnet`→`optimism`, `zksync-era`→`zksync` among them. A slug
+> written into that column drops every vendor row at `normalize()` and the capability answers an
+> empty page, which would have been this defect wearing a different mask.
 
 > Origin: investigation of L-15's fix path, 2026-08-18. Not a `run-feedback` capture — filed by
 > hand from the session transcript.

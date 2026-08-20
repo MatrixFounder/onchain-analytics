@@ -771,11 +771,20 @@ capabilities share one `normalize()` (`packages/core/src/capability-manifest.ts:
 its AUDIT comment is rewritten rather than left contradicting the code. The registry treats `point`
 as unmergeable (`packages/core/src/adapters/registry.ts:582`, `manifest.shape !== 'point' &&`).
 
-**Coverage is three chains, and the coverage matrix is what says so.** `dexscreener` answers only
-where the registry holds an observed vendor chain id — `ethereum`, `berachain`, `solana`, 3 of 458
-chains, measured 2026-08-13 over `packages/core/src/chain/registry.data.json`
-(`"dexscreener": "ethereum",` at line 19). Any other chain is refused by §4.2.3's uncovered-pair
-message, never by the input schema.
+**Coverage is 49 chains, and the coverage matrix is what says so.** `dexscreener` answers only where
+the registry holds a WITNESSED vendor chain id. Measured 2026-08-20 by
+`packages/core/scripts/gen-dexscreener-chains.ts` over all 458 rows: 65 chains are routable at the
+vendor and 49 of them additionally echoed their own identifier, which is what a value in the column
+requires. Any other chain is refused by §4.2.3's uncovered-pair message, never by the input schema.
+
+**The other 16 routable chains hold `null`, and the refusal says why.** A `200` is returned both by a
+segment holding data and by one holding none, so routability alone would read an empty answer as
+coverage (L-10). Those rows are `unverified` — "no confirmed vendor identifier" — never "the vendor
+does not serve this chain", which is the false sentence L-18 was filed for. Task 014-32a, R-33.5.
+
+**The number 3 that stood here was the previous instrument, not a smaller measurement.** It came from
+a single spot-check that witnessed `ethereum`, `berachain` and `solana`; the remaining 455 rows were
+`null`, and the runtime read that `null` as a vendor exclusion for 62 chains the vendor serves.
 
 **Cache and deadline come from the existing manifest row, unchanged.**
 `packages/core/src/capability-manifest.ts:299` (`ttlSeconds: 300,`) and `:303`

@@ -129,19 +129,19 @@ signalPercentile?, lastTriggerOn?}` (`TGMIndicator`), where `score` is qualitati
   table and not a network call (rationale — §4.2.1).
 - **Key attributes:**
 
-| Field            | Type                                                        | Purpose                                                                                                                                                                                    |
-| ---------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `caip2`          | `string` **PK**                                             | Canonical id in CAIP-2 form: `eip155:80094`, `solana:5eykt4Xh…`. The registry's stable primary key.                                                                                        |
-| `slug`           | `string` UNIQUE                                             | Human-readable canonical slug (`berachain`) — what an agent writes in `chain`, what `onchain_list_chains` returns, and what goes into the cache key (§4.2.2).                              |
-| `name`           | `string`                                                    | Display name (`Berachain`).                                                                                                                                                                |
-| `family`         | `'evm' \| 'svm' \| 'move' \| 'cosmos' \| 'utxo' \| 'other'` | Determines **address validation** (R-55) and whether `rpc-evm` can serve the chain.                                                                                                        |
-| `aliases`        | `string[]`                                                  | Every other accepted spelling, including the legacy `ethereum`/`solana` (R-59a) and vendor ids. Globally unique.                                                                           |
-| `nativeSymbol`   | `string \| null`                                            | Symbol of the **gas** token (`BERA`, `XDAI`) — consumed by `pairs.active` (R-57a) and `wallet.balances.native` instead of a hardcode.                                                      |
-| `nativeDecimals` | `number \| null`                                            | Decimals of that same gas token.                                                                                                                                                           |
-| `vendors`        | `Record<vendorId, string \| null>`                          | **Naming only:** what this chain is called at each vendor. `defillama`→`"Berachain"`, `coingecko`→`"berachain"`, `dexscreener`→`"berachain"`. `null` = the vendor does not have the chain. |
-| `rpcHosts`       | `string[] \| null`                                          | The curated SSRF allowlist for this chain (R-56a). `null` = `wallet.balances.native` is honestly uncovered, see §7.2.                                                                      |
-| `tvlUsdAtSync`   | `number \| null`                                            | TVL **as of the registry sync**, knowingly stale. Exists **solely** to filter and rank in `onchain_list_chains` without a network call.                                                    |
-| `deprecated`     | `boolean`                                                   | The chain disappeared from the vendors, but the row is kept (R-49f) — references and cache keys do not break.                                                                              |
+| Field            | Type                                                        | Purpose                                                                                                                                                                                                                                                             |
+| ---------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `caip2`          | `string` **PK**                                             | Canonical id in CAIP-2 form: `eip155:80094`, `solana:5eykt4Xh…`. The registry's stable primary key.                                                                                                                                                                 |
+| `slug`           | `string` UNIQUE                                             | Human-readable canonical slug (`berachain`) — what an agent writes in `chain`, what `onchain_list_chains` returns, and what goes into the cache key (§4.2.2).                                                                                                       |
+| `name`           | `string`                                                    | Display name (`Berachain`).                                                                                                                                                                                                                                         |
+| `family`         | `'evm' \| 'svm' \| 'move' \| 'cosmos' \| 'utxo' \| 'other'` | Determines **address validation** (R-55) and whether `rpc-evm` can serve the chain.                                                                                                                                                                                 |
+| `aliases`        | `string[]`                                                  | Every other accepted spelling, including the legacy `ethereum`/`solana` (R-59a) and vendor ids. Globally unique.                                                                                                                                                    |
+| `nativeSymbol`   | `string \| null`                                            | Symbol of the **gas** token (`BERA`, `XDAI`) — consumed by `pairs.active` (R-57a) and `wallet.balances.native` instead of a hardcode.                                                                                                                               |
+| `nativeDecimals` | `number \| null`                                            | Decimals of that same gas token.                                                                                                                                                                                                                                    |
+| `vendors`        | `Record<vendorId, string \| null>`                          | **Naming only:** what this chain is called at each vendor. `defillama`→`"Berachain"`, `coingecko`→`"berachain"`, `dexscreener`→`"berachain"`. `null` = **we hold no confirmed identifier**, which is NOT the same as the vendor not having the chain — see §4.2.3a. |
+| `rpcHosts`       | `string[] \| null`                                          | The curated SSRF allowlist for this chain (R-56a). `null` = `wallet.balances.native` is honestly uncovered, see §7.2.                                                                                                                                               |
+| `tvlUsdAtSync`   | `number \| null`                                            | TVL **as of the registry sync**, knowingly stale. Exists **solely** to filter and rank in `onchain_list_chains` without a network call.                                                                                                                             |
+| `deprecated`     | `boolean`                                                   | The chain disappeared from the vendors, but the row is kept (R-49f) — references and cache keys do not break.                                                                                                                                                       |
 
 The two native-token columns carry the failure they prevent:
 
@@ -179,6 +179,23 @@ The two native-token columns carry the failure they prevent:
   confirmed by the evidence), `creditsSpent`, `evidencePath` (a file under `raw/`).
 - **Business rule:** the absence of a probe means **`unverified`, not `unsupported`** (R-58d). What
   the engine actually gates on is described in §4.2.3.
+- **Consumers: two, not one.** `nansen/chain-coverage.ts` was the first; task 014-32a added
+  `dexscreener/chain-coverage.ts`, which carries a per-chain `status` beside the identifier.
+
+##### 4.2.3a. What a `null` in `vendors.<id>` means, stated once
+
+**Two readings of this `null` were in circulation and they contradicted each other**: the column
+table above read it as "the vendor does not have the chain", while the probe rule three lines down
+reads an absent probe as `unverified`. The second is authoritative, and the first was the defect:
+DexScreener's column was populated on 3 rows of 458, so the first reading declared 455 chains
+unserved — false for 62 of them, filed as L-18 and fixed by task 014-32a.
+
+**The column names, it does not cover.** `vendors.<id>` answers "what is this chain called at vendor
+X". A `null` means we hold no confirmed name — because nobody probed, or because a probe reached the
+vendor and could not confirm the identifier. Coverage is decided by the adapter's predicate, and WHY
+a pair is uncovered is answered by `CoverageStatus` (R-33.5), which distinguishes "the vendor does
+not serve this chain" from "no confirmed vendor identifier" from "the vendor serves it and this
+capability is not built on it".
 
 #### Artifact: `CapabilityManifest` + `PolicyDescriptor` (T-012, ADR-002 D2/D3) — compiled facts, not tables
 

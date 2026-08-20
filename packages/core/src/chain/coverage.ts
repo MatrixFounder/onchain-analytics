@@ -47,7 +47,7 @@ export interface Coverage {
    * 2. otherwise the adapter's `chainProbeStatus` hook is asked, and its answer picks the outcome
    *    and the sentence: `excluded` → the vendor does not serve this chain; `unverified` → no
    *    confirmed vendor identifier for it (nobody probed it, OR the vendor routed it and never
-   *    echoed the identifier — measured 2026-08-20, the second case is 18 of 65 routable chains);
+   *    echoed the identifier — measured 2026-08-20, the second case is 16 of 65 routable chains);
    *    `verified` → the vendor serves it and the capability is not built on it.
    *
    * **Why the third wording is obligatory.** `verified` does NOT imply coverage: the adapter's

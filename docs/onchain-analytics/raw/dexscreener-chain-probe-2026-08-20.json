@@ -7,6 +7,7 @@
     "conflux",
     "metis",
     "fuse",
+    "stepnetwork",
     "moonriver",
     "unichain",
     "polygon",
@@ -30,6 +31,7 @@
     "movement",
     "zksync",
     "apechain",
+    "mode",
     "pulsechain",
     "telos",
     "arbitrum",
@@ -38,10 +40,13 @@
     "avalanche",
     "megaeth",
     "beam",
+    "robinhood",
+    "mantle",
     "scroll",
     "bsc",
     "ink",
     "linea",
+    "flowevm",
     "katana",
     "berachain",
     "blast",
@@ -53,21 +58,19 @@
     "algorand",
     "aptos",
     "cardano",
+    "fogo",
+    "icp",
     "multiversx",
     "near",
+    "seiv2",
     "stacks",
     "starknet",
     "sui",
-    "solana",
-    "mode",
-    "robinhood",
-    "fogo",
-    "icp",
     "ton",
     "tron",
-    "mantle",
     "venom",
-    "xrpl"
+    "xrpl",
+    "solana"
   ],
   "observedChainIds": [
     "abstract",
@@ -86,6 +89,7 @@
     "ethereum",
     "fantom",
     "flare",
+    "flowevm",
     "fuse",
     "hyperevm",
     "hyperliquid",
@@ -502,6 +506,12 @@
       "status": 400
     },
     {
+      "caip2": "eip155:1234",
+      "slug": "step",
+      "candidate": "stepnetwork",
+      "status": 200
+    },
+    {
       "caip2": "eip155:12553",
       "slug": "rss3",
       "candidate": "rss3",
@@ -792,7 +802,7 @@
     {
       "caip2": "eip155:1514",
       "slug": "data-network",
-      "candidate": "sty",
+      "candidate": "data",
       "status": 400
     },
     {
@@ -3250,6 +3260,12 @@
       "status": 400
     },
     {
+      "caip2": "eip155:747",
+      "slug": "flow",
+      "candidate": "flowevm",
+      "status": 200
+    },
+    {
       "caip2": "eip155:747474",
       "slug": "katana",
       "candidate": "katana",
@@ -3305,13 +3321,19 @@
     },
     {
       "caip2": "eip155:777777",
-      "slug": "winr",
+      "slug": "winr-chain",
+      "candidate": "winr-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:777777",
+      "slug": "winr-chain",
       "candidate": "winr",
       "status": 400
     },
     {
       "caip2": "eip155:777777",
-      "slug": "winr",
+      "slug": "winr-chain",
       "candidate": "winr-protocol",
       "status": 400
     },
@@ -4850,6 +4872,12 @@
       "slug": "sei",
       "candidate": "sei-network",
       "status": 400
+    },
+    {
+      "caip2": "other:sei",
+      "slug": "sei",
+      "candidate": "seiv2",
+      "status": 200
     },
     {
       "caip2": "other:shibarium",
