@@ -824,19 +824,24 @@ describe('task 014-31 / AC-13 — `shareable` has a value on every manifest row'
     expect(undocumented, 'a `shareable` value with no derivation beside it').toStrictEqual([]);
   });
 
-  it('the enforcement has no reachable case on today’s manifest, and that is recorded here', () => {
-    // Task 014-31 part 2 refuses to serve one principal another's cached result for a NON-shareable
-    // capability. Every row is `true`, so that branch cannot fire today — no capability takes an
-    // implicit "the caller's own wallet"; `wallet.balances.native` takes the address as an argument.
-    // Asserting it means part 2 ships with its own coverage gap NAMED rather than discovered later
-    // by someone reading a green suite as evidence the rule works.
+  it('the enforcement is exercised SYNTHETICALLY, because no shipped row reaches it', () => {
+    // Task 014-31 part 2 shipped the rule: a NON-shareable capability is neither read from nor
+    // written to the cache, and its calls are not coalesced (`test/shareable-cache-rule.test.ts`,
+    // `adapters/registry.ts`, `adapters/nansen/index.ts`). Every shipped row is `true`, so that
+    // suite reaches the branch only through synthetic manifests it injects itself.
+    //
+    // This assertion is what keeps the distinction visible. It is NOT "the rule is untested" — it
+    // is "no capability we actually serve has ever run through it". The day the first `false` row
+    // lands, that stops being true, and the green synthetic suite stops being the whole story:
+    // the new row needs its own case on the real route, with a real adapter and the real cache.
     const nonShareable = Object.entries(capabilityManifests)
       .filter(([, manifest]) => manifest.shareable === false)
       .map(([capability]) => capability);
     expect(
       nonShareable,
-      'a non-shareable capability now exists — part 2 gains its first reachable case, and this ' +
-        'assertion must be replaced by one that exercises it',
+      'a non-shareable capability now exists — the synthetic coverage in ' +
+        'test/shareable-cache-rule.test.ts is no longer the whole story, and this row needs a case ' +
+        'on its own route',
     ).toStrictEqual([]);
   });
 });

@@ -1386,10 +1386,33 @@ L-10 failure class the data model states as canon (§4.5).
 - `shareable: false` — the capability is neither read from nor written to the cache; every call
   reaches the source.
 
+**Where the reader lives, measured 2026-08-20 (task 014-31 part 2).**
+`CapabilityRegistry.resolve()` binds ONE store for the call —
+`manifest.shareable === false ? this.uncached : this.cache` — and the six cache call sites of the
+two walks use that binding. The tool boundary (`mcp-server/src/tools/resolve-capability.ts`) was
+considered and rejected: it is the single funnel into `resolve()`, and it sits ABOVE both cache
+legs, so a check there could refuse the call and could not make it uncached.
+
+**The negative cache is covered.** A negative entry carries no vendor data and still decides what a
+LATER caller is told, so the arm is read without a carve-out. Declared price: a non-shareable
+capability whose `normalize()` fails re-enters the vendor on every call.
+
+**Coalescing is covered, and it is not the cache.** `singleflight` keys on
+`deriveArgsHash(capability, args)`, which carries no principal by design (R-5.1). Two principals
+issuing the identical non-shareable call concurrently would therefore share ONE vendor call and be
+handed ONE value — the serving this section forbids, reached without the cache. The paid adapter
+gives such a call a key nothing else can match, so it is always a leader. Declared price: two
+principals pay for two vendor calls, which is the point — their answers differ.
+
+**`_meta.cache.status` stays `'hit' | 'miss'`.** A non-shareable call reports `'miss'`, so the wire
+keeps "nothing usable was cached" and "the cache was never consulted" in one value. A third value
+would widen `CacheMeta`, a type eleven tools depend on (R-175(b)), for a case no shipped capability
+reaches.
+
 **Deviation.** ADR-003 D5 §5 states "`shareable: false` → кеш в пределах принципала либо не
 кешируется вовсе"; this document implements the second arm only. **Why.** The owner's decision of
 2026-08-12 keeps the principal out of the cache key (R-5.1, §4.5.10), which closes the first arm.
-ADR-003 D5 needs the annotation; §5.4.7 carries that as an obligation.
+The annotation §5.4.7 called for was written into ADR-003 D5 on 2026-08-20.
 
 **Nothing changes for any shipped capability.** All 26 rows describe public on-chain facts and take
 `true`. The first capability whose answer depends on the caller's identity is the first `false`.
@@ -1434,5 +1457,6 @@ whether a fee tier no wired provider publishes satisfies R-21.1. `feeTierBps` st
 as an optional field with a declared derivation: `eth_call` of `fee()`, selector `0xddca3f43`. It is
 populated where that call answers, absent where it does not, and never guessed.
 
-**Obligation.** ADR-003 D5's `shareable` sentence gets an annotation naming the arm this project
-took, in the style of ARCHITECTURE §1.2's annotation to ADR-001 D6 — not an ADR rewrite.
+**Obligation — discharged 2026-08-20 (task 014-31 part 2).** ADR-003 D5's `shareable` sentence
+carries an annotation naming the arm this project took, in the style of ARCHITECTURE §1.2's
+annotation to ADR-001 D6 — not an ADR rewrite.

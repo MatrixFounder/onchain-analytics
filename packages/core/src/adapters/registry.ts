@@ -494,6 +494,17 @@ export class CapabilityRegistry implements CapabilityResolver {
    */
   private readonly policies = new Map<CapabilityRoute, PolicyPredicate>();
 
+  /**
+   * The store `resolve()` uses when the capability's answer must not be shared between principals
+   * (task 014-31 part 2, R-18.2, ADR-003 D5). Inert on both legs: `get()` is always a miss and
+   * `set()` discards, so a non-shareable capability neither reads another caller's entry nor
+   * leaves one behind.
+   *
+   * **Per instance, never a module singleton** — the same rule `coverageCache` above follows
+   * (ARCHITECTURE.md §8), even though this object holds nothing.
+   */
+  private readonly uncached = new PassthroughCacheStore();
+
   constructor(
     private readonly routes: CapabilityRoute[],
     private readonly adapters: Map<string, ProviderAdapter>,
@@ -968,6 +979,28 @@ export class CapabilityRegistry implements CapabilityResolver {
 
     const argsHash = deriveArgsHash(capability, args);
 
+    // R-18.2 / ADR-003 D5 — `shareable`, applied HERE and nowhere else (task 014-31 part 2).
+    //
+    // **Why the registry and not the tool boundary.** The task file named
+    // `mcp-server/src/tools/resolve-capability.ts`, which is the single funnel into this method —
+    // but it sits ABOVE the cache. Both cache legs are inside this method (six call sites across
+    // the merge walk and the single-winner walk), so a check up there could refuse the call and
+    // could not make it uncached. Owner decision, 2026-08-20.
+    //
+    // **Why a substituted store and not six `if`s.** One binding decides once; the six sites are
+    // then mechanically identical and there is no branch a seventh site could forget to repeat.
+    //
+    // **Which arm of ADR-003 D5.** "Кеш в пределах принципала либо не кешируется вовсе" — the
+    // second. The first is closed by R-5.1, which keeps the principal out of the cache key, and
+    // `interfaces.md` §5.4.6 records that reading. This registry never receives a principal at all,
+    // so the property is structural here rather than enforced: there is no identity to key on.
+    //
+    // **No default to choose.** `manifest` above is the validated row — the lookup applies the
+    // constructor's own `Object.hasOwn` discipline and throws when it is absent — so this reads a
+    // value that is always present. A `?? true` here would be a default nobody selected, which is
+    // the L-10 shape the field was made required to avoid.
+    const cache = manifest.shareable === false ? this.uncached : this.cache;
+
     if (mergeMode) {
       // ---------------------------------------------------------------------------------------
       // THE MERGE WALK (T-013, task 013-4, R-161/R-165/R-166/R-167/R-182). Walks `plan` in the
@@ -1215,7 +1248,7 @@ export class CapabilityRegistry implements CapabilityResolver {
 
         let cached: CacheGetResult | undefined;
         try {
-          cached = await this.cache.get(adapter.id, capability, argsHash);
+          cached = await cache.get(adapter.id, capability, argsHash);
         } catch (error) {
           process.stderr.write(
             `cache.get failed provider=${adapter.id} capability=${capability}: ${
@@ -1292,7 +1325,7 @@ export class CapabilityRegistry implements CapabilityResolver {
         try {
           const result = adapter.normalize(capability, raw);
           try {
-            await this.cache.set(adapter.id, capability, argsHash, result);
+            await cache.set(adapter.id, capability, argsHash, result);
           } catch (error) {
             process.stderr.write(
               `cache.set failed provider=${adapter.id} capability=${capability}: ${
@@ -1337,7 +1370,7 @@ export class CapabilityRegistry implements CapabilityResolver {
           try {
             const expiresAtMs = Date.now() + NEGATIVE_TTL_SECONDS * 1000;
             const entry: NegativeCacheEntry = { __onchainNegative: true, reason, expiresAtMs };
-            await this.cache.set(adapter.id, capability, argsHash, entry, NEGATIVE_TTL_SECONDS);
+            await cache.set(adapter.id, capability, argsHash, entry, NEGATIVE_TTL_SECONDS);
           } catch (cacheError) {
             process.stderr.write(
               `cache.set (negative) failed provider=${adapter.id} capability=${capability}: ${
@@ -1585,7 +1618,7 @@ export class CapabilityRegistry implements CapabilityResolver {
       // falling through to fetch/normalize exactly as if nothing had ever been cached.
       let cached: CacheGetResult | undefined;
       try {
-        cached = await this.cache.get(adapter.id, capability, argsHash);
+        cached = await cache.get(adapter.id, capability, argsHash);
       } catch (error) {
         process.stderr.write(
           `cache.get failed provider=${adapter.id} capability=${capability}: ${
@@ -1673,7 +1706,7 @@ export class CapabilityRegistry implements CapabilityResolver {
         // "tried" failure for this adapter (it already answered successfully) and must never
         // fall through to the next adapterId; the result is still returned as a genuine 'miss'.
         try {
-          await this.cache.set(adapter.id, capability, argsHash, result);
+          await cache.set(adapter.id, capability, argsHash, result);
         } catch (error) {
           process.stderr.write(
             `cache.set failed provider=${adapter.id} capability=${capability}: ${
@@ -1699,7 +1732,7 @@ export class CapabilityRegistry implements CapabilityResolver {
         try {
           const expiresAtMs = Date.now() + NEGATIVE_TTL_SECONDS * 1000;
           const entry: NegativeCacheEntry = { __onchainNegative: true, reason, expiresAtMs };
-          await this.cache.set(adapter.id, capability, argsHash, entry, NEGATIVE_TTL_SECONDS);
+          await cache.set(adapter.id, capability, argsHash, entry, NEGATIVE_TTL_SECONDS);
         } catch (cacheError) {
           process.stderr.write(
             `cache.set (negative) failed provider=${adapter.id} capability=${capability}: ${

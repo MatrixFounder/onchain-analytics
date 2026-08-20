@@ -240,6 +240,13 @@ export async function resolveCapability(
   // The boundary, and it is here because this is the single place tools reach the registry
   // (`interfaces.md` §5.4.5). The registry keeps its own `Math.min` as a backstop; both read
   // `capabilityManifests`, so the boundary and the backstop cannot disagree about the ceiling.
+  //
+  // **`shareable` is NOT enforced here, and the task that shipped it named this file** (014-31
+  // part 2). Being the single funnel is not enough: this function is ABOVE the cache, and both
+  // cache legs live inside `registry.resolve()`. A check here could refuse the call; it could not
+  // make the call uncached. The rule is applied in `core/src/adapters/registry.ts`, where the
+  // manifest row is already validated and one binding covers all six cache call sites
+  // (`interfaces.md` §5.4.6, OD-014-31-4).
   let requestedDeadlineAtMs: number | undefined;
   if (requestedDeadlineMs !== undefined) {
     const declared = capabilityManifests[capability]?.deadlineMs;

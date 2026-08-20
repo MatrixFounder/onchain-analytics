@@ -59,6 +59,11 @@
       "issue": "L-19",
       "since": "2026-08-20",
       "why": "The keyless SEARCH endpoint is a global relevance ranking queried by NATIVE SYMBOL, and the adapter then filters its rows by chainId — so a chain whose ticker does not rank on itself is filtered to nothing. Measured 2026-08-20, 30 rows per response: q=BNB returned 0 of 30 on bsc (all 30 on solana), q=POL 0 of 30 on polygon, q=AVAX 0 of 30 on avalanche. The defect is OLDER than the change that revealed it: until task 014-32a the matrix declared this capability on three chains, all of which happen to rank on themselves, and every other chain was refused before the query ran — L-18's own title names that shape (the gate counted each refusal as a pass). Acknowledged rather than fixed here because the query strategy belongs to task 014-32c, which already owns this adapter's route work; narrowing coverage again to hide it would re-file L-18."
+    },
+    "base/chain.transactions": {
+      "issue": "L-20",
+      "since": "2026-08-20",
+      "why": "Blockscout answers HTTP 500 for base's /api/v2/stats — the ONE document gas.price and chain.transactions both read (WI-51). Measured 2026-08-20 through the PRO facade on chain 8453: 500 on attempts 1 and 3, a real 200 document on attempt 2; the keyless public instance base.blockscout.com answers 500 too, so both routes fail together and there is no second route to switch to. Same sweep, other chains: ethereum 1.42s 200, arbitrum 0.87s 200, polygon 0.93s 200. NOT L-12 — that one is latency on the holders endpoint and uses /api/v2/stats as its fast control; here the control is what fails, on one chain, with a fast 500 rather than a timeout. Intermittent at roughly one answer in three, which is why gas.price can pass a run this row fails."
     }
   }
 }

@@ -107,6 +107,55 @@ An earlier revision of this paragraph said "a day later" and it was wrong; the d
 2026-08-11. Persistence of this failure across days is therefore still unmeasured, which is exactly
 what fix-path item 1 asks for.
 
+## The failing chain ROTATES, so a per-chain acknowledgement cannot hold this (2026-08-20)
+
+Six live-gate runs on 2026-08-20, during task 014-31. The three acknowledged chains failed every
+run, as expected. What is new is the tail:
+
+| run | additional `token.holders` chain refused |
+| --: | :-- |
+| 1 | — |
+| 2 | gnosis |
+| 3 | ethereum |
+| 4 | ethereum |
+| 5 | — |
+| 6 | gnosis (**and ethereum now passes**) |
+
+Measured directly the same day, PRO key, 20 s ceiling, immediately after the runs that refused them:
+
+```
+ethereum  attempt 1: 6.999s 200   <- above our 5 s hop ceiling; the engine refuses here
+          attempt 2: 1.574s 200
+          attempt 3: 1.775s 200
+gnosis    attempt 1: 2.473s 200
+          attempt 2: 1.168s 200
+          attempt 3: 1.681s 200
+control — /api/v2/stats, chain 1, same host + key: 0.843s 200
+```
+
+So the cold-entry cost this record described on 2026-08-11 is still there nine days later, and it
+sits ON our 5 s ceiling rather than clearly above or below it. Which chain crosses the line depends
+on which one the run happened to warm first — the gate warms one and the next is cold.
+
+**This is what breaks the acknowledgement instrument, and the guard said so immediately.**
+`ethereum/token.holders` was acknowledged after run 4 and flagged **STALE** on run 6, because it
+passed there. An acknowledgement is keyed on `<chain>/<capability>`; a failure that moves between
+chains cannot be expressed by one, and acknowledging every chain would just move the block from the
+NEW-failure list to the stale list on whichever chains pass. The acknowledgement was removed on the
+same day it was added.
+
+**Consequence for the project, stated plainly:** the live gate cannot go green on `token.holders`
+while this holds, whatever the task under test. The blocker is not a task's change — it is the
+owner decision fix-path item 1 has been holding since 2026-08-12: route `token.holders` to the paid
+source, or retire the capability. Six runs is the strongest evidence this record has for it.
+
+**What the same day's measurement does NOT say.** `/api/v2/stats` — this record's control — answered
+`base` with HTTP **500** on two of three attempts on 2026-08-20. That is a different endpoint and a
+different failure mode, filed as
+[L-20](l-20-blockscout-answers-http-500-for-the-base-stats-document-on-both-routes.md). It does not
+alter the reasoning above: on chain 1, where the holders measurement was taken, the control answered
+200 in 0.84 s.
+
 ## Per-chain public instances measured, and they are not an escape (2026-08-11)
 
 Fix-path item 2 below proposed the keyless per-chain instances as a second adapter. **Measured, and

@@ -48,6 +48,7 @@ import {
 } from '../../cache/vendor-spend.js';
 import { reconcile } from './reconcile.js';
 import { createSingleflight } from './singleflight.js';
+import { capabilityManifests, type CapabilityManifest } from '../../capability-manifest.js';
 
 /**
  * Optional constructor dependencies (injectable — same DI convention already established in this
@@ -120,6 +121,17 @@ export interface NansenAdapterDeps {
    * site always supplies a `budgetStore` instead (`mcp-server/src/index.ts`).
    */
   __ungatedForTestsOnly?: boolean;
+  /**
+   * Per-capability manifest consulted for ONE field: `shareable` (task 014-31 part 2). Same DI
+   * convention as `CapabilityRegistry`'s fifth constructor parameter — the default is the real
+   * shipped table, so production wiring cannot forget it, and a test that needs a non-shareable
+   * capability supplies its own small map instead of editing the production one.
+   *
+   * It exists because the seam is otherwise unreachable: every shipped row is `shareable: true`
+   * (OD-014-31-1), so without an injection point the uncoalesced branch could be asserted only
+   * against a source string, never against behaviour.
+   */
+  manifests?: Readonly<Record<string, CapabilityManifest>>;
 }
 
 /** `Object.hasOwn`, never a bare index (vdd-multi cycle 5, L-2): `NANSEN_CHAIN_COVERAGE` is an
@@ -545,6 +557,32 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
   // primitive stores them without reading them. Followers need the pair `(day, window)` and
   // never the leader's amounts — those are typed `null` on their own receipt.
   const singleflight = createSingleflight<VendorLedgerCoordinates>();
+  /**
+   * Distinguishes otherwise identical calls that must NOT be coalesced — task 014-31 part 2.
+   *
+   * **Why coalescing is a second path to the leak the cache rule closes.** `shareable: false` says
+   * the answer depends on WHO asked. Singleflight keys on `deriveArgsHash(cap, args)`, which by
+   * construction carries no principal (R-5.1), so two principals asking the identical question
+   * concurrently would share ONE `fetch()` and be handed ONE value — the same cross-principal
+   * serving the cache rule forbids, arrived at without the cache being touched. Skipping the cache
+   * alone would have left this open, and left it open where nothing looks.
+   *
+   * **A key nothing else can match, rather than a bypass of the call.** The paid path below carries
+   * the deadline arm and the follower receipt; restructuring it for a case no shipped capability
+   * reaches is the riskier edit. A unique key makes every such call a leader, which is exactly the
+   * uncoalesced semantics, and leaves those two arms byte-identical. The slot is deleted in
+   * `finally` either way, so a per-call key accumulates nothing.
+   *
+   * **The price is deliberate.** Two principals then pay for two vendor calls. That is the point:
+   * their answers differ, and one charge for two different answers is the double-serving R-39's
+   * coalescing is only ever allowed to do when the answers are the same.
+   */
+  const manifests = deps.manifests ?? capabilityManifests;
+  let uncoalescedSeq = 0;
+  const coalescingKey = (cap: string, args: Record<string, unknown>): string =>
+    (Object.hasOwn(manifests, cap) ? manifests[cap] : undefined)?.shareable === false
+      ? `uncoalesced:${cap}:${String(++uncoalescedSeq)}`
+      : deriveArgsHash(cap, args);
   const budgetStore = deps.budgetStore;
   // Constructed ONCE per adapter instance (mirrors `accountState`/`singleflight` above) — `undefined`
   // when no `budgetStore` was injected (see `NansenAdapterDeps`'s own docstring above for why this
@@ -644,7 +682,7 @@ export function createNansenAdapter(deps: NansenAdapterDeps = {}): ProviderAdapt
       onVendorSpend?: VendorSpendReporter,
     ): Promise<unknown> =>
       singleflight(
-        deriveArgsHash(cap, args),
+        coalescingKey(cap, args),
         async (publish) => {
           const env = deps.env ?? process.env;
           const apiKey = env['NANSEN_API_KEY'];
