@@ -167,7 +167,7 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
     // 30 rows, and the route returned the byte-identical page for `sort=`, `sortBy=` and `rankBy=`
     // (it ignores unknown parameters). So no amount of over-fetching turns this into a new-pairs
     // feed, and a capability id claiming otherwise is the same wrong answer as the tool name was.
-    capabilities: () => [{ id: 'pairs.active' }, { id: 'pool.info' }],
+    capabilities: () => [{ id: 'pairs.active' }, { id: 'pool.info' }, { id: 'token.pools' }],
     costOf: () => ({ credits: 0 }),
     fetch: async (
       _cap: string,

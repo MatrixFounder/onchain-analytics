@@ -137,7 +137,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
   // matrix's job (§4.2.3).
   it('capabilities() declares pairs.active and pool.info without a chain list', () => {
     const caps = adapter.capabilities();
-    expect(caps.map((c) => c.id).sort()).toEqual(['pairs.active', 'pool.info']);
+    expect(caps.map((c) => c.id).sort()).toEqual(['pairs.active', 'pool.info', 'token.pools']);
     for (const cap of caps) {
       expect(cap.chains).toBeUndefined();
     }

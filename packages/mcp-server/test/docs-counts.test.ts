@@ -53,6 +53,11 @@ const WORDS: Record<string, number> = {
   eighteen: 18,
   nineteen: 19,
   twenty: 20,
+  // Task 014-32b — the twenty-second tool. Both spellings are needed because both documents write
+  // the number as a WORD: English hyphenates, Russian uses two words with a space, and `toNumber`
+  // normalises the internal whitespace before the lookup.
+  'twenty-two': 22,
+  'двадцать два': 22,
   девять: 9,
   десять: 10,
   одиннадцать: 11,
@@ -69,7 +74,9 @@ const WORDS: Record<string, number> = {
 
 /** `"twelve"` / `"12"` → 12. */
 function toNumber(token: string): number {
-  const word = WORDS[token.toLowerCase()];
+  // Internal whitespace collapsed before the lookup: a two-word Russian numeral can be captured
+  // with any run of spaces between its halves, and `'двадцать  два'` must not read as a new word.
+  const word = WORDS[token.toLowerCase().replace(/\s+/g, ' ')];
   return word ?? Number(token);
 }
 
@@ -166,13 +173,16 @@ describe('documentation counts match the code they describe (WI-21)', () => {
   it('states the MCP tool count correctly wherever it states it in the present tense', async () => {
     const actual = (await registeredToolNames()).length;
     const claims = [
-      ...claimsWithSource('docs/ARCHITECTURE.md', /and (\w+) workflow-oriented MCP tools/g),
-      ...claimsWithSource('docs/ARCHITECTURE.md', /Contracts for all (\w+) MCP tools/g),
+      ...claimsWithSource('docs/ARCHITECTURE.md', /and ([\w-]+) workflow-oriented MCP tools/g),
+      ...claimsWithSource('docs/ARCHITECTURE.md', /Contracts for all ([\w-]+) MCP tools/g),
       ...claimsWithSource('docs/architectures/interfaces.md', /External API — (\d+) MCP tools/g),
-      ...claimsWithSource('docs/architectures/interfaces.md', /of the (\w+) tools take a chain/g),
       ...claimsWithSource(
         'docs/architectures/interfaces.md',
-        /compound `superRefine` of the (\w+) tools/g,
+        /of the ([\w-]+) tools take a chain/g,
+      ),
+      ...claimsWithSource(
+        'docs/architectures/interfaces.md',
+        /compound `superRefine` of the ([\w-]+) tools/g,
       ),
       ...claimsWithSource('docs/architectures/security.md', /holds for all (\d+) tools/g),
       ...claimsWithSource('docs/architectures/deployment.md', /Call any of the (\d+) tools/g),
@@ -192,10 +202,14 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       ...claimsWithSource('README.md', /\*\*(\d+) MCP tools\.\*\*/g),
       ...claimsWithSource('README.md', /You should see \*\*(\d+) tools\*\*/g),
       ...claimsWithSource('README.md', /MCP server: (\d+) tools/g),
-      ...claimsWithSource('README.ru.md', /→ (\d+) инструментов/g),
-      ...claimsWithSource('README.ru.md', /\*\*(\d+) MCP-инструментов\.\*\*/g),
-      ...claimsWithSource('README.ru.md', /должно быть \*\*(\d+) инструментов\*\*/g),
-      ...claimsWithSource('README.ru.md', /MCP-сервер: (\d+) инструментов/g),
+      // The NOUN moved with the numeral (task 014-32b): Russian «20 инструментов» becomes
+      // «22 инструмента» — twenty-two governs the genitive SINGULAR. Widening only the number would
+      // have left the gate green over ungrammatical text in a public-facing document, or forced the
+      // document to stay wrong to keep the gate matching.
+      ...claimsWithSource('README.ru.md', /→ (\d+) инструмент(?:ов|а)/g),
+      ...claimsWithSource('README.ru.md', /\*\*(\d+) MCP-инструмент(?:ов|а)\.\*\*/g),
+      ...claimsWithSource('README.ru.md', /должно быть \*\*(\d+) инструмент(?:ов|а)\*\*/g),
+      ...claimsWithSource('README.ru.md', /MCP-сервер: (\d+) инструмент(?:ов|а)/g),
       // **WI-48 — seven sentences that stated the total and had never been given a pattern.** All
       // seven were stale at thirteen while the server served fourteen, and the whole suite was
       // green. The mechanism is the one this file's docstring already names: a gate only ever reads
@@ -206,9 +220,9 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       // Cyrillic needs its own character class: JS `\w` does not match `Четырнадцать`.
       ...claimsWithSource(
         'docs/onchain-analytics/ROADMAP.md',
-        /\*\*([А-Яа-яЁё]+) тулов\*\*, в порядке публикации/g,
+        /\*\*([А-Яа-яЁё]+(?: [А-Яа-яЁё]+)?) тул(?:ов|а)\*\*, в порядке публикации/g,
       ),
-      ...claimsWithSource('packages/mcp-server/.AGENTS.md', /\*\*The (\w+) tools today:\*\*/g),
+      ...claimsWithSource('packages/mcp-server/.AGENTS.md', /\*\*The ([\w-]+) tools today:\*\*/g),
       ...claimsWithSource('packages/mcp-server/.AGENTS.md', /capture of all (\d+) tools/g),
       ...claimsWithSource(
         'docs/architectures/interfaces.md',
@@ -216,11 +230,11 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       ),
       ...claimsWithSource(
         'docs/architectures/system-architecture.md',
-        /to all (\w+) would replace that/g,
+        /to all ([\w-]+) would replace that/g,
       ),
       ...claimsWithSource(
         'docs/architectures/system-architecture.md',
-        /exactly the \*\*(\w+)\*\* tools/g,
+        /exactly the \*\*([\w-]+)\*\* tools/g,
       ),
       // The `title?` sentence stated "4 of the 13 tools carry one and 9 do not". Measured while
       // closing WI-48: all 14 carry one, so the sentence was wrong about the FACT as well as the
@@ -273,13 +287,13 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       {
         // The "Текущий состав тулов" table — the section WI-48 was filed about.
         file: 'docs/onchain-analytics/ROADMAP.md',
-        from: /\*\*[А-Яа-яЁё]+ тулов\*\*, в порядке публикации:/,
+        from: /\*\*[А-Яа-яЁё]+(?: [А-Яа-яЁё]+)? тул(?:ов|а)\*\*, в порядке публикации:/,
         to: /^Запланированные и \*\*ещё не построенные\*\*/m,
         extract: backticked,
       },
       {
         file: 'packages/mcp-server/.AGENTS.md',
-        from: /\*\*The \w+ tools today:\*\*/,
+        from: /\*\*The [\w-]+ tools today:\*\*/,
         // Moved with the sentence on 2026-08-11: the list is in REGISTRATION order and now
         // says so. The anchor is literal on purpose — a stale one silently checks nothing, which
         // is why this gate fails loudly on a reword instead of quietly passing.
@@ -374,7 +388,7 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     expect(chainTaking).toBeGreaterThan(0);
     const claimed = claimedCounts(
       'docs/architectures/interfaces.md',
-      /\*\*The `chain` parameter, stated once\.\*\* (\w+) of the/g,
+      /\*\*The `chain` parameter, stated once\.\*\* ([\w-]+) of the/g,
     );
     expect(claimed).toEqual([chainTaking]);
   });

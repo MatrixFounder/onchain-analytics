@@ -216,9 +216,34 @@ const TTL_FOR_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
   'protocol.incidents': 3600,
 };
 
+/**
+ * Capabilities introduced AFTER the TTL move — the second reader of the same historical snapshot,
+ * carrying the same named exception (task 014-32b).
+ *
+ * See `capability-manifest.test.ts`'s `INTRODUCED_AFTER_THE_MOVE` for the whole argument: a
+ * capability that did not exist before the move has no before-value, and writing one would
+ * fabricate a measurement. Declared twice rather than exported, because the two files pin two
+ * DIFFERENT frozen tables and a shared constant would tie them together for the first time here.
+ */
+const INTRODUCED_AFTER_THE_MOVE = new Set(['token.pools']);
+
+/** The routed capabilities this file's frozen table is entitled to describe. */
+const routedBeforeTheMove = routedCapabilities.filter(
+  (capability) => !INTRODUCED_AFTER_THE_MOVE.has(capability),
+);
+
 describe('TC-UNIT-01 — the move changed no TTL: `ttlFor()` answers exactly as before', () => {
-  it('covers all 26 routed capabilities, so no row escaped the comparison', () => {
-    expect(Object.keys(TTL_FOR_BEFORE_THE_MOVE).sort()).toStrictEqual(routedCapabilities);
+  it('covers every routed capability that reached the move, so no row escaped the comparison', () => {
+    expect(Object.keys(TTL_FOR_BEFORE_THE_MOVE).sort()).toStrictEqual(routedBeforeTheMove);
+  });
+
+  it('every named exception is a capability that really routes', () => {
+    // The exception list must not be able to excuse a capability that does not exist — a typo here
+    // would be indistinguishable from a correct entry.
+    const unknown = [...INTRODUCED_AFTER_THE_MOVE].filter(
+      (capability) => !routedCapabilities.includes(capability),
+    );
+    expect(unknown, 'a named exception names no routed capability').toStrictEqual([]);
   });
 
   it.each(Object.entries(TTL_FOR_BEFORE_THE_MOVE))('%s -> %i seconds', (capability, seconds) => {
@@ -238,11 +263,16 @@ describe('TC-UNIT-02 — `DEFAULT_TTL_SECONDS` survives, for the input it is act
     expect(ttlFor('capability.which.nothing.routes')).toBe(300);
   });
 
-  it('is unreachable for the 26 routed capabilities — enumerated, not asserted in general', () => {
+  it('is unreachable for every routed capability — enumerated, not asserted in general', () => {
     // R-138d wants this stated by enumeration. What makes it a property rather than a coincidence is
     // `CapabilityRegistry`'s construction-time manifest check (012-4), which this cannot observe;
     // `capability-manifest.test.ts`'s TC-INT-02 is where that half is tested.
-    const fallingThrough = routedCapabilities.filter(
+    //
+    // The frozen table cannot answer for a capability added after the move, so the enumeration runs
+    // over the rows it is entitled to describe. `explicitRows` below still runs over ALL of them —
+    // that half reads the live manifest, and a new capability falling through to the default is
+    // exactly what it exists to catch.
+    const fallingThrough = routedBeforeTheMove.filter(
       (capability) => !Object.keys(TTL_FOR_BEFORE_THE_MOVE).includes(capability),
     );
     expect(fallingThrough).toStrictEqual([]);

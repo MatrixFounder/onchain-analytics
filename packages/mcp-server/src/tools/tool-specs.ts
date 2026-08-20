@@ -13,6 +13,8 @@ import { getTokenToolSpec } from './get-token.js';
 import { listChainsToolSpec } from './list-chains.js';
 import { activePairsToolSpec } from './active-pairs.js';
 import { pingToolSpec } from './ping.js';
+import { poolInfoToolSpec } from './pool-info.js';
+import { tokenPoolsToolSpec } from './token-pools.js';
 import { protocolTvlToolSpec } from './protocol-tvl.js';
 import type { ToolSpec } from './registry.js';
 import { smartMoneyFlowsToolSpec } from './smart-money-flows.js';
@@ -68,4 +70,11 @@ export const toolSpecs: readonly ToolSpec[] = [
   entityLabelToolSpec,
   tokenRiskToolSpec,
   dashPlatformHistoryToolSpec,
+  // T-014 task 014-32b — the two DexScreener tools registered together, in one move of the
+  // `tools/list` snapshot (AC-2). Appended AFTER the paid trio rather than beside their
+  // DexScreener sibling `onchain_active_pairs`: the order above is grouped by the milestone that
+  // added each tool, and inserting into the middle of a frozen sequence would change what a model
+  // receives for every tool after the insertion point.
+  poolInfoToolSpec,
+  tokenPoolsToolSpec,
 ];

@@ -67,7 +67,7 @@ describe('TC-UNIT-02 — no manifest entry for a capability nothing routes', () 
   it('covers exactly the 26 routed capabilities, named', () => {
     // Named, not counted: two tables of the same SIZE that disagree on one key would pass a count.
     expect(Object.keys(capabilityManifests).sort()).toStrictEqual(routedCapabilities);
-    expect(routedCapabilities).toHaveLength(26);
+    expect(routedCapabilities).toHaveLength(27);
   });
 });
 
@@ -179,14 +179,47 @@ const TTL_SECONDS_BEFORE_THE_MOVE: Readonly<Record<string, number>> = {
   'protocol.incidents': 3600,
 };
 
+/**
+ * Capabilities introduced AFTER the TTL move, named here rather than given a fabricated row in the
+ * frozen table above (task 014-32b).
+ *
+ * **Why an exception and not a row.** `TTL_SECONDS_BEFORE_THE_MOVE` is a historical snapshot, and
+ * the assertion it feeds is "no TTL edit was disguised as a migration". A capability that did not
+ * exist before the move has no before-value; inventing one would fabricate a measurement and turn
+ * this gate into a comparison of the table with itself. For every row that DID reach the move the
+ * gate stays exactly as strict.
+ *
+ * Each entry names why the capability post-dates the snapshot. The list is EXACT, so a row quietly
+ * dropped out of the frozen table cannot hide behind it.
+ */
+const INTRODUCED_AFTER_THE_MOVE: Readonly<Record<string, string>> = {
+  // T-014 task 014-32b, R-34 — a new capability with a new route, registered together with
+  // `onchain_token_pools`. Its 300 s follows the `pool.info` row by the reasoning in the manifest.
+  'token.pools': 'added by task 014-32b, after this snapshot was taken',
+};
+
 describe('TC-UNIT-05 — every `ttlSeconds` is byte-identical to the pre-move table', () => {
-  it('pins all 26, so a TTL edit disguised as a migration fails here', () => {
-    expect(Object.keys(TTL_SECONDS_BEFORE_THE_MOVE)).toHaveLength(26);
+  it('pins every row that reached the move, so a TTL edit disguised as a migration fails here', () => {
+    // The denominator is read from the two lists, never written down: `26` was a literal here until
+    // the twenty-seventh capability arrived, and a literal is what makes an added row look like a
+    // dropped one.
+    const beforeTheMove = Object.entries(capabilityManifests).filter(
+      ([capability]) => !(capability in INTRODUCED_AFTER_THE_MOVE),
+    );
+    expect(Object.keys(TTL_SECONDS_BEFORE_THE_MOVE)).toHaveLength(beforeTheMove.length);
     expect(
-      Object.fromEntries(
-        Object.entries(capabilityManifests).map(([capability, m]) => [capability, m.ttlSeconds]),
-      ),
+      Object.fromEntries(beforeTheMove.map(([capability, m]) => [capability, m.ttlSeconds])),
     ).toStrictEqual(TTL_SECONDS_BEFORE_THE_MOVE);
+  });
+
+  it('every named exception is a capability that really exists', () => {
+    // Without this, the exception list is a hole: a typo'd key would excuse nothing and be
+    // indistinguishable from a correct entry, and a stale key would keep excusing a capability that
+    // has since been removed.
+    const unknown = Object.keys(INTRODUCED_AFTER_THE_MOVE).filter(
+      (capability) => !(capability in capabilityManifests),
+    );
+    expect(unknown, 'a named exception names no manifest row').toStrictEqual([]);
   });
 
   it('agrees with the live `ttlFor()` — which task 012-5 makes a reader of this table', () => {
@@ -661,9 +694,9 @@ function scannedFieldCount(source: string): number {
 }
 
 describe('TC-UNIT-08 — every deadline number carries a two-number derivation record (R-149)', () => {
-  it('the real table: 26 numbers scanned, every one with both numbers beside it', () => {
+  it('the real table: 30 numbers scanned, every one with both numbers beside it', () => {
     // Sign of work FIRST: a scan that matched nothing would report "no defects" identically.
-    expect(scannedFieldCount(manifestSource)).toBe(29); // 26 deadlineMs + 3 paidLegMs
+    expect(scannedFieldCount(manifestSource)).toBe(30); // 27 deadlineMs + 3 paidLegMs
     expect(
       derivationRecordDefects(manifestSource),
       'R-149: the comment beside a deadline is where the NEXT edit copies its reasoning from. It ' +
@@ -1172,7 +1205,7 @@ describe('TC-F5-GATE — every manifest row states its own enforcement, and the 
   const enforced = enforcedCapabilities(aware, spendsTime);
 
   it('the scan found the real table and the real adapters — otherwise everything below is vacuous', () => {
-    expect(blocks.size).toBe(26);
+    expect(blocks.size).toBe(27);
     expect([...blocks.keys()].sort()).toStrictEqual(
       [...new Set(routes.map((r) => r.capability))].sort(),
     );

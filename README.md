@@ -2,7 +2,7 @@
 
 An on-chain analytics engine exposed as an **MCP server**: provider adapters (CoinGecko,
 DexScreener, DeFiLlama, EVM/Solana RPC, Nansen, …) → normalization into one canonical schema →
-two-level cache + credit budget guard → 20 workflow-oriented tools your agent can call.
+two-level cache + credit budget guard → 22 workflow-oriented tools your agent can call.
 
 **Русская версия:** [README.ru.md](README.ru.md)
 
@@ -35,6 +35,8 @@ two-level cache + credit budget guard → 20 workflow-oriented tools your agent 
   - [onchain_entity_label](#onchain_entity_label-paid)
   - [onchain_token_risk](#onchain_token_risk-paid)
   - [onchain_dash_platform_history](#onchain_dash_platform_history)
+  - [onchain_pool_info](#onchain_pool_info)
+  - [onchain_token_pools](#onchain_token_pools)
 - [Response envelope](#response-envelope)
 - [Credit budget guard](#credit-budget-guard)
 - [Behaviour without API keys](#behaviour-without-api-keys)
@@ -47,7 +49,7 @@ two-level cache + credit budget guard → 20 workflow-oriented tools your agent 
 
 ## What you get
 
-**20 MCP tools.** One liveness check, one chain-registry tool, eight free/keyless data tools,
+**22 MCP tools.** One liveness check, one chain-registry tool, eight free/keyless data tools,
 and three paid Nansen-backed alpha tools.
 
 **Two chains:** `ethereum` and `solana`. Every tool takes an explicit `chain`.
@@ -149,7 +151,7 @@ Restart Claude Code, then confirm the tools appear:
 /mcp
 ```
 
-You should see **20 tools** under `onchain-intel`.
+You should see **22 tools** under `onchain-intel`.
 
 ---
 
@@ -201,6 +203,8 @@ Cost is in Nansen credits. Free tools cost nothing and need no key.
 | `onchain_entity_label`          | **0/5/100 cr** | 3600s | `NANSEN_API_KEY` |
 | `onchain_token_risk`            | **6 cr**       | 1800s | `NANSEN_API_KEY` |
 | `onchain_dash_platform_history` | free           | 3600s | no               |
+| `onchain_pool_info`             | free           | 300s  | no               |
+| `onchain_token_pools`           | free           | 300s  | no               |
 
 ### onchain_ping
 
@@ -510,6 +514,48 @@ risk signal and a reward signal are not interchangeable.
 
 ---
 
+### onchain_pool_info
+
+One DEX pool, looked up by its pair address on a chain. It answers with the **contract addresses**
+of both tokens — which `onchain_active_pairs` never returns, it gives symbols only — plus the
+per-side reserves and, where it can be derived, the fee tier.
+
+`resolved: false` means this vendor knows no pool at that address on that chain. It is not an empty
+pool: `pool` is `null` exactly then.
+
+Reserves are the vendor's own rounded numbers, not exact base units. `feeTierBps` is absent wherever
+the derivation does not answer, and is never inferred from the version label.
+
+> **Registered, logic not shipped yet.** Calling it today returns a refusal naming the task that
+> completes it. The schemas below are the final contract.
+
+Input:
+
+```json
+{ "chain": "berachain", "pairAddress": "0x2608B7c8Eb17e22CB95b7cD6f872993cf33a4CA1" }
+```
+
+### onchain_token_pools
+
+The DEX pools one token trades in, by token **address**.
+
+With `chain`, the answer covers every DEX on that chain. Without it, the answer is a **sample across
+chains** and each row states its own chain — a token address is not unique across chains, and a fork
+reproduces the addresses of the chain it forked, so the cross-chain form must never be read as
+complete.
+
+Read `truncated` before concluding a token is thinly traded: the vendor caps its page, and that cap
+is not widened by `limit`.
+
+> **Registered, logic not shipped yet.** Calling it today returns a refusal naming the task that
+> completes it. The schemas below are the final contract.
+
+Input:
+
+```json
+{ "token": "0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58", "chain": "berachain", "limit": 20 }
+```
+
 ## Response envelope
 
 Every tool returns MCP's standard `content` + `structuredContent`, plus a `_meta` sibling that
@@ -761,7 +807,7 @@ resets the cache — and also the usage ledger, so the daily cap starts from zer
 
 ```
 packages/core/          engine: adapters, canonical types, cache, budget guard
-packages/mcp-server/    MCP server: 20 tools, env validation, stdio transport
+packages/mcp-server/    MCP server: 22 tools, env validation, stdio transport
 docs/                   architecture, ADR, roadmap, issue ledger
 n8n-workflows/          exported snapshotter workflows (separate always-on system)
 ```

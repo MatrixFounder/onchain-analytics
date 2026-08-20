@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CapabilityRegistry } from '@onchain-intel/core';
 import type { BudgetStore, CapabilityRoute, ProviderAdapter } from '@onchain-intel/core';
 import { captureToolsList } from '../scripts/snapshot-tools.js';
+import { toolSpecs } from '../src/tools/tool-specs.js';
 import { smartMoneyFlowsHandler } from '../src/tools/smart-money-flows.js';
 
 /**
@@ -114,12 +115,18 @@ function fakeBudgetStore(): BudgetStore {
 }
 
 describe('TC-GATE-03 — no internal key appears anywhere in the published contract (R-152)', () => {
-  it('no input or output schema of any of the 20 tools carries any of them, at any depth', async () => {
+  it('no input or output schema of any registered tool carries any of them, at any depth', async () => {
     const tools = await captureToolsList();
 
     // Sign of work BEFORE the verdict: an empty capture, or one that stopped at the top level,
     // would report "nothing leaked" identically to a clean one.
-    expect(tools).toHaveLength(20);
+    //
+    // The denominator is READ from the registry, not written down (task 014-32b): a literal here
+    // has to be edited by every task that adds a tool, and a task that forgets is one that shipped
+    // an unscanned schema. `toolSpecs` is the same source `tools/list` is built from, so a capture
+    // that lost a tool still fails — which is the property the literal was there for.
+    expect(tools).toHaveLength(toolSpecs.length);
+    expect(toolSpecs.length).toBeGreaterThan(0);
     const keys = collectKeys(tools);
     expect(keys.has('inputSchema')).toBe(true);
     expect(keys.has('outputSchema')).toBe(true);

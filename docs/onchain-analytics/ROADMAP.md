@@ -269,7 +269,7 @@ graph LR
 > первого было мало: 013-8 удовлетворил его строкой в плановом списке M2, и таблица четверо суток
 > утверждала «Тринадцать» при 14 живых. Источник — `src/tools/tool-specs.ts` (ADR-002 D7).
 
-**Двадцать тулов**, в порядке публикации:
+**Двадцать два тула**, в порядке публикации:
 
 | Тул | Capability | Ярус |
 | --- | --- | --- |
@@ -293,6 +293,8 @@ graph LR
 | `onchain_entity_label` | `entity.labels` | **платно** (Nansen, фолбэк после Blockscout) |
 | `onchain_token_risk` | `token.risk` | **платно** (Nansen) |
 | `onchain_dash_platform_history` | `privacy.shielded_pool.history` **+** `platform.metrics.history` (селектор `series`) | бесплатно |
+| `onchain_pool_info` | `pool.info` | бесплатно (DexScreener, без ключа) |
+| `onchain_token_pools` | `token.pools` | бесплатно (DexScreener, без ключа) |
 
 Единственный тул, служащий **двум** способностям (`servedCapabilities`, T-013): у остальных
 тринадцати `spec.capability` — одна строка или `null` у серверных. Это различие не косметическое —

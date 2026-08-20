@@ -73,7 +73,8 @@
  *
  * **Measured 2026-08-05, re-measured 2026-08-11** over the shipped registry (`providers.config.ts` — 24 routes, 23
  * capabilities, 12 adapters), and this section exists because the per-row records below read as
- * statements about running code:
+ * statements about running code. **The dated pair is kept as it was measured (R-23.6); the live
+ * registry today holds 28 routes over 27 capabilities, still 12 adapters.**
  *
  * - **10 of 12 adapters read the third `fetch(cap, args, deadlineAtMs)` argument** — `blockscout`,
  *   `nansen`, `coingecko`, `dexscreener`, `defillama`, `rpc-evm`, `rpc-solana`, `platform-explorer`,
@@ -92,7 +93,7 @@
  *   an adapter in the population by whether it imports a transport module at all, so the day a live
  *   gRPC transport lands for `dash-platform` (ARCHITECTURE.md §11) it enters the population and the
  *   five rows it routes go red until it reads the deadline. It is not an id list somebody maintains.
- * - **26 of 26 capabilities are therefore actually bounded by their row below.** The three added
+ * - **27 of 27 capabilities are therefore actually bounded by their row below.** The three added
  *   earlier on 2026-08-11 (`chain.tvl.history`, `protocol.list`, `protocol.tvl.history`) enter on the
  *   same two `defillama` mechanisms already described: the first two are served from SHARED
  *   documents, so the ceiling bounds the caller's wait, and the third is the one per-call route left
@@ -114,7 +115,7 @@
  * `docs/backlog/wi-37-call-deadline-declared-but-unenforced-on-ten-adapters.md` tracked the
  * behaviour until this commit closed it.
  *
- * **Every one of the 26 rows carries its own marker, and a test counts them.** The first version of
+ * **Every one of the 27 rows carries its own marker, and a test counts them.** The first version of
  * this section marked the tier BLOCKS and left 11 rows with no findable claim of their own — the
  * defect F-5 is about, one level down: an assertion true in one place and absent in the others,
  * reported as complete. `capability-manifest.test.ts`'s **TC-F5-GATE** requires exactly one marker
@@ -226,8 +227,10 @@ export type CapabilityManifest =
     });
 
 /**
- * All 23 routed capabilities (`providers.config.ts` — 24 routes, 23 distinct capabilities;
- * `wallet.balances.native` is routed twice). TC-UNIT-01 enumerates the routes against this table and
+ * All 27 routed capabilities (`providers.config.ts` — 28 routes, 27 distinct capabilities;
+ * `wallet.balances.native` is routed twice). The pair read `23 / 24` until task 014-32b measured it:
+ * it had been stale by three since before T-013, and the form `All <n> routed capabilities` matched
+ * no gate at all — which is why it could drift silently. `TC-E2E-05` reads it now. TC-UNIT-01 enumerates the routes against this table and
  * TC-UNIT-02 the reverse, so neither a new route without a row nor a row for a retired capability can
  * survive a test run.
  *
@@ -252,7 +255,7 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
   // banner, by name:** `token.price`, `token.metadata`, `pairs.active`, `pool.info`, `protocol.tvl`,
   // `chain.tvl`, `dex.volume.history`, `wallet.balances.native`. It covers no row outside that run
   // — `chain.supply` in particular belongs to the E-HTTP5 block below, not to this one. **And it is
-  // not the enforcement record for any of them:** each of the 26 rows carries its OWN
+  // not the enforcement record for any of them:** each of the 27 rows carries its OWN
   // `**ENFORCED TODAY**` / `**DECLARED, not enforced today**` marker, because a reader greps one
   // capability or reads one row in a diff, and a claim that lives only in a banner is invisible
   // there (adversarial cycle 2 review of F-5 — the first version of this section marked the block
@@ -314,15 +317,41 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     deadlineMs: 15_000,
   },
   'pool.info': {
-    // AUDIT: hypothesis `set`, CONFIRMED — and worth stating, because the NAME suggests otherwise.
-    // `dexscreener/index.ts:125` ignores `_cap` entirely: both of this adapter's capabilities run
-    // the same `normalize(): Pool[]`, so `pool.info` returns a collection, not one pool.
-    shape: 'set',
+    // AUDIT (012-4): hypothesis `set`, CONFIRMED AT THE TIME and RECLASSIFIED to `point` by task
+    // 014-32b. The 012-4 reading was correct about the code it read — `dexscreener/index.ts:125`
+    // ignored `_cap` entirely, so both capabilities ran one `normalize(): Pool[]` and this row
+    // returned a collection. It was a measurement of an UNSERVED capability: no registered tool
+    // resolved `pool.info` (L-15), so nothing ever asked this route for one pool.
+    //
+    // `onchain_pool_info` asks by POOL ADDRESS and the vendor answers with that one pool
+    // (`interfaces.md` §5.1.7, `GET /latest/dex/pairs/{chainId}/{pairAddress}`), so the shape the
+    // capability actually has is `point`. Recorded rather than silently corrected, because the
+    // earlier value was a true reading of a route nobody called — not an error of care.
+    shape: 'point',
     // Carried from `cache/ttl.ts`, with its rationale: "`pool.info` shares its adapter (dexscreener)
     // and its liquidity/volume-style volatility with `protocol.tvl`, not the
     // "new"-freshness-critical `pairs.active` — same 300s bucket."
     ttlSeconds: 300,
-    // shareable: the pools of (chain, limit) — a public listing, identical for every caller.
+    // shareable: the pool at (chain, pair address) — public chain state, identical for every caller.
+    shareable: true,
+    // measured envelope: 90_000 (E-HTTP15 — `dexscreener`, one attempt). applied: 15_000 — owner
+    // ceiling (OD-2), not a measurement; would cut 75_000.
+    // **ENFORCED TODAY** — same adapter and same call path as `pairs.active` (WI-37).
+    deadlineMs: 15_000,
+  },
+  'token.pools': {
+    // AUDIT (014-32b): `set`. The tool answers with the pools ONE token trades in — a collection
+    // with no ordering the contract claims: `interfaces.md` §5.1.8 states outright that no probe of
+    // these two vendor routes has established whether row order is stable or size-ranked, so this
+    // is a collection and not a `ts`-ordered run.
+    shape: 'set',
+    // Follows the `pool.info` row above, and `interfaces.md` §5.1.8 says why in one sentence: both
+    // capabilities read the same vendor at the same freshness, and pool MEMBERSHIP does not move
+    // faster than reserves do.
+    ttlSeconds: 300,
+    // shareable: the pools of (token address, optional chain, limit) — a public listing, identical
+    // for every caller. The token address is an ARGUMENT, never "the caller's own token", so two
+    // principals asking about one address ask one question.
     shareable: true,
     // measured envelope: 90_000 (E-HTTP15 — `dexscreener`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
@@ -361,7 +390,9 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
   },
   'protocol.list': {
     // A collection with no time dimension — the population of protocols on a chain, ranked. `set`,
-    // by the same reading that classified `pool.info`: the return is a collection, not one row.
+    // by the same reading that classified `pairs.active`: the return is a collection, not one row.
+    // (It cited `pool.info` until task 014-32b reclassified that row to `point`; the reading is
+    // unchanged, the example it points at had to move to one that still holds.)
     shape: 'set',
     // Read out of the SAME `/protocols` document `protocol.tvl` uses, plus the month-ago baseline.
     // The 300 s bucket is inherited rather than invented: serving a ranking from a fresher window

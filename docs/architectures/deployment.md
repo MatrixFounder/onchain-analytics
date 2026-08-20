@@ -208,7 +208,8 @@ since TASK-008 (`packages/mcp-server/src/env.ts:64`), and `.env.example` documen
 - Worst case: 60 000 ms + 270 000 ms = 330 000 ms on `entity.labels`
   (`packages/core/src/capability-manifest.ts:661` `deadlineMs: 60_000,`, and
   `packages/core/src/capability-manifest.ts:668` `paidLegMs: 270_000,`).
-- Measured 330 000 ms over all 26 manifest rows, 2026-08-13; 330 000 is a floor, not a ceiling.
+- Measured 330 000 ms over all 26 manifest rows, 2026-08-13; 330 000 is a floor, not a ceiling. The
+  table holds 27 rows since task 014-32b, and the floor is unchanged — the added row applies 15_000.
 - Applied: 360 000 ms as the unset default, the first whole minute above the floor.
 - `EnvSchema` refuses a value at or below 330 000 ms.
 
@@ -350,7 +351,7 @@ fails when the precondition is moved after step 4.
    key degrade explicitly (UC-1 alt, R-24).
 5. Attach to Claude Code as a local stdio MCP server, unchanged since M0
    (`node packages/mcp-server/dist/index.js` or `tsx packages/mcp-server/src/index.ts`).
-6. Call any of the 20 tools → a canonical response; a repeat call with the same normalized
+6. Call any of the 22 tools → a canonical response; a repeat call with the same normalized
    arguments within the TTL → `_meta.cache.status === 'hit'` (UC-3, ROADMAP exit criterion).
 
 #### 10.4.2. Network profile

@@ -28,9 +28,12 @@ export const routes: CapabilityRoute[] = [
   { capability: 'token.price', adapterIds: ['coingecko'] },
   { capability: 'token.metadata', adapterIds: ['coingecko'] },
   { capability: 'pairs.active', adapterIds: ['dexscreener'] },
-  // R-6 Must requires both pairs.active and pool.info — pool.info has no tool consumer yet in M1
-  // (cheap to declare now; major fix from architecture review cycle 1):
+  // R-6 Must requires both pairs.active and pool.info. `pool.info` was declared here with no tool
+  // consumer from M1 until T-014 — the gap L-15 was filed for, and closed by task 014-32b, which
+  // registers `onchain_pool_info` over this existing route. `token.pools` (R-34) is the route that
+  // task added: same adapter, same host, a different vendor path (`interfaces.md` §5.1.8).
   { capability: 'pool.info', adapterIds: ['dexscreener'] },
+  { capability: 'token.pools', adapterIds: ['dexscreener'] },
   { capability: 'protocol.tvl', adapterIds: ['defillama'] },
   // TASK-006 (task 006-7, R-53): TVL of a CHAIN, not a protocol — a different endpoint
   // (`/v2/chains`) and a different output contract, hence a separate capability.

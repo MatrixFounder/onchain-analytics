@@ -2,19 +2,19 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
-### 5.1. External API — 20 MCP tools
+### 5.1. External API — 22 MCP tools
 
 `onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
 Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), one free
 DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
 BTC-supply tool with TASK-009 (§5.1.5).
 
-**Two further tools are designed and not registered.** `onchain_pool_info` resolves `pool.info`,
+**Both tools designed by §5.1.7 and §5.1.8 are registered** (task 014-32b); their handlers are stubs until 014-32c and 014-32d. `onchain_pool_info` resolves `pool.info`,
 and its contract is §5.1.7 (T-014, R-21.1). `onchain_token_pools` resolves `token.pools`, and its
 contract is §5.1.8 (T-014, R-34). Every present-tense count in this section states the registered
 inventory, and none of them moves until those tools land.
 
-**The `chain` parameter, stated once.** Seventeen of the twenty tools take a chain, and every one of them
+**The `chain` parameter, stated once.** Nineteen of the twenty-two tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
 resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
 `ethereum` and `solana` are aliases and stay valid indefinitely. What a tool can actually serve is
@@ -122,7 +122,7 @@ reserved.
 
 `tokenAddress`/`query` reuse the same `.max()` bounds and the same
 `superRefine`/`isValidAddress` idiom as `onchain_get_token` above — reused, not reinvented.
-`onchain_entity_label` has the only compound `superRefine` of the twenty tools: **at least one** of
+`onchain_entity_label` has the only compound `superRefine` of the twenty-two tools: **at least one** of
 `query`/`tokenAddress` is required (otherwise there is nothing to search for), and `tokenAddress`
 is mandatory when `exhaustive: true`.
 
@@ -199,7 +199,7 @@ entered (a traversal fact, tier-free — the registry never classifies paidness)
 it to `budgetMeta()`, which reports the paid adapter among them. Under-reporting is the expensive
 direction: an agent that believes a call was free repeats it (R-41). The WIRE shape is unchanged;
 `attempted` never reaches a client. `tier` itself is NEVER added to this object, or to `_meta`
-anywhere else, on any of the 20 tools (R-152) — the internal cost-tier classification is our unit
+anywhere else, on any of the 22 tools (R-152) — the internal cost-tier classification is our unit
 economics, not part of the client's contract (ADR-002 D8, ADR-003 D4).
 
 #### 5.1.3 The two registry-backed tools (TASK-006) — free
@@ -612,7 +612,7 @@ Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built d
 `Object.keys(capabilityManifests)` returns 26. The historical text stands unchanged; the current
 numbers stand beside it.
 
-#### 5.1.7 The pool tool (T-014, R-21.1) — DESIGNED, not registered
+#### 5.1.7 The pool tool (T-014, R-21.1)
 
 `onchain_pool_info` takes one pool address and one chain. It answers with the addresses of the two
 tokens in that pool and the pool's reserves. It also answers with the pool's fee tier wherever that
@@ -640,7 +640,8 @@ never a token address (`packages/core/src/types/pool.ts:15`,
 
 ```jsonc
 // onchain_pool_info — ONE pool, by address: its two token addresses, its reserves, and its fee
-// tier where derivable. DexScreener-backed, keyless, 0 credits. DESIGNED, not registered.
+// tier where derivable. DexScreener-backed, keyless, 0 credits.
+// Capability: pool.info
 // { chain: ChainInput, pairAddress: string (.max(64)) }
 // → {
 //     chain,              // OUR canonical slug, never the vendor's chainId
@@ -819,7 +820,7 @@ must satisfy, measured rather than recalled.
 by a registered tool, or named in a declared list with a reason. Both inputs are modules of this
 repository, so the gate needs no network and runs in the existing `pnpm test` step.
 
-**Seven manifest keys are served by no tool today** (measured 2026-08-13, 26 keys against 20 tools):
+**Seven manifest keys are served by no tool today** (measured 2026-08-13, 26 keys against 20 tools; **five of the seven since task 014-32b registered the tools for `pool.info` and `token.pools`** — 27 keys against 22 tools):
 `pool.info`, `token.metadata`, `privacy.shielded_pool`, `platform.identities`, `platform.documents`,
 `platform.contracts`, `platform.credits`.
 
@@ -843,7 +844,7 @@ opening a second list.
 `export const CAPABILITY_TOOLS = CAPABILITY_CASES.map((c) => ({`), so the eval obligation is one new
 file under that directory (RF-5).
 
-#### 5.1.8 The token-pools tool (T-014, R-34) — DESIGNED, not registered
+#### 5.1.8 The token-pools tool (T-014, R-34)
 
 `onchain_token_pools` takes one token address and an optional chain. It answers with the pools that
 token trades in — across every DEX on that chain, or across chains when no chain is given.
@@ -864,7 +865,7 @@ received, which is the class L-10 records.
 
 ```jsonc
 // onchain_token_pools — the pools a token trades in. DexScreener-backed, keyless, 0 credits.
-// DESIGNED, not registered.
+// Capability: token.pools
 // { token: string (.max(128)), chain?: ChainInput, limit?: number }
 // → {
 //     chain: Chain | null,   // OUR canonical slug; null on the cross-chain form
@@ -1177,7 +1178,7 @@ every unsuccessful outcome as `{ isError: true, content: [{ type: 'text', text: 
 (`packages/mcp-server/src/tools/registry.ts:414`, `export function defineTool<`) is the only
 registration path, and it wraps every handler in that renderer
 (`packages/mcp-server/src/tools/registry.ts:289`,
-`toCallToolResult(await definition.handler(`). The form therefore covers all 20 tools.
+`toCallToolResult(await definition.handler(`). The form therefore covers all 22 tools.
 
 **A tool-execution failure must not be rendered with `isError: false`** (AC-33). The violation shows
 on a handler that returns `ok: true` carrying a refusal message as its output.
@@ -1267,7 +1268,7 @@ Classification today:
 would tell the caller an entry existed before its request arrived.
 
 **Why the third value stays off the wire.** A new `cache.status` value would redefine a field on all
-twenty registered tools. §5.4's scope permits two changes, and this is neither of them.
+twenty-two registered tools. §5.4's scope permits two changes, and this is neither of them.
 
 **Why `timing.overrunMs` is a client field.** Only the caller can judge whether a late but complete
 answer is still useful (OQ-T012-6). Withholding the overrun would make late invisible again.
@@ -1372,7 +1373,7 @@ served from the cache.
 **none** of the manifest rows: `Object.keys(capabilityManifests).length` returns 26, and the count
 of rows where `shareable !== undefined` is 0. No code reads it.
 
-**T-014 makes the field required.** Each of the 26 rows carries an explicit value with its
+**T-014 makes the field required.** Each of the 27 rows carries an explicit value with its
 derivation recorded beside it (R-18.1). An omitted value is a compile error, never a default
 (R-18.3, AC-13).
 
@@ -1414,7 +1415,7 @@ reaches.
 2026-08-12 keeps the principal out of the cache key (R-5.1, §4.5.10), which closes the first arm.
 The annotation §5.4.7 called for was written into ADR-003 D5 on 2026-08-20.
 
-**Nothing changes for any shipped capability.** All 26 rows describe public on-chain facts and take
+**Nothing changes for any shipped capability.** All 27 rows describe public on-chain facts and take
 `true`. The first capability whose answer depends on the caller's identity is the first `false`.
 
 #### 5.4.7. Open questions and one obligation raised by this section

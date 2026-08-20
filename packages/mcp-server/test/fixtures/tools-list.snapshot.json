@@ -312,6 +312,31 @@
                 "type": "number",
                 "minimum": 0
               },
+              "baseTokenAddress": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "quoteTokenAddress": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "reserveBase": {
+                "type": "number",
+                "minimum": 0
+              },
+              "reserveQuote": {
+                "type": "number",
+                "minimum": 0
+              },
+              "feeTierBps": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "versionLabel": {
+                "type": "string",
+                "maxLength": 64
+              },
               "source": {
                 "type": "string"
               },
@@ -2954,6 +2979,346 @@
         "groups",
         "truncated",
         "sources",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_pool_info",
+    "title": "Pool info by address",
+    "description": "ONE DEX pool, looked up by its pair address on a chain: the CONTRACT ADDRESSES of both tokens, the per-side reserves, and the fee tier where it can be derived. Use this to turn a pair address into token addresses — onchain_active_pairs answers with symbols only. `resolved: false` means this vendor knows no pool at that address on that chain; it is not an empty pool. Reserves are the vendor’s own rounded numbers, not exact base units, and `feeTierBps` is absent wherever the derivation does not answer — never inferred from the version label. Call onchain_list_chains({capability:\"pool.info\"}) to see where it is served (DexScreener-backed, keyless).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "pairAddress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "pairAddress"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "resolved": {
+          "type": "boolean",
+          "description": "False when this vendor knows no pool at that address on that chain. `pool` is null exactly then — never an empty pool object."
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "chain": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "dexId": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "baseTokenSymbol": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "quoteTokenSymbol": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "pairAddress": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "createdAt": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "liquidityUsd": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "volume24hUsd": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "baseTokenAddress": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "quoteTokenAddress": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "reserveBase": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "reserveQuote": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "feeTierBps": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "versionLabel": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "source": {
+                  "type": "string"
+                },
+                "fetchedAt": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "chain",
+                "dexId",
+                "baseTokenSymbol",
+                "quoteTokenSymbol",
+                "pairAddress",
+                "source",
+                "fetchedAt"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "resolved",
+        "pool",
+        "source",
+        "fetchedAt"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "onchain_token_pools",
+    "title": "Pools a token trades in",
+    "description": "The DEX pools one token trades in, by token ADDRESS. With `chain`, the answer covers every DEX on that chain; without it, the answer is a SAMPLE across chains and each row states its own chain — a token address is not unique across chains, and a fork reproduces the addresses of the chain it forked, so never read the cross-chain form as complete. Read `truncated` before concluding a token is thinly traded: the vendor caps its page, and that cap is not widened by `limit`. Call onchain_list_chains({capability:\"token.pools\"}) to see where it is served (DexScreener-backed, keyless).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "chain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "limit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        },
+        "deadlineMs": {
+          "description": "Optional: cap this call at N milliseconds. May only narrow the capability’s own limit.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "OUR canonical slug when the caller named a chain; null on the cross-chain form, where each row carries its own chain instead."
+        },
+        "pools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "chain": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dexId": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "baseTokenSymbol": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "quoteTokenSymbol": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "pairAddress": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "liquidityUsd": {
+                "type": "number",
+                "minimum": 0
+              },
+              "volume24hUsd": {
+                "type": "number",
+                "minimum": 0
+              },
+              "baseTokenAddress": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "quoteTokenAddress": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "reserveBase": {
+                "type": "number",
+                "minimum": 0
+              },
+              "reserveQuote": {
+                "type": "number",
+                "minimum": 0
+              },
+              "feeTierBps": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "versionLabel": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "source": {
+                "type": "string"
+              },
+              "fetchedAt": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "chain",
+              "dexId",
+              "baseTokenSymbol",
+              "quoteTokenSymbol",
+              "pairAddress",
+              "source",
+              "fetchedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "truncated": {
+          "type": "object",
+          "properties": {
+            "pairs": {
+              "type": "boolean",
+              "description": "True when this page is not the whole answer — the vendor capped its page, `limit` cut rows, rows failed validation and were dropped, or several of those."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Which causes applied, with counts, named separately. Empty string when nothing was lost. A larger `limit` recovers only the `limit` cut: neither the vendor page cap nor dropped rows can be recovered by any argument."
+            }
+          },
+          "required": [
+            "pairs",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "chain",
+        "pools",
+        "truncated",
+        "source",
         "fetchedAt"
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",

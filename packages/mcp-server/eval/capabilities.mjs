@@ -72,16 +72,34 @@ export const CAPABILITY_TOOLS = CAPABILITY_CASES.map((c) => ({
   args: c.args,
 }));
 
-/** Capabilities deliberately NOT exercised, each with the reason it is out of scope. */
+/**
+ * Capabilities deliberately NOT exercised, each with the reason it is out of scope.
+ *
+ * **Two of these five are an INTERVAL, not a policy** (task 014-32b). `pool.info` and `token.pools`
+ * have a registered `ToolSpec` and a stub handler that answers a typed refusal; there is no logic to
+ * exercise yet, so an eval case would assert the refusal and nothing else. Each names the task that
+ * removes both the stub and this line, in the same commit that adds its case file. The masked case
+ * is stated rather than left implicit (memory M6): an entry here makes the capability `accounted`
+ * WITHOUT a case, so it masks "a tool is registered and nothing checks it" — which is why
+ * `docs/tasks/task-014-34-acceptance.md` verifies both entries are gone at stage acceptance.
+ */
 export const CAPABILITY_EXCLUSIONS = new Map([
   ['entity.labels', 'paid — spends Nansen credits, and an eval that bills you gets turned off'],
   ['smart-money.flows', 'paid — spends Nansen credits'],
   ['token.risk', 'paid — spends Nansen credits'],
+  ['pool.info', 'stub registered by task 014-32b; its logic and eval case ship in task 014-32c'],
+  ['token.pools', 'stub registered by task 014-32b; its logic and eval case ship in task 014-32d'],
 ]);
 
 /** Known gaps between what the registry declares and what any MCP tool serves. These are NOT
  * exclusions — they are real holes, kept named rather than hidden so the count stays honest and a
- * NEW hole (the RF-5 case) is distinguishable from these two at a glance. */
+ * NEW hole (the RF-5 case) is distinguishable from these at a glance.
+ *
+ * The `pool.info` row left this map in the commit that registered `onchain_pool_info` (task
+ * 014-32b) — `interfaces.md:829` states that rule, and its reason (`served by no MCP tool at all`)
+ * is falsified by a registered tool. It was DELETED rather than reworded: `unwiredCapabilities`
+ * short-circuits on an exclusion before it ever looks for a reason here, so a rewritten reason would
+ * be text no run ever prints. */
 export const CAPABILITY_KNOWN_GAPS = new Map([
   [
     'token.metadata',
@@ -89,7 +107,6 @@ export const CAPABILITY_KNOWN_GAPS = new Map([
       'cache entry would legally serve an hour-stale price), so the coingecko path is covered and ' +
       'this capability id is not',
   ],
-  ['pool.info', 'declared by the registry, served by no MCP tool at all'],
 ]);
 
 /** Every capability with an eval case or a recorded reason not to have one. */

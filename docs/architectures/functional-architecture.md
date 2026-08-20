@@ -114,7 +114,7 @@
 
 **Component: MCP server (`@onchain-intel/mcp-server`) — NOW**
 
-- **Twenty registered tools**, all zod in/out and registry-routed, declared once in
+- **Twenty-two registered tools**, all zod in/out and registry-routed, declared once in
   `packages/mcp-server/src/tools/tool-specs.ts` (ADR-002 D7):
   - `onchain_ping` — M0, contract unchanged (R-20).
   - M1 read layer: `onchain_get_token`, `onchain_wallet_balances`, `onchain_active_pairs`,
@@ -139,6 +139,11 @@
     single-adapter capability that died with its vendor's auth change) and
     `onchain_chain_transactions` (Blockscout stats). Active addresses are NOT served: no wired
     provider publishes an activity-scoped address count.
+  - **T-014** task 014-32b, DexScreener-backed and keyless: `onchain_pool_info` (ONE pool by pair
+    address — the token CONTRACT ADDRESSES `onchain_active_pairs` never returns, closing L-15) and
+    `onchain_token_pools` (the pools a token trades in, per chain or as a cross-chain SAMPLE).
+    Registered with stub handlers that answer a typed refusal; their logic ships in 014-32c and
+    014-32d respectively.
   - WI-52, the risk layer partially: `onchain_protocol_incidents` (DeFiLlama's incident feed).
     EDITORIAL data, not on-chain — it carries its own `feedThroughTs` rather than inheriting a TVL
     number's freshness, and separates four meanings of "no incidents" so an empty list is never
@@ -178,7 +183,7 @@ flowchart LR
     CACHE["Cache: lru-cache + SQLite DATA_DIR (D6)<br/>+ budget guard: usage ledger, daily ceiling (M2)"]
     PGHIST["pg-history adapter (optional, R-12)<br/>inside the Registry, not beside it"]
     SCHED["croner + job log — local/embedded profile only<br/>on a dedicated server the schedule lives in n8n (D8)"]
-    MCP["MCP server @onchain-intel/mcp-server — 20 tools<br/>ping · get_token · wallet_balances · active_pairs · protocol_tvl<br/>list_chains · chain_tvl · dex_volume · token_holders · chain_supply<br/>smart_money_flows · entity_label · token_risk · dash_platform_history<br/>chain_tvl_history · list_protocols · protocol_tvl_history<br/>gas_price · chain_transactions · protocol_incidents"]
+    MCP["MCP server @onchain-intel/mcp-server — 22 tools<br/>ping · get_token · wallet_balances · active_pairs · protocol_tvl<br/>list_chains · chain_tvl · dex_volume · token_holders · chain_supply<br/>smart_money_flows · entity_label · token_risk · dash_platform_history<br/>chain_tvl_history · list_protocols · protocol_tvl_history<br/>gas_price · chain_transactions · protocol_incidents<br/>pool_info · token_pools"]
   end
 
   subgraph N8N["Autonomous loop — n8n + Supabase Postgres, dev VM<br/>snapshotter now; rule scheduling + alerts at M3"]

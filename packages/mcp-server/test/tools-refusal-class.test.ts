@@ -107,9 +107,13 @@ describe('gate: no tool module builds a refusal by hand', () => {
   it('every `ok: false` literal lives in one of the two declared producers', () => {
     // The defect this prevents produces a GREEN suite and a REJECTED row: a twentieth tool pastes
     // `{ ok: false, reason: … }`, every existing test passes, and the CHECK constraint fires in
-    // production on the failure path. Two files may construct one — the pair constructor and the
-    // one place a thrown instance is still in scope.
-    const ALLOWED = new Set(['contract-violation.ts', 'resolve-capability.ts']);
+    // production on the failure path. Three files may construct one — the pair constructor, the one
+    // place a thrown instance is still in scope, and (task 014-32b) the stub-interval refusal.
+    //
+    // **The gate's subject is the missing CLASS, not the number of files.** `stub-refusal.ts` always
+    // carries one, which is precisely what this gate asks for. What would be a real weakening is a
+    // TOOL module building a refusal inline, and that is still forbidden.
+    const ALLOWED = new Set(['contract-violation.ts', 'resolve-capability.ts', 'stub-refusal.ts']);
     const offenders = readdirSync(TOOLS_DIR)
       .filter((file) => file.endsWith('.ts') && !ALLOWED.has(file))
       .filter((file) => {

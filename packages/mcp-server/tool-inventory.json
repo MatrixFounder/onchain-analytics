@@ -104,6 +104,16 @@
         "privacy.shielded_pool.history",
         "platform.metrics.history"
       ]
+    },
+    {
+      "name": "onchain_pool_info",
+      "title": "Pool info by address",
+      "capability": "pool.info"
+    },
+    {
+      "name": "onchain_token_pools",
+      "title": "Pools a token trades in",
+      "capability": "token.pools"
     }
   ]
 }
