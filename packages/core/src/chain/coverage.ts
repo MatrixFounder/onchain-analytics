@@ -20,9 +20,42 @@ import type { ChainInfo, ChainRegistry } from './registry-core.js';
  * its route covers. That keeps every pre-TASK-006 adapter behaving exactly as before until tasks
  * 006-5/006-9 give them real predicates.
  */
+/**
+ * Why a (capability, chain) pair is or is not covered (task 014-32a, R-33.5).
+ *
+ * `unverified` is a THIRD legal answer where there used to be two, and memory M6 asks what broken
+ * case a new legal answer masks: it masks "the probe broke and silently returned nothing for the
+ * whole catalogue". That is why the generator refuses evidence below a plausibility floor rather
+ * than emitting a catalogue of `unverified` — the guard lives there, not here.
+ */
+export type CoverageStatus =
+  'covered' | 'excluded' | 'unverified' | 'vendor-serves-chain-capability-absent';
+
 export interface Coverage {
   /** Is `capability` served on `chain` by at least one adapter of its route? */
   isCovered(capability: string, chain: ChainInfo): boolean;
+  /**
+   * WHY a (capability, chain) pair is not covered — task 014-32a, R-33.5.
+   *
+   * **Four values, because there are four outcomes and not three.** A probe has three results, and
+   * "covered" is a fourth state in which no refusal is produced at all.
+   *
+   * **The composition rule: the PREDICATE decides coverage, the probe decides only the wording.**
+   * Two steps, in this order:
+   *
+   * 1. the boolean predicate answers `true` → `covered`, and the probe is never asked;
+   * 2. otherwise the adapter's `chainProbeStatus` hook is asked, and its answer picks the outcome
+   *    and the sentence: `excluded` → the vendor does not serve this chain; `unverified` → no probe
+   *    was run for it; `verified` → the vendor serves it and the capability is not built on it.
+   *
+   * **Why the third wording is obligatory.** `verified` does NOT imply coverage: the adapter's
+   * predicate requires two conditions where the probe establishes one, and the matrix additionally
+   * drops `deprecated` rows. The pair (probe confirmed, not covered) is not hypothetical — 23
+   * registry rows carry `nativeSymbol: null`. Without it, such a chain would be refused with "no
+   * probe was run" ABOUT A CHAIN THE PROBE CONFIRMED: a false statement inside the very text added
+   * for honesty.
+   */
+  coverageStatus(capability: string, chain: ChainInfo): CoverageStatus;
   /** Every chain where `capability` is covered. */
   chainsFor(capability: string): ChainInfo[];
   /** Every capability covered on `chain` — the "available instead" list in an error message. */
@@ -107,8 +140,43 @@ export function createCoverage(deps: CoverageDeps): Coverage {
     // anyway so a caller holding a deprecated `ChainInfo` from `get()` gets the same verdict.
     !chain.deprecated && coveredSet(capability).has(chain.caip2);
 
+  /**
+   * The adapters that could serve `capability` and declare a probe hook — the population whose
+   * answer decides the refusal wording. It takes no chain: a route's adapter list does not vary by
+   * chain, and asking each adapter about the chain is the NEXT step.
+   */
+  const probesFor = (capability: string): ProviderAdapter[] =>
+    routesFor(capability)
+      .flatMap((route) => route.adapterIds)
+      .map((id) => adapters.get(id))
+      .filter((adapter): adapter is ProviderAdapter => adapter?.chainProbeStatus !== undefined);
+
+  const coverageStatus = (capability: string, chain: ChainInfo): CoverageStatus => {
+    // Step 1: the predicate is the authority on coverage, and it is asked first. A probe result
+    // never widens or narrows what is covered — this function exists to explain a refusal, never to
+    // produce one.
+    if (isCovered(capability, chain)) return 'covered';
+    // Step 2: the strongest thing any candidate adapter can say about this chain. `verified` from
+    // one adapter outranks `excluded` from another: the vendor demonstrably serves the chain, so
+    // "the vendor does not serve it" would be the one false sentence of the three.
+    let seen: 'verified' | 'excluded' | 'unverified' = 'unverified';
+    for (const adapter of probesFor(capability)) {
+      const status = adapter.chainProbeStatus?.(chain);
+      if (status === 'verified') return 'vendor-serves-chain-capability-absent';
+      if (status === 'excluded') seen = 'excluded';
+    }
+    // An adapter with no hook answers `unverified`, and the default is chosen deliberately: one
+    // adapter implements the hook and twelve declare a predicate, so a default of `excluded` would
+    // have the other eleven asserting a VENDOR exclusion wherever non-coverage has some other cause
+    // — `rpc-evm` refuses on our own missing `rpcHosts`, `dune` refuses every chain outright. A
+    // false narrowing is as wrong as a false widening (R-58d), and asserting it here would
+    // reproduce L-18 inside the task that fixes it.
+    return seen;
+  };
+
   return {
     isCovered,
+    coverageStatus,
     chainsFor(capability: string): ChainInfo[] {
       const set = coveredSet(capability);
       return chains.list().filter((chain) => set.has(chain.caip2));

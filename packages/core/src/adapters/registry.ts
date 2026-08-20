@@ -6,7 +6,7 @@ import { deriveArgsHash } from '../net/args-hash.js';
 import { NEGATIVE_TTL_SECONDS } from '../cache/ttl.js';
 import type { VendorSpendReporter } from '../cache/vendor-spend.js';
 import { capabilityManifests, type CapabilityManifest } from '../capability-manifest.js';
-import { createCoverage, type Coverage } from '../chain/coverage.js';
+import { createCoverage, type Coverage, type CoverageStatus } from '../chain/coverage.js';
 import { loadChainRegistry } from '../chain/registry.js';
 import type { ChainRegistry } from '../chain/registry-core.js';
 import { CapabilityNotCoveredOnChainError } from '../chain/errors.js';
@@ -445,6 +445,31 @@ export interface CapabilityResolution {
  * assemble once real adapters exist). This also keeps the door open for future multi-instance use
  * (§8) without a refactor.
  */
+/**
+ * The refusal sentence for each non-covered outcome (task 014-32a, R-33.5).
+ *
+ * **`covered` yields no hint at all**, and cannot be reached from the refusal path: the branch that
+ * calls this has already established the pair is not covered. It is spelled out rather than
+ * defaulted so a future caller asking about a covered pair gets nothing instead of a sentence that
+ * contradicts itself.
+ *
+ * The key is spread conditionally because `hint` is optional on the error's own options object; an
+ * explicit `hint: undefined` would render as the string `undefined` in the concatenation
+ * (`chain/errors.ts`).
+ */
+function hintFor(status: CoverageStatus): { hint?: string } {
+  switch (status) {
+    case 'excluded':
+      return { hint: 'the vendor does not serve this chain' };
+    case 'unverified':
+      return { hint: 'no vendor probe has been run for this chain' };
+    case 'vendor-serves-chain-capability-absent':
+      return { hint: 'the vendor serves this chain, but this capability is not built on it' };
+    case 'covered':
+      return {};
+  }
+}
+
 export class CapabilityRegistry implements CapabilityResolver {
   /** Built lazily and memoized per instance (never a module singleton, §8): the shipped registry
    * is ~458 rows, and constructing one per `CapabilityRegistry` in a test suite would be pure
@@ -925,6 +950,12 @@ export class CapabilityRegistry implements CapabilityResolver {
         availableChains: served.slugs,
         totalServedChains: served.total,
         availableCapabilities: coverage.capabilitiesFor(chainInfo),
+        // Task 014-32a, R-33.5. This is the ONE place a (capability, chain) refusal is born, so it
+        // is the one place the reason can be named. Three outcomes, three sentences, none of them
+        // interchangeable — before this the refusal said nothing about WHY, and the registry's own
+        // `null` was read as "the vendor does not have this chain" for 62 chains the vendor serves
+        // (L-18).
+        ...hintFor(coverage.coverageStatus(capability, chainInfo)),
       });
     }
 

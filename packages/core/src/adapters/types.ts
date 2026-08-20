@@ -106,6 +106,24 @@ export interface ProviderAdapter {
    * Optional: an adapter that omits it is treated as not chain-bound, exactly as before.
    */
   chainSupport?(chain: ChainInfo, capability: string): boolean;
+
+  /**
+   * What a committed VENDOR PROBE says about this chain — task 014-32a, R-33.5.
+   *
+   * **Not a predicate, and it must not become one.** `chainSupport` decides coverage; this decides
+   * only the WORDING of a refusal the predicate has already produced. `verified` does not widen
+   * coverage, and `excluded` does not narrow it.
+   *
+   * **Three values.** `verified` — the vendor answered for this chain and its own echo confirmed the
+   * identifier. `excluded` — the vendor refused the chain segment. `unverified` — no probe covered
+   * it, or the answer carried no echo to confirm identity with.
+   *
+   * **Omitting it means `unverified`, never `excluded`.** Eleven adapters declare a predicate and do
+   * not probe; a default of `excluded` would have each of them asserting a vendor exclusion where
+   * non-coverage has some other cause entirely — `rpc-evm` refuses on OUR missing `rpcHosts`, `dune`
+   * refuses every chain. A false narrowing is as wrong as a false widening (R-58d).
+   */
+  chainProbeStatus?(chain: ChainInfo): 'verified' | 'excluded' | 'unverified';
 }
 
 /**

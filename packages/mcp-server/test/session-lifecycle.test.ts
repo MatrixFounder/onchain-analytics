@@ -571,7 +571,7 @@ describe('TC-UNIT-05 / TC-UNIT-06: the startup assertion against the manifest', 
 
   it('TC-UNIT-06: it reads the MANIFEST, not a constant copied out of it', () => {
     const slow: Record<string, CapabilityManifest> = {
-      'probe.slow': { shape: 'point', ttlSeconds: 60, deadlineMs: 1_800_000 },
+      'probe.slow': { shape: 'point', ttlSeconds: 60, deadlineMs: 1_800_000, shareable: true },
     };
     // The applied timeout clears every shipped row and still fails against this one — which is the
     // whole point: a row raised above the timeout has to fail the check, and it cannot if the number

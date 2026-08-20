@@ -634,8 +634,14 @@ describe('the architecture deadline table states the numbers the manifest applie
 
   const CONTROL_ROUTED = ['token.price', 'entity.labels'];
   const CONTROL_MANIFESTS: Readonly<Record<string, CapabilityManifest>> = {
-    'token.price': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000 },
-    'entity.labels': { shape: 'set', ttlSeconds: 3600, deadlineMs: 60_000, paidLegMs: 270_000 },
+    'token.price': { shape: 'point', ttlSeconds: 60, deadlineMs: 15_000, shareable: true },
+    'entity.labels': {
+      shape: 'set',
+      ttlSeconds: 3600,
+      deadlineMs: 60_000,
+      paidLegMs: 270_000,
+      shareable: true,
+    },
   };
   const FREE_ROW = '  | `token.price` | ~15_000 | — (free-only route) | one free adapter |';
   const PAID_ROW = '  | `entity.labels` | ~60_000 | **~270_000** (derived) | paid composite |';
@@ -747,8 +753,14 @@ describe('the architecture deadline table states the numbers the manifest applie
     ).toStrictEqual([]);
 
     const otherShape: Readonly<Record<string, CapabilityManifest>> = {
-      'token.price': { shape: 'series', ttlSeconds: 999, deadlineMs: 15_000 },
-      'entity.labels': { shape: 'point', ttlSeconds: 1, deadlineMs: 60_000, paidLegMs: 270_000 },
+      'token.price': { shape: 'series', ttlSeconds: 999, deadlineMs: 15_000, shareable: true },
+      'entity.labels': {
+        shape: 'point',
+        ttlSeconds: 1,
+        deadlineMs: 60_000,
+        paidLegMs: 270_000,
+        shareable: true,
+      },
     };
     expect(
       deadlineDefects(synthetic(FREE_ROW, PAID_ROW), CONTROL_ROUTED, otherShape),

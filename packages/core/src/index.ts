@@ -47,7 +47,12 @@ export {
   ChainRegistryLoadError,
   CapabilityNotCoveredOnChainError,
 } from './chain/errors.js';
-export { createCoverage, type Coverage, type CoverageDeps } from './chain/coverage.js';
+export {
+  createCoverage,
+  type Coverage,
+  type CoverageDeps,
+  type CoverageStatus,
+} from './chain/coverage.js';
 // TASK-006 (task 006-6, R-50): `chain` as accepted at the MCP tool boundary — an open string
 // resolved against the registry, replacing the 7 duplicated `z.enum(['ethereum','solana'])`
 // literals. See its docstring for why this is a SECOND schema rather than a widened `ChainSchema`.
