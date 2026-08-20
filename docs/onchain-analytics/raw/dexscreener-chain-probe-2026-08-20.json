@@ -1,0 +1,5251 @@
+{
+  "recordedAt": "2026-08-20",
+  "probeAddress": "0x6c9A33E3b592C0d65B3Ba59355d5Be0d38259285",
+  "echoQueries": [
+    "ethereum",
+    "optimism",
+    "conflux",
+    "metis",
+    "fuse",
+    "moonriver",
+    "unichain",
+    "polygon",
+    "flare",
+    "monad",
+    "sonic",
+    "vana",
+    "story",
+    "harmony",
+    "taiko",
+    "manta",
+    "injective",
+    "soneium",
+    "dogechain",
+    "opbnb",
+    "kava",
+    "cronos",
+    "fantom",
+    "abstract",
+    "hedera",
+    "movement",
+    "zksync",
+    "apechain",
+    "pulsechain",
+    "telos",
+    "arbitrum",
+    "celo",
+    "zkfair",
+    "avalanche",
+    "megaeth",
+    "beam",
+    "scroll",
+    "bsc",
+    "ink",
+    "linea",
+    "katana",
+    "berachain",
+    "blast",
+    "base",
+    "plasma",
+    "stable",
+    "hyperevm",
+    "hyperliquid",
+    "algorand",
+    "aptos",
+    "cardano",
+    "multiversx",
+    "near",
+    "stacks",
+    "starknet",
+    "sui",
+    "solana",
+    "mode",
+    "robinhood",
+    "fogo",
+    "icp",
+    "ton",
+    "tron",
+    "mantle",
+    "venom",
+    "xrpl"
+  ],
+  "observedChainIds": [
+    "abstract",
+    "algorand",
+    "aptos",
+    "arbitrum",
+    "avalanche",
+    "base",
+    "beam",
+    "berachain",
+    "blast",
+    "bsc",
+    "celo",
+    "conflux",
+    "cronos",
+    "ethereum",
+    "fantom",
+    "flare",
+    "fuse",
+    "hyperevm",
+    "hyperliquid",
+    "icp",
+    "injective",
+    "katana",
+    "kava",
+    "linea",
+    "manta",
+    "mantle",
+    "metis",
+    "monad",
+    "movement",
+    "near",
+    "optimism",
+    "polkadot",
+    "polygon",
+    "pulsechain",
+    "robinhood",
+    "scroll",
+    "seiv2",
+    "solana",
+    "soneium",
+    "sonic",
+    "stable",
+    "stacks",
+    "starknet",
+    "sui",
+    "ton",
+    "tron",
+    "unichain",
+    "venom",
+    "worldchain",
+    "xrpl",
+    "zksync"
+  ],
+  "candidates": [
+    {
+      "caip2": "eip155:1",
+      "slug": "ethereum",
+      "candidate": "ethereum",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:1",
+      "slug": "ethereum",
+      "candidate": "eth",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:10",
+      "slug": "op-mainnet",
+      "candidate": "op-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:10",
+      "slug": "op-mainnet",
+      "candidate": "optimistic-ethereum",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:10",
+      "slug": "op-mainnet",
+      "candidate": "optimism",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:10",
+      "slug": "op-mainnet",
+      "candidate": "oeth",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:100",
+      "slug": "gnosis",
+      "candidate": "gnosis",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:100",
+      "slug": "gnosis",
+      "candidate": "xdai",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:100",
+      "slug": "gnosis",
+      "candidate": "gno",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:10000",
+      "slug": "smartbch",
+      "candidate": "smartbch",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:100009",
+      "slug": "vechain",
+      "candidate": "vechain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:10088",
+      "slug": "gatelayer",
+      "candidate": "gatelayer",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1024",
+      "slug": "clv",
+      "candidate": "clv",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1024",
+      "slug": "clv",
+      "candidate": "clover",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1024",
+      "slug": "clv",
+      "candidate": "clover-finance",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1030",
+      "slug": "conflux",
+      "candidate": "conflux",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:1030",
+      "slug": "conflux",
+      "candidate": "conflux-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1030",
+      "slug": "conflux",
+      "candidate": "cfx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:105105",
+      "slug": "stratis",
+      "candidate": "stratis",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:105105",
+      "slug": "stratis",
+      "candidate": "xertra",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:106",
+      "slug": "velas",
+      "candidate": "velas",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:106",
+      "slug": "velas",
+      "candidate": "vlx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1071",
+      "slug": "opengpu",
+      "candidate": "opengpu",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1071",
+      "slug": "opengpu",
+      "candidate": "opengpu-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1071",
+      "slug": "opengpu",
+      "candidate": "open-gpu",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1071",
+      "slug": "opengpu",
+      "candidate": "ogpu",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:108",
+      "slug": "thundercore",
+      "candidate": "thundercore",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:108",
+      "slug": "thundercore",
+      "candidate": "thunder-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:108",
+      "slug": "thundercore",
+      "candidate": "tt",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1088",
+      "slug": "metis",
+      "candidate": "metis",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:1088",
+      "slug": "metis",
+      "candidate": "metis-andromeda",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1088",
+      "slug": "metis",
+      "candidate": "metis-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1101",
+      "slug": "polygon-zkevm",
+      "candidate": "polygon-zkevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1101",
+      "slug": "polygon-zkevm",
+      "candidate": "zkevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1110",
+      "slug": "grx-chain",
+      "candidate": "grx-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1111",
+      "slug": "wemix3-0",
+      "candidate": "wemix3-0",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1111",
+      "slug": "wemix3-0",
+      "candidate": "wemix-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1111",
+      "slug": "wemix3-0",
+      "candidate": "wemix-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1111",
+      "slug": "wemix3-0",
+      "candidate": "wemix",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:111188",
+      "slug": "re-al",
+      "candidate": "re-al",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1116",
+      "slug": "core",
+      "candidate": "core",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1116",
+      "slug": "core",
+      "candidate": "coredaoorg",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11235",
+      "slug": "haqq",
+      "candidate": "haqq",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11235",
+      "slug": "haqq",
+      "candidate": "haqq-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11235",
+      "slug": "haqq",
+      "candidate": "islamic-coin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11235",
+      "slug": "haqq",
+      "candidate": "islm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11297108109",
+      "slug": "palm",
+      "candidate": "palm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1130",
+      "slug": "defichain-evm",
+      "candidate": "defichain-evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1130",
+      "slug": "defichain-evm",
+      "candidate": "dfi",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1135",
+      "slug": "lisk",
+      "candidate": "lisk",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11501",
+      "slug": "bevm",
+      "candidate": "bevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11501",
+      "slug": "bevm",
+      "candidate": "geb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11820",
+      "slug": "artela",
+      "candidate": "artela",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11820",
+      "slug": "artela",
+      "candidate": "artela-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:11820",
+      "slug": "artela",
+      "candidate": "artela-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:119",
+      "slug": "enuls",
+      "candidate": "enuls",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:122",
+      "slug": "fuse",
+      "candidate": "fuse",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:122",
+      "slug": "fuse",
+      "candidate": "fuse-network-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1231",
+      "slug": "ultron",
+      "candidate": "ultron",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1231",
+      "slug": "ultron",
+      "candidate": "utronmainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1234",
+      "slug": "step",
+      "candidate": "step",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1234",
+      "slug": "step",
+      "candidate": "step-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1234",
+      "slug": "step",
+      "candidate": "stepex",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:12553",
+      "slug": "rss3",
+      "candidate": "rss3",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:12553",
+      "slug": "rss3",
+      "candidate": "rss3-vsl",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:128",
+      "slug": "heco",
+      "candidate": "heco",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:128",
+      "slug": "heco",
+      "candidate": "huobi-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1284",
+      "slug": "moonbeam",
+      "candidate": "moonbeam",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1284",
+      "slug": "moonbeam",
+      "candidate": "mbeam",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1285",
+      "slug": "moonriver",
+      "candidate": "moonriver",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:1285",
+      "slug": "moonriver",
+      "candidate": "mriver",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:130",
+      "slug": "unichain",
+      "candidate": "unichain",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:1313161554",
+      "slug": "aurora",
+      "candidate": "aurora",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1313161554",
+      "slug": "aurora",
+      "candidate": "aurora-near",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:13371",
+      "slug": "immutable-zkevm",
+      "candidate": "immutable-zkevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:13371",
+      "slug": "immutable-zkevm",
+      "candidate": "immutable",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:13371",
+      "slug": "immutable-zkevm",
+      "candidate": "immutable-x",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:13371",
+      "slug": "immutable-zkevm",
+      "candidate": "imx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1339",
+      "slug": "elysium",
+      "candidate": "elysium",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1339",
+      "slug": "elysium",
+      "candidate": "pyr",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:137",
+      "slug": "polygon",
+      "candidate": "polygon",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:137",
+      "slug": "polygon",
+      "candidate": "polygon-pos",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:137",
+      "slug": "polygon",
+      "candidate": "polygon-ecosystem-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:137",
+      "slug": "polygon",
+      "candidate": "pol",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1380012617",
+      "slug": "rari",
+      "candidate": "rari",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1380012617",
+      "slug": "rari",
+      "candidate": "rarible",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1380012617",
+      "slug": "rari",
+      "candidate": "rari-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:14",
+      "slug": "flare",
+      "candidate": "flare",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:14",
+      "slug": "flare",
+      "candidate": "flare-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:14",
+      "slug": "flare",
+      "candidate": "flare-networks",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:14",
+      "slug": "flare",
+      "candidate": "flr",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:140",
+      "slug": "eteria",
+      "candidate": "eteria",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:140",
+      "slug": "eteria",
+      "candidate": "era",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1424",
+      "slug": "perennial",
+      "candidate": "perennial",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:143",
+      "slug": "monad",
+      "candidate": "monad",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:143",
+      "slug": "monad",
+      "candidate": "mon",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1440000",
+      "slug": "xrpl-evm",
+      "candidate": "xrpl-evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1440000",
+      "slug": "xrpl-evm",
+      "candidate": "xrplevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:146",
+      "slug": "sonic",
+      "candidate": "sonic",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:146",
+      "slug": "sonic",
+      "candidate": "sonic-3",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:148",
+      "slug": "shimmerevm",
+      "candidate": "shimmerevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:148",
+      "slug": "shimmerevm",
+      "candidate": "shimmer_evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:148",
+      "slug": "shimmerevm",
+      "candidate": "shimmer",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1480",
+      "slug": "vana",
+      "candidate": "vana",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:151",
+      "slug": "redbelly",
+      "candidate": "redbelly",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:151",
+      "slug": "redbelly",
+      "candidate": "redbelly-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:151",
+      "slug": "redbelly",
+      "candidate": "redbelly-network-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:151",
+      "slug": "redbelly",
+      "candidate": "rbn",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1514",
+      "slug": "data-network",
+      "candidate": "data-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1514",
+      "slug": "data-network",
+      "candidate": "story",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:1514",
+      "slug": "data-network",
+      "candidate": "story-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1514",
+      "slug": "data-network",
+      "candidate": "sty",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:153153",
+      "slug": "odyssey",
+      "candidate": "odyssey",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:153153",
+      "slug": "odyssey",
+      "candidate": "odyssey-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:153153",
+      "slug": "odyssey",
+      "candidate": "dione",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1559",
+      "slug": "tenet",
+      "candidate": "tenet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1559",
+      "slug": "tenet",
+      "candidate": "tenet-1b000f7b-59cb-4e06-89ce-d62b32d362b9",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:16116",
+      "slug": "defiverse",
+      "candidate": "defiverse",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:16116",
+      "slug": "defiverse",
+      "candidate": "dfv",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:161803",
+      "slug": "eventum",
+      "candidate": "eventum",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1625",
+      "slug": "gravity-by-galxe",
+      "candidate": "gravity-by-galxe",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1625",
+      "slug": "gravity-by-galxe",
+      "candidate": "gravity-alpha",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1625",
+      "slug": "gravity-by-galxe",
+      "candidate": "g-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1625",
+      "slug": "gravity-by-galxe",
+      "candidate": "gravity",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:16507",
+      "slug": "genesys",
+      "candidate": "genesys",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:16507",
+      "slug": "genesys",
+      "candidate": "genesys-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:16661",
+      "slug": "0g",
+      "candidate": "0g",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:16661",
+      "slug": "0g",
+      "candidate": "zero-gravity",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1666600000",
+      "slug": "harmony",
+      "candidate": "harmony",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:1666600000",
+      "slug": "harmony",
+      "candidate": "harmony-shard-0",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1666600000",
+      "slug": "harmony",
+      "candidate": "hmy-s0",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:167000",
+      "slug": "taiko",
+      "candidate": "taiko",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:167000",
+      "slug": "taiko",
+      "candidate": "tko-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:16718",
+      "slug": "airdao",
+      "candidate": "airdao",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:16718",
+      "slug": "airdao",
+      "candidate": "amber",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1672",
+      "slug": "pharos",
+      "candidate": "pharos",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1672",
+      "slug": "pharos",
+      "candidate": "pharos-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:169",
+      "slug": "manta",
+      "candidate": "manta",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:169",
+      "slug": "manta",
+      "candidate": "manta-pacific",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:169",
+      "slug": "manta",
+      "candidate": "manta-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:171717",
+      "slug": "w-chain",
+      "candidate": "w-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:171717",
+      "slug": "w-chain",
+      "candidate": "wadzcoin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:171717",
+      "slug": "w-chain",
+      "candidate": "wadzchain-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1729",
+      "slug": "reyachain",
+      "candidate": "reyachain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1729",
+      "slug": "reyachain",
+      "candidate": "reya",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:173",
+      "slug": "eni",
+      "candidate": "eni",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:177",
+      "slug": "hashkey-chain",
+      "candidate": "hashkey-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:177",
+      "slug": "hashkey-chain",
+      "candidate": "hashkey-ecopoints",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:177",
+      "slug": "hashkey-chain",
+      "candidate": "hsk",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1776",
+      "slug": "injective",
+      "candidate": "injective",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:1776",
+      "slug": "injective",
+      "candidate": "injective-protocol",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:17777",
+      "slug": "eos-evm",
+      "candidate": "eos-evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:181",
+      "slug": "waterfall",
+      "candidate": "waterfall",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:181",
+      "slug": "waterfall",
+      "candidate": "water-3",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:181",
+      "slug": "waterfall",
+      "candidate": "water",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1818",
+      "slug": "cube",
+      "candidate": "cube",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1818",
+      "slug": "cube",
+      "candidate": "cube-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:185",
+      "slug": "mint",
+      "candidate": "mint",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1868",
+      "slug": "soneium",
+      "candidate": "soneium",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:18686",
+      "slug": "moonchain",
+      "candidate": "moonchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:18686",
+      "slug": "moonchain",
+      "candidate": "mxczkevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:18888",
+      "slug": "titan",
+      "candidate": "titan",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:18888",
+      "slug": "titan",
+      "candidate": "titanchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:18888",
+      "slug": "titan",
+      "candidate": "titan_tkx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1890",
+      "slug": "lightlink",
+      "candidate": "lightlink",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1890",
+      "slug": "lightlink",
+      "candidate": "lightlink_phoenix",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:19",
+      "slug": "songbird",
+      "candidate": "songbird",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:19",
+      "slug": "songbird",
+      "candidate": "sgb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1907",
+      "slug": "bitcichain",
+      "candidate": "bitcichain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1907",
+      "slug": "bitcichain",
+      "candidate": "Bitcichain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1907",
+      "slug": "bitcichain",
+      "candidate": "bitcicoin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1907",
+      "slug": "bitcichain",
+      "candidate": "bitci",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1923",
+      "slug": "swellchain",
+      "candidate": "swellchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:196",
+      "slug": "x-layer",
+      "candidate": "x-layer",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:196",
+      "slug": "x-layer",
+      "candidate": "okb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:199",
+      "slug": "bittorrent",
+      "candidate": "bittorrent",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:199",
+      "slug": "bittorrent",
+      "candidate": "btt",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:1990",
+      "slug": "qie",
+      "candidate": "qie",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:20",
+      "slug": "elastos",
+      "candidate": "elastos",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:20",
+      "slug": "elastos",
+      "candidate": "esc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2000",
+      "slug": "dogechain",
+      "candidate": "dogechain",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:2000",
+      "slug": "dogechain",
+      "candidate": "dc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2001",
+      "slug": "milkomeda-c1",
+      "candidate": "milkomeda-c1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2001",
+      "slug": "milkomeda-c1",
+      "candidate": "milkomeda-cardano",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2001",
+      "slug": "milkomeda-c1",
+      "candidate": "milkada",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2002",
+      "slug": "milkomeda-a1",
+      "candidate": "milkomeda-a1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2002",
+      "slug": "milkomeda-a1",
+      "candidate": "milkalgo",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:200901",
+      "slug": "bitlayer",
+      "candidate": "bitlayer",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:200901",
+      "slug": "bitlayer",
+      "candidate": "bitlayer-bitvm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:200901",
+      "slug": "bitlayer",
+      "candidate": "btr",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2020",
+      "slug": "ronin",
+      "candidate": "ronin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2020",
+      "slug": "ronin",
+      "candidate": "ron",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:20250217",
+      "slug": "xphere",
+      "candidate": "xphere",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:20250217",
+      "slug": "xphere",
+      "candidate": "xp",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:202555",
+      "slug": "kasplex",
+      "candidate": "kasplex",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:202555",
+      "slug": "kasplex",
+      "candidate": "kasplex-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:204",
+      "slug": "opbnb",
+      "candidate": "opbnb",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:204",
+      "slug": "opbnb",
+      "candidate": "obnb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:20402",
+      "slug": "muuchain",
+      "candidate": "muuchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:20402",
+      "slug": "muuchain",
+      "candidate": "muu-inu",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:207",
+      "slug": "vinuchain",
+      "candidate": "vinuchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:207",
+      "slug": "vinuchain",
+      "candidate": "vc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:21000000",
+      "slug": "corn",
+      "candidate": "corn",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:21000000",
+      "slug": "corn",
+      "candidate": "corn-3",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2152",
+      "slug": "findora",
+      "candidate": "findora",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2152",
+      "slug": "findora",
+      "candidate": "fra",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2222",
+      "slug": "kava",
+      "candidate": "kava",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:225",
+      "slug": "lachain",
+      "candidate": "lachain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:225",
+      "slug": "lachain",
+      "candidate": "latoken",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:225",
+      "slug": "lachain",
+      "candidate": "la",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:22776",
+      "slug": "map-protocol",
+      "candidate": "map-protocol",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:22776",
+      "slug": "map-protocol",
+      "candidate": "marcopolo",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:22776",
+      "slug": "map-protocol",
+      "candidate": "mapo",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:228",
+      "slug": "mind-network",
+      "candidate": "mind-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:228",
+      "slug": "mind-network",
+      "candidate": "fhe",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:232",
+      "slug": "lens",
+      "candidate": "lens",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:23294",
+      "slug": "oasis-sapphire",
+      "candidate": "oasis-sapphire",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:23294",
+      "slug": "oasis-sapphire",
+      "candidate": "sapphire",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2345",
+      "slug": "goat",
+      "candidate": "goat",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2345",
+      "slug": "goat",
+      "candidate": "goat-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2355",
+      "slug": "silicon-zkevm",
+      "candidate": "silicon-zkevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2355",
+      "slug": "silicon-zkevm",
+      "candidate": "silicon-zk",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2372",
+      "slug": "besc-hyperchain",
+      "candidate": "besc-hyperchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:239",
+      "slug": "tac",
+      "candidate": "tac",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:239",
+      "slug": "tac",
+      "candidate": "tacchain_239-1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:24",
+      "slug": "kardia",
+      "candidate": "kardia",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:24",
+      "slug": "kardia",
+      "candidate": "kardiachain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:245022934",
+      "slug": "neon",
+      "candidate": "neon",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:245022934",
+      "slug": "neon",
+      "candidate": "neon-evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:245022934",
+      "slug": "neon",
+      "candidate": "neonevm-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:246",
+      "slug": "energyweb",
+      "candidate": "energyweb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:246",
+      "slug": "energyweb",
+      "candidate": "energy-web-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:246",
+      "slug": "energyweb",
+      "candidate": "ewt",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:248",
+      "slug": "oasys",
+      "candidate": "oasys",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:248",
+      "slug": "oasys",
+      "candidate": "oas",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:25",
+      "slug": "cronos",
+      "candidate": "cronos",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:25",
+      "slug": "cronos",
+      "candidate": "crypto-com-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:25",
+      "slug": "cronos",
+      "candidate": "cro",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:250",
+      "slug": "fantom",
+      "candidate": "fantom",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:250",
+      "slug": "fantom",
+      "candidate": "ftm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:252",
+      "slug": "fraxtal",
+      "candidate": "fraxtal",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:252",
+      "slug": "fraxtal",
+      "candidate": "frax",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2525",
+      "slug": "inevm",
+      "candidate": "inevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:25363",
+      "slug": "fluent",
+      "candidate": "fluent",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:25363",
+      "slug": "fluent",
+      "candidate": "fluent-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:254",
+      "slug": "swan",
+      "candidate": "swan",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:254",
+      "slug": "swan",
+      "candidate": "swan-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:255",
+      "slug": "kroma",
+      "candidate": "kroma",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:256256",
+      "slug": "cmp",
+      "candidate": "cmp",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:256256",
+      "slug": "cmp",
+      "candidate": "caduceus",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:256256",
+      "slug": "cmp",
+      "candidate": "cmp-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:258432",
+      "slug": "althea",
+      "candidate": "althea",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2632500",
+      "slug": "coti",
+      "candidate": "coti",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2649",
+      "slug": "ailayer",
+      "candidate": "ailayer",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2649",
+      "slug": "ailayer",
+      "candidate": "ailayer-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2649",
+      "slug": "ailayer",
+      "candidate": "ailayer-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:269",
+      "slug": "hpb",
+      "candidate": "hpb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:269",
+      "slug": "hpb",
+      "candidate": "high-performance-blockchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2716446429837000",
+      "slug": "dchain",
+      "candidate": "dchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2716446429837000",
+      "slug": "dchain",
+      "candidate": "dchainmainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:274",
+      "slug": "lachain-network",
+      "candidate": "lachain-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:274",
+      "slug": "lachain-network",
+      "candidate": "la-coin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:2741",
+      "slug": "abstract",
+      "candidate": "abstract",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:277",
+      "slug": "prom",
+      "candidate": "prom",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:277",
+      "slug": "prom",
+      "candidate": "prometeus",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:288",
+      "slug": "boba",
+      "candidate": "boba",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:288",
+      "slug": "boba",
+      "candidate": "boba-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:295",
+      "slug": "hedera",
+      "candidate": "hedera",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:295",
+      "slug": "hedera",
+      "candidate": "hedera-hashgraph",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:295",
+      "slug": "hedera",
+      "candidate": "hedera-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:30",
+      "slug": "rootstock",
+      "candidate": "rootstock",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:30",
+      "slug": "rootstock",
+      "candidate": "rsk",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3030",
+      "slug": "bchyper",
+      "candidate": "bchyper",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3030",
+      "slug": "bchyper",
+      "candidate": "versatize-coin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3073",
+      "slug": "movement",
+      "candidate": "movement",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:3073",
+      "slug": "movement",
+      "candidate": "move",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:311",
+      "slug": "omax",
+      "candidate": "omax",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:311",
+      "slug": "omax",
+      "candidate": "omax-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:314",
+      "slug": "filecoin",
+      "candidate": "filecoin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:31612",
+      "slug": "mezo",
+      "candidate": "mezo",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:321",
+      "slug": "kcc",
+      "candidate": "kcc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:321",
+      "slug": "kcc",
+      "candidate": "kucoin-community-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:321",
+      "slug": "kcc",
+      "candidate": "kucoin-shares",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:321",
+      "slug": "kcc",
+      "candidate": "kcs",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:322202",
+      "slug": "parex",
+      "candidate": "parex",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:322202",
+      "slug": "parex",
+      "candidate": "parex-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:324",
+      "slug": "zksync-era",
+      "candidate": "zksync-era",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:324",
+      "slug": "zksync-era",
+      "candidate": "zksync",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:32520",
+      "slug": "bitgert",
+      "candidate": "bitgert",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:32520",
+      "slug": "bitgert",
+      "candidate": "bitrise-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:32520",
+      "slug": "bitgert",
+      "candidate": "brise",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:32659",
+      "slug": "fusion",
+      "candidate": "fusion",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:32659",
+      "slug": "fusion",
+      "candidate": "fusion-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:32659",
+      "slug": "fusion",
+      "candidate": "fsn",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:329",
+      "slug": "virbicoin",
+      "candidate": "virbicoin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:33139",
+      "slug": "apechain",
+      "candidate": "apechain",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:33139",
+      "slug": "apechain",
+      "candidate": "apecoin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3338",
+      "slug": "peaq",
+      "candidate": "peaq",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3338",
+      "slug": "peaq",
+      "candidate": "peaq-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:333999",
+      "slug": "polis",
+      "candidate": "polis",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:333999",
+      "slug": "polis",
+      "candidate": "polis-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:333999",
+      "slug": "polis",
+      "candidate": "olympus",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:336",
+      "slug": "shiden",
+      "candidate": "shiden",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:336",
+      "slug": "shiden",
+      "candidate": "shiden network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:336",
+      "slug": "shiden",
+      "candidate": "sdn",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:34443",
+      "slug": "mode",
+      "candidate": "mode",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:35441",
+      "slug": "q-protocol",
+      "candidate": "q-protocol",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:35441",
+      "slug": "q-protocol",
+      "candidate": "q-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:35441",
+      "slug": "q-protocol",
+      "candidate": "q",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:360",
+      "slug": "shape",
+      "candidate": "shape",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:361",
+      "slug": "theta",
+      "candidate": "theta",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:361",
+      "slug": "theta",
+      "candidate": "theta-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:361",
+      "slug": "theta",
+      "candidate": "theta-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3637",
+      "slug": "botanix",
+      "candidate": "botanix",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3637",
+      "slug": "botanix",
+      "candidate": "btnx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:369",
+      "slug": "pulsechain",
+      "candidate": "pulsechain",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:369",
+      "slug": "pulsechain",
+      "candidate": "pls",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:36900",
+      "slug": "adi",
+      "candidate": "adi",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:36900",
+      "slug": "adi",
+      "candidate": "adi-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3693",
+      "slug": "empire",
+      "candidate": "empire",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3721",
+      "slug": "xone-chain",
+      "candidate": "xone-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3721",
+      "slug": "xone-chain",
+      "candidate": "xone",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3721",
+      "slug": "xone-chain",
+      "candidate": "xoc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3776",
+      "slug": "astar-zkevm",
+      "candidate": "astar-zkevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3776",
+      "slug": "astar-zkevm",
+      "candidate": "astrzk",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3777",
+      "slug": "inri",
+      "candidate": "inri",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3797",
+      "slug": "alv",
+      "candidate": "alv",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3797",
+      "slug": "alv",
+      "candidate": "alverychain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:3797",
+      "slug": "alv",
+      "candidate": "alvey-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:388",
+      "slug": "cronos-zkevm",
+      "candidate": "cronos-zkevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:388",
+      "slug": "cronos-zkevm",
+      "candidate": "cronos-zkevm-cro",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:388",
+      "slug": "cronos-zkevm",
+      "candidate": "zkcro",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:38833",
+      "slug": "igra",
+      "candidate": "igra",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:39797",
+      "slug": "energi",
+      "candidate": "energi",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:39797",
+      "slug": "energi",
+      "candidate": "nrg",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:40",
+      "slug": "telos",
+      "candidate": "telos",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:40",
+      "slug": "telos",
+      "candidate": "telosevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4048",
+      "slug": "ganchain",
+      "candidate": "ganchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4048",
+      "slug": "ganchain",
+      "candidate": "gpunet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4114",
+      "slug": "citrea",
+      "candidate": "citrea",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:41455",
+      "slug": "aleph-zero-evm",
+      "candidate": "aleph-zero-evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:41455",
+      "slug": "aleph-zero-evm",
+      "candidate": "aleph-zero",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4158",
+      "slug": "crossfi",
+      "candidate": "crossfi",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4158",
+      "slug": "crossfi",
+      "candidate": "crossfi-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:416",
+      "slug": "sx-network",
+      "candidate": "sx-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:416",
+      "slug": "sx-network",
+      "candidate": "sx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4162",
+      "slug": "sx-rollup",
+      "candidate": "sx-rollup",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4162",
+      "slug": "sx-rollup",
+      "candidate": "sx-network-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4162",
+      "slug": "sx-rollup",
+      "candidate": "sxr",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:41923",
+      "slug": "edu-chain",
+      "candidate": "edu-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:41923",
+      "slug": "edu-chain",
+      "candidate": "edu-coin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42",
+      "slug": "lukso",
+      "candidate": "lukso",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42",
+      "slug": "lukso",
+      "candidate": "lukso-token-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:420420",
+      "slug": "kekchain",
+      "candidate": "kekchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:420420",
+      "slug": "kekchain",
+      "candidate": "kek",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42161",
+      "slug": "arbitrum",
+      "candidate": "arbitrum",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:42161",
+      "slug": "arbitrum",
+      "candidate": "arbitrum-one",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42161",
+      "slug": "arbitrum",
+      "candidate": "arb1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4217",
+      "slug": "tempo",
+      "candidate": "tempo",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4217",
+      "slug": "tempo",
+      "candidate": "tempo-presto",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42170",
+      "slug": "arbitrum-nova",
+      "candidate": "arbitrum-nova",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42170",
+      "slug": "arbitrum-nova",
+      "candidate": "arb-nova",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42220",
+      "slug": "celo",
+      "candidate": "celo",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:42262",
+      "slug": "oasis-emerald",
+      "candidate": "oasis-emerald",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42262",
+      "slug": "oasis-emerald",
+      "candidate": "oasis",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42262",
+      "slug": "oasis-emerald",
+      "candidate": "oasis-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42262",
+      "slug": "oasis-emerald",
+      "candidate": "emerald",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42420",
+      "slug": "asset-chain",
+      "candidate": "asset-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42420",
+      "slug": "asset-chain",
+      "candidate": "assetchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42766",
+      "slug": "zkfair",
+      "candidate": "zkfair",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:42766",
+      "slug": "zkfair",
+      "candidate": "zkfair-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42793",
+      "slug": "etherlink",
+      "candidate": "etherlink",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:42793",
+      "slug": "etherlink",
+      "candidate": "etlk",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:43111",
+      "slug": "hemi",
+      "candidate": "hemi",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:43114",
+      "slug": "avalanche",
+      "candidate": "avalanche",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:43114",
+      "slug": "avalanche",
+      "candidate": "avalanche-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:43114",
+      "slug": "avalanche",
+      "candidate": "avax",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:432204",
+      "slug": "dexalot",
+      "candidate": "dexalot",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4326",
+      "slug": "megaeth",
+      "candidate": "megaeth",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:4337",
+      "slug": "beam",
+      "candidate": "beam",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:4337",
+      "slug": "beam",
+      "candidate": "beam-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:44",
+      "slug": "crab",
+      "candidate": "crab",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:44",
+      "slug": "crab",
+      "candidate": "darwinia-crab-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4488",
+      "slug": "hydra",
+      "candidate": "hydra",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4488",
+      "slug": "hydra",
+      "candidate": "hydra-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:463",
+      "slug": "areum-network",
+      "candidate": "areum-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:463",
+      "slug": "areum-network",
+      "candidate": "areon-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:463",
+      "slug": "areum-network",
+      "candidate": "area",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4663",
+      "slug": "robinhood-chain",
+      "candidate": "robinhood-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4663",
+      "slug": "robinhood-chain",
+      "candidate": "robinhood",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:4663",
+      "slug": "robinhood-chain",
+      "candidate": "robinhoodchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4689",
+      "slug": "iotex",
+      "candidate": "iotex",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:4689",
+      "slug": "iotex",
+      "candidate": "iotex-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:47763",
+      "slug": "neo-x-mainnet",
+      "candidate": "neo-x-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:47763",
+      "slug": "neo-x-mainnet",
+      "candidate": "neox-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:478",
+      "slug": "form-network",
+      "candidate": "form-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:478",
+      "slug": "form-network",
+      "candidate": "formnetwork",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:47805",
+      "slug": "rei",
+      "candidate": "rei",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:47805",
+      "slug": "rei",
+      "candidate": "rei-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:480",
+      "slug": "world-chain",
+      "candidate": "world-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:480",
+      "slug": "world-chain",
+      "candidate": "worldcoin-wld",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:480",
+      "slug": "world-chain",
+      "candidate": "wc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:48900",
+      "slug": "zircuit",
+      "candidate": "zircuit",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:48900",
+      "slug": "zircuit",
+      "candidate": "zircuit-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:50",
+      "slug": "xdc",
+      "candidate": "xdc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:50",
+      "slug": "xdc",
+      "candidate": "xdc-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:50",
+      "slug": "xdc",
+      "candidate": "xdce-crowd-sale",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5000",
+      "slug": "mantle",
+      "candidate": "mantle",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:50104",
+      "slug": "sophon",
+      "candidate": "sophon",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5031",
+      "slug": "somnia",
+      "candidate": "somnia",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5031",
+      "slug": "somnia",
+      "candidate": "somniamainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5064014",
+      "slug": "ethereal",
+      "candidate": "ethereal",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5064014",
+      "slug": "ethereal",
+      "candidate": "ethena-usde",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5112",
+      "slug": "ham",
+      "candidate": "ham",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5165",
+      "slug": "bahamut",
+      "candidate": "bahamut",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5165",
+      "slug": "bahamut",
+      "candidate": "fasttoken",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5165",
+      "slug": "bahamut",
+      "candidate": "ftn",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:52",
+      "slug": "csc",
+      "candidate": "csc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:52",
+      "slug": "csc",
+      "candidate": "coinex-smart-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:52",
+      "slug": "csc",
+      "candidate": "coinex-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:52",
+      "slug": "csc",
+      "candidate": "cet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:52014",
+      "slug": "electroneum",
+      "candidate": "electroneum",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:52014",
+      "slug": "electroneum",
+      "candidate": "etn-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:530",
+      "slug": "functionx",
+      "candidate": "functionx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:530",
+      "slug": "functionx",
+      "candidate": "function-x",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:530",
+      "slug": "functionx",
+      "candidate": "fx-coin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:530",
+      "slug": "functionx",
+      "candidate": "pundiai",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5330",
+      "slug": "superseed",
+      "candidate": "superseed",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5330",
+      "slug": "superseed",
+      "candidate": "sseed",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:534352",
+      "slug": "scroll",
+      "candidate": "scroll",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:534352",
+      "slug": "scroll",
+      "candidate": "scr",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:53935",
+      "slug": "dfk",
+      "candidate": "dfk",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:53935",
+      "slug": "dfk",
+      "candidate": "defi-kingdoms-blockchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:53935",
+      "slug": "dfk",
+      "candidate": "defi-kingdoms",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:543210",
+      "slug": "zero-network",
+      "candidate": "zero-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5464",
+      "slug": "saga",
+      "candidate": "saga",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5464",
+      "slug": "saga",
+      "candidate": "saga-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5464",
+      "slug": "saga",
+      "candidate": "sagaevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:55",
+      "slug": "zyx",
+      "candidate": "zyx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:55244",
+      "slug": "superposition",
+      "candidate": "superposition",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:55244",
+      "slug": "superposition",
+      "candidate": "Superposition",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:55244",
+      "slug": "superposition",
+      "candidate": "spn",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5545",
+      "slug": "duckchain",
+      "candidate": "duckchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5545",
+      "slug": "duckchain",
+      "candidate": "duckchain-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5545",
+      "slug": "duckchain",
+      "candidate": "duck-chain-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5551",
+      "slug": "nahmii",
+      "candidate": "nahmii",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:55555",
+      "slug": "reichain",
+      "candidate": "reichain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:56",
+      "slug": "bsc",
+      "candidate": "bsc",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:56",
+      "slug": "bsc",
+      "candidate": "binance-smart-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:56",
+      "slug": "bsc",
+      "candidate": "binancecoin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:56",
+      "slug": "bsc",
+      "candidate": "bnb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:56",
+      "slug": "bsc",
+      "candidate": "binance",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:56288",
+      "slug": "boba-bnb",
+      "candidate": "boba-bnb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:56288",
+      "slug": "boba-bnb",
+      "candidate": "bobabnb",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:57",
+      "slug": "syscoin",
+      "candidate": "syscoin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:57",
+      "slug": "syscoin",
+      "candidate": "sys",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:570",
+      "slug": "rollux",
+      "candidate": "rollux",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:570",
+      "slug": "rollux",
+      "candidate": "sys-rollux",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:57073",
+      "slug": "ink",
+      "candidate": "ink",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:58",
+      "slug": "ontologyevm",
+      "candidate": "ontologyevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:58",
+      "slug": "ontologyevm",
+      "candidate": "ong",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:58",
+      "slug": "ontologyevm",
+      "candidate": "ontologymainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:5887",
+      "slug": "mantra",
+      "candidate": "mantra",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:59144",
+      "slug": "linea",
+      "candidate": "linea",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:592",
+      "slug": "astar",
+      "candidate": "astar",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:592",
+      "slug": "astar",
+      "candidate": "astr",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:60",
+      "slug": "gochain",
+      "candidate": "gochain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:60",
+      "slug": "gochain",
+      "candidate": "go",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6001",
+      "slug": "bouncebit",
+      "candidate": "bouncebit",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6001",
+      "slug": "bouncebit",
+      "candidate": "bouncebit-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:60808",
+      "slug": "bob",
+      "candidate": "bob",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:60808",
+      "slug": "bob",
+      "candidate": "bob-build-on-bitcoin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:61",
+      "slug": "ethereumclassic",
+      "candidate": "ethereumclassic",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:61",
+      "slug": "ethereumclassic",
+      "candidate": "ethereum-classic",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:61",
+      "slug": "ethereumclassic",
+      "candidate": "etc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:61803",
+      "slug": "etica",
+      "candidate": "etica",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:62621",
+      "slug": "multivac",
+      "candidate": "multivac",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:62621",
+      "slug": "multivac",
+      "candidate": "mtv",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:648",
+      "slug": "endurance",
+      "candidate": "endurance",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:648",
+      "slug": "endurance",
+      "candidate": "ace",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:66",
+      "slug": "oktchain",
+      "candidate": "oktchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:66",
+      "slug": "oktchain",
+      "candidate": "okex-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:66",
+      "slug": "oktchain",
+      "candidate": "oec-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:66",
+      "slug": "oktchain",
+      "candidate": "okt",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:660279",
+      "slug": "xai",
+      "candidate": "xai",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:660279",
+      "slug": "xai",
+      "candidate": "xai-blockchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:666666666",
+      "slug": "degen",
+      "candidate": "degen",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:666666666",
+      "slug": "degen",
+      "candidate": "degen-base",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:666666666",
+      "slug": "degen",
+      "candidate": "degen-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6699",
+      "slug": "oxfun",
+      "candidate": "oxfun",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6699",
+      "slug": "oxfun",
+      "candidate": "ox-fun",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6699",
+      "slug": "oxfun",
+      "candidate": "ox-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6714",
+      "slug": "anubis",
+      "candidate": "anubis",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6880",
+      "slug": "mtt-network",
+      "candidate": "mtt-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:690",
+      "slug": "redstone",
+      "candidate": "redstone",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6900",
+      "slug": "nibiru",
+      "candidate": "nibiru",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:6900",
+      "slug": "nibiru",
+      "candidate": "cataclysm-1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:698",
+      "slug": "matchain",
+      "candidate": "matchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:70",
+      "slug": "hoo",
+      "candidate": "hoo",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:70",
+      "slug": "hoo",
+      "candidate": "hoo-smart-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:70",
+      "slug": "hoo",
+      "candidate": "hoo-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:70",
+      "slug": "hoo",
+      "candidate": "hsc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7000",
+      "slug": "zetachain",
+      "candidate": "zetachain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7000",
+      "slug": "zetachain",
+      "candidate": "zetachain-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7070",
+      "slug": "planq",
+      "candidate": "planq",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7070",
+      "slug": "planq",
+      "candidate": "planq-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7119",
+      "slug": "sentrix",
+      "candidate": "sentrix",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7119",
+      "slug": "sentrix",
+      "candidate": "srx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:71394",
+      "slug": "godwoken",
+      "candidate": "godwoken",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:714",
+      "slug": "eden",
+      "candidate": "eden",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:71402",
+      "slug": "godwokenv1",
+      "candidate": "godwokenv1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:71402",
+      "slug": "godwokenv1",
+      "candidate": "gw-mainnet-v1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7171",
+      "slug": "bitrock",
+      "candidate": "bitrock",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7225878",
+      "slug": "saakuru",
+      "candidate": "saakuru",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7225878",
+      "slug": "saakuru",
+      "candidate": "saakuru-labs",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7332",
+      "slug": "horizen-eon",
+      "candidate": "horizen-eon",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7332",
+      "slug": "horizen-eon",
+      "candidate": "zencash",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7332",
+      "slug": "horizen-eon",
+      "candidate": "eon",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:747",
+      "slug": "flow",
+      "candidate": "flow",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:747",
+      "slug": "flow",
+      "candidate": "flow-evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:747",
+      "slug": "flow",
+      "candidate": "flow-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:747474",
+      "slug": "katana",
+      "candidate": "katana",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:747474",
+      "slug": "katana",
+      "candidate": "katana-network-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7560",
+      "slug": "cyber",
+      "candidate": "cyber",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7560",
+      "slug": "cyber",
+      "candidate": "cyeth",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:757",
+      "slug": "capx-chain",
+      "candidate": "capx-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:757",
+      "slug": "capx-chain",
+      "candidate": "capx-ai",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:766",
+      "slug": "ql1",
+      "candidate": "ql1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:766",
+      "slug": "ql1",
+      "candidate": "qom",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7700",
+      "slug": "canto",
+      "candidate": "canto",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:777777",
+      "slug": "winr",
+      "candidate": "winr",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:777777",
+      "slug": "winr",
+      "candidate": "winr-protocol",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7777777",
+      "slug": "zora",
+      "candidate": "zora",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:7777777",
+      "slug": "zora",
+      "candidate": "zora-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:78887",
+      "slug": "lung",
+      "candidate": "lung",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:78887",
+      "slug": "lung",
+      "candidate": "lung-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8",
+      "slug": "ubiq",
+      "candidate": "ubiq",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8",
+      "slug": "ubiq",
+      "candidate": "ubq",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8008",
+      "slug": "polynomial",
+      "candidate": "polynomial",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:80094",
+      "slug": "berachain",
+      "candidate": "berachain",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:80094",
+      "slug": "berachain",
+      "candidate": "berachain-bera",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:81",
+      "slug": "joc",
+      "candidate": "joc",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:81",
+      "slug": "joc",
+      "candidate": "japan-open-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:810180",
+      "slug": "zklink-nova",
+      "candidate": "zklink-nova",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:810180",
+      "slug": "zklink-nova",
+      "candidate": "zklink",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:813",
+      "slug": "meer",
+      "candidate": "meer",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:813",
+      "slug": "meer",
+      "candidate": "qitmeer-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:81457",
+      "slug": "blast",
+      "candidate": "blast",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:81457",
+      "slug": "blast",
+      "candidate": "blastmainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:82",
+      "slug": "meter",
+      "candidate": "meter",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:820",
+      "slug": "callisto",
+      "candidate": "callisto",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:820",
+      "slug": "callisto",
+      "candidate": "clo",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8217",
+      "slug": "kaia",
+      "candidate": "kaia",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8217",
+      "slug": "kaia",
+      "candidate": "klay-token",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8217",
+      "slug": "kaia",
+      "candidate": "kaia-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:836542336838601",
+      "slug": "curio",
+      "candidate": "curio",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:841",
+      "slug": "taraxa",
+      "candidate": "taraxa",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:841",
+      "slug": "taraxa",
+      "candidate": "tara",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8453",
+      "slug": "base",
+      "candidate": "base",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:8472",
+      "slug": "myrx",
+      "candidate": "myrx",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8472",
+      "slug": "myrx",
+      "candidate": "mrt",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8668",
+      "slug": "hela",
+      "candidate": "hela",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:87",
+      "slug": "nova-network",
+      "candidate": "nova-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:87",
+      "slug": "nova-network",
+      "candidate": "supernova",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:87",
+      "slug": "nova-network",
+      "candidate": "nnw",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88",
+      "slug": "viction",
+      "candidate": "viction",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88",
+      "slug": "viction",
+      "candidate": "tomochain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88",
+      "slug": "viction",
+      "candidate": "vic",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8811",
+      "slug": "haven1",
+      "candidate": "haven1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8822",
+      "slug": "iota-evm",
+      "candidate": "iota-evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:8822",
+      "slug": "iota-evm",
+      "candidate": "iotaevm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:888",
+      "slug": "wanchain",
+      "candidate": "wanchain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:888",
+      "slug": "wanchain",
+      "candidate": "wan",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88811",
+      "slug": "unit-zero",
+      "candidate": "unit-zero",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88811",
+      "slug": "unit-zero",
+      "candidate": "units-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88811",
+      "slug": "unit-zero",
+      "candidate": "unit0",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88811",
+      "slug": "unit-zero",
+      "candidate": "unit0-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88888",
+      "slug": "chiliz",
+      "candidate": "chiliz",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:88888",
+      "slug": "chiliz",
+      "candidate": "chzmainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:888888888",
+      "slug": "ancient8",
+      "candidate": "ancient8",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:9",
+      "slug": "quai",
+      "candidate": "quai",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:9",
+      "slug": "quai",
+      "candidate": "quai-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:9001",
+      "slug": "evmos",
+      "candidate": "evmos",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:9008",
+      "slug": "shido",
+      "candidate": "shido",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:9008",
+      "slug": "shido",
+      "candidate": "shido-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:96",
+      "slug": "kub",
+      "candidate": "kub",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:96",
+      "slug": "kub",
+      "candidate": "bitkub-chain",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:96",
+      "slug": "kub",
+      "candidate": "bitkub-coin",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:964",
+      "slug": "bittensor-evm",
+      "candidate": "bittensor-evm",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:964",
+      "slug": "bittensor-evm",
+      "candidate": "bittensor-evm-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:9745",
+      "slug": "plasma",
+      "candidate": "plasma",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:97477",
+      "slug": "doma",
+      "candidate": "doma",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:97741",
+      "slug": "pepu",
+      "candidate": "pepu",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:97741",
+      "slug": "pepu",
+      "candidate": "pepe-unchained-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:97741",
+      "slug": "pepu",
+      "candidate": "pepuv2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:988",
+      "slug": "stable",
+      "candidate": "stable",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:988",
+      "slug": "stable",
+      "candidate": "stable-2",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:98865",
+      "slug": "plume",
+      "candidate": "plume",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:98866",
+      "slug": "plume-mainnet",
+      "candidate": "plume-mainnet",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:98866",
+      "slug": "plume-mainnet",
+      "candidate": "plume-network",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:999",
+      "slug": "hyperliquid-l1",
+      "candidate": "hyperliquid-l1",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:999",
+      "slug": "hyperliquid-l1",
+      "candidate": "hyperevm",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:999",
+      "slug": "hyperliquid-l1",
+      "candidate": "hyperliquid",
+      "status": 200
+    },
+    {
+      "caip2": "eip155:9999999",
+      "slug": "fluence",
+      "candidate": "fluence",
+      "status": 400
+    },
+    {
+      "caip2": "eip155:9999999",
+      "slug": "fluence",
+      "candidate": "fluence-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:ab",
+      "slug": "ab",
+      "candidate": "ab",
+      "status": 400
+    },
+    {
+      "caip2": "other:ab",
+      "slug": "ab",
+      "candidate": "newton-project",
+      "status": 400
+    },
+    {
+      "caip2": "other:acala",
+      "slug": "acala",
+      "candidate": "acala",
+      "status": 400
+    },
+    {
+      "caip2": "other:aelf",
+      "slug": "aelf",
+      "candidate": "aelf",
+      "status": 400
+    },
+    {
+      "caip2": "other:aeternity",
+      "slug": "aeternity",
+      "candidate": "aeternity",
+      "status": 400
+    },
+    {
+      "caip2": "other:afx-l1",
+      "slug": "afx-l1",
+      "candidate": "afx-l1",
+      "status": 400
+    },
+    {
+      "caip2": "other:agoric",
+      "slug": "agoric",
+      "candidate": "agoric",
+      "status": 400
+    },
+    {
+      "caip2": "other:alephium",
+      "slug": "alephium",
+      "candidate": "alephium",
+      "status": 400
+    },
+    {
+      "caip2": "other:algorand",
+      "slug": "algorand",
+      "candidate": "algorand",
+      "status": 200
+    },
+    {
+      "caip2": "other:ao",
+      "slug": "ao",
+      "candidate": "ao",
+      "status": 400
+    },
+    {
+      "caip2": "other:ao",
+      "slug": "ao",
+      "candidate": "ao-computer",
+      "status": 400
+    },
+    {
+      "caip2": "other:aptos",
+      "slug": "aptos",
+      "candidate": "aptos",
+      "status": 200
+    },
+    {
+      "caip2": "other:archway",
+      "slug": "archway",
+      "candidate": "archway",
+      "status": 400
+    },
+    {
+      "caip2": "other:aura-network",
+      "slug": "aura-network",
+      "candidate": "aura-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:axiome",
+      "slug": "axiome",
+      "candidate": "axiome",
+      "status": 400
+    },
+    {
+      "caip2": "other:axiome",
+      "slug": "axiome",
+      "candidate": "axiome-chain",
+      "status": 400
+    },
+    {
+      "caip2": "other:babylon-genesis",
+      "slug": "babylon-genesis",
+      "candidate": "babylon-genesis",
+      "status": 400
+    },
+    {
+      "caip2": "other:babylon-genesis",
+      "slug": "babylon-genesis",
+      "candidate": "babylon",
+      "status": 400
+    },
+    {
+      "caip2": "other:bifrost",
+      "slug": "bifrost",
+      "candidate": "bifrost",
+      "status": 400
+    },
+    {
+      "caip2": "other:bifrost",
+      "slug": "bifrost",
+      "candidate": "bifrost-kusama",
+      "status": 400
+    },
+    {
+      "caip2": "other:bifrost",
+      "slug": "bifrost",
+      "candidate": "bifrost-native-coin",
+      "status": 400
+    },
+    {
+      "caip2": "other:bifrost-network",
+      "slug": "bifrost-network",
+      "candidate": "bifrost-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:bitcoin",
+      "slug": "bitcoin",
+      "candidate": "bitcoin",
+      "status": 400
+    },
+    {
+      "caip2": "other:bitcoin",
+      "slug": "bitcoin",
+      "candidate": "ordinals",
+      "status": 400
+    },
+    {
+      "caip2": "other:bitcoincash",
+      "slug": "bitcoincash",
+      "candidate": "bitcoincash",
+      "status": 400
+    },
+    {
+      "caip2": "other:bitcoincash",
+      "slug": "bitcoincash",
+      "candidate": "bitcoin-cash",
+      "status": 400
+    },
+    {
+      "caip2": "other:bitindi",
+      "slug": "bitindi",
+      "candidate": "bitindi",
+      "status": 400
+    },
+    {
+      "caip2": "other:bitindi",
+      "slug": "bitindi",
+      "candidate": "bitindi-chain",
+      "status": 400
+    },
+    {
+      "caip2": "other:bitnet",
+      "slug": "bitnet",
+      "candidate": "bitnet",
+      "status": 400
+    },
+    {
+      "caip2": "other:bittensor",
+      "slug": "bittensor",
+      "candidate": "bittensor",
+      "status": 400
+    },
+    {
+      "caip2": "other:boba-avax",
+      "slug": "boba-avax",
+      "candidate": "boba-avax",
+      "status": 400
+    },
+    {
+      "caip2": "other:bone",
+      "slug": "bone",
+      "candidate": "bone",
+      "status": 400
+    },
+    {
+      "caip2": "other:bostrom",
+      "slug": "bostrom",
+      "candidate": "bostrom",
+      "status": 400
+    },
+    {
+      "caip2": "other:bsquared",
+      "slug": "bsquared",
+      "candidate": "bsquared",
+      "status": 400
+    },
+    {
+      "caip2": "other:bsquared",
+      "slug": "bsquared",
+      "candidate": "bsquared-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:cabal",
+      "slug": "cabal",
+      "candidate": "cabal",
+      "status": 400
+    },
+    {
+      "caip2": "other:camp-network",
+      "slug": "camp-network",
+      "candidate": "camp-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:canton",
+      "slug": "canton",
+      "candidate": "canton",
+      "status": 400
+    },
+    {
+      "caip2": "other:canton",
+      "slug": "canton",
+      "candidate": "canton-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:carbon",
+      "slug": "carbon",
+      "candidate": "carbon",
+      "status": 400
+    },
+    {
+      "caip2": "other:carbon",
+      "slug": "carbon",
+      "candidate": "switcheo",
+      "status": 400
+    },
+    {
+      "caip2": "other:cardano",
+      "slug": "cardano",
+      "candidate": "cardano",
+      "status": 200
+    },
+    {
+      "caip2": "other:chainflip",
+      "slug": "chainflip",
+      "candidate": "chainflip",
+      "status": 400
+    },
+    {
+      "caip2": "other:chia",
+      "slug": "chia",
+      "candidate": "chia",
+      "status": 400
+    },
+    {
+      "caip2": "other:chihuahua",
+      "slug": "chihuahua",
+      "candidate": "chihuahua",
+      "status": 400
+    },
+    {
+      "caip2": "other:chihuahua",
+      "slug": "chihuahua",
+      "candidate": "chihuahua-token",
+      "status": 400
+    },
+    {
+      "caip2": "other:chromia",
+      "slug": "chromia",
+      "candidate": "chromia",
+      "status": 400
+    },
+    {
+      "caip2": "other:chromia",
+      "slug": "chromia",
+      "candidate": "chromaway",
+      "status": 400
+    },
+    {
+      "caip2": "other:civitia",
+      "slug": "civitia",
+      "candidate": "civitia",
+      "status": 400
+    },
+    {
+      "caip2": "other:comdex",
+      "slug": "comdex",
+      "candidate": "comdex",
+      "status": 400
+    },
+    {
+      "caip2": "other:concordium",
+      "slug": "concordium",
+      "candidate": "concordium",
+      "status": 400
+    },
+    {
+      "caip2": "other:cookiechain",
+      "slug": "cookiechain",
+      "candidate": "cookiechain",
+      "status": 400
+    },
+    {
+      "caip2": "other:cookiechain",
+      "slug": "cookiechain",
+      "candidate": "cookie-chain",
+      "status": 400
+    },
+    {
+      "caip2": "other:cookiechain",
+      "slug": "cookiechain",
+      "candidate": "cookie-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:cosmoshub",
+      "slug": "cosmoshub",
+      "candidate": "cosmoshub",
+      "status": 400
+    },
+    {
+      "caip2": "other:cosmoshub",
+      "slug": "cosmoshub",
+      "candidate": "cosmos",
+      "status": 400
+    },
+    {
+      "caip2": "other:crescent",
+      "slug": "crescent",
+      "candidate": "crescent",
+      "status": 400
+    },
+    {
+      "caip2": "other:crescent",
+      "slug": "crescent",
+      "candidate": "crescent-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:darwinia",
+      "slug": "darwinia",
+      "candidate": "darwinia",
+      "status": 400
+    },
+    {
+      "caip2": "other:darwinia",
+      "slug": "darwinia",
+      "candidate": "darwinia-network-native-token",
+      "status": 400
+    },
+    {
+      "caip2": "other:dash",
+      "slug": "dash",
+      "candidate": "dash",
+      "status": 400
+    },
+    {
+      "caip2": "other:defichain",
+      "slug": "defichain",
+      "candidate": "defichain",
+      "status": 400
+    },
+    {
+      "caip2": "other:dexit",
+      "slug": "dexit",
+      "candidate": "dexit",
+      "status": 400
+    },
+    {
+      "caip2": "other:dexit",
+      "slug": "dexit",
+      "candidate": "dexit-finance",
+      "status": 400
+    },
+    {
+      "caip2": "other:dfs-network",
+      "slug": "dfs-network",
+      "candidate": "dfs-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:doge",
+      "slug": "doge",
+      "candidate": "doge",
+      "status": 400
+    },
+    {
+      "caip2": "other:doge",
+      "slug": "doge",
+      "candidate": "drc-20",
+      "status": 400
+    },
+    {
+      "caip2": "other:doge",
+      "slug": "doge",
+      "candidate": "dogecoin",
+      "status": 400
+    },
+    {
+      "caip2": "other:dsc",
+      "slug": "dsc",
+      "candidate": "dsc",
+      "status": 400
+    },
+    {
+      "caip2": "other:dsc",
+      "slug": "dsc",
+      "candidate": "decimal",
+      "status": 400
+    },
+    {
+      "caip2": "other:dungeon",
+      "slug": "dungeon",
+      "candidate": "dungeon",
+      "status": 400
+    },
+    {
+      "caip2": "other:dungeon",
+      "slug": "dungeon",
+      "candidate": "dungeon-chain",
+      "status": 400
+    },
+    {
+      "caip2": "other:dungeon",
+      "slug": "dungeon",
+      "candidate": "dragon-coin-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:dydx",
+      "slug": "dydx",
+      "candidate": "dydx",
+      "status": 400
+    },
+    {
+      "caip2": "other:dydx",
+      "slug": "dydx",
+      "candidate": "dydx-chain",
+      "status": 400
+    },
+    {
+      "caip2": "other:dymension",
+      "slug": "dymension",
+      "candidate": "dymension",
+      "status": 400
+    },
+    {
+      "caip2": "other:echelon",
+      "slug": "echelon",
+      "candidate": "echelon",
+      "status": 400
+    },
+    {
+      "caip2": "other:echelon-initia",
+      "slug": "echelon-initia",
+      "candidate": "echelon-initia",
+      "status": 400
+    },
+    {
+      "caip2": "other:echelon-initia",
+      "slug": "echelon-initia",
+      "candidate": "echelon-token",
+      "status": 400
+    },
+    {
+      "caip2": "other:eclipse",
+      "slug": "eclipse",
+      "candidate": "eclipse",
+      "status": 400
+    },
+    {
+      "caip2": "other:eclipse",
+      "slug": "eclipse",
+      "candidate": "eclipse-3",
+      "status": 400
+    },
+    {
+      "caip2": "other:elys",
+      "slug": "elys",
+      "candidate": "elys",
+      "status": 400
+    },
+    {
+      "caip2": "other:elys",
+      "slug": "elys",
+      "candidate": "elys-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:equilibrium",
+      "slug": "equilibrium",
+      "candidate": "equilibrium",
+      "status": 400
+    },
+    {
+      "caip2": "other:equilibrium",
+      "slug": "equilibrium",
+      "candidate": "equilibrium-token",
+      "status": 400
+    },
+    {
+      "caip2": "other:ergo",
+      "slug": "ergo",
+      "candidate": "ergo",
+      "status": 400
+    },
+    {
+      "caip2": "other:ethereumpow",
+      "slug": "ethereumpow",
+      "candidate": "ethereumpow",
+      "status": 400
+    },
+    {
+      "caip2": "other:ethereumpow",
+      "slug": "ethereumpow",
+      "candidate": "ethereum-pow-iou",
+      "status": 400
+    },
+    {
+      "caip2": "other:ethf",
+      "slug": "ethf",
+      "candidate": "ethf",
+      "status": 400
+    },
+    {
+      "caip2": "other:ethf",
+      "slug": "ethf",
+      "candidate": "ethereumfair",
+      "status": 400
+    },
+    {
+      "caip2": "other:everscale",
+      "slug": "everscale",
+      "candidate": "everscale",
+      "status": 400
+    },
+    {
+      "caip2": "other:fogo",
+      "slug": "fogo",
+      "candidate": "fogo",
+      "status": 200
+    },
+    {
+      "caip2": "other:fsc",
+      "slug": "fsc",
+      "candidate": "fsc",
+      "status": 400
+    },
+    {
+      "caip2": "other:fsc",
+      "slug": "fsc",
+      "candidate": "fonsmartchain",
+      "status": 400
+    },
+    {
+      "caip2": "other:fuel-ignition",
+      "slug": "fuel-ignition",
+      "candidate": "fuel-ignition",
+      "status": 400
+    },
+    {
+      "caip2": "other:fuel-ignition",
+      "slug": "fuel-ignition",
+      "candidate": "fuel-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:gala",
+      "slug": "gala",
+      "candidate": "gala",
+      "status": 400
+    },
+    {
+      "caip2": "other:gala",
+      "slug": "gala",
+      "candidate": "galachain",
+      "status": 400
+    },
+    {
+      "caip2": "other:genshiro",
+      "slug": "genshiro",
+      "candidate": "genshiro",
+      "status": 400
+    },
+    {
+      "caip2": "other:goerli",
+      "slug": "goerli",
+      "candidate": "goerli",
+      "status": 400
+    },
+    {
+      "caip2": "other:goerli",
+      "slug": "goerli",
+      "candidate": "goerli-eth",
+      "status": 400
+    },
+    {
+      "caip2": "other:heiko",
+      "slug": "heiko",
+      "candidate": "heiko",
+      "status": 400
+    },
+    {
+      "caip2": "other:hydration",
+      "slug": "hydration",
+      "candidate": "hydration",
+      "status": 400
+    },
+    {
+      "caip2": "other:hydration",
+      "slug": "hydration",
+      "candidate": "hydradx",
+      "status": 400
+    },
+    {
+      "caip2": "other:icon",
+      "slug": "icon",
+      "candidate": "icon",
+      "status": 400
+    },
+    {
+      "caip2": "other:icp",
+      "slug": "icp",
+      "candidate": "icp",
+      "status": 200
+    },
+    {
+      "caip2": "other:icp",
+      "slug": "icp",
+      "candidate": "internet-computer",
+      "status": 400
+    },
+    {
+      "caip2": "other:inertia",
+      "slug": "inertia",
+      "candidate": "inertia",
+      "status": 400
+    },
+    {
+      "caip2": "other:initia",
+      "slug": "initia",
+      "candidate": "initia",
+      "status": 400
+    },
+    {
+      "caip2": "other:interlay",
+      "slug": "interlay",
+      "candidate": "interlay",
+      "status": 400
+    },
+    {
+      "caip2": "other:iota",
+      "slug": "iota",
+      "candidate": "iota",
+      "status": 400
+    },
+    {
+      "caip2": "other:jbc",
+      "slug": "jbc",
+      "candidate": "jbc",
+      "status": 400
+    },
+    {
+      "caip2": "other:joltify",
+      "slug": "joltify",
+      "candidate": "joltify",
+      "status": 400
+    },
+    {
+      "caip2": "other:juno",
+      "slug": "juno",
+      "candidate": "juno",
+      "status": 400
+    },
+    {
+      "caip2": "other:juno",
+      "slug": "juno",
+      "candidate": "juno-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:k2",
+      "slug": "k2",
+      "candidate": "k2",
+      "status": 400
+    },
+    {
+      "caip2": "other:kadena",
+      "slug": "kadena",
+      "candidate": "kadena",
+      "status": 400
+    },
+    {
+      "caip2": "other:karura",
+      "slug": "karura",
+      "candidate": "karura",
+      "status": 400
+    },
+    {
+      "caip2": "other:keeta",
+      "slug": "keeta",
+      "candidate": "keeta",
+      "status": 400
+    },
+    {
+      "caip2": "other:kintsugi",
+      "slug": "kintsugi",
+      "candidate": "kintsugi",
+      "status": 400
+    },
+    {
+      "caip2": "other:kopi",
+      "slug": "kopi",
+      "candidate": "kopi",
+      "status": 400
+    },
+    {
+      "caip2": "other:kujira",
+      "slug": "kujira",
+      "candidate": "kujira",
+      "status": 400
+    },
+    {
+      "caip2": "other:lamden",
+      "slug": "lamden",
+      "candidate": "lamden",
+      "status": 400
+    },
+    {
+      "caip2": "other:libre",
+      "slug": "libre",
+      "candidate": "libre",
+      "status": 400
+    },
+    {
+      "caip2": "other:litecoin",
+      "slug": "litecoin",
+      "candidate": "litecoin",
+      "status": 400
+    },
+    {
+      "caip2": "other:loop",
+      "slug": "loop",
+      "candidate": "loop",
+      "status": 400
+    },
+    {
+      "caip2": "other:loop",
+      "slug": "loop",
+      "candidate": "loopnetwork",
+      "status": 400
+    },
+    {
+      "caip2": "other:manta-atlantic",
+      "slug": "manta-atlantic",
+      "candidate": "manta-atlantic",
+      "status": 400
+    },
+    {
+      "caip2": "other:massa",
+      "slug": "massa",
+      "candidate": "massa",
+      "status": 400
+    },
+    {
+      "caip2": "other:mayachain",
+      "slug": "mayachain",
+      "candidate": "mayachain",
+      "status": 400
+    },
+    {
+      "caip2": "other:mayachain",
+      "slug": "mayachain",
+      "candidate": "cacao",
+      "status": 400
+    },
+    {
+      "caip2": "other:merlin",
+      "slug": "merlin",
+      "candidate": "merlin",
+      "status": 400
+    },
+    {
+      "caip2": "other:merlin",
+      "slug": "merlin",
+      "candidate": "merlin-chain",
+      "status": 400
+    },
+    {
+      "caip2": "other:migaloo",
+      "slug": "migaloo",
+      "candidate": "migaloo",
+      "status": 400
+    },
+    {
+      "caip2": "other:migaloo",
+      "slug": "migaloo",
+      "candidate": "white-whale",
+      "status": 400
+    },
+    {
+      "caip2": "other:mixin",
+      "slug": "mixin",
+      "candidate": "mixin",
+      "status": 400
+    },
+    {
+      "caip2": "other:mixin",
+      "slug": "mixin",
+      "candidate": "mixin-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:morph",
+      "slug": "morph",
+      "candidate": "morph",
+      "status": 400
+    },
+    {
+      "caip2": "other:multiversx",
+      "slug": "multiversx",
+      "candidate": "multiversx",
+      "status": 200
+    },
+    {
+      "caip2": "other:multiversx",
+      "slug": "multiversx",
+      "candidate": "elrond",
+      "status": 400
+    },
+    {
+      "caip2": "other:multiversx",
+      "slug": "multiversx",
+      "candidate": "elrond-erd-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:mvc",
+      "slug": "mvc",
+      "candidate": "mvc",
+      "status": 400
+    },
+    {
+      "caip2": "other:mvc",
+      "slug": "mvc",
+      "candidate": "microvisionchain",
+      "status": 400
+    },
+    {
+      "caip2": "other:naka",
+      "slug": "naka",
+      "candidate": "naka",
+      "status": 400
+    },
+    {
+      "caip2": "other:namada",
+      "slug": "namada",
+      "candidate": "namada",
+      "status": 400
+    },
+    {
+      "caip2": "other:near",
+      "slug": "near",
+      "candidate": "near",
+      "status": 200
+    },
+    {
+      "caip2": "other:near",
+      "slug": "near",
+      "candidate": "near-protocol",
+      "status": 400
+    },
+    {
+      "caip2": "other:neo",
+      "slug": "neo",
+      "candidate": "neo",
+      "status": 400
+    },
+    {
+      "caip2": "other:neutron",
+      "slug": "neutron",
+      "candidate": "neutron",
+      "status": 400
+    },
+    {
+      "caip2": "other:neutron",
+      "slug": "neutron",
+      "candidate": "neutron-3",
+      "status": 400
+    },
+    {
+      "caip2": "other:nolus",
+      "slug": "nolus",
+      "candidate": "nolus",
+      "status": 400
+    },
+    {
+      "caip2": "other:nos",
+      "slug": "nos",
+      "candidate": "nos",
+      "status": 400
+    },
+    {
+      "caip2": "other:nuls",
+      "slug": "nuls",
+      "candidate": "nuls",
+      "status": 400
+    },
+    {
+      "caip2": "other:obyte",
+      "slug": "obyte",
+      "candidate": "obyte",
+      "status": 400
+    },
+    {
+      "caip2": "other:obyte",
+      "slug": "obyte",
+      "candidate": "byteball",
+      "status": 400
+    },
+    {
+      "caip2": "other:ontology",
+      "slug": "ontology",
+      "candidate": "ontology",
+      "status": 400
+    },
+    {
+      "caip2": "other:onus",
+      "slug": "onus",
+      "candidate": "onus",
+      "status": 400
+    },
+    {
+      "caip2": "other:open",
+      "slug": "open",
+      "candidate": "open",
+      "status": 400
+    },
+    {
+      "caip2": "other:open",
+      "slug": "open",
+      "candidate": "openledger-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:oraichain",
+      "slug": "oraichain",
+      "candidate": "oraichain",
+      "status": 400
+    },
+    {
+      "caip2": "other:oraichain",
+      "slug": "oraichain",
+      "candidate": "oraichain-token",
+      "status": 400
+    },
+    {
+      "caip2": "other:osmosis",
+      "slug": "osmosis",
+      "candidate": "osmosis",
+      "status": 400
+    },
+    {
+      "caip2": "other:parallel",
+      "slug": "parallel",
+      "candidate": "parallel",
+      "status": 400
+    },
+    {
+      "caip2": "other:pego",
+      "slug": "pego",
+      "candidate": "pego",
+      "status": 400
+    },
+    {
+      "caip2": "other:pego",
+      "slug": "pego",
+      "candidate": "pego-network-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:penumbra",
+      "slug": "penumbra",
+      "candidate": "penumbra",
+      "status": 400
+    },
+    {
+      "caip2": "other:persistence-one",
+      "slug": "persistence-one",
+      "candidate": "persistence-one",
+      "status": 400
+    },
+    {
+      "caip2": "other:persistence-one",
+      "slug": "persistence-one",
+      "candidate": "persistence",
+      "status": 400
+    },
+    {
+      "caip2": "other:polkadex",
+      "slug": "polkadex",
+      "candidate": "polkadex",
+      "status": 400
+    },
+    {
+      "caip2": "other:provenance",
+      "slug": "provenance",
+      "candidate": "provenance",
+      "status": 400
+    },
+    {
+      "caip2": "other:provenance",
+      "slug": "provenance",
+      "candidate": "hash-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:qubic",
+      "slug": "qubic",
+      "candidate": "qubic",
+      "status": 400
+    },
+    {
+      "caip2": "other:qubic",
+      "slug": "qubic",
+      "candidate": "qubic-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:radix",
+      "slug": "radix",
+      "candidate": "radix",
+      "status": 400
+    },
+    {
+      "caip2": "other:rangers",
+      "slug": "rangers",
+      "candidate": "rangers",
+      "status": 400
+    },
+    {
+      "caip2": "other:rangers",
+      "slug": "rangers",
+      "candidate": "rangers-protocol-gas",
+      "status": 400
+    },
+    {
+      "caip2": "other:renec",
+      "slug": "renec",
+      "candidate": "renec",
+      "status": 400
+    },
+    {
+      "caip2": "other:rise",
+      "slug": "rise",
+      "candidate": "rise",
+      "status": 400
+    },
+    {
+      "caip2": "other:rise",
+      "slug": "rise",
+      "candidate": "rise-chain",
+      "status": 400
+    },
+    {
+      "caip2": "other:satoshivm",
+      "slug": "satoshivm",
+      "candidate": "satoshivm",
+      "status": 400
+    },
+    {
+      "caip2": "other:secret",
+      "slug": "secret",
+      "candidate": "secret",
+      "status": 400
+    },
+    {
+      "caip2": "other:sei",
+      "slug": "sei",
+      "candidate": "sei",
+      "status": 400
+    },
+    {
+      "caip2": "other:sei",
+      "slug": "sei",
+      "candidate": "sei-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:shibarium",
+      "slug": "shibarium",
+      "candidate": "shibarium",
+      "status": 400
+    },
+    {
+      "caip2": "other:shibarium",
+      "slug": "shibarium",
+      "candidate": "bone-shibaswap",
+      "status": 400
+    },
+    {
+      "caip2": "other:sifchain",
+      "slug": "sifchain",
+      "candidate": "sifchain",
+      "status": 400
+    },
+    {
+      "caip2": "other:skale-europa",
+      "slug": "skale-europa",
+      "candidate": "skale-europa",
+      "status": 400
+    },
+    {
+      "caip2": "other:soon-network",
+      "slug": "soon-network",
+      "candidate": "soon-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:soon-network",
+      "slug": "soon-network",
+      "candidate": "soon-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:soonbase",
+      "slug": "soonbase",
+      "candidate": "soonbase",
+      "status": 400
+    },
+    {
+      "caip2": "other:sora",
+      "slug": "sora",
+      "candidate": "sora",
+      "status": 400
+    },
+    {
+      "caip2": "other:stacks",
+      "slug": "stacks",
+      "candidate": "stacks",
+      "status": 200
+    },
+    {
+      "caip2": "other:stacks",
+      "slug": "stacks",
+      "candidate": "blockstack",
+      "status": 400
+    },
+    {
+      "caip2": "other:starcoin",
+      "slug": "starcoin",
+      "candidate": "starcoin",
+      "status": 400
+    },
+    {
+      "caip2": "other:stargaze",
+      "slug": "stargaze",
+      "candidate": "stargaze",
+      "status": 400
+    },
+    {
+      "caip2": "other:starknet",
+      "slug": "starknet",
+      "candidate": "starknet",
+      "status": 200
+    },
+    {
+      "caip2": "other:stellar",
+      "slug": "stellar",
+      "candidate": "stellar",
+      "status": 400
+    },
+    {
+      "caip2": "other:strato",
+      "slug": "strato",
+      "candidate": "strato",
+      "status": 400
+    },
+    {
+      "caip2": "other:sui",
+      "slug": "sui",
+      "candidate": "sui",
+      "status": 200
+    },
+    {
+      "caip2": "other:supra",
+      "slug": "supra",
+      "candidate": "supra",
+      "status": 400
+    },
+    {
+      "caip2": "other:svmbnb",
+      "slug": "svmbnb",
+      "candidate": "svmbnb",
+      "status": 400
+    },
+    {
+      "caip2": "other:terra-classic",
+      "slug": "terra-classic",
+      "candidate": "terra-classic",
+      "status": 400
+    },
+    {
+      "caip2": "other:terra-classic",
+      "slug": "terra-classic",
+      "candidate": "terra",
+      "status": 400
+    },
+    {
+      "caip2": "other:terra-classic",
+      "slug": "terra-classic",
+      "candidate": "terra-luna",
+      "status": 400
+    },
+    {
+      "caip2": "other:terra2",
+      "slug": "terra2",
+      "candidate": "terra2",
+      "status": 400
+    },
+    {
+      "caip2": "other:terra2",
+      "slug": "terra2",
+      "candidate": "terra-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:terra2",
+      "slug": "terra2",
+      "candidate": "terra-luna-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:tezos",
+      "slug": "tezos",
+      "candidate": "tezos",
+      "status": 400
+    },
+    {
+      "caip2": "other:thorchain",
+      "slug": "thorchain",
+      "candidate": "thorchain",
+      "status": 400
+    },
+    {
+      "caip2": "other:tlchain",
+      "slug": "tlchain",
+      "candidate": "tlchain",
+      "status": 400
+    },
+    {
+      "caip2": "other:tombchain",
+      "slug": "tombchain",
+      "candidate": "tombchain",
+      "status": 400
+    },
+    {
+      "caip2": "other:tombchain",
+      "slug": "tombchain",
+      "candidate": "tomb",
+      "status": 400
+    },
+    {
+      "caip2": "other:ton",
+      "slug": "ton",
+      "candidate": "ton",
+      "status": 200
+    },
+    {
+      "caip2": "other:ton",
+      "slug": "ton",
+      "candidate": "the-open-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:tron",
+      "slug": "tron",
+      "candidate": "tron",
+      "status": 200
+    },
+    {
+      "caip2": "other:ux",
+      "slug": "ux",
+      "candidate": "ux",
+      "status": 400
+    },
+    {
+      "caip2": "other:ux",
+      "slug": "ux",
+      "candidate": "ux-chain",
+      "status": 400
+    },
+    {
+      "caip2": "other:ux",
+      "slug": "ux",
+      "candidate": "umee",
+      "status": 400
+    },
+    {
+      "caip2": "other:vara",
+      "slug": "vara",
+      "candidate": "vara",
+      "status": 400
+    },
+    {
+      "caip2": "other:vara",
+      "slug": "vara",
+      "candidate": "vara-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:vaulta",
+      "slug": "vaulta",
+      "candidate": "vaulta",
+      "status": 400
+    },
+    {
+      "caip2": "other:vaulta",
+      "slug": "vaulta",
+      "candidate": "eos",
+      "status": 400
+    },
+    {
+      "caip2": "other:venom",
+      "slug": "venom",
+      "candidate": "venom",
+      "status": 200
+    },
+    {
+      "caip2": "other:verus",
+      "slug": "verus",
+      "candidate": "verus",
+      "status": 400
+    },
+    {
+      "caip2": "other:verus",
+      "slug": "verus",
+      "candidate": "verus-coin",
+      "status": 400
+    },
+    {
+      "caip2": "other:vision",
+      "slug": "vision",
+      "candidate": "vision",
+      "status": 400
+    },
+    {
+      "caip2": "other:vision",
+      "slug": "vision",
+      "candidate": "vision-metaverse",
+      "status": 400
+    },
+    {
+      "caip2": "other:vite",
+      "slug": "vite",
+      "candidate": "vite",
+      "status": 400
+    },
+    {
+      "caip2": "other:voi-network",
+      "slug": "voi-network",
+      "candidate": "voi-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:waves",
+      "slug": "waves",
+      "candidate": "waves",
+      "status": 400
+    },
+    {
+      "caip2": "other:wax",
+      "slug": "wax",
+      "candidate": "wax",
+      "status": 400
+    },
+    {
+      "caip2": "other:xchain",
+      "slug": "xchain",
+      "candidate": "xchain",
+      "status": 400
+    },
+    {
+      "caip2": "other:xchain",
+      "slug": "xchain",
+      "candidate": "aurora-dao",
+      "status": 400
+    },
+    {
+      "caip2": "other:xion",
+      "slug": "xion",
+      "candidate": "xion",
+      "status": 400
+    },
+    {
+      "caip2": "other:xion",
+      "slug": "xion",
+      "candidate": "xion-2",
+      "status": 400
+    },
+    {
+      "caip2": "other:xo",
+      "slug": "xo",
+      "candidate": "xo",
+      "status": 400
+    },
+    {
+      "caip2": "other:xpla",
+      "slug": "xpla",
+      "candidate": "xpla",
+      "status": 400
+    },
+    {
+      "caip2": "other:xpr-network",
+      "slug": "xpr-network",
+      "candidate": "xpr-network",
+      "status": 400
+    },
+    {
+      "caip2": "other:xpr-network",
+      "slug": "xpr-network",
+      "candidate": "proton",
+      "status": 400
+    },
+    {
+      "caip2": "other:xrpl",
+      "slug": "xrpl",
+      "candidate": "xrpl",
+      "status": 200
+    },
+    {
+      "caip2": "other:xrpl",
+      "slug": "xrpl",
+      "candidate": "ripple",
+      "status": 400
+    },
+    {
+      "caip2": "other:yominet",
+      "slug": "yominet",
+      "candidate": "yominet",
+      "status": 400
+    },
+    {
+      "caip2": "other:zcash",
+      "slug": "zcash",
+      "candidate": "zcash",
+      "status": 400
+    },
+    {
+      "caip2": "other:zeniq",
+      "slug": "zeniq",
+      "candidate": "zeniq",
+      "status": 400
+    },
+    {
+      "caip2": "other:zigchain",
+      "slug": "zigchain",
+      "candidate": "zigchain",
+      "status": 400
+    },
+    {
+      "caip2": "other:zigchain",
+      "slug": "zigchain",
+      "candidate": "zignaly",
+      "status": 400
+    },
+    {
+      "caip2": "other:zilliqa",
+      "slug": "zilliqa",
+      "candidate": "zilliqa",
+      "status": 400
+    },
+    {
+      "caip2": "other:zksync-lite",
+      "slug": "zksync-lite",
+      "candidate": "zksync-lite",
+      "status": 400
+    },
+    {
+      "caip2": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      "slug": "solana",
+      "candidate": "solana",
+      "status": 200
+    }
+  ]
+}

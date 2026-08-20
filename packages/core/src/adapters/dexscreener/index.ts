@@ -1,4 +1,5 @@
 import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
+import { DEXSCREENER_CHAIN_COVERAGE } from './chain-coverage.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
 import { safeFetch } from '../../net/safe-fetch.js';
@@ -146,6 +147,20 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
     // native symbol; without one there is no query to make.
     chainSupport: (chain: ChainInfo): boolean =>
       chain.vendors['dexscreener'] != null && chain.nativeSymbol != null,
+    /**
+     * What the committed probe says about this chain — task 014-32a, R-33.5.
+     *
+     * **Not a predicate, and the line above is untouched.** This reports what the vendor was
+     * WITNESSED doing; `chainSupport` decides coverage. `verified` here does not widen coverage by
+     * one chain, which is why the two live side by side rather than one folding into the other:
+     * `fetch` calls `extractFetchArgs` for every capability of this adapter, so a predicate relaxed
+     * ahead of the route that needs it would advertise the capability on 62 chains where no request
+     * can be built, and it would answer an empty page.
+     *
+     * A chain with no row answers `unverified` — the honest reading of "we have no witness".
+     */
+    chainProbeStatus: (chain: ChainInfo): 'verified' | 'excluded' | 'unverified' =>
+      DEXSCREENER_CHAIN_COVERAGE[chain.caip2]?.status ?? 'unverified',
     // Q-8: `pairs.active`, renamed from the id that claimed recency. The vendor route is
     // `GET /latest/dex/search`, which is a RELEVANCE search with no recency semantics — measured
     // 2026-08-11, the freshest row in a page was 155 days old, `pairCreatedAt` was absent on 6 of

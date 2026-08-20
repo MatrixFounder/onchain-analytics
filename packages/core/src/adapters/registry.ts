@@ -462,7 +462,14 @@ function hintFor(status: CoverageStatus): { hint?: string } {
     case 'excluded':
       return { hint: 'the vendor does not serve this chain' };
     case 'unverified':
-      return { hint: 'no vendor probe has been run for this chain' };
+      // **NOT "no probe was run"**, and the measurement is why. R-33.5 folds two cases into
+      // `unverified`: a candidate nobody probed, AND one the vendor routed while never echoing its
+      // identifier on a real row. Measured 2026-08-20, the second case is 18 of 65 routable chains,
+      // and no query recovers them — broad searches over eight common tokens returned none of the
+      // 18, and the vendor's cross-chain listing endpoints echo 3 to 5 chains between them. Telling
+      // an operator "no probe was run" about a chain the probe DID reach is the same class of false
+      // sentence the third wording exists to prevent, one state over.
+      return { hint: 'no confirmed vendor identifier for this chain' };
     case 'vendor-serves-chain-capability-absent':
       return { hint: 'the vendor serves this chain, but this capability is not built on it' };
     case 'covered':
