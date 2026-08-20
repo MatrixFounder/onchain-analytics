@@ -9,9 +9,10 @@ Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§
 DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
 BTC-supply tool with TASK-009 (§5.1.5).
 
-**One further tool is designed and not registered.** `onchain_pool_info` resolves `pool.info`, and
-its contract is §5.1.7 (T-014, R-21.1). Every present-tense count in this section states the
-registered inventory, and none of them moves until that tool lands.
+**Two further tools are designed and not registered.** `onchain_pool_info` resolves `pool.info`,
+and its contract is §5.1.7 (T-014, R-21.1). `onchain_token_pools` resolves `token.pools`, and its
+contract is §5.1.8 (T-014, R-34). Every present-tense count in this section states the registered
+inventory, and none of them moves until those tools land.
 
 **The `chain` parameter, stated once.** Seventeen of the twenty tools take a chain, and every one of them
 declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
@@ -717,7 +718,7 @@ reaches the caller as a number.
 **The derivation costs two things, both named.**
 
 1. `eth_call` becomes a third method on `rpc-evm`. The adapter calls `eth_gasPrice`
-   (`packages/core/src/adapters/rpc-evm/index.ts:283`, `method: 'eth_gasPrice',`) and
+   (`packages/core/src/adapters/rpc-evm/index.ts:294`, `method: 'eth_gasPrice',`) and
    `eth_getBalance` (`packages/core/src/adapters/rpc-evm/index.ts:298`,
    `method: 'eth_getBalance',`) today, and no third method.
 2. The chain needs a curated `rpcHosts` entry. That column is populated only through human review
@@ -768,7 +769,7 @@ token addresses — WI-56's first link, at no extra call.
 capabilities share one `normalize()` (`packages/core/src/capability-manifest.ts:291`,
 `'pool.info': {`). The address route answers with one pool, so the row becomes `shape: 'point'` and
 its AUDIT comment is rewritten rather than left contradicting the code. The registry treats `point`
-as unmergeable (`packages/core/src/adapters/registry.ts:581`, `manifest.shape !== 'point' &&`).
+as unmergeable (`packages/core/src/adapters/registry.ts:582`, `manifest.shape !== 'point' &&`).
 
 **Coverage is three chains, and the coverage matrix is what says so.** `dexscreener` answers only
 where the registry holds an observed vendor chain id — `ethereum`, `berachain`, `solana`, 3 of 458
@@ -832,6 +833,86 @@ opening a second list.
 `packages/mcp-server/eval/cases/` (`packages/mcp-server/eval/capabilities.mjs:69`,
 `export const CAPABILITY_TOOLS = CAPABILITY_CASES.map((c) => ({`), so the eval obligation is one new
 file under that directory (RF-5).
+
+#### 5.1.8 The token-pools tool (T-014, R-34) — DESIGNED, not registered
+
+`onchain_token_pools` takes one token address and an optional chain. It answers with the pools that
+token trades in — across every DEX on that chain, or across chains when no chain is given.
+
+**Why this tool exists beside §5.1.7.** `onchain_pool_info` answers by pool address. That is
+identification. One token trades in several pools, on several DEXes and on several chains, and
+asking for those is discovery. The two questions have different vendor routes and different
+completeness guarantees, so they are two capabilities rather than two modes of one.
+
+**Why a separate capability and not a mode of `pool.info`.** The repository already draws this line
+on the same three tests: a different endpoint, a different output contract, a different chain set.
+`chain.tvl` is separate from `protocol.tvl` on those three (`packages/core/src/providers.config.ts:37`,
+`{ capability: 'chain.tvl', adapterIds: ['defillama'] },`). All three hold here.
+
+**Rejected: one tool with a discriminated input.** It costs one `ToolSpec` less and merges an exact,
+complete answer with a capped sample into one output shape. A caller then cannot tell which one it
+received, which is the class L-10 records.
+
+```jsonc
+// onchain_token_pools — the pools a token trades in. DexScreener-backed, keyless, 0 credits.
+// DESIGNED, not registered.
+// { token: string (.max(128)), chain?: ChainInput, limit?: number }
+// → {
+//     chain: Chain | null,   // OUR canonical slug; null on the cross-chain form
+//     pools: Pool[],         // each row carries its OWN chain — see below
+//     truncated: { pairs: boolean; reason: string },
+//     source: "dexscreener", fetchedAt
+//   }
+// Rows are the canonical `Pool` (§4.1) with the six optional fields T-014 adds in §5.1.7.
+```
+
+**This block carries no capability anchor.** The anchor's gate refuses one naming a capability that
+no registered tool serves (`packages/mcp-server/test/docs-counts.test.ts:485`,
+`const stale = [...documented.values()].flat().filter((capability) => !served.has(capability));`).
+The anchor lands in the commit that registers the `ToolSpec` — the rule §5.1.6 and §5.1.7 both state.
+
+**`PLANNED_TOOL_NAMES` carries the name until then.** This section is a gated document, so naming a
+tool that does not exist requires the entry (`packages/mcp-server/test/tool-inventory-docs.test.ts:141`,
+`const PLANNED_TOOL_NAMES = new Map([`). It leaves that map in the same commit that registers the spec.
+
+**Two routes, one per form of the question, measured 2026-08-18.**
+
+| Form              | Vendor route                                   | What it guarantees                              |
+| :---------------- | :--------------------------------------------- | :---------------------------------------------- |
+| `token` + `chain` | `GET /token-pairs/v1/{chainId}/{tokenAddress}` | every DEX on that chain, capped at 30 rows      |
+| `token` alone     | `GET /latest/dex/tokens/{tokenAddress}`        | a sample across chains, capped at 30 rows total |
+
+`osBGT` (`0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58`, `berachain`) returned 6 pools on two DEXes,
+`kodiak` and `winnieswap`. WETH on `ethereum` returned 30 rows across seven DEXes.
+
+**Every row carries its own chain, and the cross-chain form is a sample.**
+
+**Why.** A token address is not unique across chains. Measured 2026-08-18:
+`GET /latest/dex/tokens/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` — the USDC address on
+`ethereum` — returned 30 rows, of which 29 were `pulsechain` and 1 was `ethereum`. A fork
+reproduces the addresses of the chain it forked. An answer presented as "this token's pools" would
+attribute another chain's pools to it.
+
+**Truncation names three causes separately, never folded.** The vendor page cap, which no argument
+of either route widens; the `limit` cut, which a larger `limit` recovers; and dropped rows, which
+nothing recovers. This is the L-14 contract the `pairs.active` route already carries
+(`packages/core/src/adapters/dexscreener/index.ts:20`,
+`* L-14 — the size of one `/latest/dex/search` page, **measured, not assumed**.`).
+
+**The 30-row cap on these two routes is measured, not inherited.** `VENDOR_PAGE_SIZE` was measured
+for `/latest/dex/search`. The task that registers this tool records its own evidence for
+`token-pairs/v1` and `/latest/dex/tokens/` rather than citing that constant.
+
+**Row order is not declared to mean anything.** No probe of these two routes has established
+whether order is stable or size-ranked, so the contract makes no claim about it. `truncated.reason`
+names the cap and does not name order until a probe of these two routes measures it.
+
+**Coverage is the registry's answer, not this section's.** The tool serves wherever
+`vendors.dexscreener` is non-null, which R-33 makes a measured column (014-32a, L-18). Stating a
+number here would pin a value that task changes.
+
+**Cache and deadline follow the `pool.info` row.** Both capabilities read the same vendor at the
+same freshness, and pool membership does not move faster than reserves do.
 
 ### 5.2. Internal interfaces
 
@@ -952,10 +1033,12 @@ the first non-curated outbound host, not a date.
 
 **Scope.** No registered tool loses or redefines a field it has today.
 
-T-014 changes the twenty-tool surface in exactly two ways:
+T-014 changes the twenty-tool surface in three ways:
 
 - it adds a twenty-first tool, `onchain_pool_info` (§5.1.7, R-21.1);
-- it adds six optional fields to `Pool`, which `onchain_active_pairs` embeds (§5.1.7).
+- it adds a twenty-second tool, `onchain_token_pools` (§5.1.8, R-34);
+- it adds six optional fields to `Pool`, which `onchain_active_pairs` embeds (§5.1.7) and
+  `onchain_token_pools` returns (§5.1.8).
 
 The rest of this section changes the transport that carries the tools, the checks placed in front of
 it, and the visibility rule over `_meta`.
@@ -1082,7 +1165,7 @@ Rows 2, 4 and 5 are produced by the SDK (`…/webStandardStreamableHttp.js` line
 every unsuccessful outcome as `{ isError: true, content: [{ type: 'text', text: reason }] }`
 (`packages/mcp-server/src/tools/registry.ts:205`
 `return { isError: true, content: [{ type: 'text', text: outcome.reason }] };`). `defineTool`
-(`packages/mcp-server/src/tools/registry.ts:258`, `export function defineTool<`) is the only
+(`packages/mcp-server/src/tools/registry.ts:414`, `export function defineTool<`) is the only
 registration path, and it wraps every handler in that renderer
 (`packages/mcp-server/src/tools/registry.ts:289`,
 `toCallToolResult(await definition.handler(`). The form therefore covers all 20 tools.
@@ -1234,7 +1317,7 @@ takes `deadlineMs`, a positive safe integer of milliseconds. The server computes
 moment from its own clock at admission.
 
 **Why a duration and not a moment.** `registry.resolve()`'s fourth parameter is an absolute moment
-(`packages/core/src/adapters/registry.ts:670` `requestedDeadlineAtMs?: number,`). Accepting a moment
+(`packages/core/src/adapters/registry.ts:671`, `requestedDeadlineAtMs?: number,`). Accepting a moment
 from the wire would let a remote clock's skew set our spending bound.
 
 **The caller may only narrow, and a widening value is refused rather than clamped.** A `deadlineMs`
@@ -1312,7 +1395,7 @@ fields and the bounds of the setting are recorded in §5.4.4.1.
 
 **What the decision does not settle.** Route composition also appears in FAILURE diagnostics.
 `CapabilityUnavailableError` and `CapabilityDeadlineExceededError` each carry `tried[]`
-(`packages/core/src/adapters/registry.ts:31`, `readonly tried: CapabilityAttempt[];`), and R-20.3
+(`packages/core/src/adapters/registry.ts:32`, `readonly tried: CapabilityAttempt[];`), and R-20.3
 names `tried[]` beside `missingSources`. R-31 already governs those through its two renderings.
 
 - Success path — the access profile's route-disclosure setting decides (§5.4.4.1).

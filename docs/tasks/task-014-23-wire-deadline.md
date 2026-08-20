@@ -80,7 +80,8 @@
 
 Пол выведен из манифеста способностей: `deadlineMs` ограничивает отменяемую часть вызова, `paidLegMs`
 не отменяется. Худший случай — `entity.labels`: 60 000 мс плюс 270 000 мс
-(`packages/core/src/capability-manifest.ts:661`, `packages/core/src/capability-manifest.ts:668`).
+(`packages/core/src/capability-manifest.ts:661`, `deadlineMs: 60_000,`;
+`packages/core/src/capability-manifest.ts:668`, `paidLegMs: 270_000,`).
 Замер 330 000 мс по всем 26 строкам манифеста, 2026-08-13. Умолчание 360 000 мс — первая целая минута
 выше пола. `EnvSchema` отвергает значение на поле и ниже (`deployment.md` §10.3).
 

@@ -3798,7 +3798,7 @@ asynchronous from the first day (R-13.3) and is declared in `security.md`. §3.4
 consumer of it: the tool inventory.
 
 **The application locus is registration time, once per session.** `createServer` loops over
-`toolSpecs` (`packages/mcp-server/src/server.ts:74`, `for (const spec of toolSpecs) {`), and §3.4.2
+`toolSpecs` (`packages/mcp-server/src/server.ts:195`, `for (const spec of toolSpecs) {`), and §3.4.2
 calls that factory once per session. The loop skips a spec whose name the profile does not allow.
 
 **Why registration time and not per request.** One `McpServer` per session is what makes a
@@ -3824,7 +3824,7 @@ applied set is `profile.toolAllowlist ∩ toolSpecs`.
 
 **Titles and descriptions never come from the profile** (R-14.3). The allowlist is a list of names,
 and `title` and `description` are read from the tool definition
-(`packages/mcp-server/src/tools/registry.ts:281`, `server.registerTool(`).
+(`packages/mcp-server/src/tools/registry.ts:437`, `server.registerTool(`).
 
 **AC-25 is then two assertions over one mechanism.** A narrowing profile yields fewer tools, and the
 texts of the surviving tools are byte-identical to the unnarrowed run.

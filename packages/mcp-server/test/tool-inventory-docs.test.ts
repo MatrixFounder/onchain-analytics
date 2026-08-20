@@ -146,6 +146,11 @@ const PLANNED_TOOL_NAMES = new Map([
   // `pool.info` a consumer. DESIGNED in `docs/architectures/interfaces.md` §5.1.7, not yet
   // registered. It is the precondition for WI-56 — resolving a token symbol to a contract address.
   ['onchain_pool_info', 'T-014 pool.info consumer (TASK-014 R-21.1, closes L-15)'],
+  // T-014 (R-34): the discovery counterpart to `onchain_pool_info` — pools BY TOKEN, across every
+  // DEX on a chain or across chains. Registered by task 014-32b and given its logic by 014-32d.
+  // DESIGNED in `docs/architectures/interfaces.md` §5.1.8, not yet registered. Same rule as the two
+  // entries around it: the entry leaves this Map in the commit that registers the `ToolSpec`.
+  ['onchain_token_pools', 'T-014 token.pools consumer (TASK-014 R-34)'],
   // T-013 (ADR-002 D5/D6): the merged-series tool. DESIGNED in `docs/architectures/interfaces.md`
   // §5.1.6 and `docs/ARCHITECTURE.md`, not yet registered — which is exactly the state this Map
   // exists to express, and the state R-126's diagnostic points a reader at.

@@ -195,9 +195,9 @@ columns, and §4.5.2 says which.
 
 ## 5. Interfaces
 
-Contracts for all twenty MCP tools that are registered today, plus one designed and not yet
+Contracts for all twenty MCP tools that are registered today, plus two designed and not yet
 registered — `onchain_pool_info`, which gives `pool.info` its first consumer and closes L-15
-(R-21.1, §5.1.7). Input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`, the
+(R-21.1, §5.1.7), and `onchain_token_pools`, which serves `token.pools` (R-34, §5.1.8). Input/output, `.max()` bounds, `_meta.cache`, `_meta.budget`, the
 `ChainInputSchema` contract shared by every chain-accepting tool, the public API of
 `packages/core`, and the provider integration table that is the source of the per-adapter SSRF
 allowlist, including T-013's `onchain_dash_platform_history`. **Plus the three free tools added

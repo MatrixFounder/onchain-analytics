@@ -49,7 +49,7 @@ backfill (§4.4 пункт 1, постусловие).
 `SqliteCacheStore`. Оператор, который не идемпотентен, отказал бы на втором открытии.
 
 **Why аддитивный путь `ALTER` здесь не нужен.** Он существует для `usage_window`
-(`packages/core/src/cache/ddl.ts:133`,
+(`packages/core/src/cache/ddl.ts:347`,
 `ALTER TABLE usage_window ADD COLUMN calls_made INTEGER NOT NULL DEFAULT 0`), потому
 что та таблица уже есть на инсталляциях. Восьми таблиц нет ни на одной, поэтому колонку добавлять не
 к чему.

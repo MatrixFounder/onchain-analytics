@@ -48,7 +48,7 @@
 | Из них вызывают `resolveCapability`                                | 18                                                  |
 | Файлов-обработчиков тулов                                          | 20                                                  |
 | Обработчиков, не вызывающих `resolveCapability`                    | 2 — `ping.ts`, `list-chains.ts`                     |
-| Мест в `packages/mcp-server/src`, вызывающих `server.registerTool` | 1 — `packages/mcp-server/src/tools/registry.ts:281` |
+| Мест в `packages/mcp-server/src`, вызывающих `server.registerTool` | 1 — `packages/mcp-server/src/tools/registry.ts:437` |
 
 `packages/mcp-server/src/tools/registry.ts` импортирует из `resolve-capability.js` только типы
 `CacheMeta`, `MergedCacheMeta` и `TimingMeta` (`packages/mcp-server/src/tools/registry.ts:6`),
@@ -58,8 +58,8 @@
 файла: `packages/core/src/adapters/registry.ts`, `packages/core/src/chain/registry.ts` и этот.
 
 **Why обёртка `defineTool`.** Это единственное место в `src`, которое трогает
-`server.registerTool`, поэтому хук пишется один раз и не может быть забыт двадцать первым тулом
-задачи 014-32b.
+`server.registerTool`, поэтому хук пишется один раз и не может быть забыт ни двадцать первым, ни
+двадцать вторым тулом задачи 014-32b.
 
 **Why не `resolve-capability.ts`.** Два обработчика в этот файл не заходят: `onchain_ping` и
 `onchain_list_chains` отвечают синхронно и способность не резолвят. Хук в этом файле их не
