@@ -1,5 +1,5 @@
 /**
- * Re-records the DeFiLlama `chain` echo evidence — task 014-32d.
+ * Re-records the DeFiLlama `chain` echo evidence — task 014-32e.
  *
  * **Why this script exists at all, and why it did not before.** The original probe (WI-16,
  * 2026-07-28) was a one-off: it answered its question, its evidence was committed, and
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
   const probedAt = new Date().toISOString().slice(0, 10);
   const evidence = {
     $comment:
-      'Task 014-32d — live re-verification that DeFiLlama’s `chain` echo equals the ' +
+      'Task 014-32e — live re-verification that DeFiLlama’s `chain` echo equals the ' +
       '`vendors.defillama` name we send, for EVERY chain the coverage predicate admits. Re-run ' +
       'because task 014-32a regenerated the chain registry and the standing invariant in ' +
       'defillama-dex-coverage.test.ts requires the probed set to equal the covered set. Keyless, ' +

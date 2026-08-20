@@ -267,14 +267,14 @@
   - [task-014-31-shareable-values.md](tasks/task-014-31-shareable-values.md)
 
 - **014-32a** — покрытие сетей DexScreener измеряется генератором (L-18)
-  - Требования: R-33 · Приоритет: высокий · Зависимости: 014-32d
+  - Требования: R-33 · Приоритет: высокий · Зависимости: 014-32e
   - [task-014-32a-dexscreener-chain-coverage.md](tasks/task-014-32a-dexscreener-chain-coverage.md)
 
-- **014-32d** — зонд эха DefiLlama получает скрипт и перезапускается
+- **014-32e** — зонд эха DefiLlama получает скрипт и перезапускается
   - Требования: обслуживает R-33 · Приоритет: высокий · Зависимости: нет
-  - [task-014-32d-defillama-echo-reprobe.md](tasks/task-014-32d-defillama-echo-reprobe.md)
+  - [task-014-32e-defillama-echo-reprobe.md](tasks/task-014-32e-defillama-echo-reprobe.md)
 
-**Why 014-32d появилась и почему 014-32a от неё зависит.** `defillama-dex-coverage.test.ts` держит
+**Why 014-32e появилась и почему 014-32a от неё зависит.** `defillama-dex-coverage.test.ts` держит
 стоячий инвариант «зонд покрыл ровно то, что допускает предикат», а зонд под ним был разовым
 прогоном без скрипта. Перегенерация реестра — предмет 014-32a — этот инвариант нарушает, поэтому
 перезапуск зонда обязан идти первым и в том же коммите.

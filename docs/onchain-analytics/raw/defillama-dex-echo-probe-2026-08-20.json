@@ -1,5 +1,5 @@
 {
-  "$comment": "Task 014-32d — live re-verification that DeFiLlama’s `chain` echo equals the `vendors.defillama` name we send, for EVERY chain the coverage predicate admits. Re-run because task 014-32a regenerated the chain registry and the standing invariant in defillama-dex-coverage.test.ts requires the probed set to equal the covered set. Keyless, read-only, 0 credits. `mismatches` is the load-bearing field: an entry there is a chain normalize() would refuse permanently while the error class tells the agent to retry.",
+  "$comment": "Task 014-32e — live re-verification that DeFiLlama’s `chain` echo equals the `vendors.defillama` name we send, for EVERY chain the coverage predicate admits. Re-run because task 014-32a regenerated the chain registry and the standing invariant in defillama-dex-coverage.test.ts requires the probed set to equal the covered set. Keyless, read-only, 0 credits. `mismatches` is the load-bearing field: an entry there is a chain normalize() would refuse permanently while the error class tells the agent to retry.",
   "probedAt": "2026-08-20",
   "endpoint": "https://api.llama.fi/overview/dexs/{vendorName}?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true",
   "auth": "none (keyless)",
