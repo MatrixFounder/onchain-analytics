@@ -616,7 +616,10 @@ describe('the architecture deadline table states the numbers the manifest applie
     // what keeps the gate from passing vacuously. What the exact count buys is the OTHER direction:
     // an eighth row, or a non-data line the parser starts treating as one, becomes visible here
     // instead of being quietly checked or quietly ignored.
-    expect(deadlineRows(markdown, routed).length).toBe(7); // the exact row count, not a floor
+    // 7 → 8 on 2026-08-21 (task 014-42): `token.holders` left the ~15_000 row for a tier of its
+    // own, because its ceiling comes from a MEASUREMENT of one vendor route rather than from the
+    // route's composition. The count moved deliberately, which is what this pin exists to force.
+    expect(deadlineRows(markdown, routed).length).toBe(8); // the exact row count, not a floor
     expect(routed).toHaveLength(27);
 
     expect(

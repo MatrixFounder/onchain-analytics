@@ -1,0 +1,303 @@
+{
+  "$comment": "Task 014-42 / L-12 — how long Blockscout takes to answer `token.holders`, with `/api/v2/stats` on the same chain as the control. `reading` per row separates \"this ROUTE is slow\" from \"this VENDOR is slow\": the first licenses a ceiling on one capability, the second does not. `slowestAnswerMs` is the number a deadline tier must clear — a ceiling below it refuses calls the vendor would have answered.",
+  "probedAt": "2026-08-21",
+  "facade": "https://mcp.blockscout.com/v1/direct_api_call",
+  "auth": "PRO key from the repo-root .env (never recorded here)",
+  "rounds": 3,
+  "ceilingMs": 60000,
+  "paceMs": 500,
+  "elapsedSeconds": 256,
+  "requestsIssued": 30,
+  "chainsProbed": 5,
+  "slowestAnswerMs": 45831,
+  "readings": {
+    "route-is-slow": [
+      "ethereum",
+      "polygon",
+      "arbitrum",
+      "base"
+    ],
+    "vendor-is-slow": [],
+    "both-fast": [
+      "gnosis"
+    ],
+    "no-answer": []
+  },
+  "results": [
+    {
+      "slug": "ethereum",
+      "chainId": 1,
+      "tokenAddress": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "holders": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 11063,
+          "rows": 50,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 920,
+          "rows": 50,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 900,
+          "rows": 50,
+          "note": ""
+        }
+      ],
+      "stats": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 342,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 389,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 697,
+          "rows": null,
+          "note": ""
+        }
+      ],
+      "holdersAnswered": 3,
+      "holdersMaxMs": 11063,
+      "statsMaxMs": 697,
+      "reading": "route-is-slow"
+    },
+    {
+      "slug": "gnosis",
+      "chainId": 100,
+      "tokenAddress": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
+      "holders": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 811,
+          "rows": 50,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 728,
+          "rows": 50,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 1137,
+          "rows": 50,
+          "note": ""
+        }
+      ],
+      "stats": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 387,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 362,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 366,
+          "rows": null,
+          "note": ""
+        }
+      ],
+      "holdersAnswered": 3,
+      "holdersMaxMs": 1137,
+      "statsMaxMs": 387,
+      "reading": "both-fast"
+    },
+    {
+      "slug": "polygon",
+      "chainId": 137,
+      "tokenAddress": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+      "holders": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 10338,
+          "rows": 50,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 11909,
+          "rows": 50,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 3339,
+          "rows": 50,
+          "note": ""
+        }
+      ],
+      "stats": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 550,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 398,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 412,
+          "rows": null,
+          "note": ""
+        }
+      ],
+      "holdersAnswered": 3,
+      "holdersMaxMs": 11909,
+      "statsMaxMs": 550,
+      "reading": "route-is-slow"
+    },
+    {
+      "slug": "arbitrum",
+      "chainId": 42161,
+      "tokenAddress": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "holders": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 24220,
+          "rows": 50,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 1568,
+          "rows": 50,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 931,
+          "rows": 50,
+          "note": ""
+        }
+      ],
+      "stats": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 367,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 513,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 574,
+          "rows": null,
+          "note": ""
+        }
+      ],
+      "holdersAnswered": 3,
+      "holdersMaxMs": 24220,
+      "statsMaxMs": 574,
+      "reading": "route-is-slow"
+    },
+    {
+      "slug": "base",
+      "chainId": 8453,
+      "tokenAddress": "0x4200000000000000000000000000000000000006",
+      "holders": [
+        {
+          "round": 1,
+          "httpStatus": 0,
+          "elapsedMs": 60008,
+          "rows": null,
+          "note": "no answer within 60000ms"
+        },
+        {
+          "round": 2,
+          "httpStatus": 0,
+          "elapsedMs": 60013,
+          "rows": null,
+          "note": "no answer within 60000ms"
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 45831,
+          "rows": 50,
+          "note": ""
+        }
+      ],
+      "stats": [
+        {
+          "round": 1,
+          "httpStatus": 200,
+          "elapsedMs": 871,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 2,
+          "httpStatus": 200,
+          "elapsedMs": 988,
+          "rows": null,
+          "note": ""
+        },
+        {
+          "round": 3,
+          "httpStatus": 200,
+          "elapsedMs": 461,
+          "rows": null,
+          "note": ""
+        }
+      ],
+      "holdersAnswered": 1,
+      "holdersMaxMs": 45831,
+      "statsMaxMs": 988,
+      "reading": "route-is-slow"
+    }
+  ]
+}

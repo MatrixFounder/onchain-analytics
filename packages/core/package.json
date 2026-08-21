@@ -15,7 +15,8 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "sync:chains": "tsx scripts/sync-chain-registry.ts"
+    "sync:chains": "tsx scripts/sync-chain-registry.ts",
+    "probe:holders-latency": "tsx scripts/probe-blockscout-holders-latency.ts"
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",

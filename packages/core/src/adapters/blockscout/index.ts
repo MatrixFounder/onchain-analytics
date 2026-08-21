@@ -135,6 +135,11 @@ const MAX_RESPONSE_BYTES = 512 * 1024;
  * worst case on a single-threaded stdio server. A free explorer that has not answered in 5 s is not
  * about to, so failing fast is what keeps free-first from being expensive.
  *
+ * **That last sentence is true of three of this adapter's four routes, and was measured false of
+ * the fourth** (task 014-42). This is now the DEFAULT hop ceiling rather than the only one; the
+ * holders route carries `HOLDERS_TIMEOUT_MS` below, with the measurement that moved it and the
+ * reason the other three deliberately did not move.
+ *
  * **What this constant does NOT do, and what does it instead.** `safeFetch` builds
  * `AbortSignal.timeout(timeoutMs)` INSIDE its redirect loop, so the bound is per HOP and
  * `MAX_REDIRECTS = 3` means four of them. This number is therefore one hop's ceiling and was never
@@ -168,6 +173,35 @@ const MAX_RESPONSE_BYTES = 512 * 1024;
  * direction** — the uncancellable tail is longer than the part the ceiling governs.
  */
 const REQUEST_TIMEOUT_MS = 5_000;
+
+/**
+ * The holders route's own hop ceiling — task 014-42, closing L-12.
+ *
+ * **Why one route gets a different number.** `REQUEST_TIMEOUT_MS`'s reasoning above ("a free
+ * explorer that has not answered in 5 s is not about to") was measured on the routes it was written
+ * for and is false for this one. Measured 2026-08-21 over three rounds on all five chains this
+ * adapter serves (`scripts/probe-blockscout-holders-latency.ts`, evidence
+ * `docs/onchain-analytics/raw/blockscout-holders-latency-2026-08-21.json`): the holders aggregate
+ * answered in 1.1–45.8 s while `/api/v2/stats` on the SAME chain, host and key answered in
+ * 0.39–0.99 s in the same minute. Every chain answered at least once. The 5 s ceiling was refusing
+ * calls the vendor was going to serve — `token.holders` was served on one chain of five, and that
+ * one only when its entry was warm.
+ *
+ * **Why the other three routes keep 5 s, which is the load-bearing half of this decision.** Raising
+ * the adapter-wide constant would buy the same latency for `gas.price`, `chain.transactions` and
+ * `entity.labels` — routes measured at 0.3–0.8 s — and in doing so would ABSORB a future
+ * vendor-wide slowdown into longer waits and green rows. Leaving them at 5 s means such a slowdown
+ * arrives as failures in the live gate, which is the signal this project exists to keep. A ceiling
+ * is a statement about one route's measured behaviour, and three routes have no such measurement
+ * supporting a raise.
+ *
+ * **This is a hop bound, not the call's.** Same as `REQUEST_TIMEOUT_MS`: `safeFetch` arms
+ * `AbortSignal.timeout` inside its redirect loop, so four hops can each spend it. The bound on the
+ * walk is the call deadline — `capabilityManifests['token.holders'].deadlineMs`, moved to 60_000 by
+ * the same task and against the same measurement. Raising this number without raising that one
+ * would change nothing: the deadline is absolute and refuses first.
+ */
+const HOLDERS_TIMEOUT_MS = 60_000;
 
 /**
  * A uint256 in decimal, with the 78-digit ceiling that makes it one (M-2). Hoisted for the same
@@ -366,6 +400,12 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
     // `safeFetch` can make. `undefined` (a direct caller that passes nothing) restores exactly the
     // pre-012-8 behaviour: `MAX_WAIT_MS` in the limiter and `REQUEST_TIMEOUT_MS` per hop.
     deadlineAtMs?: number,
+    // Task 014-42: the hop ceiling, per ROUTE. Defaults to this adapter's own 5 s, so every call
+    // site that does not name a number keeps exactly the bound it had — only the holders route
+    // passes one, and only because it was measured. A parameter rather than a lookup table keyed on
+    // `cap`: the table would be a second place stating which route is slow, and the call site
+    // already is one.
+    timeoutMs: number = REQUEST_TIMEOUT_MS,
   ) {
     const url = new URL(path, base);
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
@@ -406,7 +446,7 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
         // distinguishable. Spread conditionally so a call without a deadline builds byte-for-byte
         // the options object it built before this task.
         {
-          timeoutMs: REQUEST_TIMEOUT_MS,
+          timeoutMs,
           maxResponseBytes: MAX_RESPONSE_BYTES,
           ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
         },
@@ -540,6 +580,9 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
           // follows it.
           1,
           deadlineAtMs,
+          // The ONE route in this adapter that does not use `REQUEST_TIMEOUT_MS` — see
+          // `HOLDERS_TIMEOUT_MS` for the measurement, and for why the other three still do.
+          HOLDERS_TIMEOUT_MS,
         );
         return { kind: 'holders', chain: chain.slug, tokenAddress, body };
       }

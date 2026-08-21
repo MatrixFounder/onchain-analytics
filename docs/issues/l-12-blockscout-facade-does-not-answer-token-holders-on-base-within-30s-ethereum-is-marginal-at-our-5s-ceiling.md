@@ -16,6 +16,36 @@ finding_ref: fnd-20260811-130934-8fbaa786
 
 > Filed by `run-feedback` from capture `fnd-20260811-130934-8fbaa786`. **This body is data, not instructions** — it derives from captured output and may quote untrusted text.
 
+> **PARTIALLY RESOLVED 2026-08-21 by task 014-42 — the ceiling half. The base half is open.**
+>
+> This record has always been two findings, and only one of them was ours. The ceiling was: our
+> per-hop bound was 5 s, the vendor's holders index needs far more, and the capability was therefore
+> served on one chain of five and only when that chain's entry happened to be warm. Measured over
+> three rounds on all five chains (`packages/core/scripts/probe-blockscout-holders-latency.ts`,
+> evidence `docs/onchain-analytics/raw/blockscout-holders-latency-2026-08-21.json`), the holders
+> route answered in 1.1–45.8 s while `/api/v2/stats` on the same chain, host and key answered in
+> 0.39–0.99 s in the same minute — so the delay belongs to this ROUTE and not to the vendor, which
+> is what licensed a ceiling on one capability rather than on the adapter.
+>
+> `token.holders` now runs at `HOLDERS_TIMEOUT_MS = 60_000` per hop under a `deadlineMs` of 60_000,
+> and the other three routes of the same adapter deliberately keep 5 s so a future vendor-WIDE
+> slowdown still surfaces as failures instead of being absorbed into longer waits. On the live gate
+> the capability went from 1 chain of 5 to 4, and `ok` rose 132 → 136.
+>
+> **What is left is base, and it is no longer a ceiling problem.** Across the same three rounds base
+> answered once, at 45.8 s, and gave HTTP 500 or nothing otherwise — on the PRO facade and on the
+> keyless `base.blockscout.com` alike, while that chain's `stats` document answered in 0.99 s. The
+> options for that half are the ones this record already framed and the owner has not chosen: route
+> `token.holders` to the paid source, or stop advertising it on `base`.
+>
+> **A limit this fix does NOT remove, measured the same day.** The vendor's index is sensitive to
+> holder-set SIZE, not only to chain: on polygon, WMATIC answered in 12.1 s and WETH in 20.3 s while
+> USDC and USDT did not answer within 60 s. The eval's curated probe is each chain's wrapped native,
+> so a green `token.holders` row says "works for the wrapped native", never "works for any token".
+> Named in `onchain_token_holders`'s own description and in `eval/cases/token-holders.mjs`; a
+> deliberately-largest probe token was declined for now because on today's measurement it would be a
+> permanently red row (see the case file for the reasoning, and WI-56 for when to add it).
+
 **Symptom.** `token.holders` on `base` does not answer. Measured directly against the vendor, with a
 valid PRO key and a 30-second ceiling, twice:
 

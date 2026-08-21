@@ -148,7 +148,10 @@ export const tokenHoldersToolSpec = defineTool({
     'onchain_list_chains({capability:"token.holders"}) first. Returns at most one vendor page; ' +
     'check truncated and droppedRows before treating the list as the complete holder set. ' +
     'Balances are exact base-unit strings with no decimals applied — get decimals from ' +
-    'onchain_get_token.',
+    'onchain_get_token. The upstream index is slow for tokens with very large holder sets: ' +
+    'measured 2026-08-21, the biggest stablecoins on some chains did not answer within 60s while ' +
+    'other tokens on the same chain answered — a refusal here can mean "this token is too big for ' +
+    'the index", not "this chain is unsupported".',
   inputSchema: TokenHoldersInputSchema,
   outputSchema: TokenHoldersOutputSchema,
   capability: CAPABILITY,

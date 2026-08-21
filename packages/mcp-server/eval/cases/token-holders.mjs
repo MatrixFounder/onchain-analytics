@@ -10,6 +10,21 @@ export default {
   catches:
     'an exact balance arriving as a JSON number, the completeness flags vanishing so a page ' +
     'reads as the whole holder set, and the vendor silently dropping its own ordering',
+  // **What this case does NOT reach, stated so a green row is read correctly** (task 014-42).
+  // The curated probe is each chain's WRAPPED NATIVE token, and the vendor's holders index is
+  // sensitive to holder-set SIZE: measured 2026-08-21 on polygon, WMATIC answered in 12.1s and
+  // WETH in 20.3s while USDC and USDT did not answer within 60s, on the same chain in the same
+  // minute. So a green row here says "holders works for the wrapped native", never "holders works
+  // for any token".
+  //
+  // A second, deliberately-largest probe token per chain was considered and declined: on today's
+  // measurement it would be a permanently red row, and a permanently red row re-creates the RF-10
+  // pressure this task's sibling change exists to remove. The limit is named instead — here, in
+  // `onchain_token_holders`'s own description where a CALLER reads it, and in L-12 — and the probe
+  // row is the thing to add when a caller actually needs a large token (WI-56).
+  limitNotMeasuredHere:
+    'holder-set size: the probe token is the wrapped native, and the largest tokens on a chain ' +
+    'can exceed the vendor index while smaller ones on that chain answer',
   check: (r) => {
     const problems = [
       nonEmpty(r?.chain, 'chain'),

@@ -71,8 +71,21 @@ to drop `base`. The vendor serves the chain; it is answering 500 today. Removing
 convert a visible vendor fault into an invisible false claim about coverage — the L-18 trade this
 project has already made once.
 
-Acknowledged in `eval/acknowledged.json` so it stays named on every run without blocking unrelated
-work.
+**UPDATE 2026-08-21 — the acknowledgement was REMOVED, and not because this closed.** Re-measured
+the morning of 2026-08-21: `/api/v2/stats` on base answered 500 on four of five attempts, worse than
+the one-in-three of the day it was filed. Hours later the same document answered in 0.98 s on every
+chain including base, and `base/chain.transactions` passed the live gate. The gate then reported the
+acknowledgement as STALE and blocked on it — which is [RF-10](rf-10-the-gate-acknowledgement-is-a-per-row-boolean-so-an-intermittent-vendor-failure-can-never-be-acknowledged.md)
+exactly, observed inside one working session rather than reconstructed from the ledger.
+
+The row was cleared from `eval/acknowledged.json` because leaving it blocks every unrelated task,
+and that is the only move the file's two-word vocabulary allows. **This record stays `open`**: one
+green run does not refute four consecutive failures plus a direct vendor measurement, as this
+record's own fix-path item 2 already says. When it fails again it will arrive as a NEW failure with
+nothing filed against it, and re-adding the row is the whole cost of the missing third word.
+
+Acknowledged in `eval/acknowledged.json` so it stayed named on every run without blocking unrelated
+work — until the removal above.
 
 **Related.** [L-12](l-12-blockscout-facade-does-not-answer-token-holders-on-base-within-30s-ethereum-is-marginal-at-our-5s-ceiling.md)
 — same vendor, same `base` chain, different endpoint and different failure mode.

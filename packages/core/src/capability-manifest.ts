@@ -36,6 +36,11 @@
  * - **E-HTTP5 = 50_000 ms** — the same shape on an adapter that overrides
  *   `REQUEST_TIMEOUT_MS = 5_000` (`blockscout/index.ts`, `blockchain-info/index.ts`):
  *   30_000 + 4 × 5_000.
+ * - **E-HTTP60 = 270_000 ms** — the same shape again on the ONE route that overrides the override:
+ *   `blockscout`'s holders route, whose hop bound is `HOLDERS_TIMEOUT_MS = 60_000` — 30_000 +
+ *   4 × 60_000. Two envelopes for one adapter is not a duplication: the hop ceiling is per ROUTE
+ *   since task 014-42, so an adapter-wide envelope would now be wrong for three routes or for one.
+ *   The measurement that moved it is quoted in full at the tier that holds `token.holders`.
  * - **E-PG = 50_000 ms** — `pg-history`. **Not the HTTP template**: it speaks the Postgres wire
  *   protocol, so there are no redirect hops. Limiter wait up to `MAX_WAIT_MS = 30_000`
  *   (`net/rate-limit.ts`) + the in-process query bound of 20_000
@@ -476,20 +481,6 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
   // TIER ~15 s (OD-2) — one free adapter that overrides `REQUEST_TIMEOUT_MS = 5_000`.
   // Same applied ceiling, a different measured envelope: E-HTTP5 instead of E-HTTP15.
   // ===========================================================================================
-  'token.holders': {
-    // ADR-002 D3 names this one.
-    shape: 'set',
-    ttlSeconds: 3600,
-    // shareable: the holders of (chain, token) — public chain state, identical for every caller.
-    shareable: true,
-    // measured envelope: 50_000 (E-HTTP5 — `blockscout`, one attempt: 30_000 + 4 × 5_000).
-    // applied: 15_000 — owner ceiling (OD-2), not a measurement; cuts 35_000 — **ENFORCED TODAY**, the
-    // route's only adapter `blockscout` forwards the deadline to `throttle()` and to `safeFetch`
-    // (ENFORCEMENT above). Note the ceiling
-    // does NOT follow the adapter's own faster timeout down: the tier is a property of the
-    // capability, and `blockscout`'s 5 s is a property of one vendor.
-    deadlineMs: 15_000,
-  },
   'protocol.incidents': {
     // A collection with no time dimension of ours — the incidents recorded for one protocol. `set`,
     // by the same reading that classified `protocol.list`.
@@ -733,6 +724,54 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // T-013 (013-1): eligible for merging. Not yet ACTIVE — `CapabilityRoute.merge` (013-2) and
     // its `providers.config.ts` setting (013-6) are separate tasks that have not landed.
     mergeable: true,
+  },
+
+  // ===========================================================================================
+  // TIER ~60 s (OD-2) — one FREE adapter whose vendor answers this route far slower than the
+  // routes beside it. The tier that holds a capability is otherwise a property of the CALL's
+  // shape — how many adapters, free or paid — and this one is not: it is a property of one
+  // vendor's index, measured, and it is stated separately rather than folded into a tier whose
+  // heading would then have to be a list of unrelated reasons.
+  //
+  // **The measurement that opened it** (task 014-42, `scripts/probe-blockscout-holders-latency.ts`,
+  // evidence `docs/onchain-analytics/raw/blockscout-holders-latency-2026-08-21.json`). Three rounds
+  // over the five chains Blockscout serves, each round asking the holders route and `/api/v2/stats`
+  // on the same chain seconds apart:
+  //
+  // | chain | holders, slowest ANSWER | `/api/v2/stats` control |
+  // | :-- | :-- | :-- |
+  // | base | 45_831 ms | 988 ms |
+  // | arbitrum | 24_220 ms | 574 ms |
+  // | polygon | 11_909 ms | 550 ms |
+  // | ethereum | 11_063 ms | 697 ms |
+  // | gnosis | 1_137 ms | 387 ms |
+  //
+  // The control column is what licenses a per-CAPABILITY ceiling instead of a per-adapter one: the
+  // same host, the same key, the same minute, answering a stored document in under a second while
+  // the holders aggregate takes up to 46. The vendor is not slow; this route is.
+  //
+  // **Why 60_000 and not 30_000.** 45_831 ms is a successful answer. A 30 s ceiling refuses a call
+  // the vendor was going to serve, which is precisely the failure L-12 spent ten days being, and
+  // the deadline is ABSOLUTE — the limiter wait counts against it, so the margin is thinner than
+  // the gap looks.
+  // ===========================================================================================
+  'token.holders': {
+    // ADR-002 D3 names this one.
+    shape: 'set',
+    ttlSeconds: 3600,
+    // shareable: the holders of (chain, token) — public chain state, identical for every caller.
+    shareable: true,
+    // measured envelope: 270_000 (E-HTTP60 — `blockscout`, one attempt: 30_000 + 4 × 60_000).
+    // applied: 60_000 — owner ceiling (OD-2), not a measurement; cuts 210_000 — **ENFORCED TODAY**,
+    // the route's only adapter `blockscout` forwards the deadline to `throttle()` and to
+    // `safeFetch` (ENFORCEMENT above).
+    //
+    // **This row moved from the ~15 s tier on 2026-08-21 (task 014-42), and the envelope moved with
+    // it.** The old record read `50_000 (E-HTTP5)` because the adapter capped every hop at 5_000;
+    // this capability's hop is now `HOLDERS_TIMEOUT_MS`, so reusing E-HTTP5 here would state an
+    // envelope for a call shape that no longer exists. The other three routes of the same adapter
+    // stay on E-HTTP5, which is why both constants are derived at the top of this file.
+    deadlineMs: 60_000,
   },
 
   // ===========================================================================================

@@ -17,6 +17,10 @@
       "sha256": "5ad2cec7578816e5d936c37c6907ee91687ee5b71ac0f0bc6ae89a230cda534d",
       "note": "Live keyless probe of GET /v1/direct_api_call (USDC holders, chain 1, 2026-07-28). Fixture source for the token.holders contract test, and the evidence that holder rows carry vendor free text in metadata.tags."
     },
+    "docs/onchain-analytics/raw/blockscout-holders-latency-2026-08-21.json": {
+      "sha256": "67e039288326be65717b06138b2dcce64321398d490ad77ee07486e6f6f0c276",
+      "note": "Task 014-42 / L-12 — how long Blockscout takes to answer `token.holders`, with `/api/v2/stats` on the same chain, host and key as the control. Two numbers are load-bearing and BOTH are asserted against by `packages/core/test/blockscout-per-route-timeout.test.ts` (TC-UNIT-03): `slowestAnswerMs = 45831`, which the capability's `deadlineMs` must exceed — a lower ceiling refuses a call the vendor was going to serve, which is the failure L-12 was — and `readings['vendor-is-slow'] = []`, which is what licenses a ceiling on ONE capability instead of on the whole adapter. Editing this file would move a shipped timeout without a measurement behind it, which is the exact substitution the manifest exists to prevent."
+    },
     "docs/onchain-analytics/raw/blockscout-instance-config-2026-08-11.json": {
       "sha256": "985d737cc4e74effea812b7cf50f08560a4015fc4fa3a6352fb03821eb034a56",
       "note": "L-12 — live keyless GET https://api.blockscout.com/api/json/config (2026-08-11). The VENDOR document behind the per-chain instance list in the issue: 100 chains under two disagreeing fields, `chains[id]` (what the PRO facade proxies to) and `chains_metadata[id].explorers[].hostedBy` (who actually runs the instance). The 26/24 first-party/third-party split and the 7 chains where the two fields name different explorers are read off it, and reading the wrong field silently routes Gnosis and Scroll at Etherscan-family hosts that do not speak /api/v2. Pinned because an egress decision over 24 third-party domains rests on which field was read."
