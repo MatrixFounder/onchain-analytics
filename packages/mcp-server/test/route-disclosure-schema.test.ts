@@ -124,12 +124,14 @@ describe('the residual this gate does NOT close, measured rather than assumed', 
     // registered, so the envelope the SDK checks is checked by nobody else. It is not what this gate
     // is about, and it is named here rather than left for the next reader to rediscover.
     //
-    // **`pool-info.ts` and `token-pools.ts` are here for a DIFFERENT and TEMPORARY reason** (task
-    // 014-32b). They are registered stubs: they publish no output at all, they answer a typed
-    // refusal naming the task that removes them. There is nothing to validate because there is
-    // nothing produced. Task 014-32c removes `pool-info.ts` from this list together with its logic,
-    // and 014-32d removes `token-pools.ts` — 014-34 checks both are gone. Distinguishing the two
-    // reasons matters: the first two entries are permanent by design, these two are an interval.
+    // **`token-pools.ts` is here for a DIFFERENT and TEMPORARY reason** (task 014-32b). It is a
+    // registered stub: it publishes no output at all, it answers a typed refusal naming the task
+    // that removes it. There is nothing to validate because there is nothing produced. Task 014-32d
+    // removes it from this list together with its logic, and 014-34 checks it is gone.
+    // Distinguishing the two reasons matters: the first two entries are permanent by design, this
+    // one is an interval. `pool-info.ts` was the second such entry and left in task 014-32c, which
+    // gave it a handler that validates against `PoolInfoOutputSchema` — the interval closing as
+    // designed rather than being forgotten.
     const VALIDATES_OUTPUT = /\b\w*Schema\.safeParse\(/;
     const dir = path.resolve(__dirname, '../src/tools');
     const notValidating = readdirSync(dir)
@@ -144,6 +146,6 @@ describe('the residual this gate does NOT close, measured rather than assumed', 
         'registered schema ever disagree, the SDK refuses AFTER the request_trace row is written — ' +
         'so the row claims an answer the client received as an error. Either validate, or add the ' +
         'tool here with the reason it has nothing to validate.',
-    ).toStrictEqual(['list-chains.ts', 'ping.ts', 'pool-info.ts', 'token-pools.ts']);
+    ).toStrictEqual(['list-chains.ts', 'ping.ts', 'token-pools.ts']);
   });
 });

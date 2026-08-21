@@ -7,6 +7,7 @@ import { truncateVendorText, MAX_VENDOR_SYMBOL_LENGTH } from '../truncate-vendor
 import { adapterRegistrations } from '../../providers.config.js';
 import { PoolSchema, type Pool } from '../../types/pool.js';
 import type { ProviderAdapter } from '../types.js';
+import { createFeeTierReader, type FeeTierReading } from '../rpc-evm/fee-tier.js';
 
 const REGISTRATION = adapterRegistrations.find((r) => r.id === 'dexscreener');
 if (!REGISTRATION) {
@@ -33,18 +34,56 @@ const DEFAULT_LIMIT = 10;
 const VENDOR_PAGE_SIZE = 30;
 
 /**
- * There is no keyless DexScreener endpoint that lists "newest pairs for chain X" directly
- * (confirmed by a live probe of `/token-profiles/latest/v1` and `/token-boosts/latest/v1` —
- * neither carries liquidity/volume data, and neither accepts a chain filter). The confirmed,
- * reliable, keyless endpoint that DOES carry full `Pool`-shaped fields and can be scoped to one
- * chain client-side is `GET /latest/dex/search?q=<query>`; querying by the chain's own native
- * asset symbol reliably surfaces that chain's pairs (§11 open question, resolved by live probe
- * 2026-07-22 — not guessed). Documented implementation choice (developer-guidelines §1.6).
+ * There is no keyless DexScreener endpoint that lists the pairs of a chain — re-confirmed by probe,
+ * 2026-08-20/21 (task 014-32c, L-19).
+ *
+ * `/latest/dex/pairs/{chainId}`, `/token-pairs/v1/{chainId}`, `/latest/dex/chains/{chainId}` and
+ * `/latest/dex/chains` all answer **HTTP 404**; the two per-chain routes that DO exist
+ * (`/token-pairs/v1/{chainId}/{tokenAddress}`, `/latest/dex/pairs/{chainId}/{pairId}`) each need an
+ * address the caller of this capability does not have. The promotion feeds (`/token-boosts/*`,
+ * `/token-profiles/latest/v1`) carry a `chainId` but no liquidity and no volume, cap at 30 rows, and
+ * are ranked by who paid.
+ *
+ * So this capability is served by SEARCHING one global relevance index and filtering the rows by
+ * `chainId`. Every implementation of it is a query heuristic, and the only question that can be
+ * settled is WHICH heuristic — which is what the probe settled.
+ *
+ * ## L-19 — why the query is no longer the native symbol
+ *
+ * It was `chain.nativeSymbol`, and on a chain whose ticker does not rank on itself the filter had
+ * nothing left to keep: the tool answered an EMPTY page with HTTP 200, a false statement about the
+ * chain. Measured over all 49 covered chains, 2026-08-21
+ * (`docs/onchain-analytics/raw/dexscreener-pairs-strategy-2026-08-21.json`):
+ *
+ * | query | chains answering with ≥1 of their own rows | rows found |
+ * | :---- | :---------------------------------------- | ---------: |
+ * | `nativeSymbol` (the old strategy) | **27 / 49** | 239 |
+ * | `slug` | 43 / 49 | 566 |
+ * | `name` | 45 / 49 | 594 |
+ * | **`vendors.dexscreener`** | **47 / 49** | 650 |
+ * | `W` + `nativeSymbol` | 25 / 49 | 472 |
+ *
+ * The old strategy was empty on **22 of 49 chains**, not the four the live gate happened to probe.
+ *
+ * ## The strategy this ships
+ *
+ * `vendors.dexscreener` first — the vendor's own identifier for the chain, the most defensible
+ * string we can send and the best single candidate at 47/49. Then, ONLY IF the first query returned
+ * fewer distinct on-chain rows than the caller asked for, `W` + `nativeSymbol`. Together they answer
+ * on **49 of 49**. At the default `limit` the second query fires on 19 of 49 chains, so the common
+ * call still costs one request.
+ *
+ * **The wrapped ticker is a GUESS, and that is safe here in a way it would not be elsewhere.** It is
+ * a search string, not data: the `chainId` filter below is unchanged, so a wrong guess can only make
+ * the answer less complete, never wrong. `WETH` is the measured example — it is the wrapped native
+ * of several chains at once and therefore ranks for none of them in particular.
+ *
+ * **Refused: querying more strings.** Adding `slug` and `name` reaches the same 49 chains and buys
+ * ~7% more rows for 50% more vendor requests on a keyless endpoint. The chains they would help are
+ * already answered by the pair above.
  */
-// TASK-006 (R-57a): the native symbol comes from `chain.nativeSymbol` in the registry, replacing
-// the two-entry `NATIVE_QUERY = {ethereum:'ETH', solana:'SOL'}` map. A chain whose symbol the
-// registry does not know is honestly uncovered (see `chainSupport`) rather than searched for with
-// a guessed query string.
+const PAIRS_QUERY_NOTE =
+  'no vendor route lists a chain’s pairs, so this is a filtered search of one global index';
 
 /**
  * Optional constructor dependencies for the DexScreener adapter (injectable, same DI convention
@@ -61,31 +100,63 @@ export interface DexscreenerAdapterDeps {
   throttle?: Throttle;
 }
 
-/** This adapter's own private hand-off shape from its HTTP step to `normalize()` — `raw` is the
- * untouched `/latest/dex/search` response body (may contain pairs from OTHER chains too, since
- * the search index isn't chain-scoped server-side); `chain`/`limit` are carried alongside it so
- * `normalize()` can do the actual chain-filtering + slicing (kept there, not in the HTTP step —
- * the "narrowing only inside normalize()" anti-corruption-layer contract, task 003-4 reviewer
- * note). */
-interface DexscreenerFetchResult {
+/** This adapter's own private hand-off shape from its HTTP step to `normalize()` — `raw` bodies are
+ * untouched (a search page may contain pairs from OTHER chains, since the index isn't chain-scoped
+ * server-side); `chain`/`limit` are carried alongside so `normalize()` can do the actual
+ * chain-filtering + slicing (kept there, not in the HTTP step — the "narrowing only inside
+ * normalize()" anti-corruption-layer contract, task 003-4 reviewer note).
+ *
+ * **A discriminated union since task 014-32c**, because the adapter now has two vendor routes with
+ * different shapes. `normalize()` branches on `kind` rather than on the capability string it is
+ * handed: the fetch step already decided which route ran, and re-deciding from `cap` would let the
+ * two disagree — a class this file has met before (`_cap` was ignored entirely, which is how
+ * `pool.info` came to be classified `set`). */
+interface DexscreenerSearchFetchResult {
+  kind: 'search';
   chain: ChainInfo;
   limit: number;
-  raw: unknown;
+  /** One entry per query actually issued — see the L-19 note above for why there can be two. */
+  pages: { query: string; raw: unknown }[];
 }
+
+interface DexscreenerPoolFetchResult {
+  kind: 'pool';
+  chain: ChainInfo;
+  pairAddress: string;
+  raw: unknown;
+  /** The `fee()` derivation's outcome. Never throws the call away — see `fee-tier.ts`. */
+  fee: FeeTierReading;
+}
+
+type DexscreenerFetchResult = DexscreenerSearchFetchResult | DexscreenerPoolFetchResult;
 
 interface DexscreenerPair {
   chainId?: unknown;
   dexId?: unknown;
   pairAddress?: unknown;
-  baseToken?: { symbol?: unknown };
-  quoteToken?: { symbol?: unknown };
-  liquidity?: { usd?: unknown };
+  baseToken?: { symbol?: unknown; address?: unknown };
+  quoteToken?: { symbol?: unknown; address?: unknown };
+  liquidity?: { usd?: unknown; base?: unknown; quote?: unknown };
   volume?: { h24?: unknown };
   pairCreatedAt?: unknown;
+  /** The vendor's AMM version markers, e.g. `["v3"]`. NOT a fee — see `fee-tier.ts`. */
+  labels?: unknown;
 }
 
 interface DexscreenerSearchResponse {
   pairs?: DexscreenerPair[];
+}
+
+/**
+ * What `normalize()` hands back for `pool.info` — `interfaces.md` §5.1.7.
+ *
+ * `resolved: false` with `pool: null` is the vendor answering HTTP 200 and `"pairs": null` for an
+ * address it knows no pool at. An empty `Pool` rendered as success would read as a pool holding no
+ * tokens and no liquidity, which is the L-10 failure class.
+ */
+export interface PoolInfoResult {
+  resolved: boolean;
+  pool: Pool | null;
 }
 
 /**
@@ -112,20 +183,68 @@ export interface PoolPage {
   truncated: { pairs: boolean; reason: string };
 }
 
+/**
+ * The chain half of every capability's arguments, and the ONE place the coverage condition is
+ * spelled out for the transport.
+ *
+ * **`nativeSymbol` is no longer required, and that is a consequence of the L-19 fix rather than a
+ * relaxation of its own.** The old query was the native symbol, so a chain without one had no query
+ * to make; the new first query is `vendors.dexscreener`, which the first clause already guarantees.
+ * Measured 2026-08-21: all 49 covered chains carry a `nativeSymbol` anyway, so today this changes
+ * coverage by exactly zero chains — it removes a precondition the code no longer has, rather than
+ * widening what the adapter claims. Should a covered chain without one ever appear, the first query
+ * still works and the second is skipped.
+ */
+function resolveChain(args: Record<string, unknown>, chains: ChainRegistry): ChainInfo {
+  const rawChain = args['chain'];
+  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
+  if (!chain || chain.vendors['dexscreener'] == null) {
+    throw new Error(
+      `dexscreener.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a chain observed on DexScreener>})`,
+    );
+  }
+  return chain;
+}
+
 function extractFetchArgs(
   args: Record<string, unknown>,
   chains: ChainRegistry,
 ): { chain: ChainInfo; limit: number } {
-  const rawChain = args['chain'];
-  const chain = typeof rawChain === 'string' ? chains.tryResolve(rawChain) : null;
-  if (!chain || chain.vendors['dexscreener'] == null || chain.nativeSymbol == null) {
-    throw new Error(
-      `dexscreener.fetch: invalid args ${JSON.stringify(args)} (expected {chain: <a chain observed on DexScreener>, limit?: number})`,
-    );
-  }
+  const chain = resolveChain(args, chains);
   const rawLimit = args['limit'];
   const limit = typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : DEFAULT_LIMIT;
   return { chain, limit };
+}
+
+/** `pool.info` is addressed by a POOL ADDRESS, so its arguments are a different pair. */
+function extractPoolArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): { chain: ChainInfo; pairAddress: string } {
+  const chain = resolveChain(args, chains);
+  const pairAddress = args['pairAddress'];
+  if (typeof pairAddress !== 'string' || pairAddress.length === 0) {
+    throw new Error(
+      `dexscreener.fetch: invalid args ${JSON.stringify(args)} (expected {chain, pairAddress: <a pool address>})`,
+    );
+  }
+  return { chain, pairAddress };
+}
+
+/**
+ * The query candidates for `pairs.active`, in the order the probe ranked them.
+ *
+ * Both are derived from the registry — no new curated column — and the second is omitted when the
+ * chain declares no native symbol or when it would repeat the first string.
+ */
+function pairsQueriesFor(chain: ChainInfo): string[] {
+  const vendorId = chain.vendors['dexscreener'];
+  const queries = [typeof vendorId === 'string' ? vendorId : chain.slug];
+  if (chain.nativeSymbol !== null && chain.nativeSymbol !== undefined) {
+    const wrapped = `W${chain.nativeSymbol}`;
+    if (!queries.includes(wrapped)) queries.push(wrapped);
+  }
+  return queries;
 }
 
 /**
@@ -139,14 +258,282 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
   const chains = deps.chains ?? loadChainRegistry();
   const throttle = deps.throttle ?? productionThrottle;
 
+  const readFeeTier = createFeeTierReader({
+    fetchImpl,
+    ...(deps.throttle === undefined ? {} : { throttle: deps.throttle }),
+  });
+
+  /** One search request, with the limiter and the transport bound the way every call here binds
+   * them. Returns the untouched body — narrowing happens only in `normalize()`. */
+  async function search(query: string, deadlineAtMs?: number): Promise<unknown> {
+    const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
+    await throttle('dexscreener', RATE_LIMIT, 1, deadlineAtMs);
+    const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
+      ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+    });
+    if (!response.ok) {
+      throw new Error(`dexscreener: HTTP ${response.status} for ${url}`);
+    }
+    return response.json();
+  }
+
+  /** How many rows of a body belong to this chain — the same test `normalize()` applies, used here
+   * only to decide whether the second query is worth issuing. */
+  function onChainCount(raw: unknown, chain: ChainInfo): number {
+    const rows = (raw as DexscreenerSearchResponse).pairs ?? [];
+    const vendorId = chain.vendors['dexscreener'] ?? chain.slug;
+    return rows.filter((pair) => pair.chainId === vendorId).length;
+  }
+
+  async function fetchPairs(
+    args: Record<string, unknown>,
+    deadlineAtMs?: number,
+  ): Promise<DexscreenerSearchFetchResult> {
+    const { chain, limit } = extractFetchArgs(args, chains);
+    const queries = pairsQueriesFor(chain);
+    const pages: { query: string; raw: unknown }[] = [];
+    let found = 0;
+    for (const query of queries) {
+      const raw = await search(query, deadlineAtMs);
+      pages.push({ query, raw });
+      found += onChainCount(raw, chain);
+      // The second query is issued only when the first did not already satisfy the caller. At the
+      // default `limit` that is 19 of 49 chains (measured 2026-08-21), so the common call still
+      // costs one request — see the L-19 note at the top of this file.
+      if (found >= limit) break;
+    }
+    return { kind: 'search', chain, limit, pages };
+  }
+
+  async function fetchPool(
+    args: Record<string, unknown>,
+    deadlineAtMs?: number,
+  ): Promise<DexscreenerPoolFetchResult> {
+    const { chain, pairAddress } = extractPoolArgs(args, chains);
+    const vendorId = chain.vendors['dexscreener'] ?? chain.slug;
+    const url = `https://api.dexscreener.com/latest/dex/pairs/${encodeURIComponent(vendorId)}/${encodeURIComponent(pairAddress)}`;
+    await throttle('dexscreener', RATE_LIMIT, 1, deadlineAtMs);
+    const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
+      ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+    });
+    if (!response.ok) {
+      throw new Error(`dexscreener: HTTP ${response.status} for ${url}`);
+    }
+    const raw: unknown = await response.json();
+
+    // The fee derivation runs HERE, in the fetch step, because `normalize()` is synchronous by the
+    // `ProviderAdapter` contract and this is an `eth_call`. It never throws (see `fee-tier.ts`): a
+    // pool whose addresses and reserves were fetched successfully must not become a failed call
+    // over an optional field the caller may not even have wanted.
+    const knownPool = ((raw as DexscreenerSearchResponse).pairs ?? []).length > 0;
+    const fee: FeeTierReading = knownPool
+      ? await readFeeTier(chain, pairAddress, deadlineAtMs)
+      : { bps: null, reason: 'no pool at that address, so there was nothing to ask fee() about' };
+    return { kind: 'pool', chain, pairAddress, raw, fee };
+  }
+
+  /**
+   * One vendor row → one canonical `Pool`, or `null` when the row is malformed.
+   *
+   * Shared by both routes deliberately: the six fields task 014-32b added to `Pool` are published by
+   * `onchain_active_pairs` as well, and two builders would have meant one of them quietly not
+   * carrying them.
+   */
+  function toPool(pair: DexscreenerPair, chain: ChainInfo, feeBps: number | null): Pool | null {
+    const pairAddress = pair.pairAddress;
+    const dexId = pair.dexId;
+    const baseSymbol = pair.baseToken?.symbol;
+    const quoteSymbol = pair.quoteToken?.symbol;
+    if (
+      typeof pairAddress !== 'string' ||
+      typeof dexId !== 'string' ||
+      typeof baseSymbol !== 'string' ||
+      typeof quoteSymbol !== 'string'
+    ) {
+      return null;
+    }
+    // The vendor's AMM version marker, first entry only. NOT a fee: mapping a version to a tier
+    // would fabricate the number `fee-tier.ts` refuses to guess.
+    const label = Array.isArray(pair.labels)
+      ? (pair.labels as unknown[]).find((value): value is string => typeof value === 'string')
+      : undefined;
+    const pool: Pool = {
+      id: `${chain.slug}:${pairAddress}`,
+      chain: chain.slug,
+      dexId,
+      // Vendor-authored on a PERMISSIONLESS venue — anyone can deploy a pair and choose these
+      // two strings, and they land verbatim in the model's context (vdd-multi cycle 5, M-6).
+      baseTokenSymbol: truncateVendorText(baseSymbol, MAX_VENDOR_SYMBOL_LENGTH),
+      quoteTokenSymbol: truncateVendorText(quoteSymbol, MAX_VENDOR_SYMBOL_LENGTH),
+      pairAddress,
+      source: 'dexscreener',
+      fetchedAt: now(),
+      ...(typeof pair.pairCreatedAt === 'number' ? { createdAt: pair.pairCreatedAt } : {}),
+      ...(typeof pair.liquidity?.usd === 'number' ? { liquidityUsd: pair.liquidity.usd } : {}),
+      ...(typeof pair.volume?.h24 === 'number' ? { volume24hUsd: pair.volume.h24 } : {}),
+      // Task 014-32b's six fields. Each is spread only when the vendor actually sent it, so an
+      // absent field stays ABSENT rather than becoming a null the caller has to interpret.
+      ...(typeof pair.baseToken?.address === 'string'
+        ? { baseTokenAddress: pair.baseToken.address }
+        : {}),
+      ...(typeof pair.quoteToken?.address === 'string'
+        ? { quoteTokenAddress: pair.quoteToken.address }
+        : {}),
+      ...(typeof pair.liquidity?.base === 'number' ? { reserveBase: pair.liquidity.base } : {}),
+      ...(typeof pair.liquidity?.quote === 'number' ? { reserveQuote: pair.liquidity.quote } : {}),
+      ...(feeBps === null ? {} : { feeTierBps: feeBps }),
+      ...(label === undefined ? {} : { versionLabel: truncateVendorText(label, 64) }),
+    };
+    const parsed = PoolSchema.safeParse(pool);
+    return parsed.success ? parsed.data : null;
+  }
+
+  function normalizePool(result: DexscreenerPoolFetchResult): PoolInfoResult {
+    const { chain, raw, fee, pairAddress } = result;
+    const rows = (raw as DexscreenerSearchResponse).pairs ?? [];
+    const vendorId = chain.vendors['dexscreener'] ?? chain.slug;
+    // The chain is a PATH SEGMENT on this route, so the vendor already scoped the answer — but the
+    // row is still checked against it. The single-pool route is the one place a vendor could hand
+    // back a pool from another chain and have it cached under this one, which is exactly the
+    // failure `rpc-evm`'s no-host-fallback rule exists to prevent one layer down.
+    const row = rows.find((pair) => pair.chainId === vendorId);
+    if (row === undefined) {
+      // Measured 2026-08-18 on `0x0000000000000000000000000000000000000001` / `ethereum`: HTTP 200
+      // with `"pairs": null`. Reported as `resolved: false`, never as an empty pool (L-10).
+      return { resolved: false, pool: null };
+    }
+    const pool = toPool(row, chain, fee.bps);
+    if (pool === null) {
+      // A malformed single row is NOT `resolved: false` — the vendor claims a pool exists and sent
+      // something we cannot read. Throwing makes it a loud failure that the registry negative-caches
+      // briefly, instead of a confident "no such pool" the caller would act on.
+      throw new Error(
+        `dexscreener.normalize: the vendor's row for ${chain.slug}:${pairAddress} is malformed`,
+      );
+    }
+    if (fee.bps === null && fee.reason !== '') {
+      // The operator's channel. The caller learns only that `feeTierBps` is absent; an operator
+      // deciding whether to curate an RPC host for a chain needs to know WHICH of the causes it was.
+      process.stderr.write(
+        `dexscreener.pool.info: no fee tier for ${chain.slug}:${pairAddress} — ${fee.reason}\n`,
+      );
+    }
+    return { resolved: true, pool };
+  }
+
+  function normalizeSearch(result: DexscreenerSearchFetchResult): PoolPage {
+    const { chain, limit, pages } = result;
+    const vendorId = chain.vendors['dexscreener'] ?? chain.slug;
+
+    // Rows from every query that ran, deduplicated by pair address: two queries can surface the
+    // same pool, and a caller asking for 10 must not receive the same pair twice.
+    const seen = new Set<string>();
+    const onThisChain: DexscreenerPair[] = [];
+    let vendorRowsTotal = 0;
+    let vendorPageFull = false;
+    for (const page of pages) {
+      const rows = (page.raw as DexscreenerSearchResponse).pairs ?? [];
+      vendorRowsTotal += rows.length;
+      if (rows.length >= VENDOR_PAGE_SIZE) vendorPageFull = true;
+      for (const pair of rows) {
+        if (pair.chainId !== vendorId) continue;
+        const address = typeof pair.pairAddress === 'string' ? pair.pairAddress : null;
+        if (address !== null) {
+          if (seen.has(address)) continue;
+          seen.add(address);
+        }
+        onThisChain.push(pair);
+      }
+    }
+    const candidates = onThisChain.slice(0, limit);
+    // Q-10: counted BEFORE the slice, because "the vendor had more and we cut it" is one of the
+    // two ways this page can be short, and it is invisible afterwards.
+    const cutByLimit = onThisChain.length - candidates.length;
+    const otherChainRows = vendorRowsTotal - onThisChain.length;
+
+    // Adversarial cycle 1, fix G — explicit degradation instead of an all-or-nothing throw: one
+    // malformed pair in an otherwise-good batch used to fail the ENTIRE call. Each candidate is
+    // validated independently and a malformed one is DROPPED, not thrown, and counted. Only if
+    // EVERY candidate turns out malformed does this still throw (an empty result would otherwise
+    // look identical to "no new pairs right now" — a silent, misleading success).
+    const pools: Pool[] = [];
+    let malformedCount = 0;
+    for (const pair of candidates) {
+      // `null` fee: this route makes no `eth_call`. One extra RPC round trip per row would turn a
+      // page of 100 into 100 node calls, and the field is documented as absent where it is not
+      // derived — `onchain_pool_info` is where a caller asks for one pool and its tier.
+      const pool = toPool(pair, chain, null);
+      if (pool === null) {
+        malformedCount += 1;
+        continue;
+      }
+      pools.push(pool);
+    }
+
+    if (malformedCount > 0) {
+      process.stderr.write(
+        // `chain.slug`, not `chain` (vdd-multi cycle 5, L-1): `chain` is a `ChainInfo` since
+        // TASK-006, and interpolating an object renders `[object Object]` — a diagnostic that
+        // names no chain at all, in the one line an operator reads to find out which one broke.
+        `dexscreener.normalize: skipped ${malformedCount} malformed pair(s) of ${candidates.length} for chain=${chain.slug}\n`,
+      );
+    }
+
+    if (candidates.length > 0 && pools.length === 0) {
+      throw new Error(
+        `dexscreener.normalize: all ${candidates.length} candidate pair(s) for chain=${chain.slug} were malformed`,
+      );
+    }
+
+    // Q-10: the same two facts the stderr line above reports, now on the channel the CALLER can
+    // read. Both causes are named separately because they mean different things to a consumer: a
+    // page cut by `limit` can be widened by asking for more, whereas dropped rows cannot be
+    // recovered by any argument and say something about the vendor's payload.
+    const dropNote =
+      malformedCount > 0
+        ? `${malformedCount} of ${candidates.length} vendor row(s) failed validation and were dropped`
+        : '';
+    const cutNote =
+      cutByLimit > 0 ? `${cutByLimit} further row(s) on this chain were cut by limit=${limit}` : '';
+    // L-14: kept a SEPARATE note, never folded into `cutNote`. The two existing causes differ
+    // because one can be widened by asking for more and the other cannot; the vendor cap is a
+    // third kind that no argument of this route can widen. Folding it into `cutByLimit` would
+    // tell the caller to retry with a bigger `limit` — advice that cannot work.
+    const queried = pages.map((page) => page.query).join(', ');
+    const vendorNote = vendorPageFull
+      ? `the vendor returned a FULL page of ${VENDOR_PAGE_SIZE} row(s) for q=${queried}, so rows beyond it were never sent and no argument of this route can request them (${otherChainRows} of the ${vendorRowsTotal} row(s) returned held OTHER chains); ${PAIRS_QUERY_NOTE}`
+      : '';
+    // L-19: an empty answer names the strategy that produced it. Before this, an empty page was
+    // indistinguishable from "this chain has no pairs" — a false statement delivered with a 200.
+    const emptyNote =
+      pools.length === 0
+        ? `no pool on ${chain.slug} matched q=${queried} — ${PAIRS_QUERY_NOTE}, so this is a statement about the query, NOT about the chain`
+        : '';
+    return {
+      pools,
+      truncated: {
+        pairs: malformedCount > 0 || cutByLimit > 0 || vendorPageFull || pools.length === 0,
+        reason: [dropNote, cutNote, vendorNote, emptyNote].filter(Boolean).join('; '),
+      },
+    };
+  }
+
   return {
     id: 'dexscreener',
     // TASK-006 (R-54/R-57): DexScreener publishes no chain catalog, so `vendors.dexscreener` is an
     // OBSERVED value (task 006-2) — non-null means we have actually seen that chainId in a
-    // response. `nativeSymbol` is required too because the keyless search endpoint is queried by
-    // native symbol; without one there is no query to make.
-    chainSupport: (chain: ChainInfo): boolean =>
-      chain.vendors['dexscreener'] != null && chain.nativeSymbol != null,
+    // response.
+    //
+    // **One condition for all three capabilities, and task 014-32c is why it is not per-capability.**
+    // The plan expected a per-capability predicate: `pairs.active` needed `nativeSymbol` for its
+    // query while the address-addressed capabilities did not. Fixing L-19 removed that need — the
+    // first query is now the vendor's own chain id — so the clause is gone for everyone and there is
+    // nothing left to vary by capability. A predicate that varies where the code does not is a
+    // second thing to keep in step (`servesChain`'s own docstring in `rpc-evm` names that failure).
+    //
+    // It stays in step with the transport by construction: `resolveChain` above enforces exactly
+    // this condition, and every capability's argument extraction goes through it.
+    chainSupport: (chain: ChainInfo): boolean => chain.vendors['dexscreener'] != null,
     /**
      * What the committed probe says about this chain — task 014-32a, R-33.5.
      *
@@ -170,136 +557,38 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
     capabilities: () => [{ id: 'pairs.active' }, { id: 'pool.info' }, { id: 'token.pools' }],
     costOf: () => ({ credits: 0 }),
     fetch: async (
-      _cap: string,
+      cap: string,
       args: Record<string, unknown>,
       /** WI-37 — forwarded unchanged to the limiter and the transport, never re-derived. */
       deadlineAtMs?: number,
     ): Promise<DexscreenerFetchResult> => {
-      const { chain, limit } = extractFetchArgs(args, chains);
-      const query = chain.nativeSymbol ?? chain.slug;
-      const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
-
-      await throttle('dexscreener', RATE_LIMIT, 1, deadlineAtMs);
-      const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
-        ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
-      });
-      if (!response.ok) {
-        throw new Error(`dexscreener: HTTP ${response.status} for ${url}`);
-      }
-      const raw: unknown = await response.json();
-      return { chain, limit, raw };
-    },
-    normalize: (_cap: string, rawResult: unknown): PoolPage => {
-      const { chain, limit, raw } = rawResult as DexscreenerFetchResult;
-      const body = raw as DexscreenerSearchResponse;
-      const vendorRows = body.pairs ?? [];
-      const onThisChain = vendorRows.filter(
-        (pair) => pair.chainId === (chain.vendors['dexscreener'] ?? chain.slug),
-      );
-      const candidates = onThisChain.slice(0, limit);
-      // Q-10: counted BEFORE the slice, because "the vendor had more and we cut it" is one of the
-      // two ways this page can be short, and it is invisible afterwards.
-      const cutByLimit = onThisChain.length - candidates.length;
-
-      // L-14: the two counters above measure only what WE lose. This route is a relevance search
-      // over an index that is not chain-scoped server-side, so two losses happen before any of our
-      // arithmetic runs, and `truncated` used to report `false` through both:
-      //   1. the vendor page is capped — rows past `VENDOR_PAGE_SIZE` were never sent;
-      //   2. rows for OTHER chains consume slots in that same capped page.
-      // Measured on the repo's own fixture: `q=ETH` returns 30 rows of which **2** are ethereum,
-      // so the busiest EVM chain answered with two pairs and a completeness claim.
-      const vendorPageFull = vendorRows.length >= VENDOR_PAGE_SIZE;
-      const otherChainRows = vendorRows.length - onThisChain.length;
-
-      // Adversarial cycle 1, fix G — explicit degradation instead of an all-or-nothing throw:
-      // one malformed pair in an otherwise-good batch used to fail the ENTIRE onchain_active_pairs
-      // call. Each candidate is validated independently (a manual type-narrowing guard, since the
-      // wire fields are `unknown`, followed by `PoolSchema.safeParse` as the canonical contract
-      // check); a malformed one is DROPPED, not thrown, and counted. Only if EVERY candidate in
-      // this batch turns out malformed does this still throw (an empty result would otherwise
-      // look identical to "no new pairs right now" — a silent, misleading success).
-      const pools: Pool[] = [];
-      let malformedCount = 0;
-
-      for (const pair of candidates) {
-        const pairAddress = pair.pairAddress;
-        const dexId = pair.dexId;
-        const baseSymbol = pair.baseToken?.symbol;
-        const quoteSymbol = pair.quoteToken?.symbol;
-        if (
-          typeof pairAddress !== 'string' ||
-          typeof dexId !== 'string' ||
-          typeof baseSymbol !== 'string' ||
-          typeof quoteSymbol !== 'string'
-        ) {
-          malformedCount += 1;
-          continue;
-        }
-
-        const pool: Pool = {
-          id: `${chain.slug}:${pairAddress}`,
-          chain: chain.slug,
-          dexId,
-          // Vendor-authored on a PERMISSIONLESS venue — anyone can deploy a pair and choose these
-          // two strings, and they land verbatim in the model's context (vdd-multi cycle 5, M-6).
-          baseTokenSymbol: truncateVendorText(baseSymbol, MAX_VENDOR_SYMBOL_LENGTH),
-          quoteTokenSymbol: truncateVendorText(quoteSymbol, MAX_VENDOR_SYMBOL_LENGTH),
-          pairAddress,
-          source: 'dexscreener',
-          fetchedAt: now(),
-          ...(typeof pair.pairCreatedAt === 'number' ? { createdAt: pair.pairCreatedAt } : {}),
-          ...(typeof pair.liquidity?.usd === 'number' ? { liquidityUsd: pair.liquidity.usd } : {}),
-          ...(typeof pair.volume?.h24 === 'number' ? { volume24hUsd: pair.volume.h24 } : {}),
-        };
-        const parsed = PoolSchema.safeParse(pool);
-        if (!parsed.success) {
-          malformedCount += 1;
-          continue;
-        }
-        pools.push(parsed.data);
-      }
-
-      if (malformedCount > 0) {
-        process.stderr.write(
-          // `chain.slug`, not `chain` (vdd-multi cycle 5, L-1): `chain` is a `ChainInfo` since
-          // TASK-006, and interpolating an object renders `[object Object]` — a diagnostic that
-          // names no chain at all, in the one line an operator reads to find out which one broke.
-          `dexscreener.normalize: skipped ${malformedCount} malformed pair(s) of ${candidates.length} for chain=${chain.slug}\n`,
-        );
-      }
-
-      if (candidates.length > 0 && pools.length === 0) {
+      if (cap === 'pool.info') return fetchPool(args, deadlineAtMs);
+      if (cap === 'token.pools') {
+        // Declared by `capabilities()` since task 014-32b, served by task 014-32d. Refused
+        // EXPLICITLY rather than falling through to the search route: that fall-through would
+        // answer a `token.pools` call with a page of unrelated pairs — a wrong answer wearing the
+        // shape of a right one. Unreachable today (the tool is a stub that never resolves), and
+        // this is what keeps it unreachable by construction rather than by coincidence.
         throw new Error(
-          `dexscreener.normalize: all ${candidates.length} candidate pair(s) for chain=${chain.slug} were malformed`,
+          'dexscreener.fetch: token.pools has no vendor route yet — its logic ships in task 014-32d',
         );
       }
-
-      // Q-10: the same two facts the stderr line above reports, now on the channel the CALLER can
-      // read. Both causes are named separately because they mean different things to a consumer: a
-      // page cut by `limit` can be widened by asking for more, whereas dropped rows cannot be
-      // recovered by any argument and say something about the vendor's payload.
-      const dropNote =
-        malformedCount > 0
-          ? `${malformedCount} of ${candidates.length} vendor row(s) failed validation and were dropped`
-          : '';
-      const cutNote =
-        cutByLimit > 0
-          ? `${cutByLimit} further row(s) on this chain were cut by limit=${limit}`
-          : '';
-      // L-14: kept a SEPARATE note, never folded into `cutNote`. The two existing causes differ
-      // because one can be widened by asking for more and the other cannot; the vendor cap is a
-      // third kind that no argument of this route can widen. Folding it into `cutByLimit` would
-      // tell the caller to retry with a bigger `limit` — advice that cannot work.
-      const vendorNote = vendorPageFull
-        ? `the vendor returned a FULL page of ${vendorRows.length} row(s) (cap ${VENDOR_PAGE_SIZE}) for q=${chain.nativeSymbol ?? chain.slug}, so rows beyond it were never sent and no argument of this route can request them (${otherChainRows} slot(s) of that page held OTHER chains)`
-        : '';
-      return {
-        pools,
-        truncated: {
-          pairs: malformedCount > 0 || cutByLimit > 0 || vendorPageFull,
-          reason: [dropNote, cutNote, vendorNote].filter(Boolean).join('; '),
-        },
-      };
+      return fetchPairs(args, deadlineAtMs);
+    },
+    normalize: (cap: string, rawResult: unknown): PoolPage | PoolInfoResult => {
+      const result = rawResult as DexscreenerFetchResult;
+      // Branch on the FETCH RESULT, not on `cap` — see `DexscreenerFetchResult`'s docstring. `cap`
+      // is still checked, so a route/capability mismatch is loud rather than silently reshaped.
+      if (result.kind === 'pool') {
+        if (cap !== 'pool.info') {
+          throw new Error(`dexscreener.normalize: ${cap} was handed a pool.info fetch result`);
+        }
+        return normalizePool(result);
+      }
+      if (cap !== 'pairs.active') {
+        throw new Error(`dexscreener.normalize: ${cap} was handed a pairs.active fetch result`);
+      }
+      return normalizeSearch(result);
     },
     isAvailable: () => ({ ok: true }),
   };

@@ -447,8 +447,15 @@ composition of two things that already exist:
 ```
 covered(capability, chain) :=
     ∃ adapterId ∈ route(capability).adapterIds :
-        adapter(adapterId).chainSupport(chainInfo) === true
+        adapter(adapterId).chainSupport(chainInfo, capability) === true
 ```
+
+**The capability is an ARGUMENT of the predicate**, and the formula said so only after task 014-32c
+brought it into line with `adapters/types.ts`. It is not decoration: `nansen` covers
+`smart-money.flows` on 17 chains and `token.risk` on 25, because a composite capability is covered
+only where every sub-call is. A formula blind to the capability could state a union (over-claiming,
+and the extra chains half-succeed AFTER credits are spent) or an intersection (under-claiming), and
+neither is what the code computes.
 
 Every adapter answers the question about a chain itself, with a predicate over `ChainInfo` rather
 than a list:
@@ -457,7 +464,7 @@ than a list:
 | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `defillama`                                          | per capability — see below                                                   |
 | `coingecko`                                          | `c.vendors.coingecko !== null`                                               |
-| `dexscreener`                                        | `c.vendors.dexscreener !== null`                                             |
+| `dexscreener`                                        | `c.vendors.dexscreener !== null` — one condition for all three capabilities  |
 | `rpc-evm`                                            | `c.family === 'evm' && c.rpcHosts !== null`                                  |
 | `rpc-solana`                                         | `c.caip2 === <solana mainnet caip2>`                                         |
 | `nansen`                                             | per capability — see below                                                   |
@@ -466,6 +473,14 @@ than a list:
 | `dune`                                               | unchanged — `isAvailable()` is still unconditionally `false`                 |
 
 A deprecated chain is covered by nothing: `covered()` refuses it before consulting any adapter.
+
+**The `dexscreener` row was accurate about the intent and not about the code, until 2026-08-21.** The
+adapter also required `c.nativeSymbol !== null`, because its only query was the native symbol. Task
+014-32c planned to relax that for the two address-addressed capabilities and found it did not need
+to: fixing L-19 replaced the query with the vendor's own chain id, so no capability requires a native
+symbol and the predicate is uniform. Measured the same day: all 49 covered chains carry a
+`nativeSymbol`, so the code and this row described the same 49 chains throughout — the drift changed
+no coverage, which is exactly why nothing caught it.
 
 **Why a predicate and not a list column:** a column would mean maintaining coverage in two places
 (the registry plus the adapter's `capabilities()`) and the two would diverge on the first change. The

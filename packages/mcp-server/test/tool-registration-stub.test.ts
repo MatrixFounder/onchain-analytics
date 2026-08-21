@@ -6,7 +6,7 @@ import {
   type CapabilityManifest,
 } from '@onchain-intel/core';
 import { toolSpecs } from '../src/tools/tool-specs.js';
-import { poolInfoHandler, PoolInfoInputSchema, poolInfoToolSpec } from '../src/tools/pool-info.js';
+import { PoolInfoInputSchema, poolInfoToolSpec } from '../src/tools/pool-info.js';
 import {
   tokenPoolsHandler,
   TokenPoolsInputSchema,
@@ -56,28 +56,35 @@ const CTX = {
   ),
 } as unknown as { registry: never };
 
+/**
+ * The tools still on a stub handler.
+ *
+ * `onchain_pool_info` left this list in task 014-32c, which gave it the vendor route, the fee
+ * derivation and an eval case — the interval closing as designed. Its registration facts are still
+ * asserted below, alongside `onchain_token_pools`; only the refusal cases are scoped to what is
+ * still stubbed.
+ */
 const STUB_TOOLS = [
-  {
-    spec: poolInfoToolSpec,
-    name: 'onchain_pool_info',
-    capability: 'pool.info',
-    /** The task that removes this stub. Named in the refusal, in the exclusion, and here. */
-    task: '014-32c',
-    handler: () => poolInfoHandler({ chain: 'ethereum', pairAddress: '0x' + 'a'.repeat(40) }, CTX),
-  },
   {
     spec: tokenPoolsToolSpec,
     name: 'onchain_token_pools',
     capability: 'token.pools',
+    /** The task that removes this stub. Named in the refusal, in the exclusion, and here. */
     task: '014-32d',
     handler: () => tokenPoolsHandler({ token: '0x' + 'b'.repeat(40) }, CTX),
   },
 ] as const;
 
+/** Both tools this task registered — stubbed or not, they are registered and their schemas hold. */
+const REGISTERED = [
+  { spec: poolInfoToolSpec, name: 'onchain_pool_info', capability: 'pool.info' },
+  { spec: tokenPoolsToolSpec, name: 'onchain_token_pools', capability: 'token.pools' },
+] as const;
+
 describe('TC-UNIT-01 — both tools are registered, and the count is not written down here', () => {
-  it('every stub tool appears in the live registry', () => {
+  it('every tool this task registered appears in the live registry', () => {
     const names = toolSpecs.map((spec) => spec.name);
-    for (const tool of STUB_TOOLS) {
+    for (const tool of REGISTERED) {
       expect(names, `${tool.name} is not registered`).toContain(tool.name);
     }
     // The denominator is READ, never asserted as a literal: `expect(toolSpecs).toHaveLength(22)`
@@ -192,7 +199,7 @@ describe('TC-UNIT-07 — the adapter declares the capability it now serves', () 
 });
 
 describe('TC-UNIT-08/09 — the stub interval is declared, and each entry names its remover', () => {
-  it('TC-UNIT-08: both capabilities are accounted for, by the exclusion and not by a case', () => {
+  it('TC-UNIT-08: every still-stubbed capability is accounted for by an exclusion, not a case', () => {
     // `accountedCapabilities()` is the set `eval-capability-coverage.test.ts` compares against. A
     // registered tool makes its capability "served", so without these entries the suite refuses —
     // which is Stub-First's own contract ("the test on the stub is green") failing.
@@ -226,5 +233,14 @@ describe('TC-UNIT-08/09 — the stub interval is declared, and each entry names 
     for (const tool of STUB_TOOLS) {
       expect(withoutStubs.has(tool.capability)).toBe(false);
     }
+  });
+
+  it('a capability whose stub has SHIPPED is accounted for by a CASE, not by an exclusion', () => {
+    // The interval's other end, asserted rather than assumed. Without this, removing the stub and
+    // forgetting the exclusion would leave `pool.info` accounted for by the very entry that says
+    // "nothing exercises this" — the mask M6 warns about, surviving the task that was meant to
+    // close it.
+    expect(CAPABILITY_EXCLUSIONS.has('pool.info')).toBe(false);
+    expect(accountedCapabilities().has('pool.info')).toBe(true);
   });
 });

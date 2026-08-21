@@ -181,7 +181,16 @@ export const crossChecks = {
  * check. `degraded` rather than `error`: the call itself succeeded, we simply cannot say the answer
  * is good — and `degraded` already means precisely that, and already fails the run.
  */
-export function grade(tool, structured) {
+/**
+ * @param context what was ASKED — `{chain, args, probe}`. Optional and ignored by most cases.
+ *
+ * **Why a case may need it** (task 014-32c): a check that only sees the RESPONSE can verify the
+ * answer's shape and never that it answers the question. `pool.info` is the first capability
+ * addressed by an address, so "the vendor returned a pool, but not the one asked for" is a real
+ * failure with a schema-valid response — and it is invisible without the request. Strictly
+ * additive: every existing case declares one parameter and is unaffected.
+ */
+export function grade(tool, structured, context) {
   const check = checks[tool];
   if (!check) {
     return {
@@ -192,6 +201,6 @@ export function grade(tool, structured) {
       ],
     };
   }
-  const problems = check.run(structured) ?? [];
+  const problems = check.run(structured, context) ?? [];
   return { verdict: problems.length ? 'degraded' : 'ok', problems };
 }

@@ -716,7 +716,13 @@ measured the same day.
 **Why.** A revert is distinguishable from a returned tier ⇒ "this pool declares no fee tier" never
 reaches the caller as a number.
 
-**The derivation costs two things, both named.**
+**The derivation costs two things, both named.** Both were paid by task 014-32c:
+`packages/core/src/adapters/rpc-evm/fee-tier.ts` is the derivation, and it shares that adapter's
+transport (`call-rpc.ts`, extracted so an SSRF-bearing loop has one implementation and two callers).
+Measured live 2026-08-21: `fee()` answered `500` on ethereum's WETH/USDC v3 pool and `3000` on
+base's, and REVERTED on bsc's PancakeSwap v2 pool and avalanche's Pharaoh DLMM pool. **The vendor's
+unit is hundredths of a basis point**, so `feeTierBps` divides by 100 — publishing `500` under that
+name would overstate the fee 100×.
 
 1. `eth_call` becomes a third method on `rpc-evm`. The adapter calls `eth_gasPrice`
    (`packages/core/src/adapters/rpc-evm/index.ts:294`, `method: 'eth_gasPrice',`) and
@@ -820,9 +826,15 @@ must satisfy, measured rather than recalled.
 by a registered tool, or named in a declared list with a reason. Both inputs are modules of this
 repository, so the gate needs no network and runs in the existing `pnpm test` step.
 
-**Seven manifest keys are served by no tool today** (measured 2026-08-13, 26 keys against 20 tools; **five of the seven since task 014-32b registered the tools for `pool.info` and `token.pools`** — 27 keys against 22 tools):
-`pool.info`, `token.metadata`, `privacy.shielded_pool`, `platform.identities`, `platform.documents`,
-`platform.contracts`, `platform.credits`.
+**Seven manifest keys are served by no tool today** (measured 2026-08-13, 26 keys against 20 tools):
+
+> **State after T-014, measured 2026-08-21: SIX**, at 27 keys against 22 tools. `pool.info` left the
+> list because task 014-32c gave it a tool (L-15 closed); `token.pools` is a 27th key with a tool of
+> its own. The remaining six each carry a row in `CAPABILITY_KNOWN_GAPS` with a reason of its own,
+> and `packages/mcp-server/test/manifest-tool-coverage.test.ts` is the AC-29 gate that keeps a
+> seventh from appearing unnamed.
+> `pool.info`, `token.metadata`, `privacy.shielded_pool`, `platform.identities`, `platform.documents`,
+> `platform.contracts`, `platform.credits`.
 
 R-21.1 removes one of the seven. R-21.3 covers the other six: each gets a tool or a declared row
 before the gate can pass.

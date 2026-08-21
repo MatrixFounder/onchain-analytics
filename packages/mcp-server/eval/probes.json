@@ -50,7 +50,9 @@
       "token": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
       "tokenNote": "WETH",
       "wallet": "0x0000000000000000000000000000000000000000",
-      "protocolSlug": "aave"
+      "protocolSlug": "aave",
+      "pool": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
+      "poolNote": "WETH/USDC on Uniswap v3 — fee() answers 500 (5 bps) — the highest-liquidity pool of this row's own `token` ($105,452,090 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "solana": {
       "family": "svm",
@@ -59,21 +61,27 @@
       "tokenNote": "USDC",
       "wallet": "11111111111111111111111111111111",
       "walletNote": "System Program — always exists, balance may be 0",
-      "protocolSlug": "raydium"
+      "protocolSlug": "raydium",
+      "pool": "9d9mb8kooFfaD3SctgZtkxQypkshx6ezhbKio89ixyy2",
+      "poolNote": "TRUMP/USDC on Meteora DLMM — no fee(), and not an evm chain either — the highest-liquidity pool of this row's own `token` ($29,648,935 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "base": {
       "family": "evm",
       "token": "0x4200000000000000000000000000000000000006",
       "tokenNote": "WETH (OP-stack predeploy)",
       "wallet": "0x0000000000000000000000000000000000000000",
-      "protocolSlug": "aave"
+      "protocolSlug": "aave",
+      "pool": "0x6c561B446416E1A00E8E93E221854d6eA4171372",
+      "poolNote": "WETH/USDC on Uniswap v3 — fee() answers 3000 (30 bps) — the highest-liquidity pool of this row's own `token` ($112,041,158 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "arbitrum": {
       "family": "evm",
       "token": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
       "tokenNote": "WETH",
       "wallet": "0x0000000000000000000000000000000000000000",
-      "protocolSlug": "aave"
+      "protocolSlug": "aave",
+      "pool": "0x641C00A822e8b671738d32a431a4Fb6074E5c79d",
+      "poolNote": "WETH/USD₮0 on Uniswap — the highest-liquidity pool of this row's own `token` ($7,106,459 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "polygon": {
       "family": "evm",
@@ -81,21 +89,27 @@
       "token": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
       "tokenNote": "WMATIC/WPOL",
       "wallet": "0x0000000000000000000000000000000000000000",
-      "protocolSlug": "aave"
+      "protocolSlug": "aave",
+      "pool": "0x9B08288C3Be4F62bbf8d1C20Ac9C5e6f9467d8B7",
+      "poolNote": "WPOL/USDT0 on Uniswap — the highest-liquidity pool of this row's own `token` ($1,303,799 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "bsc": {
       "family": "evm",
       "token": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
       "tokenNote": "WBNB",
       "wallet": "0x0000000000000000000000000000000000000000",
-      "protocolSlug": "pancakeswap"
+      "protocolSlug": "pancakeswap",
+      "pool": "0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE",
+      "poolNote": "WBNB/USDT on PancakeSwap v2 — fee() reverts, which is the measured \"no tier\" case — the highest-liquidity pool of this row's own `token` ($90,539,330 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "avalanche": {
       "family": "evm",
       "token": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
       "tokenNote": "WAVAX",
       "wallet": "0x0000000000000000000000000000000000000000",
-      "protocolSlug": "aave"
+      "protocolSlug": "aave",
+      "pool": "0x8aC5707f8D4BDe1d771d34c7AfD81c3922b73379",
+      "poolNote": "WAVAX/USDC on Pharaoh DLMM — fee() reverts — the highest-liquidity pool of this row's own `token` ($8,659,306 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "berachain": {
       "family": "evm",
@@ -103,7 +117,9 @@
       "wallet": "0x0000000000000000000000000000000000000000",
       "protocolSlug": "kodiak",
       "token": "0x6969696969696969696969696969696969696969",
-      "tokenNote": "WBERA"
+      "tokenNote": "WBERA",
+      "pool": "0xCda0ca7C3a609773067261D86E817bf777a2870d",
+      "poolNote": "WBERA/WETH on Kodiak v3 — implements fee(), but the chain carries no curated rpcHosts — the highest-liquidity pool of this row's own `token` ($288,587 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "gnosis": {
       "family": "evm",
@@ -118,7 +134,9 @@
       "why": "non-EVM, non-SVM, NO wallet balances — the case that must report `unsupported` for a wallet. CORRECTED 2026-08-20 (task 014-32a): the old wording said `token+tvl only`, and the per-chain witness refutes it — the vendor routes `tron` and echoes it, so this row now carries `vendors.dexscreener` and DECLARES `pairs.active`. The probe still earns its place: the unsupported case it exists for is the wallet one, which is unchanged.",
       "protocolSlug": "justlend",
       "token": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
-      "tokenNote": "USDT TRC20 — non-EVM address format, which is the point of probing it"
+      "tokenNote": "USDT TRC20 — non-EVM address format, which is the point of probing it",
+      "pool": "TFGDbUyP8xez44C76fin3bn3Ss6jugoUwJ",
+      "poolNote": "WTRX/USDT on SunSwap — the highest-liquidity pool of this row's own `token` ($94,371,657 TVL), measured 2026-08-21 via GET /token-pairs/v1/{chainId}/{token}; re-measure rather than invent if it thins out"
     },
     "bitcoin": {
       "family": "other",

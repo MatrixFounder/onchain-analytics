@@ -18,11 +18,14 @@ interface DexscreenerFixturePair {
   chainId: string;
   dexId: string;
   pairAddress: string;
-  baseToken: { symbol: string };
-  quoteToken: { symbol: string };
-  liquidity?: { usd?: number };
+  // The address and per-side liquidity fields are what task 014-32b's six optional `Pool` fields
+  // are built from. They were always in the recorded fixtures; nothing read them until now.
+  baseToken: { symbol: string; address?: string };
+  quoteToken: { symbol: string; address?: string };
+  liquidity?: { usd?: number; base?: number; quote?: number };
   volume?: { h24?: number };
   pairCreatedAt?: number;
+  labels?: string[];
 }
 
 interface DexscreenerFixture {
@@ -49,6 +52,21 @@ function expectedPool(chain: string, pair: DexscreenerFixturePair) {
     ...(typeof pair.pairCreatedAt === 'number' ? { createdAt: pair.pairCreatedAt } : {}),
     ...(typeof pair.liquidity?.usd === 'number' ? { liquidityUsd: pair.liquidity.usd } : {}),
     ...(typeof pair.volume?.h24 === 'number' ? { volume24hUsd: pair.volume.h24 } : {}),
+    // Task 014-32b's six optional fields, published from the SAME rows this route already
+    // returned — derived from the fixture, never written as literals, so a re-recording cannot
+    // make the expectation silently wrong. `feeTierBps` is absent on this route by design: it
+    // needs an `eth_call` per row, and `onchain_pool_info` is where a caller asks for one pool.
+    ...(typeof pair.baseToken.address === 'string'
+      ? { baseTokenAddress: pair.baseToken.address }
+      : {}),
+    ...(typeof pair.quoteToken.address === 'string'
+      ? { quoteTokenAddress: pair.quoteToken.address }
+      : {}),
+    ...(typeof pair.liquidity?.base === 'number' ? { reserveBase: pair.liquidity.base } : {}),
+    ...(typeof pair.liquidity?.quote === 'number' ? { reserveQuote: pair.liquidity.quote } : {}),
+    ...(Array.isArray(pair.labels) && typeof pair.labels[0] === 'string'
+      ? { versionLabel: pair.labels[0] }
+      : {}),
   };
 }
 
@@ -56,13 +74,32 @@ const CHAINS = loadChainRegistry();
 
 /** The fixture stores the chain as a SLUG; the adapter's private fetch result carries a
  * resolved `ChainInfo` since TASK-006 (task 006-5). Expected OUTPUTS below are unchanged. */
-function resolved<T extends { chain: string }>(
+/**
+ * Builds the `search` fetch-result the adapter's `normalize()` now receives — task 014-32c.
+ *
+ * The hand-off became a discriminated union when `pool.info` got its own vendor route, and it
+ * carries `pages` rather than one `raw` because the L-19 fix can issue a second query. A fixture
+ * describes ONE page, so it is wrapped in a one-entry list here.
+ */
+function resolved<T extends { chain: string; limit: number; raw: unknown }>(
   f: T,
-): { chain: ReturnType<typeof CHAINS.resolve> } & Omit<T, 'chain'> {
-  const { chain, ...rest } = f;
-  return { chain: CHAINS.resolve(chain), ...rest } as {
-    chain: ReturnType<typeof CHAINS.resolve>;
-  } & Omit<T, 'chain'>;
+): { kind: 'search'; chain: ReturnType<typeof CHAINS.resolve>; limit: number; pages: unknown[] } {
+  return {
+    kind: 'search',
+    chain: CHAINS.resolve(f.chain),
+    limit: f.limit,
+    pages: [{ query: CHAINS.resolve(f.chain).vendors['dexscreener'] ?? f.chain, raw: f.raw }],
+  };
+}
+
+/** The same wrapper for a hand-built page — every case below hands `normalize()` one page. */
+function searchResult(chain: string, limit: number, raw: unknown): unknown {
+  return {
+    kind: 'search',
+    chain: CHAINS.resolve(chain),
+    limit,
+    pages: [{ query: CHAINS.resolve(chain).vendors['dexscreener'] ?? chain, raw }],
+  };
 }
 
 describe('dexscreener adapter (contract, R-6)', () => {
@@ -97,7 +134,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
     expect(result.truncated.pairs).toBe(true);
     expect(result.truncated.reason).toContain(`FULL page of ${fixture.raw.pairs.length} row(s)`);
     expect(result.truncated.reason).toContain(
-      `${fixture.raw.pairs.length - ethRows} slot(s) of that page held OTHER chains`,
+      `${fixture.raw.pairs.length - ethRows} of the ${fixture.raw.pairs.length} row(s) returned held OTHER chains`,
     );
     expect(result.truncated.reason).not.toContain('cut by limit');
   });
@@ -109,7 +146,10 @@ describe('dexscreener adapter (contract, R-6)', () => {
       .slice(0, fixture.limit)
       .map((pair) => expectedPool('solana', pair));
 
-    const result = adapter.normalize('pool.info', resolved(fixture)) as PoolPage;
+    // `pairs.active`, not `pool.info`: until task 014-32c both capabilities shared one route and
+    // this case exercised the shared code through the other name. They are two vendor routes now,
+    // and `normalize()` refuses the mismatch rather than reshaping it.
+    const result = adapter.normalize('pairs.active', resolved(fixture)) as PoolPage;
 
     expect(expected.length).toBeGreaterThan(0);
     expect(result.pools).toEqual(expected);
@@ -129,7 +169,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
     expect(fixture.raw.pairs.length).toBe(30);
     expect(result.truncated.reason).toContain(`FULL page of ${fixture.raw.pairs.length} row(s)`);
     expect(result.truncated.reason).toContain(
-      `${fixture.raw.pairs.length - solRows} slot(s) of that page held OTHER chains`,
+      `${fixture.raw.pairs.length - solRows} of the 30 row(s) returned held OTHER chains`,
     );
   });
 
@@ -162,8 +202,53 @@ describe('dexscreener adapter (contract, R-6)', () => {
 
     const result = await testAdapter.fetch('pairs.active', { chain: 'ethereum' });
 
-    expect(calls).toEqual(['https://api.dexscreener.com/latest/dex/search?q=ETH']);
-    expect(result).toEqual({ chain: CHAINS.resolve('ethereum'), limit: 10, raw: fixture.raw });
+    // L-19 (task 014-32c): the query is the VENDOR'S OWN CHAIN ID, not the native symbol. Measured
+    // over all 49 covered chains, the symbol found nothing on 22 of them while this finds rows on
+    // 47 — and on the chains where it finds none, the second candidate runs.
+    // TWO requests, and the second one is the L-19 fallback doing its job: this fixture holds only
+    // 2 ethereum rows against the default `limit` of 10, so the first query did not satisfy the
+    // caller and the wrapped-native candidate ran. The case below proves the opposite direction —
+    // a first query that DOES satisfy the caller costs one request.
+    expect(calls).toEqual([
+      'https://api.dexscreener.com/latest/dex/search?q=ethereum',
+      'https://api.dexscreener.com/latest/dex/search?q=WETH',
+    ]);
+    expect(result).toEqual({
+      kind: 'search',
+      chain: CHAINS.resolve('ethereum'),
+      limit: 10,
+      pages: [
+        { query: 'ethereum', raw: fixture.raw },
+        { query: 'WETH', raw: fixture.raw },
+      ],
+    });
+  });
+
+  it('L-19: the second query is SKIPPED once the first satisfies `limit`', async () => {
+    // The other half of the fallback contract. Without this the strategy would be indistinguishable
+    // from "always issue both", which doubles vendor traffic on a keyless endpoint for nothing.
+    const calls: string[] = [];
+    const page = {
+      schemaVersion: '1.0.0',
+      pairs: Array.from({ length: 5 }, (_unused, i) => ({
+        chainId: 'ethereum',
+        dexId: 'uniswap',
+        pairAddress: `0x${String(i)}`,
+        baseToken: { symbol: 'WETH' },
+        quoteToken: { symbol: 'USDC' },
+      })),
+    };
+    const testAdapter = createDexscreenerAdapter({
+      fetchImpl: async (url) => {
+        calls.push(String(url));
+        return new Response(JSON.stringify(page), { status: 200 });
+      },
+      now: () => FIXED_NOW,
+    });
+
+    await testAdapter.fetch('pairs.active', { chain: 'ethereum', limit: 5 });
+
+    expect(calls).toEqual(['https://api.dexscreener.com/latest/dex/search?q=ethereum']);
   });
 
   describe('malformed pair handling (adversarial cycle 1, fix G)', () => {
@@ -189,11 +274,10 @@ describe('dexscreener adapter (contract, R-6)', () => {
         ],
       };
 
-      const result = adapter.normalize('pairs.active', {
-        chain: CHAINS.resolve('ethereum'),
-        limit: 10,
-        raw,
-      }) as PoolPage;
+      const result = adapter.normalize(
+        'pairs.active',
+        searchResult('ethereum', 10, raw),
+      ) as PoolPage;
 
       expect(result.pools).toHaveLength(1);
       expect(result.pools[0]!.pairAddress).toBe('0xgood');
@@ -223,11 +307,10 @@ describe('dexscreener adapter (contract, R-6)', () => {
         })),
       };
 
-      const result = adapter.normalize('pairs.active', {
-        chain: CHAINS.resolve('ethereum'),
-        limit: 2,
-        raw,
-      }) as PoolPage;
+      const result = adapter.normalize(
+        'pairs.active',
+        searchResult('ethereum', 2, raw),
+      ) as PoolPage;
 
       expect(result.pools).toHaveLength(2);
       expect(result.truncated.pairs).toBe(true);
@@ -243,9 +326,9 @@ describe('dexscreener adapter (contract, R-6)', () => {
         pairs: [{ chainId: 'ethereum', dexId: 'uniswap', baseToken: {}, quoteToken: {} }],
       };
 
-      expect(() =>
-        adapter.normalize('pairs.active', { chain: CHAINS.resolve('ethereum'), limit: 10, raw }),
-      ).toThrow(/all 1 candidate pair\(s\).*were malformed/);
+      expect(() => adapter.normalize('pairs.active', searchResult('ethereum', 10, raw))).toThrow(
+        /all 1 candidate pair\(s\).*were malformed/,
+      );
       stderrSpy.mockRestore();
     });
   });
@@ -264,11 +347,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
     });
 
     const normalizePage = (raw: unknown, limit = 100): PoolPage =>
-      adapter.normalize('pairs.active', {
-        chain: CHAINS.resolve('ethereum'),
-        limit,
-        raw,
-      }) as PoolPage;
+      adapter.normalize('pairs.active', searchResult('ethereum', limit, raw)) as PoolPage;
 
     // THE GUARD THAT MATTERS. The check added for L-14 answers "possibly incomplete" from a full
     // page, and a check that fires on every page is worth exactly as much as one that never fires
@@ -288,14 +367,16 @@ describe('dexscreener adapter (contract, R-6)', () => {
 
       expect(result.pools).toHaveLength(30);
       expect(result.truncated.pairs).toBe(true);
-      expect(result.truncated.reason).toContain('FULL page of 30 row(s) (cap 30)');
-      expect(result.truncated.reason).toContain('q=ETH');
+      expect(result.truncated.reason).toContain('FULL page of 30 row(s)');
+      // The QUERY that produced the capped page, named so the caller can tell which strategy ran.
+      // `ethereum` since L-19, not `ETH` — see the strategy note at the top of the adapter.
+      expect(result.truncated.reason).toContain('q=ethereum');
       // Nothing of ours cut anything here, so neither of the two older causes may appear — the
       // vendor cap is a THIRD kind, and telling the caller to retry with a bigger `limit` would be
       // advice that cannot work.
       expect(result.truncated.reason).not.toContain('cut by limit');
       expect(result.truncated.reason).not.toContain('dropped');
-      expect(result.truncated.reason).toContain('0 slot(s) of that page held OTHER chains');
+      expect(result.truncated.reason).toContain('0 of the 30 row(s) returned held OTHER chains');
     });
 
     it('counts the slots a capped page gave to other chains', () => {
@@ -310,7 +391,7 @@ describe('dexscreener adapter (contract, R-6)', () => {
 
       expect(result.pools).toHaveLength(20);
       expect(result.truncated.pairs).toBe(true);
-      expect(result.truncated.reason).toContain('10 slot(s) of that page held OTHER chains');
+      expect(result.truncated.reason).toContain('10 of the 30 row(s) returned held OTHER chains');
     });
 
     it('reports the vendor cap ALONGSIDE our own cut, never folded into it', () => {

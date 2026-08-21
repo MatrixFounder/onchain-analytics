@@ -168,7 +168,7 @@ const RETRIABLE = /HTTP (429|5\d\d)|rate.?limit|ETIMEDOUT|ECONNRESET|abort|timed
 const THROTTLED = /HTTP (429|503)|rate.?limit/i;
 const RETRY_BACKOFF_MS = [4000, 12000];
 
-async function callToolOnce(server, name, args) {
+async function callToolOnce(server, name, args, context) {
   const started = Date.now();
   try {
     const res = await server.send('tools/call', { name, arguments: args });
@@ -185,19 +185,19 @@ async function callToolOnce(server, name, args) {
     const structured = res.result?.structuredContent;
     if (structured === undefined)
       return { verdict: 'degraded', ms, problems: ['no structuredContent'] };
-    const g = grade(name, structured);
+    const g = grade(name, structured, { ...context, args });
     return { ...g, ms, structured };
   } catch (err) {
     return { verdict: 'error', ms: Date.now() - started, problems: [String(err.message ?? err)] };
   }
 }
 
-async function callTool(server, name, args) {
-  let outcome = await callToolOnce(server, name, args);
+async function callTool(server, name, args, context) {
+  let outcome = await callToolOnce(server, name, args, context);
   for (const backoff of RETRY_BACKOFF_MS) {
     if (outcome.verdict !== 'error' || !RETRIABLE.test(outcome.problems.join(' '))) break;
     await sleep(backoff);
-    outcome = await callToolOnce(server, name, args);
+    outcome = await callToolOnce(server, name, args, context);
   }
   // RF-9: `THROTTLED`, not `RETRIABLE` — see that constant. A timeout that survived three
   // attempts stays an `error`, which is both the truth and what makes it acknowledgeable.
@@ -369,7 +369,9 @@ async function main() {
           });
           continue;
         }
-        const outcome = await callTool(server, tool, built);
+        // The REQUEST reaches the case's check alongside the response (task 014-32c). A check that
+        // sees only the answer can verify its shape and never that it answers the question asked.
+        const outcome = await callTool(server, tool, built, { chain, capability, probe });
 
         // CROSS-SOURCE checks run on top of the per-tool grade: they compare the answer against a
         // second, independent source (the registry) rather than against itself.

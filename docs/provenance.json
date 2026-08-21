@@ -53,6 +53,10 @@
       "sha256": "6cbf6910ed28c9b11bb43ce9199bb60d17f997a5841146470bbae5b4697ea4e1",
       "note": "Task 014-32a — the per-chain DexScreener witness (R-33). 858 candidates (each row’s slug plus every alias, including the three curated for this task) probed for routability, then an echo pass over the routable ones; 69 candidates routable across 65 chains, 49 chains echoed. `gen-dexscreener-chains.ts` emits `src/adapters/dexscreener/chain-coverage.ts` from it, and `sync-chain-registry.ts` takes `vendors.dexscreener` from that module. Editing it silently would turn a per-chain measurement back into the three-entry spot-check that caused L-18."
     },
+    "docs/onchain-analytics/raw/dexscreener-pairs-strategy-2026-08-21.json": {
+      "sha256": "db6460d0d7caf8ccaf1e3e8c38ea528e2c7b5c8a4304199daf6f77a1f9570b09",
+      "note": "Task 014-32c / L-19 — which query strategy can serve `pairs.active`, measured over every chain the coverage predicate admits (49). The load-bearing numbers: the native-symbol strategy this replaced answered on 27 of 49 chains, the vendor chain id answers on 47, and the pair (vendor id, then W+nativeSymbol when the first did not fill `limit`) answers on 49. It also records the negative result the fix rests on — the vendor publishes NO per-chain listing route, so every implementation of this capability is a query heuristic over one global index. Editing it would turn a measured choice back into the guess that caused L-19."
+    },
     "packages/core/test/fixtures/defillama/dexs-doge-no-history.json": {
       "sha256": "ddf9d81ba0245343af2657ef4f3472026240a54e3cdeba18e809f67302a7e59e",
       "note": "L-5 — live-recorded response for a COVERED chain the vendor publishes nothing for, chart requested, 2026-07-28. It is the evidence that an empty chart with a series REQUESTED must count the whole window as missing (the five chains listed as `echoMatchedButNoVolume` in the echo probe), and that the vendor's three absence cases — key omitted, explicit null, real zero — are distinct and must stay so. Editing it would turn that measurement back into an assumption."

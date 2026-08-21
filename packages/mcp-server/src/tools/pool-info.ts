@@ -1,22 +1,27 @@
 import { z } from 'zod';
 import { defineTool } from './registry.js';
 import {
+  canonicalizeChain,
   ChainInputSchema,
   isValidAddress,
   PoolSchema,
   type CapabilityResolver,
 } from '@onchain-intel/core';
-import { DeadlineMsInputSchema, type CacheMeta, type TimingMeta } from './resolve-capability.js';
-import { stubRefusal } from './stub-refusal.js';
+import {
+  DeadlineMsInputSchema,
+  metaFrom,
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+} from './resolve-capability.js';
+import { contractViolation } from './contract-violation.js';
 
 /**
  * `onchain_pool_info` — ONE pool, by address (T-014, R-21.1, `interfaces.md` §5.1.7).
  *
- * **What this file is today.** The `ToolSpec`, both schemas and a stub handler. The logic ships in
- * task 014-32c, which also adds the vendor branch, the eval case and the fee derivation. The form
- * lands first and once, because the `tools/list` snapshot freezes the tool inventory and AC-2
- * accepts a move of it only with a justification in the commit — two separate stubs would move that
- * snapshot twice.
+ * **Shipped in two commits on purpose.** Task 014-32b registered the `ToolSpec` and both schemas
+ * with a stub handler, so the `tools/list` snapshot moved ONCE for two tools (AC-2); task 014-32c
+ * replaced the stub with the vendor route, the fee derivation and the eval case.
  *
  * **Why the tool exists.** `pool.info` is declared by the manifest and resolved by no registered
  * tool (L-15). Owner decision `OQ-T014-F` selects variant 1: ship the tool. The capability, the
@@ -88,29 +93,50 @@ export interface PoolInfoContext {
 
 const CAPABILITY = 'pool.info';
 
-/** The task that replaces the stub below with the vendor call. Named in the refusal the caller
- * receives, so the interval is visible in the response and not only in a list. */
-const LOGIC_TASK = '014-32c';
-
 export type PoolInfoOutcome =
   | { ok: true; output: PoolInfoOutput; cache: CacheMeta; timing?: TimingMeta }
   | { ok: false; reason: string; refusalClass?: string };
 
 /**
- * Stub handler — refuses, and the refusal names task 014-32c.
+ * Resolves one pool by address — task 014-32c.
  *
- * **Declared with the full signature and implemented with none.** The type is the contract the
- * logic task inherits unchanged; the body takes no parameter because a stub that read one would
- * imply it does something with it.
+ * **The chain is canonicalised BEFORE `args` is built**, and therefore before `deriveArgsHash`:
+ * `eth` and `ethereum` would otherwise hash to two cache entries for one logical request, which on
+ * a paid route is two charges (data-model.md §4.2.2). Resolved against `ctx.registry`, never the
+ * default registry — the rule `get-token.ts` carries for the same reason.
  *
- * **It does not touch the registry.** Resolving the capability and then discarding the answer would
- * spend a vendor call and a cache slot to produce a refusal, and would make the stub interval
- * invisible in every counter that watches vendor traffic.
+ * **The address is NOT re-normalised here.** `PoolInfoInputSchema.superRefine` already refused an
+ * address the chain's own format rejects, and a pool address is a contract address the vendor
+ * matches case-sensitively on some chains — normalising it to a checksum form is the defect DF-1
+ * recorded on a different vendor's endpoint. It reaches the adapter as the caller wrote it.
  */
-export const poolInfoHandler: (
+export async function poolInfoHandler(
   input: PoolInfoInput,
   ctx: PoolInfoContext,
-) => Promise<PoolInfoOutcome> = () => Promise.resolve(stubRefusal(CAPABILITY, LOGIC_TASK));
+): Promise<PoolInfoOutcome> {
+  const chain = canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
+  const args: Record<string, unknown> = { chain, pairAddress: input.pairAddress };
+
+  const outcome = await resolveCapability(ctx.registry, CAPABILITY, chain, args, input.deadlineMs);
+  if (!outcome.ok) return outcome;
+
+  const answer = outcome.output as { resolved?: unknown; pool?: unknown };
+  // `safeParse`, never `parse` (vdd-multi cycle 6, M): this handler declares
+  // `Promise<PoolInfoOutcome>` and every sibling reports a contract violation as `{ok:false,
+  // reason}`. A throw here would escape that contract and surface as a generic transport error
+  // instead of this tool's own message.
+  const parsed = PoolInfoOutputSchema.safeParse({
+    chain,
+    resolved: answer?.resolved,
+    pool: answer?.pool ?? null,
+    source: outcome.cache.provider,
+    fetchedAt: Date.now(),
+  });
+  if (!parsed.success) {
+    return contractViolation(CAPABILITY, parsed.error);
+  }
+  return { ok: true, output: parsed.data, ...metaFrom(outcome) };
+}
 
 /** The `ToolSpec` for `onchain_pool_info` — the name is declared here and nowhere else (R-18). */
 export const poolInfoToolSpec = defineTool({

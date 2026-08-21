@@ -130,6 +130,10 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       'gas-price.ts',
       'get-token.ts',
       'list-protocols.ts',
+      // Task 014-32c. Its stub published nothing and therefore validated nothing; its handler
+      // validates against `PoolInfoOutputSchema` like every other tool that publishes a provider
+      // result, and joins this list in the commit that gave it one.
+      'pool-info.ts',
       'protocol-incidents.ts',
       'protocol-tvl-history.ts',
       'protocol-tvl.ts',

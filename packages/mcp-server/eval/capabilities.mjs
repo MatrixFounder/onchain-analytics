@@ -75,10 +75,11 @@ export const CAPABILITY_TOOLS = CAPABILITY_CASES.map((c) => ({
 /**
  * Capabilities deliberately NOT exercised, each with the reason it is out of scope.
  *
- * **Two of these five are an INTERVAL, not a policy** (task 014-32b). `pool.info` and `token.pools`
- * have a registered `ToolSpec` and a stub handler that answers a typed refusal; there is no logic to
- * exercise yet, so an eval case would assert the refusal and nothing else. Each names the task that
- * removes both the stub and this line, in the same commit that adds its case file. The masked case
+ * **One of these four is an INTERVAL, not a policy.** `token.pools` has a registered `ToolSpec` and
+ * a stub handler that answers a typed refusal; there is no logic to exercise yet, so an eval case
+ * would assert the refusal and nothing else. Its reason names the task that removes both the stub
+ * and this line, in the same commit that adds its case file. (`pool.info` had the same entry and
+ * task 014-32c removed it together with its stub — the interval closed as designed.) The masked case
  * is stated rather than left implicit (memory M6): an entry here makes the capability `accounted`
  * WITHOUT a case, so it masks "a tool is registered and nothing checks it" — which is why
  * `docs/tasks/task-014-34-acceptance.md` verifies both entries are gone at stage acceptance.
@@ -87,7 +88,6 @@ export const CAPABILITY_EXCLUSIONS = new Map([
   ['entity.labels', 'paid — spends Nansen credits, and an eval that bills you gets turned off'],
   ['smart-money.flows', 'paid — spends Nansen credits'],
   ['token.risk', 'paid — spends Nansen credits'],
-  ['pool.info', 'stub registered by task 014-32b; its logic and eval case ship in task 014-32c'],
   ['token.pools', 'stub registered by task 014-32b; its logic and eval case ship in task 014-32d'],
 ]);
 
@@ -106,6 +106,41 @@ export const CAPABILITY_KNOWN_GAPS = new Map([
     'no tool calls it: onchain_get_token routes through token.price on purpose (a token.metadata ' +
       'cache entry would legally serve an hour-stale price), so the coingecko path is covered and ' +
       'this capability id is not',
+  ],
+  // R-21.3, task 014-32c — the five POINT-IN-TIME Dash Platform keys. Each is routed and each has a
+  // reason of its own rather than one reason pasted five times: they are five different questions
+  // and a shared sentence would hide the day one of them stops being true.
+  [
+    'privacy.shielded_pool',
+    'the point-in-time reading of the shielded pool. `onchain_dash_platform_history` serves the ' +
+      '`.history` sibling, and a series whose newest point IS the current value answers this ' +
+      'question strictly better: it also shows whether the pool is growing, which one number ' +
+      'cannot. A tool for the instant would publish a second, cheaper way to ask the same thing ' +
+      'and split the cache between them',
+  ],
+  [
+    'platform.identities',
+    'the identity counter at one height. Served through `platform.metrics.history` as the ' +
+      '`identities_total` metric of the merged series, which is where the OWN-LEDGER half lives ' +
+      '(`pg-history`) — a point tool would answer from the vendor alone and silently lose it',
+  ],
+  [
+    'platform.contracts',
+    'the data-contract counter at one height. `data_contracts_total` is one of the three metrics ' +
+      'that exist ONLY in our own Postgres ledger: the vendor publishes no such field, so a ' +
+      'point-in-time tool over the vendor route would have nothing to return',
+  ],
+  [
+    'platform.documents',
+    'the document counter at one height, and the same fact as `platform.contracts`: ' +
+      '`documents_total` is published by our ledger and not by the vendor, so the merged history ' +
+      'tool is the only route that can answer it at all',
+  ],
+  [
+    'platform.credits',
+    'the total-credits counter at one height. Same shape as the two above — ' +
+      '`platform_total_credits` comes from our own ledger — and the value is an exact integer ' +
+      'string, so the history tool’s `valueRaw` contract is the one that carries it without loss',
   ],
 ]);
 

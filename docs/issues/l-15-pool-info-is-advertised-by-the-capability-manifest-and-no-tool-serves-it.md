@@ -1,14 +1,29 @@
 ---
 id: L-15
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-08-11
 category: logic
 severity: SEV-3
 slug: l-15-pool-info-is-advertised-by-the-capability-manifest-and-no-tool-serves-it
+resolved_at: 2026-08-21
+resolved_by: TASK 014-32c
 ---
 
 # L-15 — `pool.info` is advertised by the capability manifest and no tool serves it
+
+> **FIXED 2026-08-21 by task 014-32c.** `onchain_pool_info` is registered (task 014-32b shipped the
+> `ToolSpec`) and serves `pool.info` from the vendor's per-chain single-pool route,
+> `GET /latest/dex/pairs/{chainId}/{pairAddress}`. It answers with both token CONTRACT ADDRESSES —
+> the link WI-56 needed and which `onchain_active_pairs` never carried — the per-side reserves, and
+> the fee tier where an `eth_call` of `fee()` answers.
+>
+> **What keeps it from recurring is a gate, not the tool.** `packages/mcp-server/test/manifest-tool-coverage.test.ts`
+> (AC-29) compares the manifest keys against the capabilities the registered tools resolve, and
+> fails on any key that is neither served nor named in `CAPABILITY_KNOWN_GAPS` with a reason. This
+> defect existed because the two inventories were each internally consistent and nothing compared
+> them; six keys are named there today, each with its own reason.
+
 
 > Origin: live analysis of `berachain` over the MCP server, 2026-08-11. Not a `run-feedback`
 > capture — filed by hand from the session transcript.

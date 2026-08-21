@@ -103,9 +103,15 @@ const coingeckoFixtureFetch = async (input: FetchUrlInput): Promise<Response> =>
 };
 
 const dexscreenerFixtureFetch = async (input: FetchUrlInput): Promise<Response> => {
-  const url = urlOf(input);
-  if (url.includes('q=ETH')) return jsonResponse(loadFixtureRaw('dexscreener', 'ethereum'));
-  if (url.includes('q=SOL')) return jsonResponse(loadFixtureRaw('dexscreener', 'solana'));
+  const url = String(input);
+  // L-19 (task 014-32c): the query is the vendor's own chain id, and a second candidate — the
+  // wrapped-native ticker — runs when the first did not fill `limit`. Both are routed to the same
+  // recorded page: this fixture exercises the SHAPE of the answer, and the strategy itself is
+  // measured in `packages/core/test/dexscreener.contract.test.ts` against the recorded evidence.
+  if (url.includes('q=ethereum') || url.includes('q=WETH'))
+    return jsonResponse(loadFixtureRaw('dexscreener', 'ethereum'));
+  if (url.includes('q=solana') || url.includes('q=WSOL'))
+    return jsonResponse(loadFixtureRaw('dexscreener', 'solana'));
   throw new Error(`fixture fetchImpl: no dexscreener route for ${url}`);
 };
 

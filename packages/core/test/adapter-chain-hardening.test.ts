@@ -156,20 +156,28 @@ describe('M-6 — vendor-authored text is truncated, not rejected', () => {
 
   it('dexscreener: an adversarial pair symbol is bounded too', () => {
     const adapter = createDexscreenerAdapter({ chains: CHAINS });
+    // The hand-off is a discriminated union since task 014-32c, and `pairs.active` carries the
+    // pages its query strategy produced rather than one `raw` body.
     const pools = adapter.normalize('pairs.active', {
+      kind: 'search',
       chain: CHAINS.resolve('ethereum'),
       limit: 5,
-      raw: {
-        pairs: [
-          {
-            chainId: 'ethereum',
-            dexId: 'uniswap',
-            pairAddress: '0xabc',
-            baseToken: { symbol: 'A'.repeat(3000) },
-            quoteToken: { symbol: 'WETH' },
+      pages: [
+        {
+          query: 'ethereum',
+          raw: {
+            pairs: [
+              {
+                chainId: 'ethereum',
+                dexId: 'uniswap',
+                pairAddress: '0xabc',
+                baseToken: { symbol: 'A'.repeat(3000) },
+                quoteToken: { symbol: 'WETH' },
+              },
+            ],
           },
-        ],
-      },
+        },
+      ],
     }) as PoolPage;
 
     expect(pools.pools).toHaveLength(1);
@@ -187,20 +195,26 @@ describe('L-1 — dexscreener diagnostics name the chain, not [object Object]', 
     try {
       const adapter = createDexscreenerAdapter({ chains: CHAINS });
       adapter.normalize('pairs.active', {
+        kind: 'search',
         chain: CHAINS.resolve('ethereum'),
         limit: 5,
-        raw: {
-          pairs: [
-            { chainId: 'ethereum', dexId: 'uniswap', pairAddress: '0xabc', baseToken: {} },
-            {
-              chainId: 'ethereum',
-              dexId: 'uniswap',
-              pairAddress: '0xdef',
-              baseToken: { symbol: 'A' },
-              quoteToken: { symbol: 'WETH' },
+        pages: [
+          {
+            query: 'ethereum',
+            raw: {
+              pairs: [
+                { chainId: 'ethereum', dexId: 'uniswap', pairAddress: '0xabc', baseToken: {} },
+                {
+                  chainId: 'ethereum',
+                  dexId: 'uniswap',
+                  pairAddress: '0xdef',
+                  baseToken: { symbol: 'A' },
+                  quoteToken: { symbol: 'WETH' },
+                },
+              ],
             },
-          ],
-        },
+          },
+        ],
       });
     } finally {
       spy.mockRestore();

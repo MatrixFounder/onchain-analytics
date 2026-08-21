@@ -1,21 +1,13 @@
 import { normalizeAddress } from '../../chain/address.js';
 import type { ChainInfo, ChainRegistry } from '../../chain/registry-core.js';
 import { loadChainRegistry } from '../../chain/registry.js';
-import { scopedProviderId } from '../../net/limiter-store.js';
-import { throttle as productionThrottle, type Throttle } from '../../net/rate-limit.js';
-import { DeadlineExceededError, safeFetch } from '../../net/safe-fetch.js';
-import { adapterRegistrations } from '../../providers.config.js';
+import type { Throttle } from '../../net/rate-limit.js';
 import { GasPriceSchema, type GasPrice } from '../../types/chain-activity.js';
 import { WalletSchema, type Wallet } from '../../types/wallet.js';
 import type { Chain } from '../../types/chain.js';
 import type { ProviderAdapter } from '../types.js';
 import { stringifyTruncated } from '../stringify-truncated.js';
-
-const REGISTRATION = adapterRegistrations.find((r) => r.id === 'rpc-evm');
-if (!REGISTRATION) {
-  throw new Error('rpc-evm: no matching entry in adapterRegistrations (providers.config.ts)');
-}
-const RATE_LIMIT = REGISTRATION.rateLimit;
+import { createRpcCaller, type JsonRpcResponse } from './call-rpc.js';
 
 /* Endpoints and the SSRF allowlist come from the requested chain's own curated `rpcHosts` row and
  * from nowhere else (TASK-006 task 006-8, R-56; hardened in vdd-multi cycle 5, M-3). The
@@ -24,26 +16,6 @@ const RATE_LIMIT = REGISTRATION.rateLimit;
  * balance — schema-valid, cached, and undetectable downstream. Within-chain primary→fallback retry
  * still exists; it now walks that chain's own approved list, in the order a human approved it
  * (ARCHITECTURE.md §3.2/§5.3, security.md §7.2.1). */
-
-/** `https://host/...` → `host`. The registry stores full URLs (a human approves a URL, not a bare
- * hostname); `safeFetch`'s allowlist is hostname-based.
- *
- * **Fails CLOSED** (vdd-multi cycle 6, security M-1). This used to `catch { return url; }` — a
- * security control defaulting to "trust the raw string" on malformed input. The value becomes an
- * SSRF allowlist ENTRY, so a bare `evil.example` (no scheme) was unusable as an endpoint, and
- * therefore never exercised by any test, while still widening the set of hosts a redirect could be
- * followed to. Throwing makes a malformed row a loud failure of that one chain's request instead of
- * a silent widening of the perimeter — and `ChainInfoSchema` now rejects such rows at load anyway,
- * so this is the second of two gates, not the only one. */
-function hostOf(url: string): string {
-  // The AUTHORITY, not the hostname (task 014-21, AC-9): `URL.host` keeps a non-default port and
-  // drops `:443`. This value is both the SSRF allowlist entry and the string an error message
-  // names, and `assertAllowedHost` now compares authorities — so a curated `rpcHosts` endpoint on a
-  // non-default port would, with `.hostname` here, build an allowlist that refuses the very
-  // endpoint it was derived from. None of the 34 registry rows carries a port today; this is what
-  // keeps that from becoming a condition nobody wrote down.
-  return new URL(url).host;
-}
 
 /** Optional constructor dependencies (injectable — same DI convention as the 003-4 adapters:
  * `fetchImpl`/`now`). Keyless — no `env` dependency needed. */
@@ -84,11 +56,6 @@ interface RpcEvmGasFetchResult {
   chain: Chain;
   nativeSymbol: string;
   raw: unknown;
-}
-
-interface JsonRpcResponse {
-  result?: unknown;
-  error?: { code?: unknown; message?: unknown };
 }
 
 /**
@@ -168,89 +135,18 @@ export function createRpcEvmAdapter(deps: RpcEvmAdapterDeps = {}): ProviderAdapt
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
   const chains = deps.chains ?? loadChainRegistry();
-  const throttle = deps.throttle ?? productionThrottle;
 
   /**
-   * The one transport path both capabilities use: throttle, then walk THIS chain's curated
-   * endpoints until one answers.
-   *
-   * Extracted for WI-51 rather than copied. Every non-obvious rule below is one a review already
-   * paid for once — the no-fallback-to-registration-hosts rule (M-3), the hostname-only error text
-   * (security L-2), the deadline break that does not burn the endpoint list (WI-37) — and a second
-   * hand-written copy would hold none of them by construction. `servesChain()`'s own docstring names
-   * the failure mode: two conditions that must agree, maintained in two places.
+   * The one transport path every capability uses — MOVED to `call-rpc.ts` by task 014-32c, so the
+   * `fee()` derivation `interfaces.md` §5.1.7 assigns to this adapter shares it instead of holding
+   * a second copy of an SSRF-bearing loop. Behaviour is unchanged; the rules it carries are named
+   * in that module's own docstring.
    */
-  async function callRpc(
-    chain: ChainInfo,
-    body: string,
-    deadlineAtMs?: number,
-  ): Promise<JsonRpcResponse> {
-    // **One bucket per CHAIN, not per provider** (task 014-17, AC-42). The split is declared in
-    // `providers.config.ts` and composed here, because the scope has to be a value this call site
-    // knows: the hostname is not — `chain.rpcHosts` is read below, after this line, and the loop
-    // over endpoints is further down still. The chain is known; the host is not.
-    await throttle(scopedProviderId('rpc-evm', chain.caip2), RATE_LIMIT, 1, deadlineAtMs);
+  const callRpc = createRpcCaller({
+    fetchImpl,
+    ...(deps.throttle === undefined ? {} : { throttle: deps.throttle }),
+  });
 
-    // TASK-006 (task 006-8, R-56): endpoints and the SSRF allowlist BOTH come from this chain's
-    // curated `rpcHosts` row — per chain, never merged. The allowlist handed to `safeFetch` is
-    // exactly the hosts a human approved for THIS chain, so one chain's endpoint can never be
-    // used to reach another's (security.md §7.2.1).
-    //
-    // **No fallback to the registration hosts** (vdd-multi cycle 5, M-3). The previous
-    // `chainHosts.length > 0 ? … : HOSTS` had a comment asserting the else-branch was
-    // unreachable — and it was reachable, via `rpcHosts: []`, which passed both `chainSupport()`
-    // (`!== null`) and the load schema. That branch sent a `bsc` balance query to ETHEREUM's
-    // endpoints and cached the answer under `bsc`. The empty case is now rejected at load
-    // (`.min(1)`), and this code carries no silent way to serve the wrong chain: if the list were
-    // somehow empty, the loop below has nothing to try and throws.
-    const chainHosts = [...(chain.rpcHosts ?? [])];
-    const allowlist = chainHosts.map(hostOf);
-
-    let lastError: unknown;
-    for (const endpoint of chainHosts) {
-      try {
-        const response = await safeFetch(
-          endpoint,
-          { method: 'POST', headers: { 'content-type': 'application/json' }, body },
-          allowlist,
-          fetchImpl,
-          // Spread conditionally so a call without a deadline builds the same options object
-          // this loop built before WI-37.
-          { ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }) },
-        );
-        if (!response.ok) {
-          // `hostOf`, not the full URL (vdd-multi cycle 6, security L-2): `rpcHosts` is a
-          // full-URL column and this message reaches the model via `tried[].reason`. A curated
-          // endpoint could one day carry a key in its path or query.
-          //
-          // What actually holds the line is one layer further back: `isApprovableRpcUrl` refuses
-          // such an entry when the registry LOADS (adversarial cycle 3). This narrowing stays
-          // regardless — it is cheap, and it also covers the query, which the load-time rule
-          // does not.
-          throw new Error(`rpc-evm: HTTP ${response.status} for ${hostOf(endpoint)}`);
-        }
-        const raw = (await response.json()) as JsonRpcResponse;
-        if (raw.error) {
-          throw new Error(
-            `rpc-evm: JSON-RPC error from ${hostOf(endpoint)}: ${stringifyTruncated(raw.error)}`,
-          );
-        }
-        return raw;
-      } catch (error) {
-        // Try the next endpoint in the primary->fallback chain before giving up entirely.
-        lastError = error;
-        // …EXCEPT when our own time is up (WI-37). The fallback loop exists because ONE endpoint
-        // can be down while another answers; a spent deadline is not a fact about an endpoint, it
-        // is true of every remaining one. Continuing would burn the list on `safeFetch` entry
-        // checks and report the LAST endpoint's failure for a condition that had nothing to do
-        // with it.
-        if (error instanceof DeadlineExceededError) break;
-      }
-    }
-    throw lastError instanceof Error
-      ? lastError
-      : new Error(`rpc-evm: all endpoints failed for chain ${chain.slug}`);
-  }
   return {
     id: 'rpc-evm',
     // TASK-006 (R-54/R-56b): any EVM chain, but ONLY if the registry carries a curated RPC host
