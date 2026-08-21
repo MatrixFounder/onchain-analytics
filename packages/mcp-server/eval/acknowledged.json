@@ -8,27 +8,63 @@
     "`scripts/eval-gate.mjs` (`pnpm gate`), and only to decide whether a failing row should BLOCK a",
     "task from being called done. Acknowledgement is a property of the gate's report, not of grading.",
     "",
-    "WHAT AN ENTRY MEANS: 'this row is failing, we know why, it is filed, and a human decided it must",
-    "not block unrelated work until it changes'. It does NOT mean 'hidden'. Every acknowledged row is",
-    "still NAMED on every gate run, with its issue id — closing the report does not close the",
-    "obligation to chase the vendor or retire the capability (L-2).",
+    "WHAT AN ENTRY MEANS: 'at most `maxFailing` of these `rows` are failing, we know why, it is filed,",
+    "and a human decided it must not block unrelated work until `reviewBy`'. It does NOT mean 'hidden'.",
+    "Every entry is NAMED on every run with its issue id AND its live tally, so a set sliding from one",
+    "failing row toward its bound is visible long before it blocks (L-2).",
     "",
-    "STALE ENTRIES BLOCK, AND THAT IS THE POINT: when an acknowledged row starts passing, or stops",
-    "appearing in the matrix at all, the gate fails and names it. Without that, this list would only",
-    "ever grow — a blindfold assembled one honest decision at a time. Clearing a stale entry costs",
-    "one line of JSON, which is why blocking on it is the cheapest guard here.",
+    "WHY A SET AND A BOUND, NOT A ROW AND A BOOLEAN (RF-10, task 014-43). A per-row boolean asserts a",
+    "CONSTANT — this row is failing — and rejects an intermittent failure from both sides at once: the",
+    "run where it fails reports it as unfiled, and the run where it passes reports the entry as stale.",
+    "Every vendor failure this project has met is intermittent. A bound absorbs the rotation while",
+    "still blocking growth; `reviewBy` replaces 'the row passes' as the trigger to look again.",
     "",
-    "KEY: '<chain>/<capability>', exactly as the eval reports them. A chain-less row (the server and",
-    "registry checks) uses the em-dash the eval itself prints: '—/<capability>'.",
+    "SETTING `maxFailing`: it is the number of rows measured failing WHEN THE ENTRY WAS WRITTEN, never",
+    "`rows.length` and never `rows.length - 1`. One more failing row than that is a NEW fact, and the",
+    "gate blocks so a human re-measures. Raising the bound is therefore an act of measurement — say so",
+    "in `why`, with the date. A bound equal to `rows.length` is refused by the gate: it could never be",
+    "exceeded, so it would accept the total outage the bound exists to keep visible.",
     "",
-    "`issue` MUST reference a record that exists in docs/KNOWN_ISSUES.md. An acknowledgement without",
-    "a filed issue is just silence with extra steps."
+    "SETTING `reviewBy`: at most 90 days out, enforced. A date further away is a permanent exemption",
+    "wearing the costume of a review. When it arrives the gate blocks and names the entry; the cure is",
+    "to re-measure and then either extend the date with the new evidence in `why`, or close the issue",
+    "and delete the entry. A green run in between is NOT a closure — see RF-10's own Do-not.",
+    "",
+    "ROWS: '<chain>/<capability>', exactly as the eval reports them. A chain-less row (the server and",
+    "registry checks) uses the em-dash the eval itself prints: '—/<capability>'. A row this file names",
+    "that the matrix no longer contains BLOCKS: coverage shrank, which is the RF-5 shape.",
+    "",
+    "`issue` MUST reference a record that exists in docs/KNOWN_ISSUES.md, and since task 014-43 the",
+    "gate CHECKS it. An acknowledgement without a filed issue is just silence with extra steps."
   ],
   "acknowledged": {
-    "base/token.holders": {
+    "L-12/token.holders": {
       "issue": "L-12",
       "since": "2026-08-11",
-      "why": "Re-measured 2026-08-21 (task 014-42, scripts/probe-blockscout-holders-latency.ts). The 5s hop ceiling this entry was written against is gone: token.holders now runs at HOLDERS_TIMEOUT_MS = 60_000 under a 60_000 deadline, and ethereum, arbitrum, polygon and gnosis all answer — their rows were cleared from this file by the same task. base did NOT recover: across three probe rounds it answered once, at 45.8s, and returned HTTP 500 or nothing otherwise, on the PRO facade and on the keyless base.blockscout.com alike. Same day, /api/v2/stats on base answered in 0.99s, so this is that chain's holders index and not the host. NOT a ceiling problem any more, which is why raising it further is not the next move: L-12's remaining half is one chain's index, and the open options there are the paid route or retiring the capability on base."
+      "reviewBy": "2026-09-20",
+      "rows": [
+        "ethereum/token.holders",
+        "base/token.holders",
+        "arbitrum/token.holders",
+        "polygon/token.holders",
+        "gnosis/token.holders"
+      ],
+      "maxFailing": 1,
+      "why": "Re-measured 2026-08-21 (task 014-42, scripts/probe-blockscout-holders-latency.ts). The 5s hop ceiling this entry was written against is gone: token.holders now runs at HOLDERS_TIMEOUT_MS = 60_000 under a 60_000 deadline, and ethereum, arbitrum, polygon and gnosis all answer — their rows were cleared from this file by the same task. base did NOT recover: across three probe rounds it answered once, at 45.8s, and returned HTTP 500 or nothing otherwise, on the PRO facade and on the keyless base.blockscout.com alike. Same day, /api/v2/stats on base answered in 0.99s, so this is that chain's holders index and not the host. NOT a ceiling problem any more, which is why raising it further is not the next move: L-12's remaining half is one chain's index, and the open options there are the paid route or retiring the capability on base. SET AND BOUND: the five chains the capability is served on, bound 1 — the number measured failing when this entry was rewritten on 2026-08-21, which is base alone. A second failing chain is a new fact and blocks until someone measures it. Naming only base/token.holders here would have been a bound that can never be exceeded, i.e. a permanent blindfold over that row."
+    },
+    "L-20/chain.transactions": {
+      "issue": "L-20",
+      "since": "2026-08-20",
+      "reviewBy": "2026-09-20",
+      "rows": [
+        "ethereum/chain.transactions",
+        "base/chain.transactions",
+        "arbitrum/chain.transactions",
+        "polygon/chain.transactions",
+        "gnosis/chain.transactions"
+      ],
+      "maxFailing": 1,
+      "why": "Blockscout answers HTTP 500 for base's /api/v2/stats — the document chain.transactions reads. Measured 2026-08-20: 500 on two attempts of three through the PRO facade and on the keyless base.blockscout.com alike, so there is no second route. Re-measured the morning of 2026-08-21: 500 on four of five attempts, worse. Hours later the same document answered in 0.98s on every chain and this row passed the gate. THIS ENTRY EXISTS WHILE THE ROW IS GREEN, and that is the whole point of task 014-43: under the old per-row boolean the entry had to be deleted the moment the vendor recovered, so the next 500 arrived as an unfiled failure and blocked. One green run is not a closure — L-20's own fix-path item 2 says so. Bound 1 over the five chains chain.transactions is served on: base is the measured one, and a SECOND chain answering 500 would be a new fact about the vendor rather than this one."
     }
   }
 }

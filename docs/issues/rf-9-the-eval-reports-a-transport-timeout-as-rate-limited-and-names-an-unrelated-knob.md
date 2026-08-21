@@ -70,6 +70,16 @@ grep -rn "rate-limited" eval/run.mjs | head
 **Workaround.** Read the `problems[]` string rather than the verdict — it carries the real cause
 (`safeFetch: timed out after 5000ms`). The JSON artifact (`ONCHAIN_EVAL_JSON=...`) has the same text.
 
+**A residue of this defect survived in a DIFFERENT file, and was closed 2026-08-22 by task 014-43.**
+This record was fixed in `eval/run.mjs` — the classifier stopped bucketing a timeout as
+`rate-limited`. `scripts/eval-gate.mjs` kept its own half: an acknowledged row whose verdict was
+`rate-limited` was reported as **`now passes (rate-limited)`**, the exact string quoted above as the
+defect. Nobody noticed because after the classifier fix almost no row reached that branch. The gate
+now counts a `rate-limited` row as NOT TESTED — neither failing nor passing — and prints it as such,
+which also closes the quieter version of the same error the new bounded acknowledgements would
+otherwise have introduced: an entry whose whole set is being throttled reporting `0 of N failing`
+and reading as recovered.
+
 **Fix path.** Separate the verdicts by the evidence that distinguishes them, and let the remediation
 line follow the verdict rather than being fixed prose:
 

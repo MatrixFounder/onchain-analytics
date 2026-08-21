@@ -78,6 +78,12 @@ chain including base, and `base/chain.transactions` passed the live gate. The ga
 acknowledgement as STALE and blocked on it — which is [RF-10](rf-10-the-gate-acknowledgement-is-a-per-row-boolean-so-an-intermittent-vendor-failure-can-never-be-acknowledged.md)
 exactly, observed inside one working session rather than reconstructed from the ledger.
 
+**RE-ACKNOWLEDGED 2026-08-22 (task 014-43), while the row is GREEN.** That state is exactly what the
+old mechanism could not represent, and representing it is what RF-10's fix bought. The entry names
+the five chains `chain.transactions` is served on with a bound of 1: base is the measured one, and a
+second chain answering 500 would be a new fact about the vendor rather than this one. It survives
+the row passing, so the next 500 arrives covered instead of as an unfiled failure.
+
 The row was cleared from `eval/acknowledged.json` because leaving it blocks every unrelated task,
 and that is the only move the file's two-word vocabulary allows. **This record stays `open`**: one
 green run does not refute four consecutive failures plus a direct vendor measurement, as this

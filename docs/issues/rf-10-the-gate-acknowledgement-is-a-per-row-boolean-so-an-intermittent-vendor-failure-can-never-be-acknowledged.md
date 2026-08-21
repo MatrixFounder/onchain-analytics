@@ -1,14 +1,61 @@
 ---
 id: RF-10
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-08-20
 category: tooling
 severity: SEV-2
 slug: rf-10-the-gate-acknowledgement-is-a-per-row-boolean-so-an-intermittent-vendor-failure-can-never-be-acknowledged
+resolved_at: 2026-08-22
+resolved_by: TASK 014-43
 ---
 
 # RF-10 — the gate's acknowledgement is a per-row boolean, so an INTERMITTENT vendor failure can never be acknowledged
+
+> **FIXED 2026-08-22 by task 014-43.** An acknowledgement now names a SET of rows and a BOUND on how
+> many of them may fail at once, and it carries a `reviewBy` date. The bound absorbs the rotation
+> while still blocking growth; the date replaces "the row passes" as the trigger to look again.
+>
+> **What each half answers.** The bound answers the FAILING run: any `maxFailing` of the set may be
+> red and the gate passes, so it no longer matters WHICH chain is cold. `maxFailing` is set to the
+> number measured failing when the entry was written — never `rows.length` and never
+> `rows.length - 1` — so the first row beyond that is a new fact and blocks. A bound at or above the
+> set size is REFUSED by the gate: it could never be exceeded, which is the "may fail anywhere"
+> widening this record's own Do-not forbids. The date answers the PASSING run: an entry survives its
+> rows going green, which is what lets a filed defect stay filed through a vendor's recovery.
+>
+> **The date, and not run history, and this record's sibling explains why.** "Green on the last K
+> runs" looks like the stronger signal and is biased in exactly the direction of this defect: L-12
+> records that a green `token.holders` row means "the cache was warm", so K consecutive green runs in
+> one afternoon are not K independent samples. A calendar is weaker and never lies about itself, and
+> it keeps the gate a function of ONE run plus ONE file rather than of how many times somebody ran it.
+> Capped at 90 days, enforced — memory M6 applied to this file's own new vocabulary, because a
+> `reviewBy` far enough out is a permanent exemption in the costume of a review.
+>
+> **The M6 half of the fix is in the report.** A bound is a wider legal answer than a boolean, so the
+> count it is measured against is printed on every run: `1 of 5 failing (bound 1), review by
+> 2026-09-20 — base/token.holders`. An entry sliding from one failing row toward its bound never
+> blocks, and must never be invisible.
+>
+> **Three things landed with it, each a hole this defect exposed rather than caused.**
+>
+> 1. `issue` is now CHECKED against `docs/KNOWN_ISSUES.md`. The file's comment had always required a
+>    filed record; nothing verified it, so a typo silenced a row exactly as well as a real record.
+> 2. The ledger line records the VERDICT and the problem string of each failing row, not just its
+>    key. Four DefiLlama rows blocked the gate on 2026-08-21 and what they actually said was
+>    unrecoverable an hour later, because the artifact lives in a temp dir.
+> 3. RF-9's residue is gone. A `rate-limited` row is neither failing nor passing; it is counted and
+>    printed as NOT TESTED. The old code rendered that case as `now passes (rate-limited)`, and
+>    folding it into "not failing" would have been the quieter version of the same error — an entry
+>    whose whole set is being throttled reporting `0 of N failing` and reading as recovered.
+>
+> **The gate finally has tests** (`packages/mcp-server/test/eval-gate.test.ts`, 14 cases driving the
+> real script as a subprocess). It had none, which is why both defects in this instrument were found
+> in production by a human reading a report that surprised them.
+>
+> **Observed working on the defect that produced it.** `base/chain.transactions` is acknowledged
+> today WHILE PASSING — the state the old mechanism could not represent, and the reason L-20 had to
+> be un-acknowledged on 2026-08-21 in the middle of unrelated work.
 
 > Origin: seven live-gate runs on 2026-08-20 across tasks 014-31 and 014-32b. Filed after the
 > mechanism was measured, not after the first surprise.
