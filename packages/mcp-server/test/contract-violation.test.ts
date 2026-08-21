@@ -139,6 +139,9 @@ describe('no tool renders a contract violation its own way (WI-27)', () => {
       'protocol-tvl.ts',
       'smart-money-flows.ts',
       'token-holders.ts',
+      // Joined in task 014-32d, when its stub became a handler that validates against
+      // `TokenPoolsOutputSchema`. `pool-info.ts` joined the same way in 014-32c.
+      'token-pools.ts',
       'token-risk.ts',
       'wallet-balances.ts',
     ]);

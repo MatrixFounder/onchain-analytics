@@ -9,7 +9,7 @@ Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§
 DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
 BTC-supply tool with TASK-009 (§5.1.5).
 
-**Both tools designed by §5.1.7 and §5.1.8 are registered** (task 014-32b); their handlers are stubs until 014-32c and 014-32d. `onchain_pool_info` resolves `pool.info`,
+**Both tools designed by §5.1.7 and §5.1.8 are registered and SERVED** — task 014-32b registered them, 014-32c and 014-32d replaced their stubs with logic. `onchain_pool_info` resolves `pool.info`,
 and its contract is §5.1.7 (T-014, R-21.1). `onchain_token_pools` resolves `token.pools`, and its
 contract is §5.1.8 (T-014, R-34). Every present-tense count in this section states the registered
 inventory, and none of them moves until those tools land.
@@ -922,12 +922,22 @@ nothing recovers. This is the L-14 contract the `pairs.active` route already car
 `* L-14 — the size of one `/latest/dex/search` page, **measured, not assumed**.`).
 
 **The 30-row cap on these two routes is measured, not inherited.** `VENDOR_PAGE_SIZE` was measured
-for `/latest/dex/search`. The task that registers this tool records its own evidence for
-`token-pairs/v1` and `/latest/dex/tokens/` rather than citing that constant.
+for `/latest/dex/search`. Task 014-32d recorded its own evidence for `token-pairs/v1` and
+`/latest/dex/tokens/` and gave them their own constant, `TOKEN_ROUTE_PAGE_SIZE`: both cap at 30, and
+a CONTROL address nothing deploys returns 0 rows on both — which is what makes a 30-row answer
+readable as a cap rather than as a fixed-size response. Two constants holding the same number today
+is deliberate; if the vendor moves one cap and not the other, two constants report it and one hides
+it.
 
-**Row order is not declared to mean anything.** No probe of these two routes has established
-whether order is stable or size-ranked, so the contract makes no claim about it. `truncated.reason`
-names the cap and does not name order until a probe of these two routes measures it.
+**Row order is STABLE and is NOT a size ranking — measured 2026-08-21 (task 014-32d).** Two samples
+of the same address 300 s apart returned the same set in the same order, and neither was sorted by
+liquidity: the second row of the USDC sample held $9.9M behind a first row of $89k
+(`packages/core/test/fixtures/dexscreener/token-routes.evidence.md`).
+
+So a `limit` cut takes an ARBITRARY subset rather than the largest pools, and `truncated.reason`
+says so whenever it cuts — the assumption a caller would otherwise make is the expensive one. Rows
+are deliberately not re-sorted by the normalizer: that would publish a ranking the vendor does not
+make, over a `liquidityUsd` the vendor omits on some rows.
 
 **Coverage is the registry's answer, not this section's.** The tool serves wherever
 `vendors.dexscreener` is non-null, which R-33 makes a measured column (014-32a, L-18). Stating a

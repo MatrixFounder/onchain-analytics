@@ -1,0 +1,919 @@
+{
+  "schemaVersion": "1.0.0",
+  "pairs": [
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x6444456960c3f95b5b408f4d9e00220643f06f94",
+      "pairAddress": "0x6444456960C3f95b5b408f4d9E00220643f06F94",
+      "labels": ["v1"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
+        "name": "Wrapped Pulse",
+        "symbol": "WPLS"
+      },
+      "priceNative": "83.3556",
+      "priceUsd": "0.001216",
+      "txns": {
+        "m5": { "buys": 0, "sells": 1 },
+        "h1": { "buys": 2, "sells": 19 },
+        "h6": { "buys": 64, "sells": 427 },
+        "h24": { "buys": 1140, "sells": 760 }
+      },
+      "volume": { "h24": 29433.26, "h6": 9473.27, "h1": 245.06, "m5": 23.77 },
+      "priceChange": { "m5": -0.59, "h1": 0.63, "h6": 12.3, "h24": 7.99 },
+      "liquidity": { "usd": 89175.89, "base": 36648859, "quote": 3054889131 },
+      "fdv": 34646576,
+      "marketCap": 74093993,
+      "pairCreatedAt": 1683944275000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0xc636bfe0bae34824380b4e26bc34e4614e55e483",
+      "pairAddress": "0xC636bfE0bAe34824380B4E26Bc34e4614e55e483",
+      "labels": ["v1"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xCc78A0acDF847A2C1714D2A925bB4477df5d48a6",
+        "name": "Atropa",
+        "symbol": "ATROPA"
+      },
+      "priceNative": "0.02126",
+      "priceUsd": "0.001218",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 10 },
+        "h6": { "buys": 2, "sells": 256 },
+        "h24": { "buys": 265, "sells": 304 }
+      },
+      "volume": { "h24": 52984.75, "h6": 30897.34, "h1": 108.84, "m5": 0 },
+      "priceChange": { "h1": 0.36, "h6": 12.9, "h24": 8.25 },
+      "liquidity": { "usd": 9929556.19, "base": 4075785770, "quote": 86667258 },
+      "fdv": 34689002,
+      "marketCap": 74184724,
+      "pairCreatedAt": 1685325445000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0x5777d92f208679db4b9778590fa3cab3ac9e2168",
+      "pairAddress": "0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "name": "Dai Stablecoin",
+        "symbol": "DAI"
+      },
+      "priceNative": "0.4383",
+      "priceUsd": "0.001108",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 0, "sells": 0 },
+        "h24": { "buys": 1, "sells": 0 }
+      },
+      "volume": { "h24": 0, "h6": 0, "h1": 0, "m5": 0 },
+      "priceChange": {},
+      "liquidity": { "usd": 121921.85, "base": 108726972, "quote": 549629 },
+      "fdv": 31569527,
+      "marketCap": 67513522,
+      "pairCreatedAt": 1683945295000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0x99ac8ca7087fa4a2a1fb6357269965a2014abc35",
+      "pairAddress": "0x99ac8cA7087fA4A2A1FB6357269965A2014ABc35",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+        "name": "Wrapped BTC",
+        "symbol": "WBTC"
+      },
+      "priceNative": "0.000003844",
+      "priceUsd": "0.001229",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 1, "sells": 0 },
+        "h24": { "buys": 1, "sells": 0 }
+      },
+      "volume": { "h24": 0.37, "h6": 0.37, "h1": 0, "m5": 0 },
+      "priceChange": {},
+      "liquidity": { "usd": 127397.65, "base": 67609984, "quote": 138.556 },
+      "fdv": 35002014,
+      "marketCap": 74854121,
+      "pairCreatedAt": 1683945135000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0x69d91b94f0aaf8e8a2586909fa77a5c2c89818d5",
+      "pairAddress": "0x69D91B94f0AaF8e8A2586909fA77A5c2c89818d5",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x2b591e99afE9f32eAA6214f7B7629768c40Eeb39",
+        "name": "HEX",
+        "symbol": "HEX"
+      },
+      "priceNative": "0.2748",
+      "priceUsd": "0.001202",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 1, "sells": 1 },
+        "h6": { "buys": 12, "sells": 3 },
+        "h24": { "buys": 57, "sells": 46 }
+      },
+      "volume": { "h24": 409.5, "h6": 109.45, "h1": 10.21, "m5": 0 },
+      "priceChange": { "h1": -0.74, "h6": 11.15, "h24": 6.21 },
+      "liquidity": { "usd": 86397.31, "base": 6583144, "quote": 17935911 },
+      "fdv": 34248391,
+      "marketCap": 73242448,
+      "pairCreatedAt": 1683944295000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x3861254332677c8c00cf6c6aad71ce880b283ceb",
+      "pairAddress": "0x3861254332677C8c00CF6C6aaD71cE880B283cEb",
+      "labels": ["v2"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        "name": "Tether USD",
+        "symbol": "USDT"
+      },
+      "priceNative": "1.03158",
+      "priceUsd": "0.001221",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 9, "sells": 2 },
+        "h24": { "buys": 22, "sells": 15 }
+      },
+      "volume": { "h24": 999.5, "h6": 334.49, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 18.12, "h24": 7.24 },
+      "liquidity": { "usd": 77278.25, "base": 31639197, "quote": 32638384 },
+      "fdv": 34778043,
+      "marketCap": 74375144,
+      "pairCreatedAt": 1685783685000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0x3416cf6c708da44db2624d63ea0aaef7113527c6",
+      "pairAddress": "0x3416cF6C708Da44DB2624D63ea0AAef7113527C6",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        "name": "Tether USD",
+        "symbol": "USDT"
+      },
+      "priceNative": "1.02930",
+      "priceUsd": "0.001218",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 1, "sells": 0 },
+        "h24": { "buys": 2, "sells": 2 }
+      },
+      "volume": { "h24": 1.17, "h6": 0.46, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 18.56, "h24": 10.46 },
+      "liquidity": { "usd": 76366.19, "base": 206233, "quote": 64300356 },
+      "fdv": 34698057,
+      "marketCap": 74204089,
+      "pairCreatedAt": 1683944585000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x2db5ef4e8a7dbe195defae2d9b79948096a03274",
+      "pairAddress": "0x2dB5EF4E8A7Dbe195defAe2d9b79948096a03274",
+      "labels": ["v2"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "name": "Dai Stablecoin",
+        "symbol": "DAI"
+      },
+      "priceNative": "0.4364",
+      "priceUsd": "0.001214",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 2, "sells": 0 },
+        "h6": { "buys": 19, "sells": 32 },
+        "h24": { "buys": 76, "sells": 107 }
+      },
+      "volume": { "h24": 4846.7, "h6": 1652.15, "h1": 24.5, "m5": 0 },
+      "priceChange": { "h1": 0.51, "h6": 12.66, "h24": 8.16 },
+      "liquidity": { "usd": 63818.43, "base": 26267708, "quote": 11464599 },
+      "fdv": 34593718,
+      "marketCap": 73980954,
+      "pairCreatedAt": 1685651445000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0xae461ca67b15dc8dc81ce7615e0320da1a9ab8d5",
+      "pairAddress": "0xAE461cA67B15dc8dc81CE7615e0320dA1A9aB8D5",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "name": "Dai Stablecoin",
+        "symbol": "DAI"
+      },
+      "priceNative": "0.4361",
+      "priceUsd": "0.001214",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 2, "sells": 0 },
+        "h6": { "buys": 14, "sells": 9 },
+        "h24": { "buys": 93, "sells": 64 }
+      },
+      "volume": { "h24": 2674.49, "h6": 1250.83, "h1": 11.66, "m5": 0 },
+      "priceChange": { "h1": 0.26, "h6": 12.6, "h24": 8.15 },
+      "liquidity": { "usd": 54317.16, "base": 22370231, "quote": 9757754 },
+      "fdv": 34573230,
+      "marketCap": 73937138,
+      "pairCreatedAt": 1683960815000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0x3041cbd36888becc7bbcbc0045e3b1f144466f5f",
+      "pairAddress": "0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        "name": "Tether USD",
+        "symbol": "USDT"
+      },
+      "priceNative": "1.03439",
+      "priceUsd": "0.001231",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 6, "sells": 2 },
+        "h24": { "buys": 11, "sells": 13 }
+      },
+      "volume": { "h24": 375.62, "h6": 255.78, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 18.48, "h24": 8.12 },
+      "liquidity": { "usd": 36436.05, "base": 14793031, "quote": 15301794 },
+      "fdv": 35070943,
+      "marketCap": 75001530,
+      "pairCreatedAt": 1683955985000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0x7858e59e0c01ea06df3af3d20ac7b0003275d4bf",
+      "pairAddress": "0x7858E59e0C01EA06Df3aF3D20aC7B0003275D4Bf",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        "name": "Tether USD",
+        "symbol": "USDT"
+      },
+      "priceNative": "1.03149",
+      "priceUsd": "0.001220",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 10, "sells": 3 },
+        "h6": { "buys": 102, "sells": 37 },
+        "h24": { "buys": 133, "sells": 70 }
+      },
+      "volume": { "h24": 4768.19, "h6": 3961.89, "h1": 263.52, "m5": 0 },
+      "priceChange": { "h1": 1.04, "h6": 14.2, "h24": 8.36 },
+      "liquidity": { "usd": 10577.57, "base": 495519, "quote": 8430499 },
+      "fdv": 34748787,
+      "marketCap": 74312579,
+      "pairCreatedAt": 1683955575000
+    },
+    {
+      "chainId": "ethereum",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/ethereum/0x0fb0e40cec3bb23e13abc585958a93c796fbea56955e19a23727a716a0423239",
+      "pairAddress": "0x0fb0e40cec3bb23e13abc585958a93c796fbea56955e19a23727a716a0423239",
+      "labels": ["v4"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        "name": "Tether USD",
+        "symbol": "USDT"
+      },
+      "priceNative": "1.0001758",
+      "priceUsd": "1.00017",
+      "txns": {
+        "m5": { "buys": 10, "sells": 8 },
+        "h1": { "buys": 106, "sells": 65 },
+        "h6": { "buys": 436, "sells": 363 },
+        "h24": { "buys": 2216, "sells": 1889 }
+      },
+      "volume": { "h24": 106575676.86, "h6": 24669520.46, "h1": 1973973.21, "m5": 297451.78 },
+      "priceChange": { "h6": -0.01 },
+      "liquidity": { "usd": 884118.38, "base": 334322, "quote": 549737 },
+      "fdv": 49826982618,
+      "marketCap": 49826982618,
+      "pairCreatedAt": 1747108055000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0xf6dcdce0ac3001b2f67f750bc64ea5beb37b5824",
+      "pairAddress": "0xF6DCdce0ac3001B2f67F750bc64ea5beB37B5824",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x2b591e99afE9f32eAA6214f7B7629768c40Eeb39",
+        "name": "HEX",
+        "symbol": "HEX"
+      },
+      "priceNative": "0.2744",
+      "priceUsd": "0.001200",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 2, "sells": 5 },
+        "h6": { "buys": 16, "sells": 9 },
+        "h24": { "buys": 70, "sells": 60 }
+      },
+      "volume": { "h24": 559.52, "h6": 144.12, "h1": 13.91, "m5": 0 },
+      "priceChange": { "h1": -0.86, "h6": 9.67, "h24": 5.05 },
+      "liquidity": { "usd": 4746.54, "base": 1976253, "quote": 542390 },
+      "fdv": 34198632,
+      "marketCap": 73136036,
+      "pairCreatedAt": 1683946175000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0x3150e4162dfdd5c89a8653bdf1cbb9e09c11f42a",
+      "pairAddress": "0x3150e4162DfDD5c89A8653bDf1CbB9E09C11F42a",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x5a24D7129B6f3FcAd2220296df28911880AD22B0",
+        "name": "PLSZEN",
+        "symbol": "PZEN"
+      },
+      "priceNative": "3.2357",
+      "priceUsd": "0.001197",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 8, "sells": 0 },
+        "h24": { "buys": 9, "sells": 5 }
+      },
+      "volume": { "h24": 136.74, "h6": 71.37, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 10.11, "h24": 8.55 },
+      "liquidity": { "usd": 5749.42, "base": 2400070, "quote": 7765923 },
+      "fdv": 34109362,
+      "marketCap": 72945127,
+      "pairCreatedAt": 1683953815000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "0xee3E9E46E34a27dC755a63e2849C9913Ee1A06E2",
+      "url": "https://dexscreener.com/pulsechain/0xf3f82bc165a83425e81b8f2858d786e41ab21671",
+      "pairAddress": "0xF3f82bC165a83425e81b8f2858D786E41ab21671",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+        "name": "Wrapped BTC",
+        "symbol": "WBTC"
+      },
+      "priceNative": "0.000003911",
+      "priceUsd": "0.001216",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 9, "sells": 1 },
+        "h24": { "buys": 28, "sells": 17 }
+      },
+      "volume": { "h24": 210.77, "h6": 58.65, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 11.79, "h24": 8.06 },
+      "liquidity": { "usd": 4091.58, "base": 1682176, "quote": 6.5803 },
+      "fdv": 34633298,
+      "marketCap": 74065597,
+      "pairCreatedAt": 1684651625000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0xc36372218976b1473993e5d7b38442105e900102",
+      "pairAddress": "0xC36372218976B1473993e5D7b38442105E900102",
+      "labels": ["v1"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07",
+        "name": "USD Coin from Ethereum",
+        "symbol": "USDC"
+      },
+      "priceNative": "0.001224",
+      "priceUsd": "0.001224",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 5, "sells": 5 },
+        "h6": { "buys": 17, "sells": 20 },
+        "h24": { "buys": 62, "sells": 53 }
+      },
+      "volume": { "h24": 403.98, "h6": 173.65, "h1": 25.25, "m5": 0 },
+      "priceChange": { "h1": 1.2, "h6": 12.18, "h24": 7.84 },
+      "liquidity": { "usd": 2212.56, "base": 903294, "quote": 1106.2843 },
+      "fdv": 34877133,
+      "marketCap": 74587056,
+      "pairCreatedAt": 1684202935000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0xda50362042e86f78e9cc414c22fa08bfab3e8ed4",
+      "pairAddress": "0xdA50362042e86F78e9CC414C22fa08bfAB3e8ED4",
+      "labels": ["v2"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xCc78A0acDF847A2C1714D2A925bB4477df5d48a6",
+        "name": "Atropa",
+        "symbol": "ATROPA"
+      },
+      "priceNative": "0.02120",
+      "priceUsd": "0.001223",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 2, "sells": 2 },
+        "h24": { "buys": 3, "sells": 4 }
+      },
+      "volume": { "h24": 10.74, "h6": 7.45, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 10.63, "h24": 8.28 },
+      "liquidity": { "usd": 3660.43, "base": 1496212, "quote": 31730 },
+      "fdv": 34834731,
+      "marketCap": 74496376,
+      "pairCreatedAt": 1692211545000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x8f6dfb2fa2f7ccf9d7106e96207d8b947a89998a",
+      "pairAddress": "0x8F6DfB2Fa2f7Ccf9d7106E96207d8B947a89998a",
+      "labels": ["v2"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
+        "name": "Wrapped Pulse",
+        "symbol": "WPLS"
+      },
+      "priceNative": "83.6472",
+      "priceUsd": "0.001219",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 4, "sells": 0 },
+        "h6": { "buys": 19, "sells": 26 },
+        "h24": { "buys": 127, "sells": 55 }
+      },
+      "volume": { "h24": 129.86, "h6": 44.36, "h1": 0.13, "m5": 0 },
+      "priceChange": { "h1": 1.25, "h6": 11.53, "h24": 7.54 },
+      "liquidity": { "usd": 1224.48, "base": 501948, "quote": 41986644 },
+      "fdv": 34735101,
+      "marketCap": 74283309,
+      "pairCreatedAt": 1685662125000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x2dfd32f9bc0d9e9b19c68a83c924e71b209dcd67",
+      "pairAddress": "0x2DFD32F9BC0D9E9B19C68a83C924e71b209dCd67",
+      "labels": ["v2"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+        "name": "Wrapped BTC",
+        "symbol": "WBTC"
+      },
+      "priceNative": "0.000003916",
+      "priceUsd": "0.001215",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 8, "sells": 5 },
+        "h24": { "buys": 38, "sells": 24 }
+      },
+      "volume": { "h24": 227.91, "h6": 76.55, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 12.1, "h24": 6.82 },
+      "liquidity": { "usd": 2443.53, "base": 1005545, "quote": 3.9381 },
+      "fdv": 34601121,
+      "marketCap": 73996785,
+      "pairCreatedAt": 1687045625000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0xf60afed42d276507b6bcae93157c66bee2cf332b",
+      "pairAddress": "0xf60AfeD42D276507B6bcAe93157C66bee2Cf332b",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x444444444444C1a66F394025Ac839A535246FCc8",
+        "name": "Genius",
+        "symbol": "GENI"
+      },
+      "priceNative": "1367.2026",
+      "priceUsd": "0.001218",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 3, "sells": 0 },
+        "h24": { "buys": 7, "sells": 6 }
+      },
+      "volume": { "h24": 47.65, "h6": 17.94, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 12.2, "h24": 9.59 },
+      "liquidity": { "usd": 2380.33, "base": 1508306, "quote": 609692288 },
+      "fdv": 34686572,
+      "marketCap": 74179527,
+      "pairCreatedAt": 1683951225000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x0b7a23844a8adb98636ed5879e77f70c70e4956a",
+      "pairAddress": "0x0b7a23844a8aDb98636ED5879E77F70C70E4956A",
+      "labels": ["v1"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0xb17D901469B9208B17d916112988A3FeD19b5cA1",
+        "name": "Wrapped BTC from Ethereum",
+        "symbol": "WBTC"
+      },
+      "priceNative": "0.00000001568",
+      "priceUsd": "0.001229",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 1, "sells": 0 },
+        "h6": { "buys": 8, "sells": 6 },
+        "h24": { "buys": 33, "sells": 33 }
+      },
+      "volume": { "h24": 119.12, "h6": 37.91, "h1": 2.04, "m5": 0 },
+      "priceChange": { "h1": 1.71, "h6": 13, "h24": 9.18 },
+      "liquidity": { "usd": 1007.12, "base": 409728, "quote": 0.006426 },
+      "fdv": 34999349,
+      "marketCap": 74848422,
+      "pairCreatedAt": 1684794305000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "liberty-swap",
+      "url": "https://dexscreener.com/pulsechain/0x6d4b345ffed67826804f27450fb6ec5f5ce34546",
+      "pairAddress": "0x6d4b345fFeD67826804F27450FB6eC5F5cE34546",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "name": "Dai Stablecoin",
+        "symbol": "DAI"
+      },
+      "priceNative": "0.4329",
+      "priceUsd": "0.001221",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 1, "sells": 1 },
+        "h24": { "buys": 3, "sells": 3 }
+      },
+      "volume": { "h24": 4.64, "h6": 2.7, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 9.01, "h24": 8.52 },
+      "liquidity": { "usd": 1604.87, "base": 1157633, "quote": 67677 },
+      "fdv": 34782681,
+      "marketCap": 74384993,
+      "pairCreatedAt": 1781361115000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x0c0ea569200c6212dcd8be27091f81d17950a577",
+      "pairAddress": "0x0C0Ea569200c6212dcD8Be27091F81d17950A577",
+      "labels": ["v2"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x15D38573d2feeb82e7ad5187aB8c1D52810B1f07",
+        "name": "USD Coin from Ethereum",
+        "symbol": "USDC"
+      },
+      "priceNative": "0.001223",
+      "priceUsd": "0.001223",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 2, "sells": 1 },
+        "h6": { "buys": 6, "sells": 7 },
+        "h24": { "buys": 25, "sells": 23 }
+      },
+      "volume": { "h24": 50.01, "h6": 17.03, "h1": 3.38, "m5": 0 },
+      "priceChange": { "h1": 1.22, "h6": 12.08, "h24": 6.61 },
+      "liquidity": { "usd": 397.58, "base": 162530, "quote": 198.7921 },
+      "fdv": 34831171,
+      "marketCap": 74488762,
+      "pairCreatedAt": 1685651865000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0x004375dff511095cc5a197a54140a24efef3a416",
+      "pairAddress": "0x004375Dff511095CC5A197A54140a24eFEF3A416",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+        "name": "Wrapped BTC",
+        "symbol": "WBTC"
+      },
+      "priceNative": "0.000003905",
+      "priceUsd": "0.001202",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 5, "sells": 0 },
+        "h24": { "buys": 19, "sells": 12 }
+      },
+      "volume": { "h24": 41.46, "h6": 11.39, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 11.1, "h24": 5.65 },
+      "liquidity": { "usd": 809.26, "base": 336494, "quote": 1.314 },
+      "fdv": 34243941,
+      "marketCap": 73232931,
+      "pairCreatedAt": 1683961765000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "0x115934131916C8b277DD010Ee02de363c09d037c",
+      "url": "https://dexscreener.com/pulsechain/0x9379f5e035cf6148c6bbee1d6415795cc773b0a4",
+      "pairAddress": "0x9379F5e035CF6148c6bbEE1D6415795cc773b0A4",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE",
+        "name": "SHIBA INU",
+        "symbol": "SHIB"
+      },
+      "priceNative": "7085.8366",
+      "priceUsd": "0.001235",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 3, "sells": 1 },
+        "h24": { "buys": 10, "sells": 18 }
+      },
+      "volume": { "h24": 53.21, "h6": 13.38, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 10.78, "h24": 9.05 },
+      "liquidity": { "usd": 695.97, "base": 281685, "quote": 1995977882 },
+      "fdv": 35180339,
+      "marketCap": 75235481,
+      "pairCreatedAt": 1683952985000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "9mm",
+      "url": "https://dexscreener.com/pulsechain/0xd901f1d4eb400fdd897ecf26be3cca7659041698",
+      "pairAddress": "0xD901f1D4eB400fdd897ecf26BE3cca7659041698",
+      "labels": ["V3"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "name": "Dai Stablecoin",
+        "symbol": "DAI"
+      },
+      "priceNative": "0.4374",
+      "priceUsd": "0.001030",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 0, "sells": 0 },
+        "h24": { "buys": 3, "sells": 1 }
+      },
+      "volume": { "h24": 0.29, "h6": 0, "h1": 0, "m5": 0 },
+      "priceChange": { "h24": -8.41 },
+      "liquidity": { "usd": 1190.9, "base": 1063196, "quote": 40463 },
+      "fdv": 29345374,
+      "marketCap": 62756964,
+      "pairCreatedAt": 1713616885000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "0xee3E9E46E34a27dC755a63e2849C9913Ee1A06E2",
+      "url": "https://dexscreener.com/pulsechain/0x8ff77def1ff9a5c7230f0c224a716a6399da8336",
+      "pairAddress": "0x8fF77def1FF9a5c7230f0C224A716a6399DA8336",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "name": "Dai Stablecoin",
+        "symbol": "DAI"
+      },
+      "priceNative": "0.4347",
+      "priceUsd": "0.001224",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 1, "sells": 0 },
+        "h24": { "buys": 5, "sells": 4 }
+      },
+      "volume": { "h24": 10.08, "h6": 0.8, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 11.02, "h24": 8.53 },
+      "liquidity": { "usd": 673.16, "base": 274968, "quote": 119537 },
+      "fdv": 34858860,
+      "marketCap": 74547977,
+      "pairCreatedAt": 1684799705000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "uniswap",
+      "url": "https://dexscreener.com/pulsechain/0xe05e653453f733786f2dabae0ffa1e96cfcc4b25",
+      "pairAddress": "0xe05e653453F733786F2DABae0ffa1e96cFcc4b25",
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x2b591e99afE9f32eAA6214f7B7629768c40Eeb39",
+        "name": "HEX",
+        "symbol": "HEX"
+      },
+      "priceNative": "0.2705",
+      "priceUsd": "0.001236",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 1, "sells": 0 },
+        "h24": { "buys": 2, "sells": 1 }
+      },
+      "volume": { "h24": 0.98, "h6": 0.52, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 11.63, "h24": 8.62 },
+      "liquidity": { "usd": 818.67, "base": 423725, "quote": 64482 },
+      "fdv": 35211717,
+      "marketCap": 75302586,
+      "pairCreatedAt": 1683948225000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x36f526861e4dbaf640129d48f727815dcc4aa532",
+      "pairAddress": "0x36f526861e4DbaF640129D48f727815DcC4aA532",
+      "labels": ["v2"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x2fa878Ab3F87CC1C9737Fc071108F904c0B0C95d",
+        "name": "Incentive",
+        "symbol": "INC"
+      },
+      "priceNative": "0.001611",
+      "priceUsd": "0.001219",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 0, "sells": 0 },
+        "h6": { "buys": 3, "sells": 2 },
+        "h24": { "buys": 10, "sells": 15 }
+      },
+      "volume": { "h24": 20.29, "h6": 6.11, "h1": 0, "m5": 0 },
+      "priceChange": { "h6": 11.99, "h24": 7.47 },
+      "liquidity": { "usd": 212.11, "base": 86945, "quote": 140.1507 },
+      "fdv": 34737555,
+      "marketCap": 74288559,
+      "pairCreatedAt": 1695677395000
+    },
+    {
+      "chainId": "pulsechain",
+      "dexId": "pulsex",
+      "url": "https://dexscreener.com/pulsechain/0x406289c7e577db707415d6950c6cd21c0e42d223",
+      "pairAddress": "0x406289C7e577Db707415D6950C6cd21c0E42D223",
+      "labels": ["v2"],
+      "baseToken": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "quoteToken": {
+        "address": "0x463413c579D29c26D59a65312657DFCe30D545A1",
+        "name": "TREASURY BILL",
+        "symbol": "TREASURY BILL ㉾"
+      },
+      "priceNative": "21.3663",
+      "priceUsd": "0.001208",
+      "txns": {
+        "m5": { "buys": 0, "sells": 0 },
+        "h1": { "buys": 1, "sells": 0 },
+        "h6": { "buys": 3, "sells": 0 },
+        "h24": { "buys": 9, "sells": 7 }
+      },
+      "volume": { "h24": 14.26, "h6": 3.57, "h1": 0.58, "m5": 0 },
+      "priceChange": { "h1": -1.43, "h6": 16.83, "h24": 8.69 },
+      "liquidity": { "usd": 411.51, "base": 170323, "quote": 3639190 },
+      "fdv": 34401802,
+      "marketCap": 73570528,
+      "pairCreatedAt": 1721186335000
+    }
+  ]
+}

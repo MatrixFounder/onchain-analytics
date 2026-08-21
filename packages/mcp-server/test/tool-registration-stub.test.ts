@@ -39,21 +39,29 @@ const snapshot = JSON.parse(
  */
 
 /**
- * The context both stub handlers receive and neither reads.
+ * A context for a handler that reads the registry, answering only what the closed-interval case
+ * needs: a coverage matrix that serves the capability nowhere.
  *
- * **The registry is deliberately a throwing stand-in.** A stub must not resolve the capability and
- * discard the answer — that would spend a vendor call and a cache slot to produce a refusal. If a
- * handler ever reaches for it, this fails loudly here instead of passing quietly with a real one.
+ * **It replaced a hostile Proxy that threw on any registry access**, which was right while a stub
+ * existed — a stub resolving the capability and discarding the answer would spend a vendor call and
+ * a cache slot to produce a refusal. Both stubs are gone, so the context that proved they touched
+ * nothing went with them.
+ *
+ * This one is not an arbitrary stand-in either. It drives `token-pools.ts` down its
+ * coverage-refusal branch, the one path that reaches a verdict without a network call — R-21
+ * forbids one here — so it proves two things at once: the stub is gone, and the branch that
+ * replaced it works.
  */
-const CTX = {
-  registry: new Proxy(
-    {},
-    {
-      get() {
-        throw new Error('a stub handler must not touch the registry');
-      },
+const NO_COVERAGE_CTX = {
+  registry: {
+    getCoverage: () => ({ chainsFor: () => [] }),
+    getChainRegistry: () => {
+      throw new Error('the coverage-refusal branch must decide before touching the chain registry');
     },
-  ),
+    resolve: () => {
+      throw new Error('the coverage-refusal branch must not resolve anything');
+    },
+  },
 } as unknown as { registry: never };
 
 /**
@@ -64,14 +72,23 @@ const CTX = {
  * asserted below, alongside `onchain_token_pools`; only the refusal cases are scoped to what is
  * still stubbed.
  */
-const STUB_TOOLS = [
+/**
+ * Both stubs this task registered, and the task that replaced each.
+ *
+ * **The list is EMPTY of stubs now, and the cases below changed subject accordingly.** While a stub
+ * existed, TC-UNIT-03/04 asserted that it refused with a typed class and returned no empty value.
+ * Both intervals have closed — `pool.info` in task 014-32c and `token.pools` in 014-32d — so the
+ * same cases now assert the OPPOSITE: neither handler answers the stub refusal any more. Deleting
+ * them instead would have removed the only mechanical check that an interval ever ended, which is
+ * the failure mode every interval entry in this repository is written to avoid.
+ */
+const FORMER_STUBS = [
   {
-    spec: tokenPoolsToolSpec,
     name: 'onchain_token_pools',
     capability: 'token.pools',
-    /** The task that removes this stub. Named in the refusal, in the exclusion, and here. */
     task: '014-32d',
-    handler: () => tokenPoolsHandler({ token: '0x' + 'b'.repeat(40) }, CTX),
+    handler: (): Promise<{ ok: boolean; refusalClass?: string }> =>
+      tokenPoolsHandler({ token: '0x' + 'b'.repeat(40) }, NO_COVERAGE_CTX),
   },
 ] as const;
 
@@ -135,26 +152,37 @@ describe('TC-UNIT-02 — the published input schemas are `.strict()` and name no
   });
 });
 
-describe('TC-UNIT-03/04 — the stub refuses, names its task, and returns no empty value', () => {
-  it.each(STUB_TOOLS)('$name answers a typed refusal naming task $task', async (tool) => {
-    const outcome = await tool.handler();
+describe('TC-UNIT-03/04 — the stub interval CLOSED: no handler answers the stub refusal', () => {
+  it.each(FORMER_STUBS)(
+    '$name no longer refuses with the stub class (task $task)',
+    async (tool) => {
+      // The handler is driven with a well-formed address nothing deploys, so the outcome may
+      // legitimately be a failure — the network is not reachable in CI, and R-21 forbids it being so.
+      // What must NOT appear is `ToolLogicNotShipped`: that class means the stub is still in place,
+      // and it is the one outcome that would be indistinguishable from "the logic shipped" in every
+      // other test here, all of which drive the SPEC rather than the handler.
+      const outcome = await tool.handler();
+      expect(
+        outcome.refusalClass,
+        `${tool.name} still answers the stub refusal — task ${tool.task} was supposed to remove it`,
+      ).not.toBe(STUB_REFUSAL_CLASS);
+      // Positively, not only negatively: the handler took the coverage branch and produced the class
+      // the registry itself would have produced for the same fact.
+      expect(outcome.refusalClass).toBe('CapabilityUnavailableError');
+    },
+  );
 
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    // The class is what `request_trace.refusal_class` records; the column is NOT NULL by CHECK
-    // constraint, so a refusal without one is a row the engine rejects on the failure path.
-    expect(outcome.refusalClass).toBe(STUB_REFUSAL_CLASS);
-    expect(outcome.reason).toContain(tool.task);
-    expect(outcome.reason).toContain(tool.capability);
-  });
-
-  it.each(STUB_TOOLS)('$name returns NO output at all — not `{}`, not `[]`', async (tool) => {
-    const outcome = (await tool.handler()) as { ok: boolean; output?: unknown };
-
-    // The load-bearing assertion of the whole stub design. An empty object here reads as "a pool
-    // with no tokens" and an empty array as "a token with no pools"; both are answers a caller
-    // cannot tell from a real one, which is the L-10 class and the shape memory M6 names.
-    expect(outcome.output).toBeUndefined();
+  it('the eval exclusion that covered the stub is gone', () => {
+    // The interval's other half. An exclusion outliving its stub makes the capability `accounted`
+    // with no case behind it — a mask, and the exact thing `docs/tasks/task-014-34-acceptance.md`
+    // re-checks at stage acceptance. Asserted here as well because this is the file that owns the
+    // interval, and a check that lives only in a later task is a check nobody runs today.
+    for (const tool of FORMER_STUBS) {
+      expect(
+        CAPABILITY_EXCLUSIONS.has(tool.capability),
+        `${tool.capability} is still excluded from the eval although its logic shipped`,
+      ).toBe(false);
+    }
   });
 });
 
@@ -198,41 +226,61 @@ describe('TC-UNIT-07 — the adapter declares the capability it now serves', () 
   });
 });
 
-describe('TC-UNIT-08/09 — the stub interval is declared, and each entry names its remover', () => {
-  it('TC-UNIT-08: every still-stubbed capability is accounted for by an exclusion, not a case', () => {
-    // `accountedCapabilities()` is the set `eval-capability-coverage.test.ts` compares against. A
-    // registered tool makes its capability "served", so without these entries the suite refuses —
-    // which is Stub-First's own contract ("the test on the stub is green") failing.
+describe('TC-UNIT-08/09 — both stub intervals closed, and closing is what is now asserted', () => {
+  /**
+   * The two capabilities that were ever stubbed, and the task that shipped each.
+   *
+   * These cases used to assert the OPEN state: the capability is accounted for by an EXCLUSION, and
+   * that exclusion names its remover. Both intervals have now ended, so asserting the open state
+   * would be asserting a lie. They assert the closed state instead — the same obligation seen from
+   * the other end, and the reason they were not simply deleted: a deleted case cannot notice an
+   * exclusion coming back.
+   */
+  const SHIPPED = [
+    { capability: 'pool.info', task: '014-32c' },
+    { capability: 'token.pools', task: '014-32d' },
+  ] as const;
+
+  it('TC-UNIT-08: each is accounted for by a CASE, never by an exclusion', () => {
+    // `accountedCapabilities()` is the set `eval-capability-coverage.test.ts` compares against. An
+    // exclusion outliving its stub would keep the capability accounted while nothing exercises it —
+    // the mask memory M6 names, surviving the very task meant to close it.
     const accounted = accountedCapabilities();
-    for (const tool of STUB_TOOLS) {
-      expect(accounted.has(tool.capability)).toBe(true);
-      expect(CAPABILITY_EXCLUSIONS.has(tool.capability)).toBe(true);
+    for (const shipped of SHIPPED) {
+      expect(
+        CAPABILITY_EXCLUSIONS.has(shipped.capability),
+        `${shipped.capability} is still excluded although task ${shipped.task} shipped its logic`,
+      ).toBe(false);
+      expect(
+        accounted.has(shipped.capability),
+        `${shipped.capability} is accounted for by nothing — its eval case is missing`,
+      ).toBe(true);
     }
   });
 
-  it('TC-UNIT-09: each stub-interval reason names the task that removes it', () => {
-    // The masked case, stated: an entry here makes the capability accounted WITHOUT an eval case,
-    // so it masks "a tool is registered and nothing exercises it" (memory M6). Naming the remover
-    // is what turns a mask into an interval — and `task-014-34-acceptance.md` verifies both entries
-    // are gone at stage acceptance, so the interval has an end somebody checks.
-    for (const tool of STUB_TOOLS) {
-      const reason = CAPABILITY_EXCLUSIONS.get(tool.capability);
-      expect(reason, `${tool.capability} has no recorded reason`).toBeTypeOf('string');
-      expect(reason).toContain(tool.task);
-    }
-  });
-
-  it('removing either entry is observable — the gate is not vacuous', () => {
-    // Guards the guard: if `CAPABILITY_EXCLUSIONS` stopped feeding `accountedCapabilities()`, the
-    // two cases above would still pass while the suite protected nothing.
-    const withoutStubs = new Set(
-      [...accountedCapabilities()].filter(
-        (capability) => !STUB_TOOLS.some((tool) => tool.capability === capability),
-      ),
+  it('TC-UNIT-09: no exclusion left in the file is an interval', () => {
+    // The remaining entries must all be POLICY, not intervals. An interval always named the task
+    // that removes it, so a reason mentioning a task id is one that outlived its own end date.
+    const intervals = [...CAPABILITY_EXCLUSIONS.entries()].filter(([, reason]: [string, string]) =>
+      /\b014-\d/.test(reason),
     );
-    for (const tool of STUB_TOOLS) {
-      expect(withoutStubs.has(tool.capability)).toBe(false);
+    expect(
+      intervals.map(([capability]: [string, string]) => capability),
+      'an exclusion names a task, so it is an interval — either its task has not shipped, or the ' +
+        'entry outlived it',
+    ).toStrictEqual([]);
+  });
+
+  it('removing an entry is observable — the gate is not vacuous', () => {
+    // Guards the guard: if `CAPABILITY_EXCLUSIONS` stopped feeding `accountedCapabilities()`, or
+    // `accountedCapabilities()` returned everything, the cases above would pass while protecting
+    // nothing.
+    expect(CAPABILITY_EXCLUSIONS.size).toBeGreaterThan(0);
+    const accounted = accountedCapabilities();
+    for (const capability of CAPABILITY_EXCLUSIONS.keys()) {
+      expect(accounted.has(capability)).toBe(true);
     }
+    expect(accounted.has('a.capability.that.does.not.exist')).toBe(false);
   });
 
   it('a capability whose stub has SHIPPED is accounted for by a CASE, not by an exclusion', () => {

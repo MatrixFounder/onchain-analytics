@@ -75,20 +75,20 @@ export const CAPABILITY_TOOLS = CAPABILITY_CASES.map((c) => ({
 /**
  * Capabilities deliberately NOT exercised, each with the reason it is out of scope.
  *
- * **One of these four is an INTERVAL, not a policy.** `token.pools` has a registered `ToolSpec` and
- * a stub handler that answers a typed refusal; there is no logic to exercise yet, so an eval case
- * would assert the refusal and nothing else. Its reason names the task that removes both the stub
- * and this line, in the same commit that adds its case file. (`pool.info` had the same entry and
- * task 014-32c removed it together with its stub — the interval closed as designed.) The masked case
- * is stated rather than left implicit (memory M6): an entry here makes the capability `accounted`
- * WITHOUT a case, so it masks "a tool is registered and nothing checks it" — which is why
- * `docs/tasks/task-014-34-acceptance.md` verifies both entries are gone at stage acceptance.
+ * **All three reasons are now the SAME reason, and that is the state this list is meant to be in.**
+ * Each of the three spends Nansen credits, and an eval that bills you gets turned off.
+ *
+ * **Two INTERVAL entries have lived here and both are gone, on schedule.** `pool.info` left in task
+ * 014-32c and `token.pools` in 014-32d, each in the same commit that gave its capability a handler
+ * and a case file. The masked case was stated rather than left implicit (memory M6): an entry here
+ * makes a capability `accounted` WITHOUT a case, so it masks "a tool is registered and nothing
+ * checks it" — which is why `docs/tasks/task-014-34-acceptance.md` verifies both are gone at stage
+ * acceptance, and why an interval entry always named the task that removes it.
  */
 export const CAPABILITY_EXCLUSIONS = new Map([
   ['entity.labels', 'paid — spends Nansen credits, and an eval that bills you gets turned off'],
   ['smart-money.flows', 'paid — spends Nansen credits'],
   ['token.risk', 'paid — spends Nansen credits'],
-  ['token.pools', 'stub registered by task 014-32b; its logic and eval case ship in task 014-32d'],
 ]);
 
 /** Known gaps between what the registry declares and what any MCP tool serves. These are NOT

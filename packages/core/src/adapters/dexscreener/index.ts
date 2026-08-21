@@ -34,6 +34,22 @@ const DEFAULT_LIMIT = 10;
 const VENDOR_PAGE_SIZE = 30;
 
 /**
+ * The page cap of the two `token.pools` routes — MEASURED for them, task 014-32d.
+ *
+ * It equals `VENDOR_PAGE_SIZE` today and is a separate constant on purpose. That number was
+ * measured on `/latest/dex/search`, a route that takes a `q` parameter these two do not have, and
+ * reusing it would state a measurement that was never taken on this route — the substitution the
+ * task forbids by name. If the vendor moves one cap and not the other, two constants report it and
+ * one hides it.
+ *
+ * Evidence: `docs/onchain-analytics/raw/dexscreener-token-routes-2026-08-21.json`. WETH and USDC on
+ * `ethereum` and WBNB on `bsc` return 30 rows on both routes; `osBGT` on `berachain` returns 6; and
+ * the CONTROL — a well-formed address nothing deploys — returns 0 on both, which is what makes a
+ * 30-row answer readable as a cap rather than as a fixed-size response.
+ */
+const TOKEN_ROUTE_PAGE_SIZE = 30;
+
+/**
  * There is no keyless DexScreener endpoint that lists the pairs of a chain — re-confirmed by probe,
  * 2026-08-20/21 (task 014-32c, L-19).
  *
@@ -128,7 +144,32 @@ interface DexscreenerPoolFetchResult {
   fee: FeeTierReading;
 }
 
-type DexscreenerFetchResult = DexscreenerSearchFetchResult | DexscreenerPoolFetchResult;
+/**
+ * `token.pools` — task 014-32d. ONE result type for TWO vendor routes, and the discriminator is
+ * `chain`, not a second `kind`.
+ *
+ * **Why one type.** The two routes answer the same question at two scopes: the pools a token trades
+ * in, on one chain or across chains. Their rows are the same vendor `pairs` shape, and the only
+ * behavioural difference downstream is which chain a row is attributed to. A second `kind` would
+ * have duplicated the normalizer to change one line of it.
+ *
+ * **`chain: null` is the cross-chain form, and it is load-bearing rather than an absence.** It says
+ * the answer is a SAMPLE and that each row states its own chain. Measured 2026-08-18 and again by
+ * this task's probe: the USDC address of `ethereum` asked without a chain returns 30 rows of which
+ * 29 are `pulsechain`, because a fork reproduces the addresses of the chain it forked. Attributing
+ * those to the requested chain would be a wrong answer wearing the shape of a right one.
+ */
+interface DexscreenerTokenPoolsFetchResult {
+  kind: 'token-pools';
+  /** `null` on the cross-chain form — see the docstring. */
+  chain: ChainInfo | null;
+  token: string;
+  limit: number;
+  raw: unknown;
+}
+
+type DexscreenerFetchResult =
+  DexscreenerSearchFetchResult | DexscreenerPoolFetchResult | DexscreenerTokenPoolsFetchResult;
 
 interface DexscreenerPair {
   chainId?: unknown;
@@ -229,6 +270,36 @@ function extractPoolArgs(
     );
   }
   return { chain, pairAddress };
+}
+
+/**
+ * `token.pools` is addressed by a TOKEN address and an OPTIONAL chain — a third argument shape.
+ *
+ * The chain is optional here and mandatory in the two extractors above, and that is the whole
+ * difference between discovery and identification: a pool address is meaningless without the chain
+ * that hosts it, while a token address is a question the vendor can answer globally.
+ *
+ * **The token is not format-checked against a chain**, deliberately, and the tool's input schema
+ * says the same. `isValidAddress` needs a chain; on the cross-chain form there is none, and checking
+ * against a chain the caller did not name would either reject valid non-EVM input or accept it by
+ * guessing a family. The bound on length is still applied at the tool boundary.
+ */
+function extractTokenPoolsArgs(
+  args: Record<string, unknown>,
+  chains: ChainRegistry,
+): { chain: ChainInfo | null; token: string; limit: number } {
+  const token = args['token'];
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new Error(
+      `dexscreener.fetch: invalid args ${JSON.stringify(args)} (expected {token: <a token address>, chain?})`,
+    );
+  }
+  // ABSENT means cross-chain. A `chain` that is PRESENT and unresolvable is still an error — the
+  // two states must not collapse, or a typo would silently widen the question to every chain.
+  const chain = args['chain'] === undefined ? null : resolveChain(args, chains);
+  const rawLimit = args['limit'];
+  const limit = typeof rawLimit === 'number' && rawLimit > 0 ? rawLimit : DEFAULT_LIMIT;
+  return { chain, token, limit };
 }
 
 /**
@@ -333,6 +404,38 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
   }
 
   /**
+   * `token.pools` — one request, on whichever of the two routes the arguments select.
+   *
+   * **Measured caps, this task's own** (`scripts/probe-dexscreener-token-routes.ts`): both routes
+   * cap at 30 rows, and the CONTROL — a well-formed address nothing deploys — returns 0 on both, so
+   * a 30-row answer reads as "the vendor had more and stopped" rather than as a fixed-size
+   * response. The number is NOT inherited from `VENDOR_PAGE_SIZE`, which was measured on
+   * `/latest/dex/search`, a route these two do not share; carrying it across would have turned a
+   * measurement into a guess.
+   */
+  async function fetchTokenPools(
+    args: Record<string, unknown>,
+    deadlineAtMs?: number,
+  ): Promise<DexscreenerTokenPoolsFetchResult> {
+    const { chain, token, limit } = extractTokenPoolsArgs(args, chains);
+    const url =
+      chain === null
+        ? `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(token)}`
+        : `https://api.dexscreener.com/token-pairs/v1/${encodeURIComponent(
+            chain.vendors['dexscreener'] ?? chain.slug,
+          )}/${encodeURIComponent(token)}`;
+    await throttle('dexscreener', RATE_LIMIT, 1, deadlineAtMs);
+    const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
+      ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
+    });
+    if (!response.ok) {
+      throw new Error(`dexscreener: HTTP ${response.status} for ${url}`);
+    }
+    const raw: unknown = await response.json();
+    return { kind: 'token-pools', chain, token, limit, raw };
+  }
+
+  /**
    * One vendor row → one canonical `Pool`, or `null` when the row is malformed.
    *
    * Shared by both routes deliberately: the six fields task 014-32b added to `Pool` are published by
@@ -419,6 +522,138 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
       );
     }
     return { resolved: true, pool };
+  }
+
+  /**
+   * The vendor's chain id → our chain, built once per adapter instance.
+   *
+   * The cross-chain route hands back rows from chains the caller never named, and a row can only
+   * become a `Pool` once its vendor id is mapped back to OUR slug — the vendor vocabulary stops at
+   * this layer (D4). A vendor chain our registry does not model has no slug to map to, so its rows
+   * are DROPPED and counted rather than attributed to the requested chain or published under the
+   * vendor's own string.
+   */
+  let vendorChains: Map<string, ChainInfo> | null = null;
+  function chainByVendorId(vendorId: string): ChainInfo | null {
+    vendorChains ??= new Map(
+      chains.list().flatMap((chain) => {
+        const id = chain.vendors['dexscreener'];
+        return typeof id === 'string' ? [[id, chain] as [string, ChainInfo]] : [];
+      }),
+    );
+    return vendorChains.get(vendorId) ?? null;
+  }
+
+  /**
+   * `token.pools` — task 014-32d.
+   *
+   * **Two routes, one normalizer, and the branch is three lines of it.** On the per-chain form every
+   * row belongs to the requested chain and the vendor scoped it server-side; the check is kept
+   * anyway, because "the vendor scoped it" is an assumption and a mis-scoped row would otherwise be
+   * published under a chain it does not live on. On the cross-chain form each row names its own
+   * chain and gets it.
+   *
+   * **The order is stable and means nothing, measured 2026-08-21** (this task's probe, two samples
+   * 300 s apart: same set, same order, and NOT sorted by liquidity — the second row of the USDC
+   * sample held $9.9M behind a first row of $89k). So a `limit` cut takes an ARBITRARY subset, not
+   * the largest pools, and `truncated.reason` says so whenever it cuts. Rows are NOT re-sorted here:
+   * that would publish a ranking the vendor does not make, over a `liquidityUsd` the vendor omits on
+   * some rows.
+   */
+  function normalizeTokenPools(result: DexscreenerTokenPoolsFetchResult): PoolPage {
+    const { chain, limit, token, raw } = result;
+    // `/latest/dex/tokens` answers `{pairs: [...]}`; `token-pairs/v1` answers a BARE ARRAY. Both are
+    // handled rather than assumed: reading only the first shape would render the per-chain route's
+    // answer as "this token trades nowhere", which is the L-10 failure this file keeps meeting.
+    const rows: DexscreenerPair[] = Array.isArray(raw)
+      ? (raw as DexscreenerPair[])
+      : ((raw as DexscreenerSearchResponse).pairs ?? []);
+    const vendorPageFull = rows.length >= TOKEN_ROUTE_PAGE_SIZE;
+
+    const requestedVendorId = chain === null ? null : (chain.vendors['dexscreener'] ?? chain.slug);
+    const candidates: { pair: DexscreenerPair; chain: ChainInfo }[] = [];
+    let offChain = 0;
+    let unmodelledChain = 0;
+    for (const pair of rows) {
+      const rowChainId = typeof pair.chainId === 'string' ? pair.chainId : null;
+      if (requestedVendorId !== null) {
+        if (rowChainId !== requestedVendorId) {
+          offChain += 1;
+          continue;
+        }
+        candidates.push({ pair, chain: chain as ChainInfo });
+        continue;
+      }
+      const rowChain = rowChainId === null ? null : chainByVendorId(rowChainId);
+      if (rowChain === null) {
+        unmodelledChain += 1;
+        continue;
+      }
+      candidates.push({ pair, chain: rowChain });
+    }
+
+    // Counted BEFORE the slice — "the vendor had more and we cut it" is invisible afterwards (Q-10).
+    const kept = candidates.slice(0, limit);
+    const cutByLimit = candidates.length - kept.length;
+
+    const pools: Pool[] = [];
+    let malformedCount = 0;
+    for (const candidate of kept) {
+      // `null` fee: neither route makes an `eth_call`, and one per row would turn a page of 30 into
+      // 30 node calls. `onchain_pool_info` is where a caller asks one pool for its tier.
+      const pool = toPool(candidate.pair, candidate.chain, null);
+      if (pool === null) {
+        malformedCount += 1;
+        continue;
+      }
+      pools.push(pool);
+    }
+    if (malformedCount > 0) {
+      process.stderr.write(
+        `dexscreener.normalize: skipped ${malformedCount} malformed pair(s) of ${kept.length} for token.pools token=${token}\n`,
+      );
+    }
+    if (kept.length > 0 && pools.length === 0) {
+      throw new Error(
+        `dexscreener.normalize: all ${kept.length} candidate pair(s) for token=${token} were malformed`,
+      );
+    }
+
+    // L-14: every cause named separately, because they act on the caller differently. The vendor cap
+    // is widened by no argument of either route; the `limit` cut is recovered by a larger `limit`;
+    // dropped rows are recovered by nothing. The two DROP causes are also kept apart — a malformed
+    // payload is a statement about the vendor, an unmodelled chain is a statement about OUR registry
+    // and is fixed on our side.
+    const notes = [
+      malformedCount > 0
+        ? `${malformedCount} of ${kept.length} vendor row(s) failed validation and were dropped`
+        : '',
+      unmodelledChain > 0
+        ? `${unmodelledChain} row(s) were on chains this registry does not model and were dropped — they are NOT missing pools on the chains it does`
+        : '',
+      offChain > 0
+        ? `${offChain} row(s) named a chain other than ${chain?.slug ?? '(none)'} and were dropped`
+        : '',
+      cutByLimit > 0
+        ? `${cutByLimit} further row(s) were cut by limit=${limit}, and the vendor's row ORDER is not a size ranking (measured 2026-08-21: stable between samples, and not sorted by liquidity), so this is an arbitrary subset and NOT the largest ${limit}`
+        : '',
+      vendorPageFull
+        ? `the vendor returned a FULL page of ${TOKEN_ROUTE_PAGE_SIZE} row(s), so rows beyond it were never sent and no argument of this route can request them`
+        : '',
+      chain === null && pools.length > 0
+        ? 'this is the CROSS-CHAIN form: a token address is not unique across chains, so these rows are a SAMPLE and each states its own chain'
+        : '',
+    ].filter(Boolean);
+
+    return {
+      pools,
+      // An EMPTY answer is not truncation here, and that is the difference from `pairs.active`.
+      // There, empty meant the query strategy found nothing and said nothing about the chain. Here
+      // the vendor was asked about one specific token and answered "no pools" — measured against a
+      // well-formed address nothing deploys, which returns 0 rows on both routes. Reporting that as
+      // truncated would tell a caller to retry for rows that do not exist.
+      truncated: { pairs: notes.length > 0, reason: notes.join('; ') },
+    };
   }
 
   function normalizeSearch(result: DexscreenerSearchFetchResult): PoolPage {
@@ -563,16 +798,7 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
       deadlineAtMs?: number,
     ): Promise<DexscreenerFetchResult> => {
       if (cap === 'pool.info') return fetchPool(args, deadlineAtMs);
-      if (cap === 'token.pools') {
-        // Declared by `capabilities()` since task 014-32b, served by task 014-32d. Refused
-        // EXPLICITLY rather than falling through to the search route: that fall-through would
-        // answer a `token.pools` call with a page of unrelated pairs — a wrong answer wearing the
-        // shape of a right one. Unreachable today (the tool is a stub that never resolves), and
-        // this is what keeps it unreachable by construction rather than by coincidence.
-        throw new Error(
-          'dexscreener.fetch: token.pools has no vendor route yet — its logic ships in task 014-32d',
-        );
-      }
+      if (cap === 'token.pools') return fetchTokenPools(args, deadlineAtMs);
       return fetchPairs(args, deadlineAtMs);
     },
     normalize: (cap: string, rawResult: unknown): PoolPage | PoolInfoResult => {
@@ -584,6 +810,12 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
           throw new Error(`dexscreener.normalize: ${cap} was handed a pool.info fetch result`);
         }
         return normalizePool(result);
+      }
+      if (result.kind === 'token-pools') {
+        if (cap !== 'token.pools') {
+          throw new Error(`dexscreener.normalize: ${cap} was handed a token.pools fetch result`);
+        }
+        return normalizeTokenPools(result);
       }
       if (cap !== 'pairs.active') {
         throw new Error(`dexscreener.normalize: ${cap} was handed a pairs.active fetch result`);

@@ -1,0 +1,183 @@
+[
+  {
+    "chainId": "berachain",
+    "dexId": "kodiak",
+    "url": "https://dexscreener.com/berachain/0x2608b7c8eb17e22cb95b7cd6f872993cf33a4ca1",
+    "pairAddress": "0x2608B7c8Eb17e22CB95b7cD6f872993cf33a4CA1",
+    "labels": ["v3"],
+    "baseToken": {
+      "address": "0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58",
+      "name": "OpenState BGT",
+      "symbol": "osBGT"
+    },
+    "quoteToken": {
+      "address": "0x118D2cEeE9785eaf70C15Cd74CD84c9f8c3EeC9a",
+      "name": "POL Staked WBERA",
+      "symbol": "sWBERA"
+    },
+    "priceNative": "0.4872",
+    "priceUsd": "0.1212",
+    "txns": {
+      "m5": { "buys": 0, "sells": 0 },
+      "h1": { "buys": 0, "sells": 0 },
+      "h6": { "buys": 0, "sells": 0 },
+      "h24": { "buys": 0, "sells": 1 }
+    },
+    "volume": { "h24": 0, "h6": 0, "h1": 0, "m5": 0 },
+    "priceChange": {},
+    "liquidity": { "usd": 537715.39, "base": 4433017, "quote": 5.9672 },
+    "fdv": 1578053,
+    "marketCap": 1578053,
+    "pairCreatedAt": 1753290369000
+  },
+  {
+    "chainId": "berachain",
+    "dexId": "kodiak",
+    "url": "https://dexscreener.com/berachain/0xf50d30c02fba7d710e5b52a9b588b285aa550d2e",
+    "pairAddress": "0xF50d30c02Fba7d710e5b52a9b588b285Aa550d2e",
+    "labels": ["v3"],
+    "baseToken": {
+      "address": "0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58",
+      "name": "OpenState BGT",
+      "symbol": "osBGT"
+    },
+    "quoteToken": {
+      "address": "0x6969696969696969696969696969696969696969",
+      "name": "Wrapped Bera",
+      "symbol": "WBERA"
+    },
+    "priceNative": "0.6875",
+    "priceUsd": "0.1375",
+    "txns": {
+      "m5": { "buys": 0, "sells": 0 },
+      "h1": { "buys": 0, "sells": 0 },
+      "h6": { "buys": 0, "sells": 0 },
+      "h24": { "buys": 6, "sells": 15 }
+    },
+    "volume": { "h24": 92.84, "h6": 0, "h1": 0, "m5": 0 },
+    "priceChange": { "h24": -10.15 },
+    "liquidity": { "usd": 433.09, "base": 1633.5106, "quote": 1041.2901 },
+    "fdv": 1789842,
+    "marketCap": 1789842,
+    "pairCreatedAt": 1784179724000
+  },
+  {
+    "chainId": "berachain",
+    "dexId": "kodiak",
+    "url": "https://dexscreener.com/berachain/0x114c906389ac3eb806966413e171255436cb87f5",
+    "pairAddress": "0x114c906389aC3Eb806966413e171255436CB87f5",
+    "labels": ["v3"],
+    "baseToken": {
+      "address": "0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58",
+      "name": "OpenState BGT",
+      "symbol": "osBGT"
+    },
+    "quoteToken": {
+      "address": "0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce",
+      "name": "Bera USD",
+      "symbol": "BUSD"
+    },
+    "priceNative": "0.1349",
+    "priceUsd": "0.1349",
+    "txns": {
+      "m5": { "buys": 0, "sells": 0 },
+      "h1": { "buys": 0, "sells": 1 },
+      "h6": { "buys": 5, "sells": 6 },
+      "h24": { "buys": 56, "sells": 42 }
+    },
+    "volume": { "h24": 11.94, "h6": 0.81, "h1": 0.1, "m5": 0 },
+    "priceChange": { "h1": -0.7, "h6": -0.61, "h24": -11.9 },
+    "liquidity": { "usd": 61.77, "base": 222.0889, "quote": 31.8119 },
+    "fdv": 1755146,
+    "marketCap": 1755146,
+    "pairCreatedAt": 1768490646000
+  },
+  {
+    "chainId": "berachain",
+    "dexId": "kodiak",
+    "url": "https://dexscreener.com/berachain/0xac9f0924041c56690656beefdce0d19bd1c2b785",
+    "pairAddress": "0xaC9f0924041C56690656beEfDCe0D19Bd1C2b785",
+    "labels": ["v3"],
+    "baseToken": {
+      "address": "0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58",
+      "name": "OpenState BGT",
+      "symbol": "osBGT"
+    },
+    "quoteToken": {
+      "address": "0x08A38Caa631DE329FF2DAD1656CE789F31AF3142",
+      "name": "YEET",
+      "symbol": "YEET"
+    },
+    "priceNative": "2487.1072",
+    "priceUsd": "0.1317",
+    "txns": {
+      "m5": { "buys": 0, "sells": 0 },
+      "h1": { "buys": 0, "sells": 0 },
+      "h6": { "buys": 1, "sells": 1 },
+      "h24": { "buys": 16, "sells": 10 }
+    },
+    "volume": { "h24": 26.89, "h6": 0.13, "h1": 0, "m5": 0 },
+    "priceChange": { "h6": -3.38, "h24": -16.24 },
+    "liquidity": { "usd": 350.62, "base": 1386.1719, "quote": 3169556 },
+    "fdv": 1714488,
+    "marketCap": 1714488,
+    "pairCreatedAt": 1756919285000
+  },
+  {
+    "chainId": "berachain",
+    "dexId": "winnieswap",
+    "url": "https://dexscreener.com/berachain/0x8a76c9c55728ef838a12d2641ece775a780251f3",
+    "pairAddress": "0x8a76C9c55728ef838a12D2641ECe775a780251F3",
+    "baseToken": {
+      "address": "0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58",
+      "name": "OpenState BGT",
+      "symbol": "osBGT"
+    },
+    "quoteToken": {
+      "address": "0x6969696969696969696969696969696969696969",
+      "name": "Wrapped Bera",
+      "symbol": "WBERA"
+    },
+    "priceNative": "0.6876",
+    "priceUsd": "0.1364",
+    "txns": {
+      "m5": { "buys": 0, "sells": 0 },
+      "h1": { "buys": 0, "sells": 0 },
+      "h6": { "buys": 2, "sells": 3 },
+      "h24": { "buys": 12, "sells": 14 }
+    },
+    "volume": { "h24": 0.96, "h6": 0.11, "h1": 0, "m5": 0 },
+    "priceChange": { "h6": 0.83, "h24": 9.54 },
+    "liquidity": { "usd": 1.61, "base": 10.3685, "quote": 0.9879 },
+    "fdv": 1774733,
+    "marketCap": 1774733,
+    "pairCreatedAt": 1755213784000
+  },
+  {
+    "chainId": "berachain",
+    "dexId": "kodiak",
+    "url": "https://dexscreener.com/berachain/0x47134dd940b4ff64c3e4fa60f0a3eb7f177d0702",
+    "pairAddress": "0x47134dD940b4FF64c3E4fa60f0A3EB7F177D0702",
+    "labels": ["v3"],
+    "baseToken": {
+      "address": "0xCaa70d2aa873Ef057980844e18D9a9560bdfFcC0",
+      "name": "EVK Vault eWBERA-4",
+      "symbol": "eWBERA-4"
+    },
+    "quoteToken": {
+      "address": "0xD2C41BF4033A83C0FC3A7F58a392Bf37d6dCDb58",
+      "name": "OpenState BGT",
+      "symbol": "osBGT"
+    },
+    "priceNative": "2.3804",
+    "txns": {
+      "m5": { "buys": 0, "sells": 0 },
+      "h1": { "buys": 0, "sells": 1 },
+      "h6": { "buys": 3, "sells": 3 },
+      "h24": { "buys": 31, "sells": 15 }
+    },
+    "volume": { "h24": 0, "h6": 0, "h1": 0, "m5": 0 },
+    "priceChange": { "h1": -0.47, "h6": -0.01, "h24": 31.45 },
+    "pairCreatedAt": 1747661760000
+  }
+]

@@ -1,15 +1,27 @@
 import { z } from 'zod';
 import { defineTool } from './registry.js';
-import { ChainInputSchema, PoolSchema, type CapabilityResolver } from '@onchain-intel/core';
-import { DeadlineMsInputSchema, type CacheMeta, type TimingMeta } from './resolve-capability.js';
-import { stubRefusal } from './stub-refusal.js';
+import {
+  canonicalizeChain,
+  ChainInputSchema,
+  PoolSchema,
+  type CapabilityResolver,
+} from '@onchain-intel/core';
+import { contractViolation } from './contract-violation.js';
+import {
+  capabilityUnavailable,
+  metaFrom,
+  resolveCapability,
+  type CacheMeta,
+  type TimingMeta,
+  DeadlineMsInputSchema,
+} from './resolve-capability.js';
 
 /**
  * `onchain_token_pools` — the pools one token trades in (T-014, R-34, `interfaces.md` §5.1.8).
  *
- * **What this file is today.** The `ToolSpec`, both schemas and a stub handler; the logic ships in
- * task 014-32d. Registered in the same commit as `onchain_pool_info` so the `tools/list` snapshot
- * moves once (AC-2).
+ * The `ToolSpec` and both schemas shipped with task 014-32b, registered alongside
+ * `onchain_pool_info` so the `tools/list` snapshot moved once (AC-2); task 014-32d replaced the stub
+ * handler with the logic below.
  *
  * **Why it is a capability of its own and not a mode of `pool.info`.** `onchain_pool_info` answers
  * by pool address: that is identification. One token trades in several pools, on several DEXes and
@@ -99,25 +111,86 @@ export interface TokenPoolsContext {
 
 const CAPABILITY = 'token.pools';
 
-/** The task that replaces the stub below. Named in the refusal the caller receives. */
-const LOGIC_TASK = '014-32d';
-
 export type TokenPoolsOutcome =
   | { ok: true; output: TokenPoolsOutput; cache: CacheMeta; timing?: TimingMeta }
   | { ok: false; reason: string; refusalClass?: string };
 
 /**
- * Stub handler — refuses, and the refusal names task 014-32d.
+ * Answers the pools a token trades in — task 014-32d.
  *
- * Declared with the full signature and implemented with none — see `pool-info.ts` for why.
+ * **The cross-chain form still has to be ROUTED somewhere, and this is the one design decision the
+ * contract left open.** `registry.resolve()` takes a chain and uses it for exactly one thing here:
+ * asking each candidate adapter's `chainSupport()` whether it serves the capability there. It is
+ * NOT part of the cache key — that is `(capability, args)` (`net/args-hash.ts`) — so a routing
+ * chain does not leak into what a cached answer is keyed on, and the caller's own `chain` reaches
+ * the adapter through `args` or not at all.
  *
- * An empty `pools` array is exactly what "this token trades nowhere" looks like, so the stub must
- * not return one. See `stub-refusal.ts` for the whole argument.
+ * The anchor is therefore DERIVED from coverage rather than written down: the first chain the
+ * registry says serves `token.pools`. A hardcoded `'ethereum'` would break the cross-chain form the
+ * day that chain left the vendor's list, for a reason having nothing to do with the question asked.
+ * When coverage is empty the tool refuses instead of resolving against a chain nobody serves —
+ * which is the honest answer and not an empty pool list (class L-10).
+ *
+ * **The chain is canonicalised BEFORE `args` is built**, so `eth` and `ethereum` do not hash to two
+ * cache entries for one logical request (data-model.md §4.2.2) — the rule `pool-info.ts` carries.
+ *
+ * **The token address is NOT normalised.** On the cross-chain form there is no chain to normalise
+ * it against; on the per-chain form normalising to a checksum form is the DF-1 defect, since some
+ * vendors match a contract address case-sensitively. It reaches the adapter as the caller wrote it.
  */
-export const tokenPoolsHandler: (
+export async function tokenPoolsHandler(
   input: TokenPoolsInput,
   ctx: TokenPoolsContext,
-) => Promise<TokenPoolsOutcome> = () => Promise.resolve(stubRefusal(CAPABILITY, LOGIC_TASK));
+): Promise<TokenPoolsOutcome> {
+  const chain =
+    input.chain === undefined
+      ? null
+      : canonicalizeChain(input.chain, ctx.registry.getChainRegistry());
+
+  const routingChain = chain ?? ctx.registry.getCoverage().chainsFor(CAPABILITY)[0]?.slug;
+  if (routingChain === undefined) {
+    // Built by `resolve-capability.ts`, never here: a tool module constructing its own `{ok:false}`
+    // is what `tools-refusal-class.test.ts` forbids, because such a refusal can ship without the
+    // `refusalClass` that `request_trace`'s NOT NULL column requires.
+    return capabilityUnavailable(
+      CAPABILITY,
+      'it is served on no chain this registry knows, so the cross-chain form has no route to ' +
+        'take. This is a coverage fact, not an answer about the token.',
+    );
+  }
+
+  const args: Record<string, unknown> = { token: input.token };
+  // ABSENT, never `chain: undefined`: `canonicalize` in the args hash would otherwise have to
+  // decide whether a present-but-undefined key differs from a missing one, and the two forms of
+  // this call must key differently on purpose — they ask the vendor different questions.
+  if (chain !== null) args['chain'] = chain;
+  if (input.limit !== undefined) args['limit'] = input.limit;
+
+  const outcome = await resolveCapability(
+    ctx.registry,
+    CAPABILITY,
+    routingChain,
+    args,
+    input.deadlineMs,
+  );
+  if (!outcome.ok) return outcome;
+
+  const answer = outcome.output as { pools?: unknown; truncated?: unknown };
+  // `safeParse`, never `parse`: this handler declares `Promise<TokenPoolsOutcome>`, and a throw
+  // would escape that contract and surface as a generic transport error rather than this tool's own
+  // message — the rule every sibling handler follows.
+  const parsed = TokenPoolsOutputSchema.safeParse({
+    chain,
+    pools: answer?.pools ?? [],
+    truncated: answer?.truncated,
+    source: outcome.cache.provider,
+    fetchedAt: Date.now(),
+  });
+  if (!parsed.success) {
+    return contractViolation(CAPABILITY, parsed.error);
+  }
+  return { ok: true, output: parsed.data, ...metaFrom(outcome) };
+}
 
 /** The `ToolSpec` for `onchain_token_pools` — the name is declared here and nowhere else (R-18). */
 export const tokenPoolsToolSpec = defineTool({

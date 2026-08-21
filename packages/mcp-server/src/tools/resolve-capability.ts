@@ -200,6 +200,29 @@ export interface ResolveFailure {
   refusalClass: string;
 }
 
+/**
+ * A refusal for the case a handler can see BEFORE it resolves anything: this capability is served
+ * on no chain at all.
+ *
+ * **Why it lives here and not in the handler that needs it.** `tools-refusal-class.test.ts` forbids
+ * a tool module from constructing an `{ok: false}` literal, and the reason is not style: a refusal
+ * built by hand is a refusal that can ship without a `refusalClass`, and `request_trace`'s column is
+ * NOT NULL by CHECK constraint — so the row is rejected in production, on the failure path, with a
+ * green suite behind it. This is the module that owns turning "we cannot resolve" into a typed
+ * outcome, so the case belongs here rather than in a fourth allowed file.
+ *
+ * The class name matches what `CapabilityRegistry` would have produced for the same fact, so a
+ * trace row cannot tell whether the refusal was reached before the walk or inside it — which is
+ * correct, because to the caller it is the same fact.
+ */
+export function capabilityUnavailable(capability: string, detail: string): ResolveFailure {
+  return {
+    ok: false,
+    reason: `capability unavailable: ${capability} — ${detail}`,
+    refusalClass: 'CapabilityUnavailableError',
+  };
+}
+
 export type ResolveOutcome = ResolveSuccess | ResolveFailure;
 
 /**
