@@ -24,6 +24,30 @@ env). Exports **credential references (id/name) only** — n8n never returns sec
 
 Credentials referenced: **Supabase DB** (postgres → schema `onchain`) and **Onchain bot** (Telegram).
 
+## `proposed/` — built here, not yet on any instance
+
+`exported/` mirrors what IS running. `proposed/` holds a workflow this repository has built and
+validated but that no instance has ever had, because installing it needs something an author cannot
+grant themselves.
+
+| File | What | Blocked on |
+|---|---|---|
+| `proposed/onchain-retention.json` | daily retention: three jobs → `onchain.retention_runs`, one `retention.cleanup` row per pass (task 014-41, `deployment.md` §10.6) | migrations 002/003 on the target Postgres, a `Onchain engine state` credential, and the owner's explicit approval to create it on the shared instance |
+
+**Why a separate directory rather than a file in `exported/`.** `import.sh` imports *everything* in
+`exported/`, so a proposal parked there would be installed by the next prod re-import — with a
+credential that does not exist on that instance. The split keeps `import.sh` unchanged and keeps
+"what runs" readable as exactly that.
+
+**Promotion, when the gates clear:** `cp proposed/onchain-retention.json exported/`, run `import.sh`,
+verify on the instance, then `export.sh` — which overwrites the file with the instance's own form and
+makes it a true export.
+
+⚠️ **`import.sh` relinks exactly two credential names.** `import_with_relink.py` builds
+`{"Supabase DB": …, "Onchain bot": …}`, so a node naming a THIRD credential keeps its dangling id and
+imports broken. `onchain-retention` is the first workflow to need a second Postgres credential, so
+installing it means teaching the importer that name — or creating this one workflow by hand.
+
 ## Prod re-import (Step 1d)
 
 Credential ids are instance-specific — after importing to a new instance, re-link **Supabase DB**
