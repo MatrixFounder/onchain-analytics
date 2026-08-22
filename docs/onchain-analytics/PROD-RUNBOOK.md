@@ -268,18 +268,36 @@ database receives only its digest.** The plaintext reaches neither the repositor
    **The pepper must be the same value the server runs with.** It enters the digest here and again on
    every verification (R-29.1). A different pepper on the server makes the seeded row unmatchable,
    silently.
-2. Apply the seed migration with the printed command. It carries the digest, the prefix and the two
-   row ids — never the token:
-   ```bash
-   ssh vm 'docker exec -i supabase-db psql -qU supabase_admin -d postgres -v ON_ERROR_STOP=1 \
-     -v ADMIN_EMAIL=you@example.com -v ADMIN_TOKEN_SHA256=<64-hex> \
-     -v ADMIN_TOKEN_PREFIX=<11-chars> -v ADMIN_USER_ID=<ULID> -v ADMIN_TOKEN_ID=<ULID>' \
-     < sql/migrations/003_seed_engine_admin.sql
-   ```
-   The file checks every parameter before its first write, so a missing one stops it with the
-   parameter named and nothing written. It refuses rather than promoting if the address already
-   belongs to a non-admin user, and it is idempotent: re-running after fixing a neighbouring step
-   adds no row.
+2. **Run the command step 1 printed. Do not retype it, and do not copy one from this page — there is
+   none here on purpose.**
+
+   The second block of the script's output is a complete `ssh vm 'docker exec … psql …' <
+   sql/migrations/003_seed_engine_admin.sql` with all five values already substituted. Select that
+   block and run it unchanged.
+
+   **Why this page shows no example of it.** A command shown with `<placeholders>` is a command
+   somebody will paste. It happened on 2026-08-22: a template was copied with its placeholders
+   intact, `psql` passed them through as literal values, and the seed failed on
+   `api_tokens_prefix_check` because `…` is shorter than eight characters. Nothing was written — see
+   the transaction note below — but the failure was caused by the instruction, not by the operator.
+
+   How to tell you are looking at the real command: `-v ADMIN_TOKEN_PREFIX=` is followed by `oi_`
+   and eight more characters, and each of `-v ADMIN_USER_ID=` / `-v ADMIN_TOKEN_ID=` by a 26-character
+   ULID. Anything in angle brackets, or any `…`, means you are holding a template.
+
+   **Two guards, and they catch different things.** A MISSING parameter is refused by the file's own
+   `\if :{?VAR}` checks before the first write, with the parameter named. A parameter that is present
+   but malformed is not: it reaches the tables and is caught by a column constraint. The whole seed
+   runs inside one transaction under `ON_ERROR_STOP=1`, so that case rolls back whole — three empty
+   tables, not a half-applied admin.
+
+   It refuses rather than promoting if the address already belongs to a non-admin user.
+
+   **Re-running is idempotent only for an IDENTICAL re-run.** The same five values a second time
+   write nothing: the user conflicts on `email` and the token on `token_hash`, both `DO NOTHING`. But
+   re-running after a fresh mint carries a NEW digest, which conflicts with nothing — the user row is
+   skipped and a SECOND active token is added for the same admin. That is a rotation, not a repair;
+   revoke the first one deliberately if that is what you meant.
 3. Verify without revealing anything: one row, the prefix you copied, no plaintext column. The
    migration prints this itself; run it again any time.
    ```sql
