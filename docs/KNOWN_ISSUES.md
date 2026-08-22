@@ -128,6 +128,7 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 ## security
 
 - **SEC-1** [the daily credit cap bounds damage per day, not per minute: there is no velocity guard](issues/sec-1-nansen-daily-cap-does-not-bound-a-burst-no-velocity-guard.md) — severity `SEV-2`, status `fixed`, opened 2026-07-25
+- **SEC-2** [a stock Supabase role holds `pg_read_all_data`, so every engine table is readable by it](issues/sec-2-a-stock-supabase-role-holds-pg-read-all-data-so-the-engine-tables-are-readable-by-it.md) — severity `SEV-2`, status `open`, opened 2026-08-22
 
 ## quality
 

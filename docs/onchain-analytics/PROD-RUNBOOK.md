@@ -172,6 +172,72 @@ the target's current workflows.
   failure. At minimum confirm `ChatID` in `onchain-error-alert` → `Normalize Input` is not `0` —
   otherwise it stays silent exactly when it is needed.
 
+## Engine network profile — the two database roles  *(T-014, §10.4.2 steps 1–2)*
+
+Before the migration, not after. The migration carries the grants of §10.5.1, and a `GRANT` names its
+grantee — a role that does not exist yet aborts the whole file under `ON_ERROR_STOP=1`, **after** the
+tables are created, leaving a half-applied schema to clean up by hand.
+
+**Split the creation from the password.** The grant needs the role to EXIST; it does not need the
+role to be able to log in. So the half with no secret in it can be done by anyone, scripted, and
+reviewed — and the half that carries a secret stays with the person who chooses it.
+
+```sql
+-- no secret: safe to script, safe to paste in a review, safe for an agent to run
+CREATE ROLE onchain_engine_state NOLOGIN;
+CREATE ROLE onchain_engine_read  NOLOGIN;
+```
+
+```sql
+-- the operator, and only the operator. The password reaches no transcript and no file.
+ALTER ROLE onchain_engine_state LOGIN PASSWORD '<chosen by you>';
+ALTER ROLE onchain_engine_read  LOGIN PASSWORD '<chosen by you>';
+```
+
+⚠️ A role left `NOLOGIN` is inert but not harmless bookkeeping: it will pass the migration and then
+fail every connection with a message about authentication rather than about the missing step. Do the
+second block in the same sitting.
+
+**Neither name is fixed by the documents.** `deployment.md` §10.5.1 spells `onchain_engine_state`
+only as a suggestion, and the read role's name is installation-local. Both arrive at the migration as
+`psql` parameters, so a host that already holds a role of that name takes different values and the
+same file.
+
+**Do not point `READ_ROLE` at a stock Supabase role.** Measured on the dev VM 2026-08-22:
+`supabase_read_only_user` is a member of `pg_read_all_data`, so it already reads every table in the
+cluster and would gain the twelve engine tables for free — see
+[SEC-2](../issues/sec-2-a-stock-supabase-role-holds-pg-read-all-data-so-the-engine-tables-are-readable-by-it.md).
+A dedicated read role is what makes the grant list mean anything.
+
+Then apply the migration, piping over stdin per the `vm-deploy` skill:
+
+```bash
+ssh vm 'docker exec -i supabase-db psql -qU supabase_admin -d postgres -v ON_ERROR_STOP=1 \
+  -v STATE_ROLE=onchain_engine_state -v READ_ROLE=onchain_engine_read' \
+  < sql/migrations/002_t014_network_profile.sql
+```
+
+**Postconditions, all four checked by the migration itself** (dev VM, 2026-08-22): 0 objects created
+in `public`; the seeded foreign-key target present; zero orphans on all eight tables carrying
+`REFERENCES`; and the state role reaching **none** of `assets`, `metrics`, `snapshots`.
+
+**Then run step 2a's own measurement**, which the migration does not do for you:
+
+```sql
+SELECT t.table_name,
+       has_table_privilege('onchain_engine_read', 'onchain.'||t.table_name,'SELECT')  AS engine_read,
+       has_table_privilege('onchain_engine_state','onchain.'||t.table_name,'SELECT')  AS engine_state
+  FROM information_schema.tables t WHERE t.table_schema='onchain' ORDER BY 1;
+```
+
+Expected, and measured on the dev VM: `engine_read` true for exactly `assets`, `metrics`,
+`snapshots`; `engine_state` true for exactly the other twelve; no row true in both columns.
+
+**Why `has_table_privilege` and not `information_schema.role_table_grants`.** The catalogue view is
+blind to a grant to `PUBLIC`, to a privilege inherited through a group role, and to any grant whose
+roles are not enabled in the session. SEC-2 is an instance of the second: the privilege appears in no
+table ACL and is real.
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are
