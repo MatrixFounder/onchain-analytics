@@ -69,9 +69,12 @@ supabase_read_only_user` — a change to a role Supabase ships and its own tooli
 instance shared with other work. That is an operation on someone else's environment and it needs the
 owner's decision, not an author's judgement.
 
-**The state that makes it urgent has not arrived yet.** The three tables are EMPTY: migration 003
-seeds the first admin, and until it runs there is no user row, no token row and no audit trail to
-read. The window to decide is therefore before step 4 of §10.4.2, not before step 2.
+**The state that makes it urgent ARRIVED on 2026-08-22.** This paragraph previously said the three
+tables were empty and the decision could wait for step 4. Migration 003 has now run: `users` holds the
+administrator's address, `api_tokens` one active row, and `access_audit` the two bootstrap entries.
+All three are readable by `supabase_read_only_user` today. The digest remains useless without the
+pepper, so what is exposed is identity and administrative history — but it is exposed now, not
+prospectively, and the decision below is no longer one that can be deferred by inaction.
 
 **Fix path — three directions, and the third is not a deferral.**
 
