@@ -406,7 +406,11 @@ and row-level security binds neither, because both `pg_read_all_data` members ca
 
 So on such a host the check above is run against the roles the INSTALLATION controls, and the three
 platform roles are recorded as an accepted exception with a re-check pinned to the move off the
-managed cluster. **The load-bearing postcondition does not move**: `authenticator` — the role
+managed cluster. **On the dev VM that acceptance was taken by the owner on 2026-08-23**, scoped to a
+host where the database administrator and the engine owner are the same person; the separated host is
+to get a dedicated Postgres container instead
+([WI-62](../backlog/wi-62-engine-tables-move-to-a-dedicated-postgres-container-on-the-separated-host.md)),
+which restores this postcondition as written rather than excepting it again. **The load-bearing postcondition does not move**: `authenticator` — the role
 PostgREST authenticates as, and the only role reachable from outside the machine — must read none of
 the twelve engine tables. Measured true on the dev VM the same day.
 

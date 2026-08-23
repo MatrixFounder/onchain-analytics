@@ -1,7 +1,7 @@
 ---
 id: SEC-2
 type: known-issue
-status: open
+status: documented
 opened_at: 2026-08-22
 category: security
 severity: SEV-2
@@ -13,6 +13,29 @@ slug: sec-2-a-stock-supabase-role-holds-pg-read-all-data-so-the-engine-tables-ar
 > Origin: the step-2a measurement of `deployment.md` §10.4.2, run before applying migration 002 to
 > the dev VM on 2026-08-22 and re-run after. Filed because the measurement found what that step
 > exists to find, and the correction it prescribes is an operation on a shared role.
+
+> **ACCEPTED for the dev VM — owner decision, 2026-08-23.** Direction 4 of the fix path. The record
+> stays open in substance and is closed in status only in the sense the ledger's `documented`
+> vocabulary means: a constraint accepted with the guidance written down, not a defect repaired.
+>
+> **What was accepted, stated so a later reader cannot mistake its scope.** On THIS host, three
+> platform roles — `supabase_admin`, `postgres`, `supabase_read_only_user` — read the twelve engine
+> tables, and nothing available on a managed Supabase cluster prevents it. The exposure is the dev
+> administrator's address and the administrative journal, to whoever already holds
+> database-administrator access to this same cluster, which today is the person who owns the engine.
+>
+> **What was NOT accepted.** This decision does not travel. It is scoped to the dev VM, where the DBA
+> and the engine owner are one person. The owner's stated intent for the separated host is a
+> DEDICATED Postgres container rather than the managed cluster, which is direction 3 and restores the
+> postcondition as written — filed as
+> [WI-62](../backlog/wi-62-engine-tables-move-to-a-dedicated-postgres-container-on-the-separated-host.md)
+> so the intent survives this conversation.
+>
+> **The re-check this acceptance is pinned to.** Before the network profile runs on any host where
+> the database administrator and the engine owner are different people, or where the cluster carries
+> another application's data, run the reproduction below again and re-decide. A green run of that
+> query on the dev VM is not evidence about the next host, and this paragraph exists because an
+> acceptance with no expiry is how a scoped decision becomes an unscoped one.
 
 **Symptom.** `onchain.api_tokens`, `onchain.users` and `onchain.access_audit` — three of the twelve
 tables the network profile relies on being private to its own role — are readable by
@@ -127,11 +150,12 @@ the one the perimeter is built against.
    postcondition as written. The network profile targets a VPS later (§10.1), where the cluster is
    ours and ships none of these three roles; a separate Postgres instance on this VM would do the
    same today. This is the direction §10.7 anticipates, and it is now the only one that works.
-4. **Accept, explicitly, for the dev VM.** Defensible while the exposure is one dev administrator's
-   address and two bootstrap audit rows, and while everyone with `supabase_admin` or `postgres` on
-   this cluster is the same person who owns the engine. It must be a decision with a re-check pinned
-   to the move to a shared host, because the same measurement where the DBA and the engine owner are
-   different people reads differently.
+4. **Accept, explicitly, for the dev VM.** ← **TAKEN 2026-08-23.** Defensible while the exposure is
+   one dev administrator's address and two bootstrap audit rows, and while everyone with
+   `supabase_admin` or `postgres` on this cluster is the same person who owns the engine. It is a
+   decision with a re-check pinned to the move to a shared host, because the same measurement where
+   the DBA and the engine owner are different people reads differently. The pin is stated at the top
+   of this record; direction 3 is the owner's stated intent for that host and is filed as WI-62.
 
 **Do not** treat "the digests are peppered" as closing this. It bounds the damage; it does not
 restore the postcondition, and `users` plus `access_audit` are unpeppered by nature.
