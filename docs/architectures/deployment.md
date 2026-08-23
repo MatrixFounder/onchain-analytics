@@ -394,6 +394,26 @@ SELECT defaclobjtype, defaclacl FROM pg_default_acl d
 Postcondition: `may_select` is true for `assets`, `metrics` and `snapshots`, and false for every
 other table in the schema. Any true elsewhere is revoked before the profile starts, and
 `pg_default_acl` carries no entry that would grant the read role a future engine table.
+
+**On a MANAGED cluster this postcondition is unreachable, and the exception is named rather than
+quietly tolerated** (measured on the dev VM 2026-08-23,
+[SEC-2](../issues/sec-2-a-stock-supabase-role-holds-pg-read-all-data-so-the-engine-tables-are-readable-by-it.md)).
+Supabase ships three roles that read every table by construction: `supabase_admin` (superuser),
+`postgres` (the project-owner role, `rolbypassrls` and a member of `pg_read_all_data`), and
+`supabase_read_only_user` (reserved by `supautils.conf` in both `reserved_roles` and
+`reserved_memberships`). Revoking is not available for the third and not desirable for the second,
+and row-level security binds neither, because both `pg_read_all_data` members carry `rolbypassrls`.
+
+So on such a host the check above is run against the roles the INSTALLATION controls, and the three
+platform roles are recorded as an accepted exception with a re-check pinned to the move off the
+managed cluster. **The load-bearing postcondition does not move**: `authenticator` — the role
+PostgREST authenticates as, and the only role reachable from outside the machine — must read none of
+the twelve engine tables. Measured true on the dev VM the same day.
+
+**Why the exception is written here rather than left to each operator.** An unreachable
+postcondition is a check that gets skipped, and a skipped check is indistinguishable from a passed
+one six months later. Naming what cannot hold, and what must hold instead, is what keeps the rest of
+the step worth running.
 Postcondition: `SELECT * FROM onchain.api_tokens` over `ONCHAIN_PG_URL` is refused. **This last
 one is the load-bearing check**; the two queries above are how an operator finds what to fix.
 

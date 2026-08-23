@@ -76,20 +76,69 @@ All three are readable by `supabase_read_only_user` today. The digest remains us
 pepper, so what is exposed is identity and administrative history — but it is exposed now, not
 prospectively, and the decision below is no longer one that can be deferred by inaction.
 
-**Fix path — three directions, and the third is not a deferral.**
+## The remeasurement of 2026-08-23, which removed two of the three fix paths
 
-1. **Revoke the membership.** `REVOKE pg_read_all_data FROM supabase_read_only_user;` restores the
-   postcondition exactly. Risk: unmeasured impact on Supabase's own tooling on this instance. Measure
-   what still authenticates as that role before revoking.
-2. **Move the engine's tables off this cluster.** The network profile targets a VPS later
-   (§10.1), where the cluster is ours and no such role exists. This closes it by relocation rather
-   than by revocation, and it is the direction §10.7 already anticipates.
-3. **Accept and record, for the dev VM only.** Defensible while the tables hold a single dev admin
-   and no production trace — but it must be an explicit decision with a re-check pinned to the move
-   to a shared VPS, because the same measurement on a host with real traffic reads differently.
+The owner asked for this to be fixed before other work continued. The measurement taken to carry that
+out found the fix does not exist in the form this record first proposed, and the record is corrected
+rather than left proposing it.
+
+**Every login role, measured against `onchain.api_tokens` and `onchain.users`:**
+
+| role | reads them | what it is |
+| :-- | :-- | :-- |
+| `onchain_engine_state` | yes | ours, by design |
+| `supabase_admin` | yes | superuser |
+| `postgres` | yes | the project-owner role — `rolbypassrls`, and the SECOND member of `pg_read_all_data` |
+| `supabase_read_only_user` | yes | this record's subject |
+| `authenticator` (PostgREST) | **no** | the internet-facing path |
+| `onchain_engine_read`, `pgbouncer`, `supabase_auth_admin`, `supabase_functions_admin`, `supabase_storage_admin`, `supabase_replication_admin` | no | |
+
+**Revoking is not available, on two independent counts.**
+
+1. `pg_read_all_data` has **two** members, not one. The other is `postgres`, the role Supabase gives
+   the project owner. Revoking from `supabase_read_only_user` alone leaves the tables readable and
+   the postcondition still false, so it would buy the appearance of a fix.
+2. `supabase_read_only_user` is named in `/etc/postgresql-custom/supautils.conf` in **both**
+   `reserved_roles` and `reserved_memberships`. It is a role the platform manages, and its
+   memberships are reserved. A revoke here fights Supabase's own privilege manager rather than
+   configuring our own database.
+
+**Row-level security is not available either.** It was the obvious narrower fix — RLS applies to
+`pg_read_all_data` members, so a policy on the three tables would have restored the boundary without
+touching a platform role. Measured: both members carry `rolbypassrls = t`, so no policy binds them.
+
+**So the postcondition of §10.4.2 step 2a cannot hold on a managed Supabase cluster.** Not because
+this installation is misconfigured, but because the platform ships a superuser, an owner role and a
+reserved read-only role, all three of which read every table by construction. A document that
+requires "false for every other table in the schema" on such a host requires something the host does
+not offer.
+
+**The boundary that DOES hold, and it is the one that carries the risk.** `authenticator` — the role
+PostgREST authenticates as, and therefore the only role reachable from outside the machine — reads
+none of the twelve engine tables. Nor does any other non-platform role. The exposure is to whoever
+already has database-administrator access to this cluster, which is a different threat model from
+the one the perimeter is built against.
+
+## Fix path, as it stands after that measurement
+
+1. ~~Revoke the membership~~ — **withdrawn**, for the two reasons measured above.
+2. ~~Row-level security on the three tables~~ — **withdrawn**: both members bypass RLS.
+3. **Move the engine's tables off the managed cluster.** The only direction that restores the
+   postcondition as written. The network profile targets a VPS later (§10.1), where the cluster is
+   ours and ships none of these three roles; a separate Postgres instance on this VM would do the
+   same today. This is the direction §10.7 anticipates, and it is now the only one that works.
+4. **Accept, explicitly, for the dev VM.** Defensible while the exposure is one dev administrator's
+   address and two bootstrap audit rows, and while everyone with `supabase_admin` or `postgres` on
+   this cluster is the same person who owns the engine. It must be a decision with a re-check pinned
+   to the move to a shared host, because the same measurement where the DBA and the engine owner are
+   different people reads differently.
 
 **Do not** treat "the digests are peppered" as closing this. It bounds the damage; it does not
 restore the postcondition, and `users` plus `access_audit` are unpeppered by nature.
+
+**Do not** revoke `pg_read_all_data` from `postgres` to make the table above look clean. That role is
+how the owner administers the project; removing its read is not a security improvement, it is a
+locked door with the key inside.
 
 **Reproduction.**
 

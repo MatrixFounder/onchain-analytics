@@ -281,9 +281,18 @@ database receives only its digest.** The plaintext reaches neither the repositor
    `api_tokens_prefix_check` because `…` is shorter than eight characters. Nothing was written — see
    the transaction note below — but the failure was caused by the instruction, not by the operator.
 
-   How to tell you are looking at the real command: `-v ADMIN_TOKEN_PREFIX=` is followed by `oi_`
-   and eight more characters, and each of `-v ADMIN_USER_ID=` / `-v ADMIN_TOKEN_ID=` by a 26-character
-   ULID. Anything in angle brackets, or any `…`, means you are holding a template.
+   **The five flags it carries, and the shape of each value.** This is a reference for checking what
+   you were given — deliberately a table and not a command line, so there is nothing here to paste:
+
+   | flag | what follows it |
+   | :-- | :-- |
+   | `-v ADMIN_EMAIL=` | the address you passed to the script, lowercased |
+   | `-v ADMIN_TOKEN_SHA256=` | 64 lowercase hex characters — the digest, never the token |
+   | `-v ADMIN_TOKEN_PREFIX=` | `oi_` and eight more characters |
+   | `-v ADMIN_USER_ID=` | a ULID, 26 characters |
+   | `-v ADMIN_TOKEN_ID=` | a ULID, 26 characters |
+
+   Anything in angle brackets, and any `…`, means you are holding a template rather than the output.
 
    **Two guards, and they catch different things.** A MISSING parameter is refused by the file's own
    `\if :{?VAR}` checks before the first write, with the parameter named. A parameter that is present
