@@ -1,11 +1,13 @@
 {
   "name": "onchain-retention",
+  "description": null,
+  "active": true,
   "nodes": [
     {
       "parameters": {
         "content": "## onchain-retention — retention cleanup (task 014-41, deployment.md §10.6)\n\n**Daily.** Three jobs, each deleting or nulling data past its window, each writing ONE row to\n`onchain.retention_runs` in the same pass — including a pass that deleted nothing\n(`rows_affected = 0`, `outcome = 'ok'`). \"Nothing to delete\" and \"the job did not run\" are different\nfacts and only the written row tells them apart.\n\n| job | target | action | default window |\n| --- | --- | --- | --- |\n| `diagnostics.purge` | `onchain.diagnostics` | delete rows past the window | 90d (floor 90, max = NORMALIZED) |\n| `request_trace.raw_null` | `onchain.request_trace` | set `tried_json` to NULL past the window | 90d (floor 90, max = NORMALIZED) |\n| `request_trace.purge` | `onchain.request_trace` | delete rows past the window | 365d (floor 365, max 730) |\n\n**The three windows live in `Set Parameters` and nowhere else.** Changing one edits that node; no\nquery node is touched. The BOUNDS live in `Plan jobs`, because a setting that carried its own maximum\ncould widen itself.\n\n**A window out of range is REFUSED, not clamped.** The job deletes nothing, its row is written with\n`outcome = 'failed'` and the rejected setting named in `detail_json`, and `Check outcomes` throws so\nthe refusal reaches Telegram through `onchain-error-alert`. A clamped window would delete rows the\noperator asked to keep and record the clamped period as the requested one.\n\n**Credential: `Onchain engine state`, NOT `Supabase DB`.** The snapshotter's role has no privilege on\nthe twelve engine tables (§10.5). Reading `onchain.snapshots` with this credential must be refused by\nPostgres — that is the check, not a convention.\n\n**Every write binds base64 as one `$1` parameter.** `queryReplacement` is positional CSV: a comma\nbreaks it and an empty value silently shifts every later `$N`. Nothing is interpolated into SQL.\n\n`retention_runs` is never itself cleaned: the job that cleaned it would write to it (§4.5.9).",
-        "height": 620,
-        "width": 720,
+        "height": 1388,
+        "width": 2272,
         "color": 4
       },
       "id": "Overview",
@@ -13,17 +15,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -160,
-        -420
+        -48,
+        -944
       ]
     },
     {
       "parameters": {
         "rule": {
           "interval": [
-            {
-              "field": "days"
-            }
+            {}
           ]
         }
       },
@@ -33,7 +33,7 @@
       "typeVersion": 1.3,
       "position": [
         0,
-        260
+        272
       ]
     },
     {
@@ -67,8 +67,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        200,
-        260
+        208,
+        272
       ]
     },
     {
@@ -81,7 +81,7 @@
       "typeVersion": 2,
       "position": [
         400,
-        260
+        272
       ],
       "alwaysOutputData": true
     },
@@ -98,16 +98,16 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        600,
-        260
+        608,
+        272
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_INSTALL",
+          "id": "MjsP4aIFWZd25tik",
           "name": "Onchain engine state"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -119,7 +119,7 @@
       "typeVersion": 2,
       "position": [
         800,
-        260
+        272
       ],
       "alwaysOutputData": true
     },
@@ -136,16 +136,16 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1000,
-        260
+        1008,
+        272
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_INSTALL",
+          "id": "MjsP4aIFWZd25tik",
           "name": "Onchain engine state"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -161,15 +161,15 @@
       "typeVersion": 2.6,
       "position": [
         1200,
-        260
+        272
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_INSTALL",
+          "id": "MjsP4aIFWZd25tik",
           "name": "Onchain engine state"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -180,8 +180,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1400,
-        260
+        1408,
+        272
       ],
       "alwaysOutputData": true
     },
@@ -199,15 +199,15 @@
       "typeVersion": 2.6,
       "position": [
         1600,
-        260
+        272
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_INSTALL",
+          "id": "MjsP4aIFWZd25tik",
           "name": "Onchain engine state"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -222,16 +222,16 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1800,
-        260
+        1808,
+        272
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_INSTALL",
+          "id": "MjsP4aIFWZd25tik",
           "name": "Onchain engine state"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -243,7 +243,7 @@
       "typeVersion": 2,
       "position": [
         2000,
-        260
+        272
       ],
       "alwaysOutputData": true
     },
@@ -260,16 +260,16 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        2200,
-        260
+        2208,
+        272
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_INSTALL",
+          "id": "MjsP4aIFWZd25tik",
           "name": "Onchain engine state"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -281,7 +281,7 @@
       "typeVersion": 2,
       "position": [
         2400,
-        260
+        272
       ],
       "alwaysOutputData": true
     },
@@ -298,16 +298,16 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        2600,
-        260
+        2608,
+        272
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_ON_INSTALL",
+          "id": "MjsP4aIFWZd25tik",
           "name": "Onchain engine state"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -319,7 +319,7 @@
       "typeVersion": 2,
       "position": [
         2800,
-        260
+        272
       ]
     }
   ],
@@ -485,7 +485,10 @@
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "none",
     "saveManualExecutions": false,
-    "errorWorkflow": "REPLACE_ON_INSTALL",
-    "availableInMCP": true
-  }
+    "errorWorkflow": "WapVxU2SneMiNNyM",
+    "availableInMCP": true,
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "sourceWorkflowId": null
 }
