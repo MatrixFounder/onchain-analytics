@@ -425,3 +425,23 @@ describe('TC-UNIT-21: a deadline refusal tells the caller which phase spent the 
     );
   });
 });
+
+describe('TC-UNIT-22: the limiter’s SECOND refusal class also names its phase', () => {
+  // `DeadlineWouldExceedError` — the wait that was never begun. It reaches the caller inside the
+  // same `capability deadline exceeded:` sentence as the wait that ran out, and labelling only the
+  // first class left this one silent: measured on `ethereum/protocol.incidents`, 2026-08-24, where
+  // a 15 008 ms refusal named no phase at all while the document itself fetched in 0.46 s.
+  const WOULD_EXCEED =
+    'capability deadline exceeded: protocol.incidents on ethereum — tried: defillama (throttle: rejected for provider "defillama": computed wait 900ms would leave 40ms of the 940ms left before the call deadline — under the 250ms a request needs to be worth issuing)';
+
+  it('renders [phase: limiter] for a refusal that never began its wait', () => {
+    const text = toClientText(WOULD_EXCEED, null);
+    expect(text).toBe(
+      'capability deadline exceeded: protocol.incidents on ethereum [phase: limiter]',
+    );
+  });
+
+  it('and still keeps the provider name on the operator’s side', () => {
+    expect(toClientText(WOULD_EXCEED, '01EV')).not.toContain('defillama');
+  });
+});

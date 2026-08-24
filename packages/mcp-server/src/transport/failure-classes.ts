@@ -290,7 +290,18 @@ const RENDERABLE_DEADLINE_PHASES: readonly string[] = [
  */
 function deadlinePhaseOf(reason: string): string | null {
   const found = /deadline exceeded in ([a-z-]+)/i.exec(reason)?.[1]?.toLowerCase();
-  return found !== undefined && RENDERABLE_DEADLINE_PHASES.includes(found) ? found : null;
+  if (found !== undefined && RENDERABLE_DEADLINE_PHASES.includes(found)) return found;
+  // **The limiter refuses under TWO classes, and labelling only one was this fix applied halfway.**
+  // `DeadlineExceededError` is the wait that ran out; `DeadlineWouldExceedError` is the wait that
+  // was never begun because it would not have left enough of the deadline to be worth issuing. Both
+  // are our own queue and both end as `capability deadline exceeded: …` for the caller — so a
+  // refusal of the second kind rendered no phase at all, which is how the first live occurrence
+  // after this feature shipped (`ethereum/protocol.incidents`, 2026-08-24, 15 008 ms against a
+  // document `curl` fetched in 0.46 s) still could not say where its budget went.
+  //
+  // Matched on the limiter's own sentence, and ONLY the closed-set word `limiter` is rendered from
+  // it — the provider name in that text stays on the operator's side of the boundary.
+  return /throttle: rejected for provider /i.test(reason) ? 'limiter' : null;
 }
 
 export function toClientText(reason: string, eventId: string | null): string {
