@@ -698,17 +698,38 @@ not move it.
 Editing a pinned file without re-baselining in the same commit turns both red
 ([RF-2](docs/issues/rf-2-m2-evidence-records-drifted-from-the-shipped-commit.md), fixed).
 
-Enable the hook once per clone — git hooks are local and cannot ship enabled:
-
-```sh
-git config core.hooksPath .githooks
-```
-
 Re-baseline deliberately, in the same commit as the change, so a reviewer sees both halves:
 
 ```sh
 node scripts/verify-provenance.mjs --update
 ```
+
+### Format gate
+
+`prettier --check .` is CI step two of eight, and for thirteen days it was the only place the
+formatter ran: seven CI failures on six different files, each of them stopping the run before
+typecheck, test, build and smoke:dist ever started
+([RF-11](docs/issues/rf-11-the-format-gate-lived-only-in-ci-so-it-turned-main-red-six-times-in-thirteen-days.md),
+fixed). `.githooks/pre-commit` now runs the same check over the **staged** blobs first:
+
+```sh
+pnpm format:check:staged      # what the hook runs; `pnpm format:check` is the repo-wide CI one
+```
+
+Its scope is the CI step's scope — same `.prettierignore`, same config — so it cannot refuse a
+commit CI would have passed. It reports and never rewrites; fix with `pnpm format` and restage.
+
+### Enabling the hooks
+
+Both gates above live in one hook. Enable it once per clone — git hooks are local and cannot ship
+enabled:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+`--no-verify`, or a clone that never ran that line, bypasses both. CI still checks; the hook only
+moves the answer to before the push.
 
 ---
 

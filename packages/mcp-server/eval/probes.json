@@ -35,11 +35,7 @@
     "(owner decision 2026-08-24); it never suppresses a failure."
   ],
   "linkProbes": {
-    "hosts": [
-      "www.cloudflare.com",
-      "api.github.com",
-      "www.google.com"
-    ],
+    "hosts": ["www.cloudflare.com", "api.github.com", "www.google.com"],
     "intervalMs": 30000,
     "why": "Three unrelated networks (Cloudflare anycast, GitHub, Google), none of them an engine adapter and none of them a referenceSource. A TCP connect asks nothing of the application behind them, spends no quota and returns no data, so a probe every 30s for the length of a run is polite on hosts that owe us nothing. Three rather than one because the signal that matters is a UNIFORM floor across unrelated paths — one host slowing down is that host's problem, three at once is ours.",
     "verifiedAt": "2026-08-24",

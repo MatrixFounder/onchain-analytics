@@ -58,10 +58,13 @@ onchain-analytics/
 ├─ tsconfig.base.json                     # both packages extend it
 ├─ eslint.config.js                       # resolved upward by both packages
 ├─ .prettierrc / .prettierignore
-├─ .githooks/pre-commit                   # runs verify-provenance (RF-2) before every commit
+├─ .githooks/pre-commit                   # two gates on the STAGED blobs, before every commit:
+│                                         #   verify-provenance (RF-2) + check-format-staged (RF-11)
 ├─ .github/workflows/ci.yml               # §10.2 — core build precedes typecheck/test
 ├─ scripts/
-│  └─ verify-provenance.mjs               # RF-2 — recomputes docs/provenance.json path→sha256
+│  ├─ verify-provenance.mjs               # RF-2 — recomputes docs/provenance.json path→sha256
+│  └─ check-format-staged.mjs             # RF-11 — `prettier --check` on the staged blobs, so the
+│                                         #   CI format step cannot be discovered after the push
 ├─ packages/
 │  ├─ core/
 │  │  ├─ package.json                     # name: @onchain-intel/core, private, Apache-2.0

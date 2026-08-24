@@ -11,6 +11,7 @@
   "scripts": {
     "lint": "eslint .",
     "format:check": "prettier --check .",
+    "format:check:staged": "node scripts/check-format-staged.mjs",
     "format": "prettier --write .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

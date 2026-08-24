@@ -1,10 +1,17 @@
 #!/bin/sh
-# RF-2 — provenance gate on what is actually being COMMITTED, not on the working tree.
+# Two gates on what is actually being COMMITTED, not on the working tree.
 #
-# The original break was exactly that gap: a hash recorded from the working tree, an edit after it,
-# and a commit that matched neither. `--source=index` reads the staged blobs, so this cannot be
-# true-at-check-time and false-at-commit-time.
+# The original break (RF-2) was exactly that gap: a hash recorded from the working tree, an edit
+# after it, and a commit that matched neither. Both checks below read the staged blobs, so neither
+# can be true-at-check-time and false-at-commit-time.
 #
 # Install once per clone (git hooks are local and cannot be shipped enabled):
 #   git config core.hooksPath .githooks
-exec node scripts/verify-provenance.mjs --source=index
+set -e
+
+# RF-2 — live-recorded fixtures still hash to what the manifest pins.
+node scripts/verify-provenance.mjs --source=index
+
+# RF-11 — staged content is Prettier-clean. `prettier --check .` used to exist only in CI, which
+# made it red six times in thirteen days on six different files; see the script header.
+node scripts/check-format-staged.mjs
