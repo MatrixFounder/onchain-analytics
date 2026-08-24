@@ -1,10 +1,10 @@
 ---
 id: L-21
 type: known-issue
-status: open
+status: documented
 opened_at: 2026-08-24
 category: logic
-severity: SEV-2
+severity: SEV-4
 slug: l-21-nine-consecutive-telegram-alerts-failed-over-five-days-and-nothing-reported-it
 ---
 
@@ -12,6 +12,27 @@ slug: l-21-nine-consecutive-telegram-alerts-failed-over-five-days-and-nothing-re
 
 > Origin: the TC-WF-07 acceptance run of task 014-41, 2026-08-24. Found because that case insists on
 > proving DELIVERY rather than wiring — which is exactly what L-4 already told this project to do.
+
+> **NOT A DEFECT — cause established by the owner, 2026-08-24: the laptop hosting the VM had no
+> internet connection during that window.** The alert workflow, its credential, its message and the
+> Telegram transport were all correct; there was no route out of the machine.
+>
+> **The evidence in this record is consistent with that and was consistent all along**, which is
+> worth saying because it means the record was filed on a true observation and a wrong conclusion.
+> `ECONNRESET` at TLS setup is what an absent route looks like from inside a container. And execution
+> 45219 — quoted below as "a genuine incident nobody was told about" — was `onchain-snapshotter`
+> failing at `PE status`, an HTTP node fetching a third-party API. That row was read here as the
+> alert channel losing a real incident; it is better read as the same absent connection failing two
+> workflows at once. Both facts pointed at the machine's egress, and this record pointed at Telegram.
+>
+> **What survives, and why the record is kept rather than deleted.** One paragraph of it is true
+> independently of the cause: a failing error-handler cannot report its own failure, so an
+> alert-channel outage is silent by construction and was noticed five days in, by accident, during an
+> unrelated acceptance. A laptop going offline is a ROUTINE event, not an exotic one, so that
+> silence will recur on a cause nobody will call a defect either. The heartbeat that would end it is
+> filed as [WI-64](../backlog/wi-64-the-alert-channel-has-no-heartbeat-so-its-silence-is-indistinguishable-from-quiet.md).
+>
+> Severity drops from SEV-2 to SEV-4: nothing in the engine or the workflows needs repair.
 
 **Symptom.** `onchain-error-alert` fires correctly and its message does not arrive. Every execution
 of it between 2026-08-19 and 2026-08-23 ended in `status: error` at the `Telegram alert` node:

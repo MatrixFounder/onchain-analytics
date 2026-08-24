@@ -336,10 +336,37 @@ export function createDexscreenerAdapter(deps: DexscreenerAdapterDeps = {}): Pro
 
   /** One search request, with the limiter and the transport bound the way every call here binds
    * them. Returns the untouched body — narrowing happens only in `normalize()`. */
+  /**
+   * The search hop's own ceiling — task 014-33, closing L-22.
+   *
+   * **Why this route needs one at all.** `safeFetch`'s default is `DEFAULT_TIMEOUT_MS = 15_000`, and
+   * `pairs.active` carried a capability deadline of the same 15_000. Task 014-32c then gave the route
+   * a SECOND search — issued when the first returns fewer on-chain rows than `limit`, which the L-19
+   * probe measured as 19 of 49 chains at the default limit. So the budget for the whole call equalled
+   * the budget for ONE of its two hops, and whenever the first query took more than a moment the
+   * second could not start. That is arithmetic and not latency: it held on a healthy vendor too.
+   *
+   * **How the number is derived.** The capability now sits in the ~30 s tier (OD-2), so both hops
+   * plus the limiter's waits have to fit inside 30_000. The bucket is `{capacity: 5, refillPerSec: 1}`
+   * (`providers.config.ts`), which after a burst costs about a second per call. Two hops at 12_000
+   * plus two such waits is ~26_000 — inside the ceiling with room, and a single hanging leg now fails
+   * at 12 s instead of consuming the whole budget and taking the other leg with it.
+   *
+   * **What it is NOT derived from.** DexScreener's search endpoint was badly degraded on the day this
+   * landed — most probes gave no answer in 40 s, the ones that answered took 6.8–7.2 s, against
+   * 1.3–2.5 s hours earlier. A ceiling fitted to that state would be a ceiling fitted to an outage.
+   * This one is fitted to the route's SHAPE, and it holds whatever the vendor is doing today.
+   */
+  const SEARCH_TIMEOUT_MS = 12_000;
+
   async function search(query: string, deadlineAtMs?: number): Promise<unknown> {
     const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
     await throttle('dexscreener', RATE_LIMIT, 1, deadlineAtMs);
     const response = await safeFetch(url, {}, HOSTS, fetchImpl, {
+      // The hop bound is EXPLICIT here and nowhere else in this adapter: `pool.info` and
+      // `token.pools` each make one request, so the default is right for them and wrong only for
+      // the route that makes two. See `SEARCH_TIMEOUT_MS`.
+      timeoutMs: SEARCH_TIMEOUT_MS,
       ...(deadlineAtMs === undefined ? {} : { deadlineAtMs }),
     });
     if (!response.ok) {

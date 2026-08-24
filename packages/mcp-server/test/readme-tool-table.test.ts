@@ -619,7 +619,10 @@ describe('the architecture deadline table states the numbers the manifest applie
     // 7 → 8 on 2026-08-21 (task 014-42): `token.holders` left the ~15_000 row for a tier of its
     // own, because its ceiling comes from a MEASUREMENT of one vendor route rather than from the
     // route's composition. The count moved deliberately, which is what this pin exists to force.
-    expect(deadlineRows(markdown, routed).length).toBe(8); // the exact row count, not a floor
+    // 8 → 9 on 2026-08-24 (task 014-33, L-22): `pairs.active` left the same row for the ~30_000
+    // tier. Its route makes TWO sequential searches since 014-32c, and the tier it sat in equalled
+    // `safeFetch`'s default hop bound — so the whole call was budgeted at one of its two hops.
+    expect(deadlineRows(markdown, routed).length).toBe(9); // the exact row count, not a floor
     expect(routed).toHaveLength(27);
 
     expect(

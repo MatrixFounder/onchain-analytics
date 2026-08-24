@@ -36,6 +36,11 @@
  * - **E-HTTP5 = 50_000 ms** — the same shape on an adapter that overrides
  *   `REQUEST_TIMEOUT_MS = 5_000` (`blockscout/index.ts`, `blockchain-info/index.ts`):
  *   30_000 + 4 × 5_000.
+ * - **E-HTTP12 = 78_000 ms** — one attempt of the `dexscreener` search route, whose hop bound is
+ *   `SEARCH_TIMEOUT_MS = 12_000` (`adapters/dexscreener/index.ts`): limiter wait up to
+ *   `MAX_WAIT_MS = 30_000` + 4 hops × 12_000. `pairs.active` cites it DOUBLED, because that route
+ *   issues a second search when the first comes up short of `limit` — the envelope of a call is the
+ *   envelope of the attempts it makes, and this is the only capability that makes two.
  * - **E-HTTP60 = 270_000 ms** — the same shape again on the ONE route that overrides the override:
  *   `blockscout`'s holders route, whose hop bound is `HOLDERS_TIMEOUT_MS = 60_000` — 30_000 +
  *   4 × 60_000. Two envelopes for one adapter is not a duplication: the hop ceiling is per ROUTE
@@ -305,20 +310,6 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // measured envelope: 90_000 (E-HTTP15 — `coingecko`, one attempt). applied: 15_000 — owner
     // ceiling (OD-2), not a measurement; would cut 75_000.
     // **ENFORCED TODAY** — same adapter and same call path as `token.price` (WI-37).
-    deadlineMs: 15_000,
-  },
-  'pairs.active': {
-    // AUDIT: hypothesis `set`, CONFIRMED. `dexscreener/index.ts:125` — `normalize(): Pool[]`, a
-    // chain-filtered, `limit`-sliced batch with no ordering imposed (no sort anywhere in the
-    // method), so it is a collection and not a `ts`-ordered run.
-    shape: 'set',
-    ttlSeconds: 30,
-    // shareable: the active pairs of (chain, limit) — a public listing, identical for every caller.
-    shareable: true,
-    // measured envelope: 90_000 (E-HTTP15 — `dexscreener`, one attempt). applied: 15_000 — owner
-    // ceiling (OD-2), not a measurement; would cut 75_000.
-    // **ENFORCED TODAY** — `dexscreener` forwards the deadline to `throttle()` and `safeFetch`
-    // (WI-37).
     deadlineMs: 15_000,
   },
   'pool.info': {
@@ -670,7 +661,12 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
   },
 
   // ===========================================================================================
-  // TIER ~30 s (OD-2) — up to two free adapters walked SEQUENTIALLY.
+  // TIER ~30 s (OD-2) — a call that makes TWO sequential round trips before it can answer.
+  //
+  // Two shapes qualify, and the tier is about the SHAPE rather than about how many adapters it
+  // takes: two free adapters walked one after the other, and ONE adapter queried twice. Task 014-33
+  // added the second reading when `pairs.active` moved here; before that the heading named only
+  // adapters, and a capability whose single adapter makes two hops had nowhere to sit.
   // `platform-explorer` (HTTP) then `pg-history` (Postgres wire protocol — E-PG, not the HTTP
   // template). This is the architecture row that is CORRECT and stays untouched.
   //
@@ -706,6 +702,34 @@ export const capabilityManifests: Readonly<Record<string, CapabilityManifest>> =
     // T-013 (013-1): eligible for merging. Not yet ACTIVE — `CapabilityRoute.merge` (013-2) and
     // its `providers.config.ts` setting (013-6) are separate tasks that have not landed.
     mergeable: true,
+  },
+  'pairs.active': {
+    // AUDIT: hypothesis `set`, CONFIRMED. `dexscreener/index.ts:125` — `normalize(): Pool[]`, a
+    // chain-filtered, `limit`-sliced batch with no ordering imposed (no sort anywhere in the
+    // method), so it is a collection and not a `ts`-ordered run.
+    shape: 'set',
+    ttlSeconds: 30,
+    // shareable: the active pairs of (chain, limit) — a public listing, identical for every caller.
+    shareable: true,
+    // measured envelope: 180_000 (E-HTTP12 ×2 — `dexscreener`, TWO attempts: the route issues a
+    // second search when the first returns fewer on-chain rows than `limit`). applied: 30_000 —
+    // owner ceiling (OD-2), not a measurement; cuts 150_000. **ENFORCED TODAY** — `dexscreener`
+    // forwards the deadline to `throttle()` and to every `safeFetch` hop (WI-37).
+    //
+    // **This row moved from the ~15 s tier on 2026-08-24 (task 014-33), and the move is a defect
+    // fix rather than a tuning** ([L-22](../../../docs/issues/l-22-pairs-active-loses-two-chains-under-gate-load-while-the-vendor-still-serves-them.md)).
+    // Task 014-32c gave this route a SECOND query to close L-19 and left the tier where it was. The
+    // tier was 15_000 and `safeFetch`'s default hop timeout is also 15_000, so the budget for the
+    // whole call equalled the budget for ONE of its two hops: whenever the first query took more
+    // than a moment, the second could not start. That is arithmetic, not latency — it held on a
+    // healthy vendor too, and it is why a two-hop route now carries a two-hop tier.
+    //
+    // **What it is NOT tuned against.** DexScreener's search endpoint was measured badly degraded
+    // on the day of the move (most probes no answer in 40 s, the ones that answered 6.8–7.2 s,
+    // against 1.3–2.5 s hours earlier). Numbers fitted to that state would be numbers fitted to a
+    // vendor outage. The derivation above uses the route's SHAPE — two hops, each bounded by
+    // `SEARCH_TIMEOUT_MS`, plus the limiter's wait — and nothing measured that day.
+    deadlineMs: 30_000,
   },
   'platform.metrics.history': {
     // ADR-002 D3 names this one.

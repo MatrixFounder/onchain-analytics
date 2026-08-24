@@ -1,17 +1,60 @@
 ---
 id: L-22
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-08-24
 category: logic
 severity: SEV-3
 slug: l-22-pairs-active-loses-two-chains-under-gate-load-while-the-vendor-still-serves-them
+resolved_at: 2026-08-24
+resolved_by: TASK 014-33
 ---
 
 # L-22 — `pairs.active` loses `berachain` and `tron` under gate load, while the vendor still serves both
 
 > Origin: the live gate of task 014-33, 2026-08-24. Measured against the vendor immediately
 > afterwards, which is what turned "two chains failed" into the finding below.
+
+> **FIXED 2026-08-24 (task 014-33). The cause was arithmetic, and the record's first reading — "the
+> gate's load" — was wrong.**
+>
+> `pairs.active` carried a capability deadline of `15_000`, and `safeFetch`'s default hop bound is
+> also `15_000`. Task 014-32c gave the route a SECOND search to close L-19. **So the budget for the
+> whole call equalled the budget for ONE of its two hops:** whenever the first query took more than
+> a moment, the second could not start. That holds on a healthy vendor and under no load at all —
+> nothing about a full matrix was needed to produce it, and blaming the gate's concurrency was
+> looking at the wrong variable.
+>
+> Reproduced narrowly on two chains, with no matrix around it: both failed at **15010 ms and
+> 15005 ms** — the deadline to the millisecond, not a page and not a vendor error.
+>
+> **Two numbers changed, both derived from the route's SHAPE.**
+>
+> - `pairs.active` moves to the ~30 s tier (OD-2). The tier's heading now names both readings of it —
+>   two adapters in sequence, or ONE adapter queried twice — because before this a capability whose
+>   single adapter makes two hops had nowhere to sit.
+> - The search hop gets `SEARCH_TIMEOUT_MS = 12_000`, explicit and for that route alone. Two hops at
+>   12 s plus the bucket's waits (`{capacity: 5, refillPerSec: 1}`) is ~26 s, inside the ceiling with
+>   room; a single hanging leg now fails at 12 s instead of consuming the whole budget and taking the
+>   other leg with it.
+>
+> **The failure mode changed, which is the observable proof.** Same two chains, after: `capability
+> unavailable` at **12004 ms** instead of `capability deadline exceeded` at 15010 ms. The call now
+> reports "this vendor did not answer" rather than "we ran out of our own time" — two different facts
+> that the old numbers could not tell apart.
+>
+> **What was NOT fixed, and must not be read as fixed.** DexScreener's search endpoint was badly
+> degraded while this landed: of eighteen direct probes, most gave no answer in 40 s and the ones
+> that answered took 6.8–7.2 s, against 1.3–2.5 s a few hours earlier. So the two chains still fail —
+> on the vendor, now correctly attributed. **No number here was fitted to that state**, deliberately:
+> a ceiling tuned against an outage is a ceiling that has to be retuned when the outage ends. The
+> acknowledgement in `eval/acknowledged.json` covers the vendor's condition and expires on its own
+> review date.
+>
+> **The `tron` "empty page" of the original report is explained by the same cause.** A walk whose
+> deadline expires between the two queries keeps only the first query's rows — and the first query
+> returns zero rows of that chain, which is exactly what L-19 established. It was never a second
+> failure mode.
 
 **Symptom.** Two rows failed the gate, in two DIFFERENT ways:
 
