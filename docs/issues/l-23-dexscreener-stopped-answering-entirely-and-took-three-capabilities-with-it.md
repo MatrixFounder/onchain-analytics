@@ -72,10 +72,14 @@ that case rests on the vendor always returning its full 30-row page, and it stop
 
 So as of 2026-08-24 the three capabilities ARE acknowledged, with bounds 4 / 2 / 4 for
 `pairs.active` / `pool.info` / `token.pools` — the maxima MEASURED, never the size of the set.
-`token.pools` was raised from 3 to 4 later the same day on two further runs, one of them taken on a
-link measured healthy; the entry says so, because raising a bound is an act of measurement and a
-number lifted from a run whose own egress had stalled would bake weather into the record
-([WI-65](../backlog/wi-65-the-gate-cannot-tell-a-vendor-outage-from-a-stall-on-our-own-link.md)). `L-22/pairs.active` was retired in the
+`token.pools` was raised twice the same day — 3 → 4, then 4 → 5 — and the second raise is the first
+application of the owner's rule of 2026-08-24: the maximum over TWO CONSECUTIVE runs whose link the
+gate measured stable (5 of 9, then 1 of 9). The maximum, not the average: a bound answers "how much
+breaks in the worst case", and averaging would make it unexceedable on exactly the bad day.
+**`pool.info` was NOT raised, and the reason is the same rule read the other way.** It showed 4 of 9
+on one stable run and 2, 1, 1 and 0 on the others, so the two consecutive runs do not agree on 4 —
+one run's peak is a sample, not a measurement, and the bound of 2 stands until two runs say
+otherwise ([WI-65](../backlog/wi-65-the-gate-cannot-tell-a-vendor-outage-from-a-stall-on-our-own-link.md)). `L-22/pairs.active` was retired in the
 same edit: that entry described OUR defect (a capability deadline equal to one hop's ceiling), which
 is fixed, and the rows failing under it today fail for the vendor's reason instead.
 
