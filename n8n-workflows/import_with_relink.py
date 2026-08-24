@@ -11,7 +11,8 @@ prod ids you pass (the public API has no list-credentials endpoint, so ids can't
 
 Usage (via import.sh, or directly):
     python3 import_with_relink.py --url URL --api-key KEY --exported-dir ./exported \
-        --pg-cred-id <prod "Supabase DB" id> --tg-cred-id <prod "Onchain bot" id> [--dry-run 1]
+        --pg-cred-id <prod "Supabase DB" id> --tg-cred-id <prod "Onchain bot" id> \
+        --engine-cred-id <prod "Onchain engine state" id> [--dry-run 1]
 
 Note: on a dual-stack / mDNS `.local` host, Python may resolve to IPv6 and hit a reverse-proxy 503
 where curl (IPv4) succeeds — point --url at the resolvable IPv4 if that happens (prod DNS names are
@@ -66,18 +67,27 @@ def prepare(wf, cred_ids, error_wf_id, chat_id=None):
     and fill the scrubbed ChatID. export.sh scrubs the alert target to 0 so a personal chat id never
     reaches git; this puts the target back for THIS instance. Left at 0, the first Telegram send
     fails — loudly, which is the point: the alternative is alerts silently landing in whichever chat
-    the exporting environment happened to use."""
+    the exporting environment happened to use.
+
+    A credential name this importer does not know is a HARD ERROR, not a warning (WI-64). The
+    exported JSON still carries the SOURCE instance's credential ids, so a name that goes unrelinked
+    imports as a dangling id: the workflow lands, activates, and fails at the first node that needs
+    it. The README used to carry that as a caveat for a human to remember. It is a check now."""
     c = copy.deepcopy(wf)
     for k in META_KEYS:
         c.pop(k, None)
     c["settings"] = {k: v for k, v in (c.get("settings") or {}).items() if k in ALLOWED_SETTINGS}
     relinked, chats = 0, 0
+    unmapped = []
     for n in c.get("nodes", []):
         for _type, cred in (n.get("credentials") or {}).items():
-            pid = cred_ids.get(cred.get("name"))
+            name = cred.get("name")
+            pid = cred_ids.get(name)
             if pid:
                 cred["id"] = pid           # keep the name, swap the dangling id for the prod one
                 relinked += 1
+            else:
+                unmapped.append(f"{n.get('name')} → {name!r}")
         for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []):
             if a.get("name") == "ChatID":
                 if chat_id is not None:
@@ -86,6 +96,14 @@ def prepare(wf, cred_ids, error_wf_id, chat_id=None):
                 elif a.get("value") in (0, "0"):
                     print(f"    WARNING: {c.get('name')} imports with ChatID=0 — Telegram sends will "
                           f"fail until it is set (pass CHAT_ID=<id>)")
+    if unmapped:
+        raise SystemExit(
+            f"{c.get('name')}: credential name(s) this importer cannot relink: "
+            + "; ".join(unmapped)
+            + ". Every credential must map to an id on THIS instance, or the node imports with the "
+              "SOURCE instance's id and fails at run time. Pass the missing id (--pg-cred-id / "
+              "--tg-cred-id / --engine-cred-id), or teach this script the name."
+        )
     if error_wf_id and c["settings"].get("errorWorkflow"):
         c["settings"]["errorWorkflow"] = error_wf_id
     return c, relinked, chats
@@ -107,12 +125,22 @@ def main():
     ap.add_argument("--exported-dir", required=True)
     ap.add_argument("--pg-cred-id", required=True, help='prod "Supabase DB" credential id')
     ap.add_argument("--tg-cred-id", required=True, help='prod "Onchain bot" credential id')
+    ap.add_argument("--engine-cred-id", required=True,
+                    help='prod "Onchain engine state" credential id — the least-privileged role '
+                         'onchain-retention and the WI-64 alert heartbeat write onchain.diagnostics '
+                         'with')
     ap.add_argument("--dry-run", default="0")
     ap.add_argument("--chat-id", default="", help="Telegram chat id for THIS instance; export.sh "
                                                   "scrubs it to 0 so it never reaches git")
     a = ap.parse_args()
     dry = a.dry_run == "1"
-    cred_ids = {"Supabase DB": a.pg_cred_id, "Onchain bot": a.tg_cred_id}
+    # The map is the whole contract: a credential name absent from it is refused in `prepare`,
+    # never silently imported with the source instance's id.
+    cred_ids = {
+        "Supabase DB": a.pg_cred_id,
+        "Onchain bot": a.tg_cred_id,
+        "Onchain engine state": a.engine_cred_id,
+    }
     chat_id = None
     if a.chat_id:
         try:

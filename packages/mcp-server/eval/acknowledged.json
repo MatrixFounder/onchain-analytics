@@ -66,23 +66,99 @@
       "maxFailing": 1,
       "why": "Blockscout answers HTTP 500 for base's /api/v2/stats — the document chain.transactions reads. Measured 2026-08-20: 500 on two attempts of three through the PRO facade and on the keyless base.blockscout.com alike, so there is no second route. Re-measured the morning of 2026-08-21: 500 on four of five attempts, worse. Hours later the same document answered in 0.98s on every chain and this row passed the gate. THIS ENTRY EXISTS WHILE THE ROW IS GREEN, and that is the whole point of task 014-43: under the old per-row boolean the entry had to be deleted the moment the vendor recovered, so the next 500 arrived as an unfiled failure and blocked. One green run is not a closure — L-20's own fix-path item 2 says so. Bound 1 over the five chains chain.transactions is served on: base is the measured one, and a SECOND chain answering 500 would be a new fact about the vendor rather than this one."
     },
-    "L-22/pairs.active": {
-      "issue": "L-22",
+    "L-23/pairs.active": {
+      "issue": "L-23",
       "since": "2026-08-24",
-      "reviewBy": "2026-09-22",
+      "reviewBy": "2026-09-24",
       "rows": [
         "ethereum/pairs.active",
+        "solana/pairs.active",
         "base/pairs.active",
         "arbitrum/pairs.active",
         "polygon/pairs.active",
         "bsc/pairs.active",
         "avalanche/pairs.active",
         "berachain/pairs.active",
-        "tron/pairs.active",
-        "solana/pairs.active"
+        "tron/pairs.active"
+      ],
+      "maxFailing": 4,
+      "why": "DexScreener перестал отвечать целиком 2026-08-24 (L-23), и к вечеру того же дня выправился не в здоровье, а в ЧАСТИЧНУЮ деградацию: два прогона гейта подряд дают разные красные строки при одном и том же наборе. Прогон A (14:22 UTC): pairs.active 2 из 9, pool.info 1, token.pools 1. Прогон B (14:31 UTC): pairs.active 4 из 9, pool.info 2, token.pools 3 — и НЕ те же сети. Ротация без роста суммы — ровно та форма, ради которой RF-10 заменил булев флаг на множество с границей: под старым механизмом каждый прогон объявлял бы одни строки незаявленными, а другие устаревшими. Наш егресс здоров — измерен в ту же минуту против llama.fi, coingecko и mempool.space. Граница — максимум, ИЗМЕРЕННЫЙ в этих двух прогонах, не размер множества: следующая красная строка сверх него это новый факт о вендоре, и гейт обязан на нём встать. ЭТА ЗАПИСЬ ЗАМЕНЯЕТ `L-22/pairs.active`, и это смена причины, а не продление: L-22 был НАШИМ дефектом (дедлайн способности равнялся потолку одного хопа) и он исправлен — сегодняшние отказы приходят как `pairs is empty` и как страница короче лимита, то есть вендор отдаёт меньше, чем есть. Берачейн с `truncated.pairs is false` того же рода: кейс опирается на то, что вендор всегда отдаёт полную страницу в 30 строк, и это перестало быть верным."
+    },
+    "L-23/pool.info": {
+      "issue": "L-23",
+      "since": "2026-08-24",
+      "reviewBy": "2026-09-24",
+      "rows": [
+        "ethereum/pool.info",
+        "solana/pool.info",
+        "base/pool.info",
+        "arbitrum/pool.info",
+        "polygon/pool.info",
+        "bsc/pool.info",
+        "avalanche/pool.info",
+        "berachain/pool.info",
+        "tron/pool.info"
       ],
       "maxFailing": 2,
-      "why": "Two of the nine chains the eval exercises `pairs.active` on failed the gate of 2026-08-24 — berachain on the 15s capability deadline, tron with an empty page. Measured against the vendor minutes later: BOTH are served, and only by the SECOND of the two queries the L-19 fix ships (q=<vendorId> returns 0 rows of their own; q=WBERA and q=WTRX return 30 each). So the strategy is right and the gate did not reach it — a second round trip and a second bucket token, under a matrix walking twelve chains through one dexscreener bucket. Bound 2: the number measured failing when this entry was written. A third chain is a new fact about the strategy under load rather than about these two, and blocks until someone measures it."
+      "why": "DexScreener перестал отвечать целиком 2026-08-24 (L-23), и к вечеру того же дня выправился не в здоровье, а в ЧАСТИЧНУЮ деградацию: два прогона гейта подряд дают разные красные строки при одном и том же наборе. Прогон A (14:22 UTC): pairs.active 2 из 9, pool.info 1, token.pools 1. Прогон B (14:31 UTC): pairs.active 4 из 9, pool.info 2, token.pools 3 — и НЕ те же сети. Ротация без роста суммы — ровно та форма, ради которой RF-10 заменил булев флаг на множество с границей: под старым механизмом каждый прогон объявлял бы одни строки незаявленными, а другие устаревшими. Наш егресс здоров — измерен в ту же минуту против llama.fi, coingecko и mempool.space. Граница — максимум, ИЗМЕРЕННЫЙ в этих двух прогонах, не размер множества: следующая красная строка сверх него это новый факт о вендоре, и гейт обязан на нём встать. Отказ здесь приходит как `resolved: false` на пуле, курированном за реальную ликвидность, — то есть вендор не находит пул, который он же отдавал 2026-08-21 при курировании."
+    },
+    "L-23/token.pools": {
+      "issue": "L-23",
+      "since": "2026-08-24",
+      "reviewBy": "2026-09-24",
+      "rows": [
+        "ethereum/token.pools",
+        "solana/token.pools",
+        "base/token.pools",
+        "arbitrum/token.pools",
+        "polygon/token.pools",
+        "bsc/token.pools",
+        "avalanche/token.pools",
+        "berachain/token.pools",
+        "tron/token.pools"
+      ],
+      "maxFailing": 4,
+      "why": "DexScreener перестал отвечать целиком 2026-08-24 (L-23), и к вечеру того же дня выправился не в здоровье, а в ЧАСТИЧНУЮ деградацию: два прогона гейта подряд дают разные красные строки при одном и том же наборе. Прогон A (14:22 UTC): pairs.active 2 из 9, pool.info 1, token.pools 1. Прогон B (14:31 UTC): pairs.active 4 из 9, pool.info 2, token.pools 3 — и НЕ те же сети. Ротация без роста суммы — ровно та форма, ради которой RF-10 заменил булев флаг на множество с границей: под старым механизмом каждый прогон объявлял бы одни строки незаявленными, а другие устаревшими. Наш егресс здоров — измерен в ту же минуту против llama.fi, coingecko и mempool.space. Граница — максимум, ИЗМЕРЕННЫЙ в этих двух прогонах, не размер множества: следующая красная строка сверх него это новый факт о вендоре, и гейт обязан на нём встать. Отказ здесь приходит как пустая страница для обёрнутого нативного токена сети — L-10 в чистом виде: уверенный ноль там, где ноль невозможен, и именно поэтому кейс считает пустоту отказом вендора, а не фактом. ГРАНИЦА ПОДНЯТА 3 → 4 (2026-08-24, новое измерение, как того требует правило этого файла): прогоны C и D оба дали четыре красные строки, и прогон D снят на канале, измеренном здоровым, — то есть цифра не артефакт локального провала (WI-65). Сети снова разные (C: ethereum, solana, avalanche, tron; D: base, arbitrum, berachain, tron), так что растёт не набор, а частота ротации."
+    },
+    "L-24/dex.volume.history": {
+      "issue": "L-24",
+      "since": "2026-08-24",
+      "reviewBy": "2026-09-24",
+      "rows": [
+        "ethereum/dex.volume.history",
+        "solana/dex.volume.history",
+        "base/dex.volume.history",
+        "arbitrum/dex.volume.history",
+        "polygon/dex.volume.history",
+        "bsc/dex.volume.history",
+        "avalanche/dex.volume.history",
+        "berachain/dex.volume.history",
+        "gnosis/dex.volume.history",
+        "tron/dex.volume.history",
+        "bitcoin/dex.volume.history"
+      ],
+      "maxFailing": 4,
+      "why": "Замерено 2026-08-24 напрямую против вендора, и обе альтернативные причины отвергнуты замером, а не рассуждением. НЕ наш дедлайн и не размер документа: /overview/dexs/bsc — 9.18 с на 620 КБ, /overview/dexs/avalanche — 32.84 с на 320 КБ, /protocol/pancakeswap — ни байта за 60 с, /protocol/babylon-protocol — 1.06 с на 48 КБ. Размер этот порядок не объясняет, и те же маршруты укладываются в 15 с, когда вендору хорошо, то есть это не форма L-22, где потолком был наш собственный бюджет. НЕ наш егресс: прогон C того же дня шёл во время измеренного локального провала (пять несвязанных хостов на одинаковом полу ~1.6 с, через полторы минуты 0.39–0.53 с, WI-65), и его строки в границу НЕ засчитаны — граница взята с прогона D, чей канал измерен здоровым. ПОЧЕМУ ТОЛЬКО ЭТИ ДВЕ СПОСОБНОСТИ: это единственные маршруты defillama, которые всё ещё запрашиваются НА КАЖДЫЙ ВЫЗОВ; protocol.tvl, chain.tvl, protocol.list и protocol.incidents читают общие документы раз в TTL, поэтому один медленный запрос к источнику размазан по всем сетям и до построчного дедлайна не доходит. Граница 4 из 11 — прогоны A и D сошлись на четырёх, и это РАЗНЫЕ четыре сети (A: ethereum, polygon, bsc, avalanche; D: bsc, avalanche, berachain, bitcoin). Пятая красная строка — новый факт о вендоре, и гейт обязан на ней встать."
+    },
+    "L-24/protocol.tvl.history": {
+      "issue": "L-24",
+      "since": "2026-08-24",
+      "reviewBy": "2026-09-24",
+      "rows": [
+        "ethereum/protocol.tvl.history",
+        "solana/protocol.tvl.history",
+        "base/protocol.tvl.history",
+        "arbitrum/protocol.tvl.history",
+        "polygon/protocol.tvl.history",
+        "bsc/protocol.tvl.history",
+        "avalanche/protocol.tvl.history",
+        "berachain/protocol.tvl.history",
+        "gnosis/protocol.tvl.history",
+        "tron/protocol.tvl.history",
+        "bitcoin/protocol.tvl.history"
+      ],
+      "maxFailing": 4,
+      "why": "Замерено 2026-08-24 напрямую против вендора, и обе альтернативные причины отвергнуты замером, а не рассуждением. НЕ наш дедлайн и не размер документа: /overview/dexs/bsc — 9.18 с на 620 КБ, /overview/dexs/avalanche — 32.84 с на 320 КБ, /protocol/pancakeswap — ни байта за 60 с, /protocol/babylon-protocol — 1.06 с на 48 КБ. Размер этот порядок не объясняет, и те же маршруты укладываются в 15 с, когда вендору хорошо, то есть это не форма L-22, где потолком был наш собственный бюджет. НЕ наш егресс: прогон C того же дня шёл во время измеренного локального провала (пять несвязанных хостов на одинаковом полу ~1.6 с, через полторы минуты 0.39–0.53 с, WI-65), и его строки в границу НЕ засчитаны — граница взята с прогона D, чей канал измерен здоровым. ПОЧЕМУ ТОЛЬКО ЭТИ ДВЕ СПОСОБНОСТИ: это единственные маршруты defillama, которые всё ещё запрашиваются НА КАЖДЫЙ ВЫЗОВ; protocol.tvl, chain.tvl, protocol.list и protocol.incidents читают общие документы раз в TTL, поэтому один медленный запрос к источнику размазан по всем сетям и до построчного дедлайна не доходит. МНОЖЕСТВО ИСПРАВЛЕНО в тот же день: первая редакция этой записи перечислила 10 сетей и потеряла bitcoin, хотя матрица его обслуживает — это ошибка набора, а не поднятие границы, и она вылезла сразу: следующий прогон объявил bitcoin/protocol.tvl.history незаявленным отказом. zcash/protocol.tvl.history в множество НЕ включён по другой причине: у него нет курированного входа (`no-probe`), то есть эта строка не может упасть и только разбавляла бы знаменатель. ГРАНИЦА 4 из 11 — максимум, измеренный на прогоне E (bsc, berachain, tron, bitcoin); прогон D дал 2 (bsc, bitcoin). Условия названы, потому что читатель обязан их учесть: контрольное плечо кейса http-shared-limiter-rate на прогоне E показало 4420 мс задержки RPC против ~265 мс на прогонах B и D, то есть канал просел ПО ХОДУ прогона E. Приписать эти отказы вендору всё равно можно — прямые пробы против api.llama.fi минутами ранее, на измеренно здоровом канале, дали 32.84 с и полное отсутствие ответа за 60 с (L-24), — но 4 здесь потолок, включающий плохой канал. На review эта граница обязана ОПУСТИТЬСЯ, если вендор выправился, а не ползти вверх."
     }
   }
 }

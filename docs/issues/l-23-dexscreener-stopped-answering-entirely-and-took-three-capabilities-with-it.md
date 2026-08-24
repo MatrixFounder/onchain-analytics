@@ -50,16 +50,46 @@ vendor did not answer" — rather than `capability deadline exceeded`, which wou
 budget for a vendor that has stopped serving. The attribution is right; the rows are red because the
 vendor is down.
 
-**This outage cannot be acknowledged, and that is the mechanism working rather than failing.**
+**Update, same day, 14:22–14:31 UTC — the total outage lifted into intermittent PARTIAL failure, and
+the acknowledgement rule flipped with it.** Two consecutive gate runs, one set:
+
+| run | `pairs.active` | `pool.info` | `token.pools` |
+| :-- | :-- | :-- | :-- |
+| A (14:22) | 2 of 9 | 1 of 9 | 1 of 9 |
+| B (14:31) | 4 of 9 | 2 of 9 | 3 of 9 |
+
+**And not the same chains.** Run A named base/`pool.info` and avalanche/`token.pools`; run B named
+ethereum + avalanche/`pool.info` and arbitrum + bsc + tron/`token.pools`. Rotation without a growing
+total is exactly the shape RF-10 replaced a per-row boolean for: under the old mechanism every run
+would have reported some rows as unfiled and others as stale, on one unchanged vendor condition.
+
+The failures read as three different sentences and mean one thing — the vendor is answering with
+less than it holds: `pairs is empty` where a live DEX chain cannot have zero new pairs;
+`resolved: false` on a pool curated on 2026-08-21 *because it holds real liquidity*; an empty page
+for a chain's own wrapped native token (L-10 in its pure form — a confident zero where zero is
+impossible). berachain's `truncated.pairs is false` belongs to the same family from the other side:
+that case rests on the vendor always returning its full 30-row page, and it stopped doing so.
+
+So as of 2026-08-24 the three capabilities ARE acknowledged, with bounds 4 / 2 / 4 for
+`pairs.active` / `pool.info` / `token.pools` — the maxima MEASURED, never the size of the set.
+`token.pools` was raised from 3 to 4 later the same day on two further runs, one of them taken on a
+link measured healthy; the entry says so, because raising a bound is an act of measurement and a
+number lifted from a run whose own egress had stalled would bake weather into the record
+([WI-65](../backlog/wi-65-the-gate-cannot-tell-a-vendor-outage-from-a-stall-on-our-own-link.md)). `L-22/pairs.active` was retired in the
+same edit: that entry described OUR defect (a capability deadline equal to one hop's ceiling), which
+is fixed, and the rows failing under it today fail for the vendor's reason instead.
+
+**A total outage cannot be acknowledged, and that was the mechanism working rather than failing.**
 `eval/acknowledged.json` refuses a bound at or above the size of the set it covers
 ([RF-10](rf-10-the-gate-acknowledgement-is-a-per-row-boolean-so-an-intermittent-vendor-failure-can-never-be-acknowledged.md),
 task 014-43): a bound that cannot be exceeded accepts the total outage the bound exists to keep
-visible. A total vendor outage is therefore un-acknowledgeable BY DESIGN, and the gate stays blocked
-until one of three things is true — the vendor recovers, the capabilities stop being advertised, or
-a second adapter serves them.
+visible. A total vendor outage is therefore un-acknowledgeable BY DESIGN, and while it lasted the gate
+stayed blocked. Partial failure is a different fact and takes a bound; the refusal above applies again
+the moment the whole vendor goes away.
 
-L-22's own entry has already gone `over the bound of 2` with 8 of 9 failing, which is the same
-mechanism reporting that the filed fact grew into a different one.
+L-22's own entry went `over the bound of 2` with 8 of 9 failing during the outage, which is the same
+mechanism reporting that the filed fact had grown into a different one — and it is why that entry was
+retired rather than widened.
 
 **Blast radius.** Three capabilities on up to 49 chains. `onchain_active_pairs`, `onchain_pool_info`
 and `onchain_token_pools` answer `capability unavailable` for the duration. No other provider is
@@ -90,3 +120,6 @@ done
 these rows are attributed correctly.
 [L-6](l-6-token-holders-advertised-everywhere-blockscout-403-everywhere.md) — the single-vendor
 capability whose vendor withdrew, and the precedent for what direction 2 costs.
+[L-24](l-24-defillamas-two-per-call-history-routes-answer-erratically.md) — a DIFFERENT vendor
+degrading on the same day, filed separately because it was measured separately: same-minute probes
+are what keep two coincident outages from being written up as one.

@@ -5,8 +5,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## onchain-verify (daily)\nHealth check on onchain.snapshots → Telegram report. Target chat lives in **Set Parameters** (edit there, never in the Telegram node).\n\nChecks, each judged PER METRIC and each NAMING its offenders:\n- **stale** — max(ts) older than that metric's `onchain.metrics.max_staleness_ms` (migration 003). Two clocks: hourly observations 2h, ZecHub daily close-date aggregates 72h. One global 2h threshold was L-3 — it made the daily metrics permanently stale, pinned the report to ⚠️, and hid a real 4-day gap.\n- **never written** — registered in `metrics` but zero rows (the check the old `metrics_seen != metrics_registered` actually was).\n- **unbounded** — a registry row with NULL `max_staleness_ms`, i.e. an unmonitored metric. Adding metric #12 without a bound is itself reported, so this cannot silently regress.\n- **orphans** — snapshot rows whose asset/metric is missing from the registries (must be 0).\n\nOwner: onchain-intel.",
-        "height": 364,
+        "content": "## onchain-verify (daily)\nHealth check on onchain.snapshots → Telegram report. Target chat **and every threshold** live in **Set Parameters** (edit there, never in the Telegram node and never in the query).\n\nChecks, each judged PER METRIC and each NAMING its offenders:\n- **stale** — max(ts) older than that metric's `onchain.metrics.max_staleness_ms` (migration 003). Two clocks: hourly observations 2h, ZecHub daily close-date aggregates 72h. One global 2h threshold was L-3 — it made the daily metrics permanently stale, pinned the report to ⚠️, and hid a real 4-day gap.\n- **never written** — registered in `metrics` but zero rows (the check the old `metrics_seen != metrics_registered` actually was).\n- **unbounded** — a registry row with NULL `max_staleness_ms`, i.e. an unmonitored metric. Adding metric #12 without a bound is itself reported, so this cannot silently regress.\n- **orphans** — snapshot rows whose asset/metric is missing from the registries (must be 0).\n- **alert channel** (WI-64) — age of the newest `alert.delivered` row in `onchain.diagnostics`, against `AlertHeartbeatMaxAgeMs` (26h). Every confirmed Telegram send writes one: this report daily, onchain-error-alert on every incident. So a week with no incidents still produces a row a day, and a MISSING row means the channel did not get out — the fact L-21 had no way to state when nine alerts failed over five days unnoticed. The bound must exceed one daily cycle: the query runs BEFORE today's send and therefore reads the previous cycle's row.\n\n**Report → Record delivery → Write delivery is a chain, not a fan-out.** The row is written only if Telegram accepted the message (L-4 — a monitoring change is proven by the message arriving). It writes with the least-privileged **Onchain engine state** credential, the same one onchain-retention uses for `onchain.diagnostics`.\n\nOwner: onchain-intel.",
+        "height": 500,
         "width": 664
       },
       "id": "sticky",
@@ -41,7 +41,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Staleness is judged per metric on the metric's OWN clock, from onchain.metrics.max_staleness_ms\n-- (migration 003). One hardcoded 2h threshold was L-3: daily close-date aggregates can never be\n-- younger than 2h, so stale_metrics had a permanent floor and the OK branch was unreachable.\n-- A registry row with NULL max_staleness_ms is reported as a defect, not treated as fine.\n-- `derived` reports metrics the snapshotter had to COMPUTE because the vendor stopped sending the\n-- field: self-healing keeps the series unbroken, and this line keeps that from becoming silent.\nWITH judged AS (\n  SELECT m.id AS metric,\n         m.max_staleness_ms,\n         (SELECT max(s.ts) FROM onchain.snapshots s WHERE s.metric = m.id) AS max_ts,\n         (extract(epoch from now())*1000)::bigint AS now_ms\n    FROM onchain.metrics m\n), flags AS (\n  SELECT metric, max_ts, max_staleness_ms, now_ms,\n         (max_ts IS NULL) AS never_seen,\n         (max_staleness_ms IS NULL) AS unbounded,\n         (max_ts IS NOT NULL AND max_staleness_ms IS NOT NULL\n            AND max_ts < now_ms - max_staleness_ms) AS is_stale\n    FROM judged\n), derived AS (\n  SELECT metric, count(*) AS n\n    FROM onchain.snapshots\n   WHERE source = 'derived'\n     AND ts > (extract(epoch from now())*1000)::bigint - 86400000\n   GROUP BY metric\n)\nSELECT\n  (SELECT count(*) FROM onchain.snapshots) AS total_rows,\n  (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots) AS buckets,\n  (SELECT count(*) FROM onchain.metrics) AS metrics_registered,\n  (SELECT count(*) FROM flags WHERE NOT never_seen) AS metrics_seen,\n  (SELECT count(*) FROM flags WHERE is_stale) AS stale_metrics,\n  (SELECT coalesce(string_agg(metric || ' (' || round((now_ms - max_ts)/3600000.0)::text\n                              || 'h > ' || round(max_staleness_ms/3600000.0)::text || 'h)',\n                              ', ' ORDER BY max_ts), '')\n     FROM flags WHERE is_stale) AS stale_names,\n  (SELECT count(*) FROM flags WHERE never_seen) AS never_seen_metrics,\n  (SELECT coalesce(string_agg(metric, ', ' ORDER BY metric), '')\n     FROM flags WHERE never_seen) AS never_seen_names,\n  (SELECT count(*) FROM flags WHERE unbounded) AS unbounded_metrics,\n  (SELECT coalesce(string_agg(metric, ', ' ORDER BY metric), '')\n     FROM flags WHERE unbounded) AS unbounded_names,\n  (SELECT count(*) FROM derived) AS derived_metrics,\n  (SELECT coalesce(string_agg(metric || ' (' || n || ' rows/24h)', ', ' ORDER BY metric), '')\n     FROM derived) AS derived_names,\n  (SELECT count(*) FROM onchain.snapshots s\n     LEFT JOIN onchain.assets a ON s.asset = a.id\n     LEFT JOIN onchain.metrics m ON s.metric = m.id\n    WHERE a.id IS NULL OR m.id IS NULL) AS orphans,\n  (SELECT to_char(to_timestamp(max(ts)/1000) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI')\n     FROM onchain.snapshots) AS latest_ts_utc;",
+        "query": "-- Staleness is judged per metric on the metric's OWN clock, from onchain.metrics.max_staleness_ms\n-- (migration 003). One hardcoded 2h threshold was L-3: daily close-date aggregates can never be\n-- younger than 2h, so stale_metrics had a permanent floor and the OK branch was unreachable.\n-- A registry row with NULL max_staleness_ms is reported as a defect, not treated as fine.\n-- `derived` reports metrics the snapshotter had to COMPUTE because the vendor stopped sending the\n-- field: self-healing keeps the series unbroken, and this line keeps that from becoming silent.\nWITH judged AS (\n  SELECT m.id AS metric,\n         m.max_staleness_ms,\n         (SELECT max(s.ts) FROM onchain.snapshots s WHERE s.metric = m.id) AS max_ts,\n         (extract(epoch from now())*1000)::bigint AS now_ms\n    FROM onchain.metrics m\n), flags AS (\n  SELECT metric, max_ts, max_staleness_ms, now_ms,\n         (max_ts IS NULL) AS never_seen,\n         (max_staleness_ms IS NULL) AS unbounded,\n         (max_ts IS NOT NULL AND max_staleness_ms IS NOT NULL\n            AND max_ts < now_ms - max_staleness_ms) AS is_stale\n    FROM judged\n), derived AS (\n  SELECT metric, count(*) AS n\n    FROM onchain.snapshots\n   WHERE source = 'derived'\n     AND ts > (extract(epoch from now())*1000)::bigint - 86400000\n   GROUP BY metric\n)\nSELECT\n  (SELECT count(*) FROM onchain.snapshots) AS total_rows,\n  (SELECT count(DISTINCT ts_bucket) FROM onchain.snapshots) AS buckets,\n  (SELECT count(*) FROM onchain.metrics) AS metrics_registered,\n  (SELECT count(*) FROM flags WHERE NOT never_seen) AS metrics_seen,\n  (SELECT count(*) FROM flags WHERE is_stale) AS stale_metrics,\n  (SELECT coalesce(string_agg(metric || ' (' || round((now_ms - max_ts)/3600000.0)::text\n                              || 'h > ' || round(max_staleness_ms/3600000.0)::text || 'h)',\n                              ', ' ORDER BY max_ts), '')\n     FROM flags WHERE is_stale) AS stale_names,\n  (SELECT count(*) FROM flags WHERE never_seen) AS never_seen_metrics,\n  (SELECT coalesce(string_agg(metric, ', ' ORDER BY metric), '')\n     FROM flags WHERE never_seen) AS never_seen_names,\n  (SELECT count(*) FROM flags WHERE unbounded) AS unbounded_metrics,\n  (SELECT coalesce(string_agg(metric, ', ' ORDER BY metric), '')\n     FROM flags WHERE unbounded) AS unbounded_names,\n  (SELECT count(*) FROM derived) AS derived_metrics,\n  (SELECT coalesce(string_agg(metric || ' (' || n || ' rows/24h)', ', ' ORDER BY metric), '')\n     FROM derived) AS derived_names,\n  (SELECT count(*) FROM onchain.snapshots s\n     LEFT JOIN onchain.assets a ON s.asset = a.id\n     LEFT JOIN onchain.metrics m ON s.metric = m.id\n    WHERE a.id IS NULL OR m.id IS NULL) AS orphans,\n  (SELECT to_char(to_timestamp(max(ts)/1000) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI')\n     FROM onchain.snapshots) AS latest_ts_utc,\n  -- WI-64 — the alert channel's own pulse. Every CONFIRMED Telegram delivery writes an\n  -- `alert.delivered` row: this workflow's daily report is the regular one, onchain-error-alert's\n  -- sends are the extra ones. The AGE of the newest row is how long the channel has been unproven,\n  -- and a week with no incidents still produces one row a day — which is what makes silence\n  -- distinguishable from quiet (L-21). The BOUND is not here: it lives in Set Parameters (L-3).\n  (SELECT max(ts) FROM onchain.diagnostics WHERE event = 'alert.delivered') AS alert_last_ts,\n  (extract(epoch from now())*1000)::bigint AS now_ms;",
         "options": {}
       },
       "id": "verify",
@@ -61,7 +61,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// onchain-verify — render the daily health report.\n// Judged per metric on the metric's OWN clock (onchain.metrics.max_staleness_ms, migration 003).\n// Every failing check NAMES its metrics: a bare count cannot be acted on, and could not be told\n// apart from the permanent floor the old one-threshold-for-everything check produced (L-3).\nconst r = $('Verify query').first().json;\nconst num = (x) => Number(x || 0);\n\nconst stale = num(r.stale_metrics);\nconst never = num(r.never_seen_metrics);\nconst unbounded = num(r.unbounded_metrics);\nconst orphans = num(r.orphans);\n// A derived metric is HEALED, not healthy: the series has no gap, but a vendor stopped sending a\n// field and someone must either chase that or retire the metric. Unlike L-3's permanent floor this\n// is a real, closable condition, so it belongs in `ok` rather than being reported as background.\nconst derived = num(r.derived_metrics);\nconst ok = stale === 0 && never === 0 && unbounded === 0 && orphans === 0 && derived === 0;\n\nconst lines = [\n  (ok ? '✅' : '⚠️') + ' onchain-verify (daily)',\n  'rows: ' + r.total_rows + ' · buckets: ' + r.buckets,\n  'metrics: ' + r.metrics_seen + '/' + r.metrics_registered + ' seen',\n  'latest: ' + r.latest_ts_utc + ' UTC',\n];\nif (stale) lines.push('⏳ stale (age > registry bound): ' + r.stale_names);\nif (never) lines.push('👻 registered but never written: ' + r.never_seen_names);\nif (unbounded) lines.push('❓ no max_staleness_ms in registry: ' + r.unbounded_names);\nif (derived) lines.push('🧮 derived — vendor field missing, value computed: ' + r.derived_names);\nif (orphans) lines.push('🔗 orphan rows (asset/metric not in registry): ' + orphans);\n\n// L-4: the Report node sends with parse_mode=HTML, so this text MUST be HTML-escaped. Metric ids\n// are snake_case and every '_' is an italic delimiter under Telegram's Markdown modes — naming the\n// offenders (the whole point of L-3) is what made an unescaped message a guaranteed 400\n// \"can't parse entities\". '&' first, or it would double-escape the entities produced after it.\nconst esc = (s) => String(s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\nlet text = esc(lines.join('\\n'));\n\n// Telegram hard-caps a message at 4096 chars and the name lists are DB-derived, so bound them.\n// Truncate AFTER escaping, then drop a half-written entity at the cut — a trailing '&am' would\n// itself be an unparseable entity, i.e. the exact failure this guard exists to avoid.\nif (text.length > 3500) {\n  text = text.slice(0, 3500).replace(/&[a-z]{0,5}$/i, '') + '\\n… truncated';\n}\n\nreturn [{ json: { ok, text } }];"
+        "jsCode": "// onchain-verify — render the daily health report.\n// Judged per metric on the metric's OWN clock (onchain.metrics.max_staleness_ms, migration 003).\n// Every failing check NAMES its metrics: a bare count cannot be acted on, and could not be told\n// apart from the permanent floor the old one-threshold-for-everything check produced (L-3).\nconst r = $('Verify query').first().json;\nconst p = $('Set Parameters').first().json;\nconst num = (x) => Number(x || 0);\n\nconst stale = num(r.stale_metrics);\nconst never = num(r.never_seen_metrics);\nconst unbounded = num(r.unbounded_metrics);\nconst orphans = num(r.orphans);\n// A derived metric is HEALED, not healthy: the series has no gap, but a vendor stopped sending a\n// field and someone must either chase that or retire the metric. Unlike L-3's permanent floor this\n// is a real, closable condition, so it belongs in `ok` rather than being reported as background.\nconst derived = num(r.derived_metrics);\n\n// WI-64 — the alert channel's own pulse.\n//\n// Every CONFIRMED Telegram delivery writes an `alert.delivered` row into onchain.diagnostics: this\n// workflow's own daily report is the REGULAR one, onchain-error-alert's sends are the extra ones.\n// That is what makes silence distinguishable from quiet — a week with no incidents still produces\n// one row a day, so a missing row means the channel did not get out rather than \"nothing happened\".\n// L-21: nine alerts failed across five days and nothing said so, because the reporter cannot report\n// its own silence.\n//\n// The bound lives in Set Parameters and never here (L-3: a threshold inside the renderer is a\n// threshold nobody can change without editing logic). It must exceed one daily cycle, because the\n// query runs BEFORE today's report is sent and therefore reads the PREVIOUS cycle's row.\nconst channelBoundMs = Number(p.AlertHeartbeatMaxAgeMs);\nconst channelLastTs =\n  r.alert_last_ts === null || r.alert_last_ts === undefined ? null : Number(r.alert_last_ts);\nconst channelAgeMs = channelLastTs === null ? null : num(r.now_ms) - channelLastTs;\n// A missing bound and a missing row are BOTH defects, not \"fine\". A heartbeat nobody bounds is\n// unmonitored, and \"never delivered\" is the state this check exists to name — it clears itself on\n// the next run, because the report this very run sends writes the first row.\nconst channelUnbounded = !Number.isFinite(channelBoundMs) || channelBoundMs <= 0;\nconst channelSilent = channelUnbounded || channelAgeMs === null || channelAgeMs > channelBoundMs;\nconst hours = (ms) => Math.round(ms / 3600000);\nconst channelLine = channelUnbounded\n  ? 'no AlertHeartbeatMaxAgeMs in Set Parameters — unmonitored'\n  : channelAgeMs === null\n    ? 'no confirmed delivery on record'\n    : hours(channelAgeMs) + 'h since last confirmed delivery (bound ' + hours(channelBoundMs) + 'h)';\n\nconst ok =\n  stale === 0 && never === 0 && unbounded === 0 && orphans === 0 && derived === 0 && !channelSilent;\n\nconst lines = [\n  (ok ? '✅' : '⚠️') + ' onchain-verify (daily)',\n  'rows: ' + r.total_rows + ' · buckets: ' + r.buckets,\n  'metrics: ' + r.metrics_seen + '/' + r.metrics_registered + ' seen',\n  'latest: ' + r.latest_ts_utc + ' UTC',\n  (channelSilent ? '📵 ' : '📡 ') + 'alert channel: ' + channelLine,\n];\nif (stale) lines.push('⏳ stale (age > registry bound): ' + r.stale_names);\nif (never) lines.push('👻 registered but never written: ' + r.never_seen_names);\nif (unbounded) lines.push('❓ no max_staleness_ms in registry: ' + r.unbounded_names);\nif (derived) lines.push('🧮 derived — vendor field missing, value computed: ' + r.derived_names);\nif (orphans) lines.push('🔗 orphan rows (asset/metric not in registry): ' + orphans);\n\n// L-4: the Report node sends with parse_mode=HTML, so this text MUST be HTML-escaped. Metric ids\n// are snake_case and every '_' is an italic delimiter under Telegram's Markdown modes — naming the\n// offenders (the whole point of L-3) is what made an unescaped message a guaranteed 400\n// \"can't parse entities\". '&' first, or it would double-escape the entities produced after it.\nconst esc = (s) => String(s)\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;');\n\nlet text = esc(lines.join('\\n'));\n\n// Telegram hard-caps a message at 4096 chars and the name lists are DB-derived, so bound them.\n// Truncate AFTER escaping, then drop a half-written entity at the cut — a trailing '&am' would\n// itself be an unparseable entity, i.e. the exact failure this guard exists to avoid.\nif (text.length > 3500) {\n  text = text.slice(0, 3500).replace(/&[a-z]{0,5}$/i, '') + '\\n… truncated';\n}\n\nreturn [{ json: { ok, text } }];"
       },
       "id": "fmt",
       "name": "Format report",
@@ -106,6 +106,12 @@
               "name": "ChatID",
               "value": 0,
               "type": "number"
+            },
+            {
+              "id": "wi64-alert-heartbeat-bound",
+              "name": "AlertHeartbeatMaxAgeMs",
+              "value": 93600000,
+              "type": "number"
             }
           ]
         },
@@ -119,6 +125,42 @@
       ],
       "id": "2c395703-9eaf-44e0-b441-a8b35c52c76e",
       "name": "Set Parameters"
+    },
+    {
+      "id": "b29566bf-37ec-476c-aa21-806752d39ff5",
+      "name": "Record delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// WI-64 — one `alert.delivered` row per CONFIRMED Telegram delivery.\n//\n// WHY THE ROW EXISTS. `onchain-error-alert` is the terminal reader for every health signal this\n// project produces — the snapshotter's `Check dropped`, this workflow's report, onchain-retention's\n// `Check outcomes` — and it is the one workflow whose own failure it cannot report, because it IS\n// the reporter. L-21 recorded nine undelivered alerts across five days, noticed by accident during\n// an unrelated acceptance. The cause was mundane (the laptop hosting the VM had no internet), and\n// that is exactly why the gap is worth closing: the same silence recurs on causes nobody calls a\n// defect.\n//\n// WHY IT IS CHAINED AFTER THE SEND, not fanned out beside it. An edge, not a canvas position: this\n// node runs only when the Telegram node returned success, so the row means \"Telegram accepted the\n// message\" and nothing weaker. L-4's rule — a monitoring change is proven by the message arriving,\n// never by a query returning the right rows.\n//\n// WHY THE DATABASE AND NOT A SECOND ALERT. The DB is on the same VM and needs no egress, so it\n// stays reachable exactly when the outbound path does not. A second Telegram channel with no\n// heartbeat of its own would be two silences instead of one.\n//\n// WHY THIS WORKFLOW WRITES ONE AT ALL, when the record that filed WI-64 proposed writing only from\n// onchain-error-alert: that handler runs only when something failed, so its rows alone cannot tell\n// \"no incidents\" from \"channel dead\". The DAILY report is the regular pulse; the handler's sends\n// are the extra ones.\nconst now = Date.now();\n\n// ULID as TEXT (DB-SCHEMA §1.3) — the app generates the id. `onchain.diagnostics.id` carries no\n// default, unlike `onchain.snapshots.id`. Same construction as onchain-retention's `Pass event`.\nconst B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';\nlet time = '';\nlet rest = now;\nfor (let i = 0; i < 10; i += 1) { time = B32[rest % 32] + time; rest = Math.floor(rest / 32); }\nlet rand = '';\nfor (let i = 0; i < 16; i += 1) rand += B32[Math.floor(Math.random() * 32)];\n\nconst event = {\n  id: time + rand,\n  ts: now,\n  // `info`: a delivery that worked is not a warning. The signal is the ABSENCE of these rows, and\n  // that absence is read by this workflow against the bound in its Set Parameters node.\n  severity: 'info',\n  event: 'alert.delivered',\n  // The chat id is deliberately NOT recorded: it identifies a real person, which is the same reason\n  // `export.sh` scrubs it out of the workflow JSON.\n  detail_json: JSON.stringify({ workflow: 'onchain-verify', channel: 'telegram' }),\n  created_at: now,\n};\n\n// Base64, bound as ONE `$1` parameter downstream: `queryReplacement` is positional CSV, so a value\n// holding a comma breaks it and an empty value silently shifts every later `$N`. Base64 has\n// neither, and it is driver-bound rather than interpolated.\nreturn [{ json: { event_b64: Buffer.from(JSON.stringify([event])).toString('base64') } }];"
+      }
+    },
+    {
+      "id": "4f86189a-d9e9-4142-b15e-0706bfa45883",
+      "name": "Write delivery",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO onchain.diagnostics\n  (id, ts, severity, event, principal_id, session_id, provider, capability, trace_id, detail_json, created_at)\nSELECT id, ts, severity, event, NULL, NULL, NULL, NULL, NULL, detail_json, created_at\nFROM jsonb_to_recordset(convert_from(decode($1,'base64'),'utf8')::jsonb)\n  AS x(id text, ts bigint, severity text, event text, detail_json text, created_at bigint);",
+        "options": {
+          "queryReplacement": "={{ $('Record delivery').first().json.event_b64 }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "MjsP4aIFWZd25tik",
+          "name": "Onchain engine state"
+        }
+      }
     }
   ],
   "connections": {
@@ -160,6 +202,28 @@
         [
           {
             "node": "Verify query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report": {
+      "main": [
+        [
+          {
+            "node": "Record delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record delivery": {
+      "main": [
+        [
+          {
+            "node": "Write delivery",
             "type": "main",
             "index": 0
           }

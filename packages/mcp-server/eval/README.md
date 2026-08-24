@@ -30,7 +30,14 @@ which is the only claim worth making.
 **Two phases, on two transports** (task 014-33). The **capability matrix** runs over stdio, which is
 where it belongs: it does not depend on the transport and raises more cheaply. The **HTTP set** runs
 after it, against a second process raised on its own profile, and covers exactly what stdio cannot
-reach — a token refused, a perimeter refused, one end-to-end call, and two concurrent sessions.
+reach — a token refused, a perimeter refused, one end-to-end call, two concurrent sessions, and the
+aggregate vendor RATE those two sessions produce.
+
+That last one (`http-shared-limiter-rate.mjs`, WI-63) is the one case that deliberately spends wall
+clock: about 19 s of full-refill waits and throttle wait at today's `rpc-evm` bucket, on 18 keyless
+RPC calls and no credits. It measures whether two sessions share ONE token bucket, by comparing the
+observed throttle wait against the two hypotheses the declared bucket implies — both derived from
+`adapterRegistrations`, so nothing in the case restates a number `providers.config.ts` owns.
 
 The HTTP set resolves its profile from `ONCHAIN_EVAL_HTTP_PROFILE`, defaulting to `network-sqlite`
 because the `network` pair needs a running Postgres and this gate runs on a development machine. The
@@ -89,6 +96,29 @@ count — an eval that scores its own missing test data as a provider defect is 
 that cries wolf stops being read.
 
 Exit code is 0 unless something is `error` or `degraded`, so it can gate a release.
+
+### Before you believe a run that blames several vendors at once
+
+Check our own egress first, in the same minute, against hosts the engine does not use. Measured
+2026-08-24: a run reported four `capability deadline exceeded` rows across two defillama routes and
+pushed both blockscout acknowledgements over their bounds — three vendors, presented as three
+independent facts. Five unrelated hosts were all answering at a uniform ~1.6 s with slow CONNECT
+times, and ninety seconds later the same hosts answered in 0.39–0.53 s with 0.012 s connects. The
+gate had measured our link.
+
+```sh
+for u in https://api.llama.fi/v2/chains https://api.coingecko.com/api/v3/ping \
+         https://mcp.blockscout.com https://mempool.space/api/blocks/tip/height; do
+  curl -sS -o /dev/null -m 25 -w "%{http_code} %{time_total}s %{time_connect}s conn  $u\n" "$u"
+done
+```
+
+A uniform floor across unrelated companies and CDNs is one condition, not many. This matters beyond
+reading one report: raising an acknowledgement bound is an act of MEASUREMENT (RF-10), and a bound
+raised on a run taken during a local stall bakes weather into the record permanently. The reverse
+error is just as available — dismissing a real vendor outage as "the link was probably bad" — which
+is why the answer is to measure rather than to guess either way. Filed as WI-65 so the gate
+eventually states this itself instead of relying on whoever remembers this paragraph.
 
 ## Cross-source checks (the combinations)
 

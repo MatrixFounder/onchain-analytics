@@ -30,7 +30,12 @@ slug: l-21-nine-consecutive-telegram-alerts-failed-over-five-days-and-nothing-re
 > alert-channel outage is silent by construction and was noticed five days in, by accident, during an
 > unrelated acceptance. A laptop going offline is a ROUTINE event, not an exotic one, so that
 > silence will recur on a cause nobody will call a defect either. The heartbeat that would end it is
-> filed as [WI-64](../backlog/wi-64-the-alert-channel-has-no-heartbeat-so-its-silence-is-indistinguishable-from-quiet.md).
+> filed as [WI-64](../backlog/wi-64-the-alert-channel-has-no-heartbeat-so-its-silence-is-indistinguishable-from-quiet.md),
+> **and closed the same day.** Every confirmed Telegram delivery now writes an `alert.delivered`
+> row into `onchain.diagnostics`, and `onchain-verify` reports the newest row's age daily. The
+> five-day silence this record describes would now be named on the first report after one missed
+> cycle — and named in the database from the first missed send, where no egress is required to
+> read it.
 >
 > Severity drops from SEV-2 to SEV-4: nothing in the engine or the workflows needs repair.
 

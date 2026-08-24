@@ -134,6 +134,16 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
   first** (§1.6/§1.8) with formula + inputs in `raw_json`, never under the vendor's name. **Healed is
   not hidden:** `onchain-verify` names derived metrics daily and counts them against `ok`, so closing
   the data gap does not close the obligation to chase the vendor or retire the metric.
+- **The alert channel needs a pulse of its own** (WI-64, 2026-08-24). `onchain-error-alert` is the
+  terminal reader for every health signal here, and it is the one workflow whose own failure it
+  cannot report — L-21 is what that costs: nine alerts failed over five days and the silence was
+  found by accident. Every CONFIRMED Telegram send now writes an `alert.delivered` row into
+  `onchain.diagnostics` (**chained after** the Telegram node, so only a delivery Telegram accepted
+  counts), and `onchain-verify` reports the newest row's age daily against `AlertHeartbeatMaxAgeMs`
+  in its Set node. The DAILY report is the regular pulse and the handler's sends are the extra ones —
+  writing only from the handler would not distinguish "no incidents" from "channel dead", because the
+  handler runs only when something failed. The checker must not be the channel: the DB is on the same
+  VM and needs no egress, so it stays reachable exactly when the outbound path does not.
 - **A diagnostic nobody reads is not a diagnostic** (L-2, 2026-07-27). The snapshotter's `Normalize`
   collected skipped metrics into a `dropped` array that no downstream node consumed, and only threw
   when *every* source was empty — so losing 1 metric of 11 looked exactly like a clean run for four
@@ -173,6 +183,19 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
   is unreachable this way by design; prove its expressions with a throwaway Manual-trigger probe
   instead (create → run → **delete**), which is also the only way to exercise them without
   manufacturing a failure in a production workflow.
+- **`errorWorkflow` does NOT fire for a MANUAL execution** (measured 2026-08-24, WI-64). A probe run
+  with `executionMode: manual` fails visibly and the error workflow is never invoked, so a manual run
+  proves nothing about the alert path. To exercise it: a throwaway workflow with a Schedule trigger
+  set to a date that never comes, `settings.errorWorkflow` pointing at `onchain-error-alert`, one
+  node that fails on purpose (`http://127.0.0.1:9/` refuses instantly, and needs no Code node) —
+  **activate it**, run it with `executionMode: production`, then **delete it**.
+- **Manual executions and scheduled ones use DIFFERENT task runners.** This instance runs n8n in
+  queue mode (`n8n-main` + `n8n-worker`, `task-runners-main` + `task-runners-worker`). On 2026-08-24
+  two manual executions of `onchain-verify` died with "Task request timed out after 60 seconds — your
+  Code node task was not matched to a runner", while the same workflow in `production` mode ran in
+  1.1 s: `task-runners-main` had logged nothing since a failed handshake on 2026-08-13. Read that
+  error as "the MAIN runner is wedged", not as a defect in the Code node — and do not restart the
+  container, it is shared with 20+ other workflows.
 - **"Workflow is not available in MCP" is a plain setting, not a UI-only toggle:**
   `settings.availableInMCP: true`. Set it with `n8n_update_partial_workflow` → `updateSettings`
   (pass the whole settings object; new workflows are created without it). Don't ask the operator to

@@ -107,8 +107,9 @@ top-level id but **not** node `credentials.id` nor `settings.errorWorkflow`). Re
 | Dangling ref (by name) | remap to |
 |---|---|
 | PG cred **"Supabase DB"** — snapshotter `Write snapshots` + `Upsert zec supply`, verify `Verify query` | new prod PG cred |
+| PG cred **"Onchain engine state"** — retention's seven nodes, and `Write delivery` in verify + error-alert (WI-64) | new prod engine-state PG cred |
 | TG cred **"Onchain bot"** — verify `Report`, error-alert `Telegram alert` | new prod TG cred |
-| `settings.errorWorkflow` — snapshotter + verify | **new** `onchain-error-alert` |
+| `settings.errorWorkflow` — snapshotter + verify + retention | **new** `onchain-error-alert` |
 | `ChatID` param — verify `Set Parameters`, error-alert `Normalize Input` | this instance's chat (arrives as `0`) |
 
 **Preferred — `./n8n-workflows/import.sh`** (wrapper over `import_with_relink.py`). Idempotent: a
@@ -121,11 +122,16 @@ rejects it).
 DRY_RUN=1 \
 N8N_URL=… N8N_API_KEY=… \
 PROD_PG_CRED_ID=<"Supabase DB" id> PROD_TG_CRED_ID=<"Onchain bot" id> \
+PROD_ENGINE_CRED_ID=<"Onchain engine state" id> \
 CHAT_ID=<chat id> \
 ./n8n-workflows/import.sh
 ```
 Run `DRY_RUN=1` first and read the plan; then the same command without it. Credential ids come from
 the n8n UI (Credentials → open → id in the URL); the public API has no list-credentials endpoint.
+
+All three ids are **required**, and a credential name outside that map makes the importer **exit
+rather than import** (WI-64). It used to warn and continue, which produced a workflow carrying the
+source instance's credential id — one that looks installed and fails at the first node that needs it.
 
 *Dual-stack / `.local` hosts:* Python may resolve to IPv6 and get a proxy `503` where curl (IPv4)
 works — point `N8N_URL` at the resolvable IPv4 if so.
@@ -134,8 +140,8 @@ works — point `N8N_URL` at the resolvable IPv4 if so.
 Open the **existing** workflow → its menu → *Import from File* → Save. That replaces nodes in place
 and keeps the id. **"Import from File" from the workflow *list* creates a NEW same-name workflow** —
 two active workflows with one name break `export.sh` and can bind the wrong `errorWorkflow`. Then set
-by hand everything the script would have done: both credentials, `Settings → Error Workflow`, and the
-two `ChatID` params (they arrive as `0`).
+by hand everything the script would have done: **all three** credentials, `Settings → Error Workflow`,
+and the two `ChatID` params (they arrive as `0`).
 
 ### Take a rollback snapshot first
 Importing overwrites nodes wholesale, so capture the target's current state before you do:
@@ -170,7 +176,21 @@ the target's current workflows.
   `ChatID` is still `0`; `credential not found` → credential not re-picked.
 - **Error path:** an Error Trigger cannot be executed manually, so it is only exercised by a real
   failure. At minimum confirm `ChatID` in `onchain-error-alert` → `Normalize Input` is not `0` —
-  otherwise it stays silent exactly when it is needed.
+  otherwise it stays silent exactly when it is needed. To exercise it properly, create a throwaway
+  `onchain-probe-*` workflow whose `settings.errorWorkflow` points at `onchain-error-alert` and whose
+  one node fails on purpose (an HTTP request to `http://127.0.0.1:9/` refuses instantly), **activate
+  it and run it in PRODUCTION mode** — n8n does not invoke `errorWorkflow` for a manual execution, so
+  a manual run proves nothing — then delete it. Measured 2026-08-24 (WI-64).
+- **Alert-channel heartbeat (WI-64):** every confirmed Telegram delivery writes one row, so after the
+  two steps above there must be two:
+  ```sql
+  SELECT to_char(to_timestamp(ts/1000) AT TIME ZONE 'UTC','MM-DD HH24:MI:SS') AS ts_utc, detail_json
+    FROM onchain.diagnostics WHERE event = 'alert.delivered' ORDER BY ts DESC LIMIT 5;
+  ```
+  No rows after a message visibly arrived means `Write delivery` did not run — check that the
+  **Onchain engine state** credential was re-picked, and that `Report`/`Telegram alert` is CHAINED to
+  `Record delivery` rather than fanned out beside it. From the next day on, `onchain-verify`'s report
+  carries the age itself (`📡 alert channel: …`), and `📵` is the alarm.
 
 ## Engine network profile — the two database roles  *(T-014, §10.4.2 steps 1–2)*
 

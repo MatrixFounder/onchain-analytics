@@ -15,9 +15,11 @@
 // against six split across two and reported "9ms versus 312ms" — the second arm was reading the
 // cache the first arm had filled, and the case would have reported that as a broken limiter.
 //
-// The rate property is real and worth measuring; it needs an arg axis wider than the probe set, and
-// that is filed as WI-63 rather than approximated here. A case that asserts a threshold it cannot
-// resolve is worse than one that states its limit.
+// **The rate IS measured — in `http-shared-limiter-rate.mjs`, on a different provider** (WI-63,
+// closed 2026-08-24). It moved to `rpc-evm`/`wallet.balances.native`, whose argument axis is
+// addresses rather than the curated chain set, so the distinct calls a bucket comparison needs
+// exist. Nothing about that measurement belongs here: the two files assert different properties,
+// and this one stays the cheap session-plumbing check that runs in one round trip.
 //
 // The calls go to a free, keyless capability. The gate spends no Nansen credits.
 const CHAINS_A = ['ethereum', 'base', 'arbitrum'];

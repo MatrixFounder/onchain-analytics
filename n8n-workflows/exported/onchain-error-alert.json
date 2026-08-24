@@ -5,8 +5,8 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## onchain-error-alert\nError Trigger → **Normalize Input** (Set: owns the error-payload→named-fields contract + the target `ChatID`, with fallbacks so nothing renders `undefined`) → Telegram. Set as the `errorWorkflow` for onchain-* workflows; fires a Telegram alert on any failure. To change the target chat or the message, edit **Normalize Input** — not the Telegram node.\n\n**HTML-escaping is load-bearing (L-4).** The Telegram node sends `parse_mode: HTML`, and the fields interpolated here are arbitrary vendor/runtime text. A raw `_` is an italic delimiter under Telegram's Markdown modes and a raw `<` breaks HTML mode — either way an unparseable entity means **400 and NO alert delivered**, i.e. the alerting path fails exactly when it is needed. `workflow_name` / `last_node` / `error_message` are escaped here (`&` first), and `error_message` is capped at 1500 chars so a long stack trace cannot blow the 4096-char message limit. Keep both when editing.\n\nOwner: onchain-intel.",
-        "height": 524,
+        "content": "## onchain-error-alert\nError Trigger → **Normalize Input** (Set: owns the error-payload→named-fields contract + the target `ChatID`, with fallbacks so nothing renders `undefined`) → Telegram → **Record delivery → Write delivery**. Set as the `errorWorkflow` for onchain-* workflows; fires a Telegram alert on any failure. To change the target chat or the message, edit **Normalize Input** — not the Telegram node.\n\n**HTML-escaping is load-bearing (L-4).** The Telegram node sends `parse_mode: HTML`, and the fields interpolated here are arbitrary vendor/runtime text. A raw `_` is an italic delimiter under Telegram's Markdown modes and a raw `<` breaks HTML mode — either way an unparseable entity means **400 and NO alert delivered**, i.e. the alerting path fails exactly when it is needed. `workflow_name` / `last_node` / `error_message` are escaped here (`&` first), and `error_message` is capped at 1500 chars so a long stack trace cannot blow the 4096-char message limit. Keep both when editing.\n\n**The heartbeat (WI-64).** This workflow cannot report its own failure — it IS the reporter, and L-21 is what that costs: nine alerts failed over five days and the silence was found by accident. So every CONFIRMED send writes an `alert.delivered` row into `onchain.diagnostics` (least-privileged **Onchain engine state** credential), and **onchain-verify** reads the newest row's age daily against `AlertHeartbeatMaxAgeMs`. The write is CHAINED after Telegram, never fanned out beside it: only a delivery Telegram accepted counts. These rows are the extra pulse — this workflow runs only on failures, so onchain-verify's own daily report writes the regular one.\n\nOwner: onchain-intel.",
+        "height": 640,
         "width": 768
       },
       "id": "sticky",
@@ -124,6 +124,42 @@
         224,
         0
       ]
+    },
+    {
+      "id": "f7590cd7-cdd1-44db-968a-1e92aed4752d",
+      "name": "Record delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// WI-64 — one `alert.delivered` row per CONFIRMED Telegram delivery.\n//\n// WHY THE ROW EXISTS. This workflow is the terminal reader for every health signal the project\n// produces — the snapshotter's `Check dropped`, onchain-verify's report, onchain-retention's\n// `Check outcomes` — and it is the one workflow whose own failure it cannot report, because it IS\n// the reporter. L-21 recorded nine undelivered alerts across five days, noticed by accident during\n// an unrelated acceptance. The cause was mundane (the laptop hosting the VM had no internet), and\n// that is exactly why the gap is worth closing: the same silence recurs on causes nobody calls a\n// defect.\n//\n// WHY IT IS CHAINED AFTER THE SEND, not fanned out beside it. An edge, not a canvas position: this\n// node runs only when the Telegram node returned success, so the row means \"Telegram accepted the\n// message\" and nothing weaker. L-4's rule — a monitoring change is proven by the message arriving,\n// never by a query returning the right rows.\n//\n// WHY THE DATABASE AND NOT A SECOND ALERT. The DB is on the same VM and needs no egress, so it\n// stays reachable exactly when the outbound path does not. A second Telegram channel with no\n// heartbeat of its own would be two silences instead of one.\n//\n// WHO READS IT. onchain-verify, daily, against `AlertHeartbeatMaxAgeMs` in its Set Parameters node.\n// These rows are the EXTRA pulse — this workflow only runs when something failed, so its rows alone\n// could not tell \"no incidents\" from \"channel dead\". onchain-verify's own daily report writes the\n// regular one.\nconst now = Date.now();\n\n// ULID as TEXT (DB-SCHEMA §1.3) — the app generates the id. `onchain.diagnostics.id` carries no\n// default, unlike `onchain.snapshots.id`. Same construction as onchain-retention's `Pass event`.\nconst B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';\nlet time = '';\nlet rest = now;\nfor (let i = 0; i < 10; i += 1) { time = B32[rest % 32] + time; rest = Math.floor(rest / 32); }\nlet rand = '';\nfor (let i = 0; i < 16; i += 1) rand += B32[Math.floor(Math.random() * 32)];\n\nconst event = {\n  id: time + rand,\n  ts: now,\n  // `info`: a delivery that worked is not a warning. The signal is the ABSENCE of these rows.\n  severity: 'info',\n  event: 'alert.delivered',\n  // The failed workflow is named so a reader can see WHICH incident got out; the chat id is\n  // deliberately NOT recorded, because it identifies a real person — the same reason `export.sh`\n  // scrubs it out of the workflow JSON.\n  detail_json: JSON.stringify({\n    workflow: 'onchain-error-alert',\n    channel: 'telegram',\n    about: $('Normalize Input').first().json.workflow_name,\n  }),\n  created_at: now,\n};\n\n// Base64, bound as ONE `$1` parameter downstream: `queryReplacement` is positional CSV, so a value\n// holding a comma breaks it and an empty value silently shifts every later `$N`. Base64 has\n// neither, and it is driver-bound rather than interpolated — which matters here because\n// `workflow_name` is runtime text.\nreturn [{ json: { event_b64: Buffer.from(JSON.stringify([event])).toString('base64') } }];"
+      }
+    },
+    {
+      "id": "9f391d40-9465-4072-917b-8e266897af94",
+      "name": "Write delivery",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        912,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO onchain.diagnostics\n  (id, ts, severity, event, principal_id, session_id, provider, capability, trace_id, detail_json, created_at)\nSELECT id, ts, severity, event, NULL, NULL, NULL, NULL, NULL, detail_json, created_at\nFROM jsonb_to_recordset(convert_from(decode($1,'base64'),'utf8')::jsonb)\n  AS x(id text, ts bigint, severity text, event text, detail_json text, created_at bigint);",
+        "options": {
+          "queryReplacement": "={{ $('Record delivery').first().json.event_b64 }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "MjsP4aIFWZd25tik",
+          "name": "Onchain engine state"
+        }
+      }
     }
   ],
   "connections": {
@@ -143,6 +179,28 @@
         [
           {
             "node": "Telegram alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram alert": {
+      "main": [
+        [
+          {
+            "node": "Record delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record delivery": {
+      "main": [
+        [
+          {
+            "node": "Write delivery",
             "type": "main",
             "index": 0
           }

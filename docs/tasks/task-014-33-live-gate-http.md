@@ -236,7 +236,10 @@
 Отгружена версия, утверждающая наблюдаемое — две сессии получают разные идентификаторы и все шесть
 одновременных вызовов обслужены, — и называющая свой предел в собственном тексте. Свойство частоты
 заведено как
-[WI-63](../backlog/wi-63-the-shared-limiter-rate-is-not-measurable-from-outside-with-todays-probe-set.md).
+[WI-63](../backlog/wi-63-the-shared-limiter-rate-is-not-measurable-from-outside-with-todays-probe-set.md)
+и **закрыто 2026-08-24** отдельным кейсом `http-shared-limiter-rate.mjs` на другом провайдере:
+ось аргументов там адреса (`wallet.balances.native` на `rpc-evm`), а не курируемый список сетей,
+поэтому различных вызовов хватает на обе руки сравнения.
 
 ### Живой гейт нашёл дефект
 
