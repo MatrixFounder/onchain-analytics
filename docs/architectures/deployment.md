@@ -172,6 +172,8 @@ valid configuration (UC-1), and an empty value (`KEY=`) behaves exactly like an 
 schema declares **twelve** keys today (`packages/mcp-server/src/env.ts:46-96`, measured
 2026-08-13); T-014 adds ten.
 
+**Re-measured 2026-08-24, at T-014 acceptance: `EnvSchema` declares 23 keys.** The line above is kept as the record of the tree it described — task 014-40 added the ten T-014 keys, and R-23.6 asks for the current number BESIDE the historical one rather than for the past to be rewritten. The word "today" in the sentence above now means 2026-08-13.
+
 `BLOCKSCOUT_PRO_API_KEY` was missing from this table until 2026-08-12. The schema has declared it
 since TASK-008 (`packages/mcp-server/src/env.ts:64`), and `.env.example` documents it.
 

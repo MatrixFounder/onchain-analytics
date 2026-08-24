@@ -609,8 +609,11 @@ Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built d
 
 **The counts inside §5.1.6 describe the tree T-013 was built on, not today's** (R-23.6). They name
 13 tools and 11 capability-bearing ones. Measured 2026-08-12: `toolSpecs` holds 20 entries and
-`Object.keys(capabilityManifests)` returns 26. The historical text stands unchanged; the current
-numbers stand beside it.
+`Object.keys(capabilityManifests)` returns 26. **Re-measured 2026-08-24, at T-014 acceptance: 22 and
+27** — task 014-32b registered `onchain_pool_info` and `onchain_token_pools`, and 014-32c added the
+`token.pools` manifest row. The historical text stands unchanged, and so does the 2026-08-12 line,
+which is now itself a record of a past tree; each current number stands beside the one it replaced
+rather than overwriting it.
 
 #### 5.1.7 The pool tool (T-014, R-21.1)
 

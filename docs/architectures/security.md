@@ -771,7 +771,7 @@ returns nothing), and the engine adds no CORS middleware.
 **AC-36 is met by a gate over the schema, not by a parse failure.** `EnvSchema` is deliberately not
 `.strict()` (`packages/mcp-server/src/env.ts:30`, ``Deliberately NOT `.strict()`: the real input is `process.env` ``),
 so an unknown key is stripped rather than rejected. The gate asserts that no declared key names a
-certificate or a private key; 12 keys are declared today (measured 2026-08-12).
+certificate or a private key; 12 keys are declared today (measured 2026-08-12). **Re-measured 2026-08-24: 23** — task 014-40 added the ten T-014 keys; the 2026-08-12 figure stands as the record of that tree (R-23.6).
 
 **Perimeter refusals are observable** (R-19.4) as the `perimeter.rejected` diagnostics event
 (§4.5.8); authentication refusals as `auth.rejected` (R-19.3).
