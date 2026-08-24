@@ -138,11 +138,14 @@ export const FAILURE_CLASSES: readonly FailureClass[] = Object.freeze([
      * The wait inside the shared limiter, ended by the call deadline — thrown as
      * `DeadlineExceededError('provider "…"')` and delivered as `CapabilityDeadlineExceededError`.
      *
-     * **Its outer text is IDENTICAL to `deadline-expired`'s, and that is recorded rather than
-     * papered over.** Both arrive as `capability deadline exceeded: …`; which of the two happened
-     * is legible only from the nested attempt reason. They stay two classes because the operator's
-     * next action differs — raise the limiter's rate, or raise the deadline — and the gate does not
-     * need them disjoint: a text matching either is a failure that must carry the flag.
+     * **Its outer text is identical to `deadline-expired`'s, and since L-26 the two are still
+     * distinguishable.** Both arrive as `capability deadline exceeded: …`, so this marker stays
+     * broad on purpose — it is the safety net asserting that a refusal carries `isError`, and a
+     * narrower one would stop catching the case it exists for. What tells them apart now is the
+     * PHASE: every `DeadlineExceededError` names it, `toClientText` lifts it to the caller as
+     * `[phase: limiter]` or `[phase: wire]`, and the operator's diagnostics row carries the whole
+     * sentence. They were always two classes because the next action differs — widen the limiter's
+     * rate, or chase the vendor — and now the wire says which.
      */
     marker: /capability deadline exceeded: /i,
     producedAt: 'packages/core/src/net/rate-limit.ts',
@@ -257,9 +260,43 @@ function containsOperatorToken(text: string): boolean {
  *    Not patched in place: a surgical substitution assumes the rest of an unrecognised sentence is
  *    safe, and the whole point of this step is that it is the sentence nobody classified.
  */
+/**
+ * The closed set of `DeadlinePhase` values, restated here as STRINGS on purpose (L-26).
+ *
+ * `packages/core` owns the type; this file owns what may cross the client boundary, and those are
+ * two different questions. Importing the type would tie the boundary's allowlist to a union that a
+ * future edit could widen without anyone looking at this file — and the whole point of step 3 below
+ * is that an unclassified word never reaches a caller. A phase this list does not know is simply
+ * not rendered, which fails closed.
+ */
+const RENDERABLE_DEADLINE_PHASES: readonly string[] = [
+  'limiter',
+  'wire',
+  'shared-document',
+  'coalesced',
+  'pg-query',
+];
+
+/**
+ * Lifts the deadline PHASE out of the traversal text that step 1 cuts away (L-26, fix-path item 1).
+ *
+ * **Why it is worth rescuing exactly this token.** The head of a deadline refusal —
+ * `capability deadline exceeded: token.price on tron` — tells a caller that the call ran out of
+ * budget and nothing about where the budget went. The tail knows, and the tail cannot be shown: it
+ * names adapters. The phase is the one word in it that names none, and it is the word that decides
+ * the operator's next move — our own queue is a rate to widen or a sweep to narrow, the wire is a
+ * vendor to chase. Before this, both arrived as the same sentence, and two investigations on
+ * 2026-08-24 each began by trying to recover the difference after the fact and could not.
+ */
+function deadlinePhaseOf(reason: string): string | null {
+  const found = /deadline exceeded in ([a-z-]+)/i.exec(reason)?.[1]?.toLowerCase();
+  return found !== undefined && RENDERABLE_DEADLINE_PHASES.includes(found) ? found : null;
+}
+
 export function toClientText(reason: string, eventId: string | null): string {
   const suffix = eventId === null ? '' : ` (event ${eventId})`;
   const head = (reason.split(TRAVERSAL_MARKER)[0] ?? reason).trim();
+  const phase = deadlinePhaseOf(reason);
 
   // Against the WHOLE reason, traversal included, and that is a decision rather than an oversight.
   // A budget refusal reaches a caller nested inside `capability unavailable: … — tried: nansen
@@ -272,7 +309,9 @@ export function toClientText(reason: string, eventId: string | null): string {
     return `the provider budget for this call is exhausted${suffix}`;
   }
   if (head === '' || containsOperatorToken(head)) return `${GENERIC_REFUSAL}${suffix}`;
-  return `${head}${suffix}`;
+  // Appended AFTER the operator-token check, never woven into the head: the check must see the
+  // sentence the traversal produced, not one this function has already edited.
+  return phase === null ? `${head}${suffix}` : `${head} [phase: ${phase}]${suffix}`;
 }
 
 export class RefusalRenderedAsSuccessError extends Error {

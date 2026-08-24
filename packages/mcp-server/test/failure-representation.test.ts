@@ -15,6 +15,7 @@ import {
   TOOL_RESULT_KEYS,
   assertRefusalIsFlagged,
   isToolResultEnvelope,
+  toClientText,
   type ProtocolFailureClass,
 } from '../src/transport/failure-classes.js';
 import { CapabilityRegistry, routes } from '@onchain-intel/core';
@@ -252,7 +253,7 @@ async function callThrough(outcome: ToolOutcome<{ note: string }>): Promise<Call
  */
 const REAL_TEXTS: Readonly<Record<string, string>> = {
   'limiter-saturated':
-    'capability deadline exceeded: entity.labels on ethereum — tried: nansen (deadline exceeded (deadlineAtMs=1770000000000) at provider "nansen")',
+    'capability deadline exceeded: entity.labels on ethereum — tried: nansen (deadline exceeded in limiter (deadlineAtMs=1770000000000) at provider "nansen")',
   'budget-exhausted':
     'capability unavailable: entity.labels on ethereum — tried: nansen (nansen budget gate refused: budget exceeded for provider=nansen: need 10, used 25000, ceiling 25000)',
   'capability-unavailable':
@@ -298,7 +299,9 @@ describe('TC-UNIT-01 / AC-33: no tool-execution failure is rendered with isError
       'limiter-saturated': 'provider "',
       'budget-exhausted': 'budget exceeded for provider=',
       'capability-unavailable': 'capability unavailable: ',
-      'deadline-expired': 'deadline exceeded (deadlineAtMs=',
+      // L-26: the producer names the PHASE, so the pin follows it. Kept as a substring that stops
+      // BEFORE the interpolation, which is what makes it a pin on the sentence rather than on a value.
+      'deadline-expired': 'deadline exceeded in ${phase} (deadlineAtMs=',
     };
     for (const declared of TOOL_FAILURE_CLASSES) {
       const source = readFileSync(path.join(repoRoot, declared.producedAt), 'utf8');
@@ -375,5 +378,50 @@ describe('TC-UNIT-03: every class carries a declared level', () => {
       'unknown-session',
       'method-not-allowed',
     ]);
+  });
+});
+
+/**
+ * L-26 fix-path item 1 — the phase reaches the CALLER, and nothing else does.
+ *
+ * The head of a deadline refusal says the call ran out of budget; the tail says where it went and
+ * cannot be shown, because it names adapters. The phase is the one token in the tail that names
+ * none — so it is lifted, and only from a closed set.
+ */
+describe('TC-UNIT-21: a deadline refusal tells the caller which phase spent the budget', () => {
+  const LIMITER =
+    'capability deadline exceeded: token.price on tron — tried: coingecko (deadline exceeded in limiter (deadlineAtMs=1770000000000) at provider "coingecko")';
+  const WIRE =
+    'capability deadline exceeded: dex.volume.history on bsc — tried: defillama (deadline exceeded in wire (deadlineAtMs=1770000000000) at https://api.llama.fi/overview)';
+
+  it('renders the phase, and still cuts the traversal that names the adapter', () => {
+    const text = toClientText(LIMITER, '01TESTEVENT');
+    expect(text).toBe(
+      'capability deadline exceeded: token.price on tron [phase: limiter] (event 01TESTEVENT)',
+    );
+    expect(text).not.toContain('coingecko');
+    expect(text).not.toContain('tried');
+  });
+
+  it('distinguishes the two failures that used to read identically', () => {
+    // This pair is the whole point of the record: same head, same class of refusal, opposite next
+    // action — widen our own rate, or chase the vendor.
+    expect(toClientText(LIMITER, null)).toContain('[phase: limiter]');
+    expect(toClientText(WIRE, null)).toContain('[phase: wire]');
+  });
+
+  it('renders NO phase for a word outside the closed set — it fails closed', () => {
+    const forged =
+      'capability deadline exceeded: token.price on tron — tried: x (deadline exceeded in nansen-internal (deadlineAtMs=1) at y)';
+    const text = toClientText(forged, null);
+    expect(text).toBe('capability deadline exceeded: token.price on tron');
+    expect(text).not.toContain('phase');
+  });
+
+  it('leaves a refusal that is not a deadline exactly as it was', () => {
+    const unavailable = 'capability unavailable: entity.labels on bitcoin — tried: no route';
+    expect(toClientText(unavailable, null)).toBe(
+      'capability unavailable: entity.labels on bitcoin',
+    );
   });
 });

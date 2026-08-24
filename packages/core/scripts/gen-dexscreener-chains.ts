@@ -100,10 +100,18 @@ interface CandidateRecord {
   readonly candidate: string;
   /** HTTP status of the routability probe, or `null` when the request never completed. */
   readonly status: number | null;
+  /**
+   * Set only on a record produced by `--amend`, and it is the whole reason amending is honest:
+   * the file's top-level `recordedAt` describes the full run, and a record probed weeks later
+   * under one shared date would be a claim nobody measured (WI-61).
+   */
+  readonly recordedAt?: string;
 }
 
 export interface ProbeEvidence {
   readonly recordedAt: string;
+  /** The evidence file this one amends, when it was produced by `--amend` — the provenance chain. */
+  readonly amendedFrom?: string;
   readonly probeAddress: string;
   /** The search queries whose responses contributed echoes — the measurement is reproducible only
    * if the queries are part of the record. */
@@ -212,6 +220,102 @@ async function recordEvidence(): Promise<string> {
     echoQueries,
     observedChainIds: [...observed].sort(),
     candidates: candidates.map((c) => ({ ...c, status: status.get(c.candidate) ?? null })),
+  };
+  const path = `${RAW_DIR}/dexscreener-chain-probe-${recordedAt}.json`;
+  writeFileSync(path, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
+  process.stdout.write(`evidence -> ${path}\n`);
+  return path;
+}
+
+/**
+ * Mode 1b — amend: probe ONE chain's candidates and merge them into existing evidence (WI-61).
+ *
+ * **Why a full re-record is the wrong instrument for onboarding one row.** Two reasons, and the
+ * second is the one that matters.
+ *
+ * The cheap reason: a full run probes every candidate of every chain, and rewrites 458 rows of
+ * evidence to add one. The diff is unreviewable, which defeats the purpose of committing evidence.
+ *
+ * The real reason: a witness is only as good as the day it was taken. Re-recording while the vendor
+ * is degraded turns an outage into a permanent `excluded` — the generator would see 400s and 500s
+ * and conclude the vendor does not route chains it routes perfectly well next week. On the day this
+ * was written, DexScreener was measurably broken on three capabilities
+ * ([L-23](docs/issues/l-23-...)), so a full re-record would have written that outage into the
+ * registry. This is the same mistake WI-65 named on the gate and L-25 paid for: a measurement taken
+ * under bad conditions is worse than no measurement, because it looks like one.
+ *
+ * So: probe exactly the named chains, keep every other record byte-identical, and stamp the new
+ * records with their OWN date. `observedChainIds` and `echoQueries` are UNIONS — an echo witnessed
+ * in either run is still a witness, and dropping the old ones would silently downgrade rows the
+ * amendment never looked at.
+ */
+async function amendEvidence(basePath: string, caip2s: readonly string[]): Promise<string> {
+  const base = JSON.parse(readFileSync(basePath, 'utf8')) as ProbeEvidence;
+  const registry = JSON.parse(readFileSync(REGISTRY, 'utf8')) as { chains: RegistryRow[] };
+  const wanted = new Set(caip2s);
+  const rows = registry.chains.filter((row) => wanted.has(row.caip2));
+  const missing = [...wanted].filter((c) => !rows.some((row) => row.caip2 === c));
+  if (missing.length > 0) {
+    throw new Error(
+      `gen-dexscreener-chains --amend: no registry row for ${missing.join(', ')} — add the row ` +
+        'first (CURATED_ROWS in sync-chain-registry.ts), then amend the evidence for it',
+    );
+  }
+
+  const candidates = candidatesOf(rows);
+  const recordedAt = new Date().toISOString().slice(0, 10);
+  process.stdout.write(
+    `amending ${basePath}\n  ${String(candidates.length)} candidates for ${[...wanted].join(', ')}\n`,
+  );
+
+  const observed = new Set(base.observedChainIds);
+  const echoQueries = new Set(base.echoQueries);
+  const amended: CandidateRecord[] = [];
+  for (const c of candidates) {
+    const url = `https://api.dexscreener.com/latest/dex/pairs/${encodeURIComponent(c.candidate)}/${PROBE_ADDRESS}`;
+    let status: number | null = null;
+    try {
+      status = (await fetch(url)).status;
+    } catch {
+      // Left null — "the request never completed" is a different fact from "the vendor refused",
+      // and `decideRow` already reads them differently.
+    }
+    amended.push({ caip2: c.caip2, slug: c.slug, candidate: c.candidate, status, recordedAt });
+    process.stdout.write(`    ${c.candidate} ${String(status)}\n`);
+    await sleep(PACE_MS);
+
+    // The echo query, same as the full run: routability says the path is accepted, the echo says
+    // the vendor NAMES the chain. Only the second is a witness — a 200 with an empty body proves
+    // the segment exists, not that anything lives on it.
+    try {
+      const response = await fetch(
+        `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(c.candidate)}`,
+      );
+      echoQueries.add(c.candidate);
+      if (response.status === 200) {
+        const body = (await response.json()) as { pairs?: unknown };
+        if (Array.isArray(body.pairs)) {
+          for (const pair of body.pairs) {
+            const id = (pair as { chainId?: unknown }).chainId;
+            if (typeof id === 'string') observed.add(id);
+          }
+        }
+      }
+    } catch {
+      // Same reasoning as the full run: a failed echo query costs a confirmation, never a wrong one.
+    }
+    await sleep(PACE_MS);
+  }
+
+  const evidence: ProbeEvidence = {
+    recordedAt,
+    amendedFrom: basePath.split('/').pop() ?? basePath,
+    probeAddress: PROBE_ADDRESS,
+    echoQueries: [...echoQueries].sort(),
+    observedChainIds: [...observed].sort(),
+    candidates: [...base.candidates.filter((r) => !wanted.has(r.caip2)), ...amended].sort((a, b) =>
+      a.caip2 === b.caip2 ? a.candidate.localeCompare(b.candidate) : a.caip2 < b.caip2 ? -1 : 1,
+    ),
   };
   const path = `${RAW_DIR}/dexscreener-chain-probe-${recordedAt}.json`;
   writeFileSync(path, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
@@ -352,15 +456,25 @@ ${rows}
 const invokedDirectly = process.argv[1]?.endsWith('gen-dexscreener-chains.ts') ?? false;
 if (invokedDirectly) {
   const recordMode = process.argv.includes('--record');
+  const amendAt = process.argv.indexOf('--amend');
   const run = async (): Promise<void> => {
+    const committed = process.argv.find((arg) => arg.endsWith('.json'));
     const evidencePath = recordMode
       ? await recordEvidence()
-      : (process.argv.find((arg) => arg.endsWith('.json')) ??
-        (() => {
-          throw new Error(
-            'gen-dexscreener-chains: pass the committed evidence path, or --record to probe',
-          );
-        })());
+      : amendAt !== -1
+        ? await amendEvidence(
+            committed ??
+              (() => {
+                throw new Error('gen-dexscreener-chains --amend: pass the committed evidence path');
+              })(),
+            (process.argv[amendAt + 1] ?? '').split(',').filter(Boolean),
+          )
+        : (committed ??
+          (() => {
+            throw new Error(
+              'gen-dexscreener-chains: pass the committed evidence path, or --record to probe',
+            );
+          })());
     const { coverage, curation } = generateDexscreenerChains(evidencePath);
     const counts = { verified: 0, excluded: 0, unverified: 0 };
     for (const entry of Object.values(coverage)) counts[entry.status] += 1;

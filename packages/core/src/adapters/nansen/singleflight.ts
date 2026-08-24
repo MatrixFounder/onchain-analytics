@@ -146,11 +146,12 @@ function followUntilDeadline<T>(leader: Promise<T>, deadlineAtMs: number): Promi
   // Already spent on arrival — no timer, no waiting, same class. The duplicate of the check below,
   // for the same reason `safeFetch` keeps its own entry check: a timer can only fire after the fact.
   if (remainingMs <= 0) {
-    return Promise.reject(new DeadlineExceededError(FOLLOWER_CONTEXT, deadlineAtMs));
+    return Promise.reject(new DeadlineExceededError(FOLLOWER_CONTEXT, deadlineAtMs, 'coalesced'));
   }
   return new Promise<T>((resolve, reject) => {
     const signal = AbortSignal.timeout(remainingMs);
-    const onAbort = (): void => reject(new DeadlineExceededError(FOLLOWER_CONTEXT, deadlineAtMs));
+    const onAbort = (): void =>
+      reject(new DeadlineExceededError(FOLLOWER_CONTEXT, deadlineAtMs, 'coalesced'));
     signal.addEventListener('abort', onAbort, { once: true });
     leader.then(
       (value) => {

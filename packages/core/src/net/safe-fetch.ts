@@ -252,15 +252,46 @@ function redactContext(text: string): string {
  *
  * `at` is the REDACTED context (see `redactContext`): the origin+path of the hop on the transport
  * path, `provider "<id>"` on the limiter path.
+ *
+ * **`phase` says WHERE the budget went, and it exists because the answer was unrecoverable** (L-26,
+ * fix-path item 1). Every producer of this class ends the same way for the caller — the capability
+ * refuses — but the operator's next move is completely different: time spent queueing in our own
+ * limiter is a rate to widen or a sweep to narrow, and time spent on the wire is a vendor to chase
+ * or a deadline to re-derive. Until this field existed both arrived as the identical sentence
+ * `capability deadline exceeded: …`, and `transport/failure-classes.ts` had to record in prose that
+ * its two classes were indistinguishable on the wire. Two investigations of 2026-08-24 (L-25, and
+ * this record) each began by trying to recover that distinction after the fact and could not.
+ *
+ * It is a CLOSED set rather than free text, so a reader can group by it and a test can pin every
+ * producer to exactly one value.
  */
+export type DeadlinePhase =
+  /** Waiting for a token in the shared provider limiter — our own queue. */
+  | 'limiter'
+  /** Waiting on the vendor: connection, headers or body of a hop. */
+  | 'wire'
+  /** Waiting on a document another caller is already downloading (defillama's shared caches). */
+  | 'shared-document'
+  /** Waiting on a query already in flight for the same key (nansen singleflight). */
+  | 'coalesced'
+  /** Waiting on the Postgres read path. */
+  | 'pg-query';
+
 export class DeadlineExceededError extends Error {
   public readonly at: string;
   constructor(
     at: string,
     public readonly deadlineAtMs: number,
+    /**
+     * Defaulted to `wire` ONLY so that no existing call site becomes a compile error while the
+     * producers are being labelled; every producer in this repository passes it explicitly, and a
+     * test asserts that. A new producer that forgets it is the one case this default covers, and it
+     * guesses the commonest answer rather than inventing a sixth value.
+     */
+    public readonly phase: DeadlinePhase = 'wire',
   ) {
     const safe = redactContext(at);
-    super(`deadline exceeded (deadlineAtMs=${deadlineAtMs}) at ${safe}`);
+    super(`deadline exceeded in ${phase} (deadlineAtMs=${deadlineAtMs}) at ${safe}`);
     this.at = safe;
     this.name = 'DeadlineExceededError';
   }
@@ -477,7 +508,7 @@ function composeHopAbort(inputs: {
     signal: sources.length === 1 ? hopSignal : AbortSignal.any(sources),
     reason: () => {
       if (firedBy === 'deadline' && deadline !== undefined) {
-        return new DeadlineExceededError(url, deadline.atMs);
+        return new DeadlineExceededError(url, deadline.atMs, 'wire');
       }
       if (firedBy === 'caller' && callerSignal !== undefined) {
         // NOT wrapped in anything of ours: the caller asked for this and already knows why.
@@ -743,7 +774,7 @@ export async function safeFetch(
     // only abort a call that has already been issued, and issuing it is exactly what a spent
     // deadline must prevent (R-142c). Costs nothing on the hop that is still in budget.
     if (deadlineAtMs !== undefined && deadlineAtMs - Date.now() <= 0) {
-      throw new DeadlineExceededError(currentUrl, deadlineAtMs);
+      throw new DeadlineExceededError(currentUrl, deadlineAtMs, 'wire');
     }
 
     // `effectiveHopMs = timeoutMs` — UNCLAMPED BY THE DEADLINE, and that is a decision, not an

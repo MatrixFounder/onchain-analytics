@@ -276,3 +276,90 @@ describe('sync-chain-registry — join correctness (regressions)', () => {
     ).not.toThrow();
   });
 });
+
+/**
+ * WI-61 — a chain no catalogue lists still gets a row, and keeps it.
+ *
+ * **What makes this worth its own suite.** The failure it guards is silent and delayed: a curated
+ * row that is not registered before the catalogue loop looks perfectly correct on the run that adds
+ * it, and is flagged `deprecated` on the NEXT one — at which point the coverage matrix refuses the
+ * chain before any adapter is asked. One sync proves nothing here, so every case below runs two.
+ */
+describe('sync-chain-registry — curated rows (WI-61)', () => {
+  const polkadot = (): Record<string, unknown> | undefined =>
+    snapshot().chains.find((c) => c['caip2'] === 'other:polkadot');
+
+  it('emits a row for a chain absent from every catalogue', async () => {
+    await run();
+    const row = polkadot();
+    expect(row).toBeDefined();
+    expect(row?.['slug']).toBe('polkadot');
+    expect(row?.['nativeSymbol']).toBe('DOT');
+    expect(row?.['deprecated']).toBe(false);
+  });
+
+  it('leaves vendors.defillama null — the catalogue is that column’s only source', async () => {
+    await run();
+    // The main loop assigns `defillama: name` unconditionally, so a non-null value here would mean
+    // the curated row went through it — i.e. the generator invented a vendor identifier (R-33).
+    expect((polkadot()?.['vendors'] as Record<string, unknown>)['defillama']).toBeNull();
+  });
+
+  it('survives a SECOND sync without being deprecated — the whole point of the mechanism', async () => {
+    await run();
+    await run([], 5_000);
+    expect(polkadot()?.['deprecated']).toBe(false);
+    // And it is not re-reported as new work every run: a row that shows up under Added or Changed
+    // forever is a row whose diff nobody will keep reading.
+    const text = readFileSync(report, 'utf8');
+    expect(text).toContain('## Added (0)');
+    expect(text).toContain('## Changed (0)');
+  });
+
+  it('takes its aliases through pass 2 like any other row', async () => {
+    await run();
+    expect(polkadot()?.['aliases']).toStrictEqual(['dot']);
+  });
+
+  it('is resolvable by slug and by alias once loaded', async () => {
+    // The registry loader is the consumer that matters: a row the generator wrote but the loader
+    // rejects would pass every assertion above and still be useless.
+    await run();
+    const registry = loadChainRegistry({ data: JSON.parse(readFileSync(out, 'utf8')) as unknown });
+    expect(registry.tryResolve('polkadot')?.caip2).toBe('other:polkadot');
+    expect(registry.tryResolve('dot')?.caip2).toBe('other:polkadot');
+  });
+
+  it('reports — and does NOT silently yield — when the catalogue starts carrying the chain', async () => {
+    const grown = join(work, 'fixtures-grown');
+    mkdirSync(grown, { recursive: true });
+    cpSync(FIXTURES, grown, { recursive: true });
+    const dl = JSON.parse(readFileSync(join(grown, 'defillama-chains.json'), 'utf8')) as Array<
+      Record<string, unknown>
+    >;
+    writeFileSync(
+      join(grown, 'defillama-chains.json'),
+      JSON.stringify([...dl, { name: 'Polkadot', tokenSymbol: 'DOT', tvl: 1234 }]),
+      'utf8',
+    );
+    await syncChainRegistry([
+      '--offline',
+      '--fixtures',
+      grown,
+      '--out',
+      out,
+      '--report',
+      report,
+      '--now',
+      '9000',
+    ]);
+
+    // Ownership does NOT transfer on its own: that would flip `vendors.defillama` from null to a
+    // name and change which capabilities the chain is served on — a coverage change nobody approved.
+    expect((polkadot()?.['vendors'] as Record<string, unknown>)['defillama']).toBeNull();
+    expect(polkadot()?.['tvlUsdAtSync']).toBeNull();
+    const text = readFileSync(report, 'utf8');
+    expect(text).toContain('Curated rows the catalogue now carries');
+    expect(text).toContain('other:polkadot');
+  });
+});

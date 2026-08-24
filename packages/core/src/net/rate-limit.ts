@@ -640,7 +640,7 @@ export function createThrottle(deps: ThrottleDeps = {}): Throttle {
       if (remainingMs <= 0) {
         // Genuine expiry — true for EVERY adapter on the route, so this ends the traversal.
         await release(served, key, weight, decidedAtMs);
-        throw new DeadlineExceededError(`provider "${providerId}"`, deadlineAtMs);
+        throw new DeadlineExceededError(`provider "${providerId}"`, deadlineAtMs, 'limiter');
       }
       // A different fact: time is left, but not through THIS provider's bucket. Ask the next one.
       //

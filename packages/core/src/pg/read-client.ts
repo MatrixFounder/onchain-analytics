@@ -357,7 +357,7 @@ export function createReadClient(deps: ReadClientDeps = {}): ReadClient {
       // also be a connection opened to be abandoned.
       const { deadlineAtMs } = options;
       if (deadlineAtMs !== undefined && deadlineAtMs - Date.now() <= 0) {
-        throw new DeadlineExceededError('pg-history query', deadlineAtMs);
+        throw new DeadlineExceededError('pg-history query', deadlineAtMs, 'pg-query');
       }
       if (!pool) {
         // Lazy: constructed HERE, on the first query() call — never at module load or at
@@ -412,7 +412,7 @@ export function createReadClient(deps: ReadClientDeps = {}): ReadClient {
       try {
         const result = await withQueryBound(pool.query(sql, params), boundMs, () =>
           deadlineIsBinding && deadlineAtMs !== undefined
-            ? new DeadlineExceededError('pg-history query', deadlineAtMs)
+            ? new DeadlineExceededError('pg-history query', deadlineAtMs, 'pg-query')
             : new PgQueryTimeoutError(boundMs),
         );
         return result.rows as T[];

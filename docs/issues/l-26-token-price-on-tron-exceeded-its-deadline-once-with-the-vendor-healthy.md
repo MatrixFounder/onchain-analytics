@@ -40,17 +40,37 @@ into `safeFetch`), so even a queue overrun here would be the deadline being HONO
 unproven. CoinGecko's free tier throttles by slowing as well as by 429, and a lone response past
 15 s would produce exactly this row and leave no other trace.
 
-**What would actually settle it, and this is the L-25 lesson applied.** The report says the deadline
-was exceeded; it does not say WHERE the time went — waiting in our limiter, or on the wire. Those are
-different defects with different fixes, and today they are indistinguishable after the fact. The
-diagnostic event the call emitted (`01M0TGTJ5JAGM6AC1Y31XE3B6P`) is the natural place to carry that
-split. Until it does, an occurrence has to be caught while it is happening, which L-25 established
-the hard way: an experiment about a transient must run DURING the transient.
+**What would settle it — and half of that is now built.** The report used to say only that the
+deadline was exceeded, never WHERE the time went: waiting in our limiter, or on the wire. Those are
+different defects with different fixes, and on 2026-08-24 they were indistinguishable after the
+fact — which is why fix-path item 1 was done the same day and why this record stays open rather than
+being closed by it. The NEXT occurrence will name its phase in the refusal itself.
+
+What that does not do is make the occurrence reproducible on demand. L-25 established the rest the
+hard way: an experiment about a transient must run DURING the transient, and a probe taken after the
+window closed answers a question nobody asked.
 
 **Fix path.**
 
-1. **Split the deadline diagnostic by phase** — limiter wait versus wire time — so the next
-   occurrence answers its own question instead of starting an investigation.
+1. ~~**Split the deadline diagnostic by phase** — limiter wait versus wire time — so the next
+   occurrence answers its own question instead of starting an investigation.~~ **DONE 2026-08-24.**
+   `DeadlineExceededError` now carries an explicit `phase` from a closed set — `limiter`, `wire`,
+   `shared-document`, `coalesced`, `pg-query` — and names it in its message. All nine producers in
+   `packages/core` are labelled, and `TC-UNIT-20` asserts that by reading the source, because the
+   failure it guards is a NEW call site added without one, which no behavioural coverage of the old
+   ones would catch (it also asserts the scan found producers at all, so a drifted pattern cannot
+   report a clean sweep).
+
+   **The phase reaches the CALLER, and nothing else does.** `toClientText` cuts the traversal —
+   that tail names adapters — but lifts the phase out of it, so a refusal now reads
+   `capability deadline exceeded: token.price on tron [phase: limiter] (event …)`. It is rendered
+   only from the closed set: a word outside it produces no phase at all rather than a passthrough,
+   which is the same fail-closed rule step 3 of that function already applies to everything else.
+
+   The two failure classes in `transport/failure-classes.ts` kept their broad marker deliberately —
+   it is the safety net asserting a refusal carries `isError`, and narrowing it would stop it
+   catching what it exists for. What changed is that the prose recording "these two are
+   indistinguishable on the wire" is no longer true, and was rewritten rather than left standing.
 2. **Do NOT raise `deadlineMs`.** Measured: this route answers in 0.46–0.91 s. A capability that
    needs more than 15 s for a 0.5 s document does not have a deadline problem.
 3. **Do NOT loosen the bucket.** `{capacity: 10, refillPerSec: 0.5}` is set to the keyless tier this

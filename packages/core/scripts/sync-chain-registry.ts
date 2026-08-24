@@ -92,6 +92,63 @@ const CURATED_ALIASES: Readonly<Record<string, readonly string[]>> = {
   'eip155:1234': ['stepnetwork'],
 };
 
+/**
+ * Chains a VENDOR serves that no upstream catalogue lists (WI-61).
+ *
+ * **Why a ROW and not another curated column.** `CURATED_NATIVE_DECIMALS` and `CURATED_ALIASES`
+ * above supply VALUES to a row the DeFiLlama catalogue already produced. A chain absent from that
+ * catalogue has no row to supply values to, and a hand-edit to `registry.data.json` does not
+ * survive: the generator rebuilds every row, so the next sync sends the edit straight into the
+ * deprecation loop and the coverage matrix then refuses the chain before any adapter is asked. The
+ * row has to be born here, where rows are born.
+ *
+ * **`vendors.defillama` is `null` and must stay null.** The catalogue is where that column comes
+ * from; a chain the catalogue does not carry has no name in it, and writing one would be the
+ * generator inventing a vendor identifier — the one thing this file has never been allowed to do
+ * (R-33, the rule the DexScreener witness exists to satisfy). The main loop assigns
+ * `defillama: name` unconditionally, which is exactly why a curated row cannot go through it.
+ *
+ * **What a curated row still gets like every other row:** its slug and aliases are reserved before
+ * the catalogue loop, so a catalogue chain cannot take them; the alias candidates go through pass 2
+ * and a collision is dropped and reported rather than silently claimed; the curated columns
+ * (`rpcHosts`, `vendors.nansen`, `nativeDecimals`) are carried forward from the previous snapshot;
+ * `vendors.dexscreener` comes from the same per-chain witness as everyone else. It is a normal row
+ * with one column the catalogue cannot fill.
+ *
+ * **When the catalogue catches up**, the row is NOT silently replaced — see `curatedInCatalog` in
+ * the report. Handing ownership back is a human's edit, because it changes `vendors.defillama` from
+ * `null` to a name and that changes which capabilities the chain is served on.
+ */
+interface CuratedRow {
+  caip2: string;
+  slug: string;
+  name: string;
+  family: SnapshotChain['family'];
+  nativeSymbol: string | null;
+  nativeDecimals: number | null;
+  /** Alias candidates, treated exactly like a catalogue row's: proposed here, assigned in pass 2. */
+  aliases: readonly string[];
+  /** Why this row exists at all — the evidence, not the intention. */
+  why: string;
+}
+
+const CURATED_ROWS: readonly CuratedRow[] = [
+  {
+    caip2: 'other:polkadot',
+    slug: 'polkadot',
+    name: 'Polkadot',
+    family: 'other',
+    nativeSymbol: 'DOT',
+    // Polkadot's native unit is the Planck: 1 DOT = 10^10 Planck. Not a guess and not a default —
+    // the same class of fact as Solana's 9 in CURATED_NATIVE_DECIMALS, which moved out of a
+    // hardcode in `rpc-solana` for this reason. No adapter reads it yet; it is here so that the day
+    // one does, the column is not `null` and the balance is not labelled by a literal.
+    nativeDecimals: 10,
+    aliases: ['dot'],
+    why: 'DexScreener answers on the `polkadot` segment while the DeFiLlama catalogue carries no such chain (owner decision 2026-08-19, WI-61)',
+  },
+];
+
 interface Args {
   offline: boolean;
   fixtures: string;
@@ -173,6 +230,8 @@ interface Report {
   added: string[];
   deprecated: string[];
   changed: string[];
+  /** WI-61: a curated row whose chain has since appeared in the catalogue — a human decision. */
+  curatedInCatalog: string[];
   ambiguousJoins: string[];
   fuzzyJoined: string[];
   slugConflicts: string[];
@@ -350,6 +409,60 @@ function joinCatalogs(
   const out: SnapshotChain[] = [];
   const seenCaip2 = new Set<string>();
 
+  // **Curated rows are emitted FIRST, and the order is the mechanism** (WI-61). Three things have to
+  // be true before the catalogue loop runs, and each of them is why this cannot be a later step:
+  // the row's `caip2` must be in `seenCaip2` so the deprecation pass below leaves it alone; its slug
+  // must hold its place in `takenSlugs` so a catalogue chain cannot take the name; and its alias
+  // candidates must be registered so pass 2 assigns them the same way it assigns everyone else's.
+  //
+  // A curated row does NOT get to override a chain the previous snapshot already carries under a
+  // different caip2 — that would be one table quietly rewriting another. It only fills a hole.
+  for (const curated of CURATED_ROWS) {
+    const slugOwner = takenSlugs.get(curated.slug);
+    if (slugOwner !== undefined && slugOwner !== curated.caip2) {
+      // A curated row losing its slug is a CONFLICT to resolve by hand, not a suffix to invent: the
+      // operator picked this spelling on purpose, and renaming it silently would hand the chain a
+      // name nobody asked for. Reported and skipped, exactly as an unresolvable catalogue collision
+      // is — with the difference stated, because a human chose this one.
+      report.slugConflicts.push(
+        `curated ${curated.caip2}: slug '${curated.slug}' is taken by ${slugOwner} — row skipped, ` +
+          'resolve by hand (CURATED_ROWS)',
+      );
+      continue;
+    }
+    const prev = prevByCaip2.get(curated.caip2);
+    out.push({
+      caip2: curated.caip2,
+      slug: curated.slug,
+      name: curated.name,
+      family: curated.family,
+      aliases: [],
+      nativeSymbol: curated.nativeSymbol,
+      // Carried forward like every other row's: the generator never erases a value it did not
+      // produce, and a curated row is the one place where ALL of these can only come from curation.
+      nativeDecimals: curated.nativeDecimals ?? prev?.nativeDecimals ?? null,
+      vendors: {
+        // NEVER a name. See CURATED_ROWS: the catalogue is this column's only source, and a chain
+        // the catalogue does not carry has no name in it.
+        defillama: null,
+        // No catalogue row means no CoinGecko join either — the join ladder starts from a DeFiLlama
+        // entry. A previously curated value still survives, for the same reason as the rest.
+        coingecko: prev?.vendors.coingecko ?? null,
+        dexscreener:
+          DEXSCREENER_CHAIN_COVERAGE[curated.caip2]?.chainId ?? prev?.vendors.dexscreener ?? null,
+        nansen: prev?.vendors.nansen ?? null,
+      },
+      rpcHosts: prev?.rpcHosts ?? null,
+      // `null`, not 0: the catalogue is where TVL comes from, and 0 would be a claim that this chain
+      // holds nothing rather than that nobody measured it.
+      tvlUsdAtSync: null,
+      deprecated: false,
+    });
+    takenSlugs.set(curated.slug, curated.caip2);
+    seenCaip2.add(curated.caip2);
+    if (curated.aliases.length > 0) aliasCandidates.set(curated.caip2, [...curated.aliases]);
+  }
+
   for (const dl of catalogs.defillama) {
     const name = str(dl.name);
     if (!name) continue;
@@ -407,6 +520,19 @@ function joinCatalogs(
     // "OP Mainnet"/"Optimism"). Dropping the later row outright would also drop the name a user
     // is most likely to type, so the duplicate is MERGED as an alias of the row that won.
     if (seenCaip2.has(caip2)) {
+      // WI-61: the catalogue has caught up with a curated row. Reported in its own section rather
+      // than merged as a duplicate name, because the two are different facts and want different
+      // actions: a duplicate is the catalogue saying one chain twice, this is the catalogue
+      // starting to carry a chain we had to hand-write. Ownership does NOT transfer here — that
+      // would flip `vendors.defillama` from null to a name, which changes the capabilities this
+      // chain is served on, and a coverage change nobody approved is not a sync detail.
+      if (CURATED_ROWS.some((c) => c.caip2 === caip2)) {
+        report.curatedInCatalog.push(
+          `${caip2}: the DeFiLlama catalogue now carries '${name}' — the curated row still wins; ` +
+            'delete it from CURATED_ROWS to hand the chain back to the generator',
+        );
+        continue;
+      }
       const winner = out.find((row) => row.caip2 === caip2);
       const candidate = slugify(name);
       if (winner && candidate.length > 0) {
@@ -606,6 +732,10 @@ function renderReport(report: Report): string {
     section('Deprecated (vanished from catalogs, row kept)', report.deprecated),
     section('Changed', report.changed),
     section(
+      'Curated rows the catalogue now carries — hand ownership back BY HAND (WI-61)',
+      report.curatedInCatalog,
+    ),
+    section(
       'Ambiguous / rejected vendor joins — vendors.coingecko left null',
       report.ambiguousJoins,
     ),
@@ -634,6 +764,7 @@ export async function syncChainRegistry(argv: readonly string[] = []): Promise<v
     added: [],
     deprecated: [],
     changed: [],
+    curatedInCatalog: [],
     ambiguousJoins: [],
     fuzzyJoined: [],
     slugConflicts: [],

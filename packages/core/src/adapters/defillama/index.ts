@@ -1677,10 +1677,13 @@ export function createDefillamaAdapter(deps: DefillamaAdapterDeps = {}): Provide
     const remainingMs = deadlineAtMs - Date.now();
     // Already spent: the same entry check `safeFetch` performs, for the same reason — a bound can
     // only cut short a wait that was begun, and not beginning it is what a spent deadline means.
-    if (remainingMs <= 0) throw new DeadlineExceededError(what, deadlineAtMs);
+    if (remainingMs <= 0) throw new DeadlineExceededError(what, deadlineAtMs, 'shared-document');
     let timer: ReturnType<typeof setTimeout> | undefined;
     const bound = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new DeadlineExceededError(what, deadlineAtMs)), remainingMs);
+      timer = setTimeout(
+        () => reject(new DeadlineExceededError(what, deadlineAtMs, 'shared-document')),
+        remainingMs,
+      );
       timer.unref?.();
     });
     // `Promise.race` attaches handlers to `document`, so a shared download that fails AFTER this
