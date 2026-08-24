@@ -39,16 +39,35 @@ at 926 KB when the 60 s ceiling cut it. That is a real outage on that route. **T
 record is that it does not explain the other two**, and until now they were being written up as
 though it did.
 
-**The hypothesis this record exists to test, stated as a hypothesis.** All DeFiLlama capabilities
-share ONE token bucket (`{capacity: 10, refillPerSec: 5}`, per PROVIDER not per capability), and
-`providers.config.ts` already says in writing what that can do: *"a wide sweep can now park a backlog
-deep enough to make a concurrent `protocol.tvl` call wait tens of seconds or be refused."* A matrix
-walk issues the whole free defillama surface across twelve chains, and it does so while
-`protocol.tvl.history` calls are hanging for 40–60 s each. That is the shape to check first.
+**The mechanism, read out of the code rather than guessed — and it is a deliberate design decision
+meeting a case it was not weighed against.**
 
-It is NOT yet established, and this record must not be cited as though it were. What is established
-is the three measurements above: the rows fail in the sweep and pass outside it, on a link measured
-healthy, against a vendor measured willing.
+`awaitSharedDocument` (`defillama/index.ts`) bounds the caller's WAIT, not the download. That is
+written down and argued for: this adapter serves `chain.tvl`, `chain.tvl.history` and
+`dex.volume.history` out of promises SHARED between concurrent callers, so handing one caller's
+`deadlineAtMs` to the `safeFetch` inside that shared body would let its expiry abort a transfer a
+second caller — possibly with a much larger budget — is also awaiting. WI-37 closed on exactly that
+reasoning, and it is right on its own terms.
+
+Its consequence is what nobody weighed: **a caller that gives up does not stop the work.** The 15 s
+race rejects the caller; the download keeps running so the next caller finds it complete. In a
+one-call-at-a-time world that is pure gain. In a sweep it is not — abandoned transfers ACCUMULATE.
+`protocol.tvl.history` documents run to tens of megabytes and were measured taking 40–60 s each, so
+by mid-sweep several of them are still streaming, holding bandwidth and limiter tokens, while fresh
+`dex.volume.history` calls start their own 15 s clock behind them. The rows that lose that race are
+ours, not the vendor's.
+
+Two facts fit only this shape and not "the vendor is down": the failures land on the three PER-CALL
+routes and never on the shared-document ones, and they rotate — which call lands behind the pile-up
+varies run to run. So does the link probe reading healthy throughout (WI-65): a saturated pipe still
+completes TCP handshakes in milliseconds, so connect time cannot see it, which is a limit of that
+instrument worth knowing.
+
+**Still a hypothesis about CAUSE, and this record must not be cited as though it were settled.** The
+code path is real and the arithmetic is plausible; what has not been done is the experiment in item 1
+below, which is what separates it from the simpler story that DeFiLlama's origin merely rotates fast.
+What IS established is the three measurements above: the rows fail in the sweep and pass outside it,
+on a link measured healthy, against a vendor measured willing.
 
 **Why SEV-2 rather than a work item.** Two reasons, and neither is the gate's inconvenience. A
 capability that fails under load and passes alone is a capability that fails for a caller running a
@@ -62,14 +81,20 @@ a fact about DeFiLlama that is not true and hidden one about us that is.
 1. **Reproduce deliberately** — the sweep is already the reproduction; narrow it by running the
    matrix with `ONCHAIN_EVAL_CHAINS` limited, with and without `protocol.tvl.history` in flight, and
    compare. That separates "shared bucket" from "vendor rotation" without guessing.
-2. **If it is the bucket**, the question is scope, not size: `rpc-evm` already declares
+2. **If it is the abandoned transfers**, the fix is not to start cancelling them — WI-37's argument
+   against that still holds. It is to stop an abandoned transfer from being unbounded: a shared
+   download that no caller is waiting for any more has no deadline at all today, and giving it one
+   of its own (its own ceiling, not any caller's) preserves the sharing while capping the pile-up.
+   Counting them is the cheap first step — the number of in-flight documents with no live awaiter is
+   not measured anywhere, which is why this went unseen.
+3. **If it is the bucket instead**, the question is scope, not size: `rpc-evm` already declares
    `scopeKey: 'chain'` for exactly this reason — one saturated chain must not delay another — and
-   the same argument may apply per capability here. Raising `capacity` instead would be the
-   L-22 mistake in reverse: a bigger budget for a queue whose problem is that it is shared.
-3. **Do NOT raise `deadlineMs`.** Measurement 1 above says the vendor answers in under 9 s; a
+   the same argument may apply per capability here. Raising `capacity` would be the L-22 mistake in
+   reverse: a bigger budget for a queue whose problem is that it is shared.
+4. **Do NOT raise `deadlineMs`.** Measurement 1 above says the vendor answers in under 9 s; a
    capability that needs more than 15 s to deliver a 9 s document has a queueing problem, and a
    longer deadline would hide it rather than fix it.
-4. **Do NOT bound these rows in `eval/acknowledged.json`.** An acknowledgement says "we know why,
+5. **Do NOT bound these rows in `eval/acknowledged.json`.** An acknowledgement says "we know why,
    it is filed, and it must not block unrelated work". Bounding a defect of ours behind an entry
    whose `issue` points at a vendor record is the mechanism being used to look away.
 
