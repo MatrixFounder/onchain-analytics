@@ -47,6 +47,11 @@ export default tseslint.config(
         console: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
+        // WI-65: the eval's link probe samples on a schedule for the length of a run, so it needs
+        // the interval pair as well. Same reasoning as the rest of this list — declare the handful
+        // of Node globals these scripts actually use, one more pair rather than a new exemption.
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
         fetch: 'readonly',
         URL: 'readonly',
         // TASK-009: the eval's reference-source fetch bounds itself with a timeout signal. Added to

@@ -56,6 +56,7 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { renderLink } from '../eval/link-probe.mjs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -320,7 +321,7 @@ function tally(entry) {
     : `${base}, ${entry.notTested.length} NOT TESTED (${entry.notTested.join(', ')})`;
 }
 
-function report({ counts, unacknowledged, known, expired, defects, blocked }) {
+function report({ counts, unacknowledged, known, expired, defects, blocked, link = null }) {
   const out = [];
   out.push('');
   out.push(`  eval-gate: ${blocked ? 'BLOCKED' : 'pass'}`);
@@ -328,6 +329,17 @@ function report({ counts, unacknowledged, known, expired, defects, blocked }) {
     `  ok ${counts.ok ?? 0} · error ${counts.error ?? 0} · unsupported ${counts.unsupported ?? 0} ` +
       `· no-probe ${counts['no-probe'] ?? 0}`,
   );
+  // WI-65 — above the failures, because it decides how to read them. A run whose own egress stalled
+  // produces vendor rows that are an observation and not a measurement, and the owner's rule of
+  // 2026-08-24 forbids setting a bound from one. It never removes a row: a gate that decided on its
+  // own when to stop believing itself would be a gate nobody can audit.
+  out.push(`  ${renderLink(link)}`);
+  if (link && link.verdict !== 'stable') {
+    out.push(
+      '  → A BOUND MAY NOT BE SET OR RAISED FROM THIS RUN. Re-run when the link is stable; a bound ' +
+        'is the maximum over TWO consecutive stable runs (owner decision, 2026-08-24).',
+    );
+  }
   if (defects.length) {
     out.push('');
     out.push(`  eval/acknowledged.json is MALFORMED (${defects.length}) — fix the file:`);
@@ -415,7 +427,15 @@ async function main() {
   const blocked = unacknowledged.length > 0 || allExpired.length > 0 || defects.length > 0;
   const counts = artifact.counts ?? {};
 
-  report({ counts, unacknowledged, known: stillKnown, expired: allExpired, defects, blocked });
+  report({
+    counts,
+    unacknowledged,
+    known: stillKnown,
+    expired: allExpired,
+    defects,
+    blocked,
+    link: artifact.link ?? null,
+  });
 
   if (!DRY_RUN) {
     // Append-only, one line per gate run. This is the evidence that the gate actually ran at a
@@ -428,6 +448,24 @@ async function main() {
       // only surviving evidence of a run, and without this a `network-sqlite` run and a `network`
       // one read identically — while `onchain.provider_buckets` is covered by only one of them.
       httpProfile: artifact.httpProfile ?? null,
+      // WI-65 — what OUR OWN egress was doing while the run happened. Without it the ledger cannot
+      // tell a vendor incident from a local one after the fact, and the owner's rule of 2026-08-24
+      // (a bound is the maximum over two consecutive runs on a measured-stable link) has nothing to
+      // read. Summary only: the per-probe samples are noise in a committed file.
+      link: artifact.link
+        ? {
+            verdict: artifact.link.verdict,
+            thresholdMs: artifact.link.thresholdMs,
+            reasons: artifact.link.reasons ?? [],
+            perHost: (artifact.link.perHost ?? []).map((h) => ({
+              host: h.host,
+              samples: h.samples,
+              failures: h.failures,
+              medianConnectMs: h.medianConnectMs,
+              maxConnectMs: h.maxConnectMs,
+            })),
+          }
+        : null,
       gitSha: gitSha(),
       counts,
       // The eval's own exit code, kept beside our verdict: they answer different questions, and a

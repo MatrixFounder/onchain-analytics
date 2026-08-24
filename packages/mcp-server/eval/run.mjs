@@ -31,6 +31,7 @@ import path from 'node:path';
 import { crossChecks, grade } from './checks.mjs';
 import { TRANSPORT_CASES } from './cases/index.mjs';
 import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS, unwiredCapabilities } from './capabilities.mjs';
+import { renderLink, startLinkProbe } from './link-probe.mjs';
 
 const evalDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(evalDir, '..');
@@ -282,6 +283,10 @@ async function loadReferenceSources(specs) {
 
 // ── run ──────────────────────────────────────────────────────────────────────────────────────────
 async function main() {
+  // Started FIRST and stopped LAST, so the window it measures is the window the vendors are called
+  // in. `probes.json` owns the hosts; absent configuration it is a no-op that reports `not measured`
+  // rather than a silently missing check.
+  const linkProbe = startLinkProbe(probes.linkProbes);
   const server = startServer();
   const results = [];
   // No initializer: `report`'s own default covers the path where the run throws before the sources
@@ -415,7 +420,10 @@ async function main() {
     server.stop();
   }
 
-  report(results, server.stderr, references);
+  // Stopped only now, so the window it measured is the window the vendors were called in. A probe
+  // that ended earlier would leave exactly the gap the hand-run one left on 2026-08-24.
+  const link = await linkProbe.stop();
+  report(results, server.stderr, references, link);
 }
 
 // ── the HTTP set (task 014-33, R-22) ──────────────────────────────────────────────────────────────
@@ -707,7 +715,7 @@ async function runHttpPhase(record) {
 }
 
 // ── report ───────────────────────────────────────────────────────────────────────────────────────
-function report(results, stderrLines, references = {}) {
+function report(results, stderrLines, references = {}, link = null) {
   const ICON = {
     ok: '✅',
     degraded: '⚠️ ',
@@ -778,6 +786,12 @@ function report(results, stderrLines, references = {}) {
       );
     }
   }
+  // WI-65 — printed every run, stable or not. A run whose own egress stalled reads exactly like one
+  // where several vendors broke at once, and on 2026-08-24 it did: four `capability deadline
+  // exceeded` rows plus two acknowledgements over their bounds, all of it our own link. The line
+  // goes NEXT TO the failures rather than filtering them; nothing here suppresses a row.
+  console.log(`\n  ${renderLink(link)}`);
+
   // Printed every run, unconditionally: an exclusion nobody is reminded of is indistinguishable
   // from an oversight, and this is the list that decides what the eval is allowed not to cover.
   console.log('\n  Excluded from the free contour by contract:');
@@ -795,7 +809,10 @@ function report(results, stderrLines, references = {}) {
       // `httpProfile` is the pair the HTTP set ran under. Without it a run on `network-sqlite`
       // is indistinguishable from a run on `network` in the one record that survives (task 014-33).
       JSON.stringify(
-        { ranAt: new Date().toISOString(), httpProfile: HTTP_PROFILE, counts, results },
+        // `link` (WI-65) is what makes a run's numbers admissible as a MEASUREMENT rather than an
+        // observation: the owner's rule of 2026-08-24 sets a bound from two consecutive runs whose
+        // link was stable, and without this field neither the gate nor a later reader can tell.
+        { ranAt: new Date().toISOString(), httpProfile: HTTP_PROFILE, link, counts, results },
         null,
         2,
       ),

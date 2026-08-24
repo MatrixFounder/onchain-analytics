@@ -22,6 +22,72 @@ rotating between chains from run to run while every other defillama capability s
 | C | 0 | 3 — bsc, berachain, tron *(link stalled, see below)* |
 | D | 4 — bsc, avalanche, berachain, bitcoin | 2 — bsc, bitcoin |
 | E | 0 | 4 — bsc, berachain, tron, bitcoin |
+| F | 6 of 11 | 5 of 11 |
+| **G** | **9 of 11** | **7 of 11** |
+| H *(link measured stable)* | 5 of 11 | **9 of 11** |
+| I *(link measured stable)* | **9 of 11** | 3 of 11 |
+
+**Runs H and I are the first two whose link the gate measured for itself** (WI-65 landed between G
+and H): three unrelated hosts, 54 probes each, zero failures, median TCP connect 13–18 ms and
+16–22 ms. Under the owner's rule of 2026-08-24 those two consecutive stable runs are what a bound
+may be set from — and what they say is that **the two routes trade places**: 5/9 one run, 9/3 the
+next, on the same set, minutes apart.
+
+**Run H also lost a THIRD route, so this record's title understates its own scope.**
+`chain.tvl.history` failed on bsc, avalanche and tron. It belongs here by mechanism: it is fetched
+per call too (`/v2/historicalChainTvl/{chain}`, `defillama/index.ts`), which makes three per-call
+routes, not two. `protocol.tvl`, `chain.tvl`, `protocol.list` and `protocol.incidents` remain
+untouched, and they remain the ones reading shared documents.
+
+**But the attribution SPLIT under measurement, and half of it is not the vendor at all.** Probed
+within minutes of run I finishing:
+
+- `protocol.tvl.history` **is** vendor-broken: `aave` 39.9 s, `raydium` and `quickswap` no answer in
+  60 s, `aerodrome-slipstream` still streaming at 926 KB when the ceiling cut it. Four of five slugs.
+- `dex.volume.history` is **not**: all eleven `/overview/dexs/{chain}` documents answered in
+  0.58–8.81 s, every one inside the 15 s deadline — and `onchain_dex_volume` on `bsc`, red in run I,
+  returned a complete series through the real adapter, limiter and deadline.
+
+That second line is filed as its own record,
+[L-25](l-25-a-wide-sweep-makes-defillama-rows-fail-that-answer-fine-alone.md): rows that fail inside
+the sweep and pass outside it, on a link measured healthy, against a vendor measured willing. **This
+record keeps only the half the vendor is responsible for**, and the split is the whole point — for
+most of 2026-08-24 both halves were being counted as one vendor outage, and were one step away from
+being written into a bound that would have recorded something false about DeFiLlama and hidden
+something true about us.
+
+**Run G is the first fully attributable run, and it says this is not weather.** Our own egress was
+sampled every 30 s THROUGHOUT it, against three hosts the engine never calls: 57 of 57 HTTP 200,
+median 0.38–0.52 s, worst CONNECT 0.017 s. The link was healthy from end to end, and the two routes
+still lost nine and seven rows of eleven.
+
+**Direct probes minutes later name the failing part exactly — it is the vendor's ORIGIN, not its
+edge and not our budget:**
+
+```
+504   0.41s   6 KB    /protocol/aave            ← gateway timeout, server-side, in 0.4s
+504   0.45s   6 KB    /protocol/pancakeswap
+200   0.49s  61 KB    /protocol/raydium         ← same route, different document, fine
+200  19.87s 559 KB    /overview/dexs/ethereum
+200   0.58s 268 KB    /overview/dexs/solana     ← larger-per-second than ethereum by 40×
+200   0.61s 389 KB    /overview/dexs/base
+--- control: the SHARED documents on the same host ---
+200   0.45s  14 KB    /v2/chains
+200   0.85s 2.26 MB   /protocols                ← 2.26 MB in under a second
+```
+
+The control is what settles it. The same host streams 2.26 MB in 0.85 s while returning a 6 KB
+`504` page for `/protocol/aave` — so neither our link nor DeFiLlama's edge is the problem. What is
+failing is the origin BEHIND the cached documents, which is precisely the half these two capabilities
+depend on and the half `protocol.tvl` / `chain.tvl` / `protocol.list` / `protocol.incidents` were
+moved off (L-7).
+
+**This is therefore closer to [L-23](l-23-dexscreener-stopped-answering-entirely-and-took-three-capabilities-with-it.md)'s
+original shape than to drift**, and the title's "erratically" now understates it: at 9 of 11 the
+capability is mostly unserved rather than intermittently slow. The bounds in
+`eval/acknowledged.json` are NOT raised to cover it — a bound is a claim about how much breakage is
+accepted, and accepting nine rows of eleven is accepting the outage the bound exists to keep visible.
+
 
 **It is the vendor, and both alternative explanations were measured away.**
 

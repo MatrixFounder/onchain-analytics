@@ -25,8 +25,26 @@
     "answer against something with no shared cause. Adding one is a config edit here — run.mjs reads url/parse",
     "generically. Rules: https only; the host lives in this reviewed file, never computed at run time; and a",
     "reference that fails to answer yields `no-probe`, never a provider failure, because it is OUR test",
-    "apparatus and not the vendor under test."
+    "apparatus and not the vendor under test.",
+    "",
+    "linkProbes (WI-65): hosts used to measure OUR OWN egress while the run happens, by TCP connect only.",
+    "Data here for the same reason referenceSources are: the host is chosen in a reviewed file, never at",
+    "run time. They must be OUTSIDE the engine — a host under test cannot be the control for the test —",
+    "and outside the eval's own reference sources, so a slow mempool.space cannot read as a slow link.",
+    "The verdict decides whether a run's vendor rows may be used to SET an acknowledgement bound",
+    "(owner decision 2026-08-24); it never suppresses a failure."
   ],
+  "linkProbes": {
+    "hosts": [
+      "www.cloudflare.com",
+      "api.github.com",
+      "www.google.com"
+    ],
+    "intervalMs": 30000,
+    "why": "Three unrelated networks (Cloudflare anycast, GitHub, Google), none of them an engine adapter and none of them a referenceSource. A TCP connect asks nothing of the application behind them, spends no quota and returns no data, so a probe every 30s for the length of a run is polite on hosts that owe us nothing. Three rather than one because the signal that matters is a UNIFORM floor across unrelated paths — one host slowing down is that host's problem, three at once is ours.",
+    "verifiedAt": "2026-08-24",
+    "verifiedNote": "TCP connect 7-8ms median on a healthy link; the stall of the same day measured 215-502ms on five unrelated hosts, which is the two-state separation the 100ms bound sits between"
+  },
   "referenceSources": {
     "btcTipHeight": {
       "url": "https://mempool.space/api/blocks/tip/height",

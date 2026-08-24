@@ -234,7 +234,8 @@ export default {
       problems.push(`both sessions were given the same id ${o.sessionA}`);
     }
     for (const message of o?.rpcErrors ?? []) problems.push(`JSON-RPC error: ${message}`);
-    for (const message of o?.toolErrors ?? []) problems.push(`the tool refused: ${String(message)}`);
+    for (const message of o?.toolErrors ?? [])
+      problems.push(`the tool refused: ${String(message)}`);
     if (o?.controlAnswered !== o?.controlCalls || o?.answered !== o?.calls) {
       // An incomplete arm makes the elapsed time mean nothing, so the timing assertion is withheld
       // rather than evaluated against a number that measures a vendor failure.

@@ -97,28 +97,36 @@ that cries wolf stops being read.
 
 Exit code is 0 unless something is `error` or `degraded`, so it can gate a release.
 
-### Before you believe a run that blames several vendors at once
+### The run measures its own egress, and says so (WI-65)
 
-Check our own egress first, in the same minute, against hosts the engine does not use. Measured
-2026-08-24: a run reported four `capability deadline exceeded` rows across two defillama routes and
-pushed both blockscout acknowledgements over their bounds — three vendors, presented as three
-independent facts. Five unrelated hosts were all answering at a uniform ~1.6 s with slow CONNECT
-times, and ninety seconds later the same hosts answered in 0.39–0.53 s with 0.012 s connects. The
-gate had measured our link.
+Every run probes three hosts the engine never calls — `www.cloudflare.com`, `api.github.com`,
+`www.google.com`, configured as data in `probes.json` → `linkProbes` — by **TCP connect only**, every
+30 s, for as long as the run lasts. The verdict is printed above the failures and stored in the
+artifact and the ledger line:
 
-```sh
-for u in https://api.llama.fi/v2/chains https://api.coingecko.com/api/v3/ping \
-         https://mcp.blockscout.com https://mempool.space/api/blocks/tip/height; do
-  curl -sS -o /dev/null -m 25 -w "%{http_code} %{time_total}s %{time_connect}s conn  $u\n" "$u"
-done
+```
+  link: stable — median connect www.cloudflare.com 8ms · api.github.com 7ms · www.google.com 9ms over 57 probes, 0 failures
 ```
 
-A uniform floor across unrelated companies and CDNs is one condition, not many. This matters beyond
-reading one report: raising an acknowledgement bound is an act of MEASUREMENT (RF-10), and a bound
-raised on a run taken during a local stall bakes weather into the record permanently. The reverse
-error is just as available — dismissing a real vendor outage as "the link was probably bad" — which
-is why the answer is to measure rather than to guess either way. Filed as WI-65 so the gate
-eventually states this itself instead of relying on whoever remembers this paragraph.
+**Why connect time and not response time.** Response time conflates the network with the server's
+own work. Connect time is almost purely the path, and it is what actually separated the two states
+measured on 2026-08-24: 6–17 ms healthy against 215–502 ms during a stall, a factor of twenty-five,
+while the response times differed by three. `fetch` cannot report it at all, which is the second
+reason the probe is a raw socket; the third is that a TCP handshake asks nothing of the host — no
+application, no quota, no data — so probing every 30 s is polite on hosts that owe us nothing.
+
+**Why this exists.** One run that day reported four `capability deadline exceeded` rows across two
+DeFiLlama routes AND pushed both blockscout acknowledgements over their bounds — three vendors,
+presented as three independent facts. Five unrelated hosts were all answering at a uniform ~1.6 s;
+ninety seconds later they answered in 0.39–0.53 s, same machine, unchanged code. The gate had
+measured our link. Nothing in the run said so.
+
+**What the verdict does and does not do.** It never removes a row: a gate that decides on its own
+when to stop believing itself is a gate nobody can audit. What it gates is EVIDENCE — under the
+owner's rule of 2026-08-24 an acknowledgement bound is the maximum over two consecutive runs whose
+link was `stable`, so a `degraded` or `unknown` run prints, in as many words, that no bound may be
+set from it. `unknown` (too few samples) is kept distinct from `degraded` (the link was bad): both
+block a bound, but they send a reader to different places.
 
 ## Cross-source checks (the combinations)
 
