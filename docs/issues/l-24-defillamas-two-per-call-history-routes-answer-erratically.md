@@ -48,13 +48,23 @@ within minutes of run I finishing:
   0.58–8.81 s, every one inside the 15 s deadline — and `onchain_dex_volume` on `bsc`, red in run I,
   returned a complete series through the real adapter, limiter and deadline.
 
-That second line is filed as its own record,
-[L-25](l-25-a-wide-sweep-makes-defillama-rows-fail-that-answer-fine-alone.md): rows that fail inside
-the sweep and pass outside it, on a link measured healthy, against a vendor measured willing. **This
-record keeps only the half the vendor is responsible for**, and the split is the whole point — for
-most of 2026-08-24 both halves were being counted as one vendor outage, and were one step away from
-being written into a bound that would have recorded something false about DeFiLlama and hidden
-something true about us.
+That second line was filed as its own record,
+[L-25](l-25-a-wide-sweep-makes-defillama-rows-fail-that-answer-fine-alone.md) — **and the same day a
+controlled experiment refuted it, so the split did not survive.** Three arms (sweep alone / sweep
+with abandoned downloads in flight / sweep alone again) each took 11 of 11, and a full gate run
+minutes later took all eleven `dex.volume.history` rows in 89–1730 ms on a link the gate measured
+stable. In that run **both routes of this record read 0 of 11**: the vendor had recovered outright.
+
+The reasoning error is worth keeping because it is easy to repeat: the measurements that argued for
+the split were taken at DIFFERENT TIMES — the gate run first, then `curl` and a single tool call
+minutes later. That is "failed then, passed later", not "fails in the sweep and passes outside it",
+and no simultaneous comparison was ever made. So the rows come back here, where "the vendor's
+per-call origin degrades in windows" already explains them.
+
+**Run J (2026-08-24, evening, link stable — 42 probes, median connect 14–17 ms): 0 of 11 and 0 of 11.**
+Not a closure — this record's own Do-not says a green run is not one, and today produced 5, 9, 3 and
+9 on the same two routes before this. It is the fourth data point on the same day, and what it shows
+is the amplitude.
 
 **Run G is the first fully attributable run, and it says this is not weather.** Our own egress was
 sampled every 30 s THROUGHOUT it, against three hosts the engine never calls: 57 of 57 HTTP 200,

@@ -1,0 +1,231 @@
+{
+  "probedAt": "2026-08-24T18:11:05.638Z",
+  "deadlineMs": 15000,
+  "cooldownMs": 60000,
+  "load": [
+    {
+      "chain": "ethereum",
+      "protocolSlug": "aave"
+    },
+    {
+      "chain": "ethereum",
+      "protocolSlug": "curve-finance"
+    },
+    {
+      "chain": "polygon",
+      "protocolSlug": "quickswap"
+    },
+    {
+      "chain": "solana",
+      "protocolSlug": "raydium"
+    }
+  ],
+  "stillInFlight": 1,
+  "verdict": "no contention effect measured: arm B is not worse than the controls",
+  "arms": {
+    "A": [
+      {
+        "chain": "ethereum",
+        "ok": true,
+        "ms": 580,
+        "error": null
+      },
+      {
+        "chain": "solana",
+        "ok": true,
+        "ms": 115,
+        "error": null
+      },
+      {
+        "chain": "base",
+        "ok": true,
+        "ms": 114,
+        "error": null
+      },
+      {
+        "chain": "arbitrum",
+        "ok": true,
+        "ms": 265,
+        "error": null
+      },
+      {
+        "chain": "polygon",
+        "ok": true,
+        "ms": 371,
+        "error": null
+      },
+      {
+        "chain": "bsc",
+        "ok": true,
+        "ms": 295,
+        "error": null
+      },
+      {
+        "chain": "avalanche",
+        "ok": true,
+        "ms": 224,
+        "error": null
+      },
+      {
+        "chain": "berachain",
+        "ok": true,
+        "ms": 283,
+        "error": null
+      },
+      {
+        "chain": "gnosis",
+        "ok": true,
+        "ms": 304,
+        "error": null
+      },
+      {
+        "chain": "tron",
+        "ok": true,
+        "ms": 95,
+        "error": null
+      },
+      {
+        "chain": "bitcoin",
+        "ok": true,
+        "ms": 313,
+        "error": null
+      }
+    ],
+    "B": [
+      {
+        "chain": "ethereum",
+        "ok": true,
+        "ms": 95,
+        "error": null
+      },
+      {
+        "chain": "solana",
+        "ok": true,
+        "ms": 81,
+        "error": null
+      },
+      {
+        "chain": "base",
+        "ok": true,
+        "ms": 79,
+        "error": null
+      },
+      {
+        "chain": "arbitrum",
+        "ok": true,
+        "ms": 114,
+        "error": null
+      },
+      {
+        "chain": "polygon",
+        "ok": true,
+        "ms": 98,
+        "error": null
+      },
+      {
+        "chain": "bsc",
+        "ok": true,
+        "ms": 76,
+        "error": null
+      },
+      {
+        "chain": "avalanche",
+        "ok": true,
+        "ms": 128,
+        "error": null
+      },
+      {
+        "chain": "berachain",
+        "ok": true,
+        "ms": 110,
+        "error": null
+      },
+      {
+        "chain": "gnosis",
+        "ok": true,
+        "ms": 330,
+        "error": null
+      },
+      {
+        "chain": "tron",
+        "ok": true,
+        "ms": 325,
+        "error": null
+      },
+      {
+        "chain": "bitcoin",
+        "ok": true,
+        "ms": 141,
+        "error": null
+      }
+    ],
+    "A'": [
+      {
+        "chain": "ethereum",
+        "ok": true,
+        "ms": 418,
+        "error": null
+      },
+      {
+        "chain": "solana",
+        "ok": true,
+        "ms": 97,
+        "error": null
+      },
+      {
+        "chain": "base",
+        "ok": true,
+        "ms": 104,
+        "error": null
+      },
+      {
+        "chain": "arbitrum",
+        "ok": true,
+        "ms": 96,
+        "error": null
+      },
+      {
+        "chain": "polygon",
+        "ok": true,
+        "ms": 103,
+        "error": null
+      },
+      {
+        "chain": "bsc",
+        "ok": true,
+        "ms": 99,
+        "error": null
+      },
+      {
+        "chain": "avalanche",
+        "ok": true,
+        "ms": 98,
+        "error": null
+      },
+      {
+        "chain": "berachain",
+        "ok": true,
+        "ms": 87,
+        "error": null
+      },
+      {
+        "chain": "gnosis",
+        "ok": true,
+        "ms": 315,
+        "error": null
+      },
+      {
+        "chain": "tron",
+        "ok": true,
+        "ms": 88,
+        "error": null
+      },
+      {
+        "chain": "bitcoin",
+        "ok": true,
+        "ms": 105,
+        "error": null
+      }
+    ]
+  }
+}

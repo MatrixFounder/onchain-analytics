@@ -17,7 +17,8 @@
     "test": "vitest run",
     "sync:chains": "tsx scripts/sync-chain-registry.ts",
     "probe:holders-latency": "tsx scripts/probe-blockscout-holders-latency.ts",
-    "probe:token-routes": "tsx scripts/probe-dexscreener-token-routes.ts"
+    "probe:token-routes": "tsx scripts/probe-dexscreener-token-routes.ts",
+    "probe:sweep-contention": "tsx scripts/probe-defillama-sweep-contention.ts"
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",
