@@ -38,6 +38,10 @@ import { toolFor } from './capabilities.mjs';
 function indexByTool() {
   const byTool = new Map();
   for (const c of CASES) {
+    // Transport cases are not keyed by a tool and must not enter this map (task 014-33). Without
+    // the skip, `toolFor(undefined)` throws at import; and a key that is not a registered tool
+    // would fail `test/eval-checks-coverage.test.ts`'s "no check for a tool that does not exist".
+    if (c.kind === 'transport') continue;
     const tool = c.kind === 'bootstrap' ? c.tool : toolFor(c.capability);
     const existing = byTool.get(tool);
     if (existing && existing.check !== c.check) {

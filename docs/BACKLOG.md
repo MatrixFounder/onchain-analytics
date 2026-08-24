@@ -82,6 +82,7 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 ## Discovered issues / work-items
 
 <!-- feedback:discovered-issues -->
+- **WI-63** [the shared-limiter RATE is not measurable from outside with today's probe set](backlog/wi-63-the-shared-limiter-rate-is-not-measurable-from-outside-with-todays-probe-set.md) — effort `M`, status `open`, opened 2026-08-24
 - **WI-62** [the engine's tables move to a dedicated Postgres container on the separated host](backlog/wi-62-engine-tables-move-to-a-dedicated-postgres-container-on-the-separated-host.md) — effort `M`, status `open`, opened 2026-08-23
 - **WI-61** [механизм курируемой строки реестра и сеть `polkadot`](backlog/wi-61-curated-registry-row-mechanism.md) — effort `M`, status `open`, opened 2026-08-19
 - **WI-59** [Слой внеончейн-контекста: новости, соцсети, календарь форков и апгрейдов](backlog/wi-59-off-chain-context-layer-news-social-fork-calendar.md) — effort `L`, status `open`, opened 2026-08-11

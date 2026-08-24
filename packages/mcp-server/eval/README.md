@@ -27,6 +27,22 @@ JSON-RPC, the production `buildRegistry()` wiring, real adapters, real network. 
 `fetchImpl`, no fixture registry, no importing internals. If it passes here, it works for a client —
 which is the only claim worth making.
 
+**Two phases, on two transports** (task 014-33). The **capability matrix** runs over stdio, which is
+where it belongs: it does not depend on the transport and raises more cheaply. The **HTTP set** runs
+after it, against a second process raised on its own profile, and covers exactly what stdio cannot
+reach — a token refused, a perimeter refused, one end-to-end call, and two concurrent sessions.
+
+The HTTP set resolves its profile from `ONCHAIN_EVAL_HTTP_PROFILE`, defaulting to `network-sqlite`
+because the `network` pair needs a running Postgres and this gate runs on a development machine. The
+profile NAME is written into the JSON artifact and into the ledger line: `onchain.provider_buckets`
+is covered only under `ONCHAIN_EVAL_HTTP_PROFILE=network`, so a run that does not say which pair it
+used cannot be told apart from one that did.
+
+Its process gets a temporary `DATA_DIR`, its own bootstrapped administrator and a token issued
+before the process starts — the network profile refuses to start with zero active tokens. All three
+are removed in a `finally`. A phase that could not be raised records one `error` row per case rather
+than skipping: `no-probe` is not counted as a failure, so a skip would read as success.
+
 The **chain** axis is derived from the live registry: for each chain the eval asks
 `onchain_list_chains` which capabilities that chain declares, and exercises exactly those. A chain
 added later is covered automatically, and a chain the registry _stops_ declaring stops being tested

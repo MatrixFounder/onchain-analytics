@@ -65,6 +65,24 @@
       ],
       "maxFailing": 1,
       "why": "Blockscout answers HTTP 500 for base's /api/v2/stats — the document chain.transactions reads. Measured 2026-08-20: 500 on two attempts of three through the PRO facade and on the keyless base.blockscout.com alike, so there is no second route. Re-measured the morning of 2026-08-21: 500 on four of five attempts, worse. Hours later the same document answered in 0.98s on every chain and this row passed the gate. THIS ENTRY EXISTS WHILE THE ROW IS GREEN, and that is the whole point of task 014-43: under the old per-row boolean the entry had to be deleted the moment the vendor recovered, so the next 500 arrived as an unfiled failure and blocked. One green run is not a closure — L-20's own fix-path item 2 says so. Bound 1 over the five chains chain.transactions is served on: base is the measured one, and a SECOND chain answering 500 would be a new fact about the vendor rather than this one."
+    },
+    "L-22/pairs.active": {
+      "issue": "L-22",
+      "since": "2026-08-24",
+      "reviewBy": "2026-09-22",
+      "rows": [
+        "ethereum/pairs.active",
+        "base/pairs.active",
+        "arbitrum/pairs.active",
+        "polygon/pairs.active",
+        "bsc/pairs.active",
+        "avalanche/pairs.active",
+        "berachain/pairs.active",
+        "tron/pairs.active",
+        "solana/pairs.active"
+      ],
+      "maxFailing": 2,
+      "why": "Two of the nine chains the eval exercises `pairs.active` on failed the gate of 2026-08-24 — berachain on the 15s capability deadline, tron with an empty page. Measured against the vendor minutes later: BOTH are served, and only by the SECOND of the two queries the L-19 fix ships (q=<vendorId> returns 0 rows of their own; q=WBERA and q=WTRX return 30 each). So the strategy is right and the gate did not reach it — a second round trip and a second bucket token, under a matrix walking twelve chains through one dexscreener bucket. Bound 2: the number measured failing when this entry was written. A third chain is a new fact about the strategy under load rather than about these two, and blocks until someone measures it."
     }
   }
 }

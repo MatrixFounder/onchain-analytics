@@ -23,12 +23,13 @@
 //   ONCHAIN_EVAL_JSON=report.json pnpm … eval             # machine-readable artifact too
 // Exit code is 0 when nothing is `error`/`degraded`, 1 otherwise — so it can gate a release.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { crossChecks, grade } from './checks.mjs';
+import { TRANSPORT_CASES } from './cases/index.mjs';
 import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS, unwiredCapabilities } from './capabilities.mjs';
 
 const evalDir = path.dirname(fileURLToPath(import.meta.url));
@@ -406,11 +407,303 @@ async function main() {
     // The two axes, compared. Everything above walks CAPABILITY_TOOLS; this walks what the chains
     // actually declare and names what nothing above touched.
     for (const row of unwiredCapabilities(selected, (c) => registry.get(c))) record(...row);
+
+    // The HTTP set, after the capability matrix and on its own profile. It raises a second process
+    // with its own temporary DATA_DIR, so nothing above is affected by it.
+    await runHttpPhase(record);
   } finally {
     server.stop();
   }
 
   report(results, server.stderr, references);
+}
+
+// ── the HTTP set (task 014-33, R-22) ──────────────────────────────────────────────────────────────
+//
+// WHY A SECOND PHASE AND NOT A SECOND TRANSPORT FOR THE MATRIX. The capability matrix does not
+// depend on the transport and raises more cheaply over stdio. What HTTP adds — authentication, the
+// perimeter, a session, a principal, a limiter under concurrency — is exactly what no fixture-backed
+// test reaches, so that is what this phase exercises and nothing else.
+//
+// WHY A FAILED PHASE RECORDS `error` ROWS RATHER THAN SKIPPING. `no-probe` is not counted as a
+// failure, so a skip would read as success. A gate that could not run has not passed.
+
+const HTTP_PROFILE = process.env.ONCHAIN_EVAL_HTTP_PROFILE ?? 'network-sqlite';
+/** The pepper this phase runs with. Local to the run: it never leaves the temporary DATA_DIR. */
+const HTTP_PEPPER = 'onchain-eval-transport-pepper';
+const HTTP_ADMIN_EMAIL = 'eval-transport@onchain.invalid';
+const LISTEN_TIMEOUT_MS = 30_000;
+
+/** A free localhost port, taken by binding one and releasing it. */
+async function freePort() {
+  const { createServer } = await import('node:net');
+  return await new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+/** Runs one admin command in the temporary store, and returns its stdout lines. */
+function admin(dataDir, argv) {
+  const child = spawnSync(process.execPath, ['--import', 'tsx', 'src/admin/bin.ts', ...argv], {
+    cwd: packageRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      DATA_DIR: dataDir,
+      ONCHAIN_PROFILE: HTTP_PROFILE,
+      ONCHAIN_TOKEN_HASH_SALT: HTTP_PEPPER,
+    },
+  });
+  if (child.status !== 0) {
+    throw new Error(
+      `admin ${argv[0]} failed (exit ${String(child.status)}): ${(child.stderr || child.stdout).trim().slice(0, 300)}`,
+    );
+  }
+  return child.stdout.split('\n').filter(Boolean);
+}
+
+/**
+ * Issues the phase's token, BEFORE the process starts.
+ *
+ * The network profile's pre-start checks refuse a start with zero active rows in `api_tokens`
+ * (task 014-38), so a process raised first would not come up. The first `user:add` runs without
+ * `--actor` because the store is empty — the bootstrap the SQLite axis has instead of a seed
+ * migration (task 014-33).
+ */
+function issueToken(dataDir) {
+  admin(dataDir, ['user:add', '--email', HTTP_ADMIN_EMAIL, '--role', 'admin']);
+  const lines = admin(dataDir, [
+    'token:issue',
+    '--user',
+    HTTP_ADMIN_EMAIL,
+    '--actor',
+    HTTP_ADMIN_EMAIL,
+    '--name',
+    'eval-transport',
+  ]);
+  const value = lines.find((l) => l.startsWith('oi_'));
+  const idLine = lines.find((l) => l.startsWith('id='));
+  const tokenId = idLine?.match(/^id=(\S+)/)?.[1];
+  if (!value || !tokenId) throw new Error('token:issue printed neither a value nor an id');
+  return { token: value.trim(), tokenId };
+}
+
+/** Starts the server on the chosen profile and resolves once it announces its listener. */
+async function startHttpServer(dataDir, port) {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
+    cwd: packageRoot,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      DATA_DIR: dataDir,
+      ONCHAIN_PROFILE: HTTP_PROFILE,
+      ONCHAIN_TOKEN_HASH_SALT: HTTP_PEPPER,
+      ONCHAIN_HTTP_BIND: '127.0.0.1',
+      ONCHAIN_HTTP_PORT: String(port),
+    },
+  });
+  const stderr = [];
+  child.stderr.setEncoding('utf8');
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', () => {});
+
+  const listening = new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `the server did not announce a listener in ${String(LISTEN_TIMEOUT_MS)}ms: ${stderr.join('').slice(-400)}`,
+          ),
+        ),
+      LISTEN_TIMEOUT_MS,
+    );
+    timer.unref?.();
+    child.stderr.on('data', (chunk) => {
+      stderr.push(chunk);
+      if (/listening on /.test(chunk)) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(
+        new Error(
+          `the server exited (${String(code)}) before listening: ${stderr.join('').slice(-400)}`,
+        ),
+      );
+    });
+  });
+  await listening;
+  return { child, stderr };
+}
+
+/** The context every transport case receives. */
+function transportContext(baseUrl, token) {
+  const request = async ({ method = 'POST', body = '', headers = {} } = {}) => {
+    const response = await fetch(`${baseUrl}/mcp`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        ...headers,
+      },
+      ...(method === 'GET' || method === 'DELETE' ? {} : { body }),
+    });
+    return {
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      body: await response.text(),
+    };
+  };
+
+  /** One MCP session over Streamable HTTP: `initialize`, then tool calls, then `DELETE`. */
+  const openSession = async () => {
+    let id = null;
+    let nextId = 0;
+    const send = async (payload, extraHeaders = {}) => {
+      const response = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          authorization: `Bearer ${token}`,
+          ...(id === null ? {} : { 'mcp-session-id': id }),
+          ...extraHeaders,
+        },
+        body: JSON.stringify(payload),
+      });
+      const header = response.headers.get('mcp-session-id');
+      if (header) id = header;
+      const text = await response.text();
+      // Streamable HTTP may answer either a bare JSON body or an SSE frame; the eval reads both
+      // rather than assuming one, because assuming is how a transport change reads as a tool fault.
+      //
+      // The frame is detected by CONTAINING a `data:` line, not by starting with one: this server
+      // emits `event: message` first, and a check anchored to the body's first characters read that
+      // as JSON and reported a transport fault as an unparseable tool answer.
+      const dataLines = text
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trim());
+      const jsonText = dataLines.length > 0 ? dataLines.join('') : text;
+      try {
+        return JSON.parse(jsonText);
+      } catch {
+        return {
+          error: {
+            message: `unparseable body (HTTP ${String(response.status)}): ${text.slice(0, 200)}`,
+          },
+        };
+      }
+    };
+
+    const init = await send({
+      jsonrpc: '2.0',
+      id: (nextId += 1),
+      method: 'initialize',
+      params: {
+        protocolVersion: PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: 'onchain-eval-http', version: '1.0.0' },
+      },
+    });
+    if (init.error) throw new Error(`initialize over HTTP failed: ${init.error.message}`);
+    await send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} });
+
+    return {
+      get id() {
+        return id;
+      },
+      initialized: !init.error,
+      callTool: (name, args) =>
+        send({
+          jsonrpc: '2.0',
+          id: (nextId += 1),
+          method: 'tools/call',
+          params: { name, arguments: args },
+        }),
+      close: async () => {
+        if (id === null) return;
+        await fetch(`${baseUrl}/mcp`, {
+          method: 'DELETE',
+          headers: { authorization: `Bearer ${token}`, 'mcp-session-id': id },
+        }).catch(() => {});
+      },
+    };
+  };
+
+  return { baseUrl, token, request, openSession };
+}
+
+/**
+ * Runs the HTTP set and records one row per case.
+ *
+ * Every failure mode records rows rather than throwing past the caller: a phase that could not run
+ * must be VISIBLE in the matrix, and `record` is the only channel the report reads.
+ */
+async function runHttpPhase(record) {
+  const label = (c) => c.label;
+  if (TRANSPORT_CASES.length === 0) return;
+
+  let dataDir = null;
+  let server = null;
+  let issued = null;
+  try {
+    dataDir = mkdtempSync(path.join(tmpdir(), 'onchain-eval-http-'));
+    issued = issueToken(dataDir);
+    const port = await freePort();
+    server = await startHttpServer(dataDir, port);
+    const ctx = transportContext(`http://127.0.0.1:${String(port)}`, issued.token);
+
+    for (const c of TRANSPORT_CASES) {
+      const started = Date.now();
+      try {
+        const observation = await c.exercise(ctx);
+        const problems = c.check(observation) ?? [];
+        record('—', label(c), null, {
+          verdict: problems.length === 0 ? 'ok' : 'degraded',
+          ms: Date.now() - started,
+          problems,
+        });
+      } catch (error) {
+        record('—', label(c), null, {
+          verdict: 'error',
+          ms: Date.now() - started,
+          problems: [String(error?.message ?? error)],
+        });
+      }
+    }
+  } catch (error) {
+    // The phase itself could not be raised. Every case records `error`, so the count of failures
+    // reflects what was not verified rather than shrinking to zero.
+    for (const c of TRANSPORT_CASES) {
+      record('—', label(c), null, {
+        verdict: 'error',
+        ms: 0,
+        problems: [`the HTTP phase could not be raised: ${String(error?.message ?? error)}`],
+      });
+    }
+  } finally {
+    if (server) {
+      server.child.kill('SIGTERM');
+    }
+    // The token is revoked before the directory goes, so the revocation is recorded in the journal
+    // this run wrote rather than disappearing with the file.
+    if (dataDir && issued) {
+      try {
+        admin(dataDir, ['token:revoke', '--token-id', issued.tokenId, '--actor', HTTP_ADMIN_EMAIL]);
+      } catch {
+        // A revoke that fails is not worth failing the run for: the store is about to be deleted.
+      }
+    }
+    if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+  }
 }
 
 // ── report ───────────────────────────────────────────────────────────────────────────────────────
@@ -499,7 +792,13 @@ function report(results, stderrLines, references = {}) {
   if (process.env.ONCHAIN_EVAL_JSON) {
     writeFileSync(
       process.env.ONCHAIN_EVAL_JSON,
-      JSON.stringify({ ranAt: new Date().toISOString(), counts, results }, null, 2),
+      // `httpProfile` is the pair the HTTP set ran under. Without it a run on `network-sqlite`
+      // is indistinguishable from a run on `network` in the one record that survives (task 014-33).
+      JSON.stringify(
+        { ranAt: new Date().toISOString(), httpProfile: HTTP_PROFILE, counts, results },
+        null,
+        2,
+      ),
     );
     console.log(`\n  JSON artifact → ${process.env.ONCHAIN_EVAL_JSON}`);
   }

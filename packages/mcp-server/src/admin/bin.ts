@@ -1,9 +1,10 @@
 #!/usr/bin/env tsx
-import { createStateClient } from '@onchain-intel/core';
+import { createSqliteStateClient, createStateClient } from '@onchain-intel/core';
 import { createTokenStore } from '../auth/token-store.js';
 import { createUserStore } from '../auth/user-store.js';
 import { createEngineStore } from '../engine/pg-engine-store.js';
 import { loadEnv, toProcessEnv } from '../env.js';
+import { resolveProfile } from '../profile.js';
 import { runAdminCommand } from './cli.js';
 
 /**
@@ -22,8 +23,17 @@ async function main(): Promise<void> {
   const env = loadEnv();
   const raw = toProcessEnv(env);
 
+  // The storage axis decides the client, exactly as `index.ts:114` decides it — task 014-33.
+  //
+  // **Why this file used to be Postgres-only, and why that was a hole.** It opened
+  // `createStateClient` unconditionally and refused without a DSN, so on the `network-sqlite` axis
+  // there was no way to run ANY admin operation. That axis exists to raise the transport without
+  // Postgres, and a transport nobody can issue a token for cannot be exercised: the process binds a
+  // port and answers 401 to everyone, including the operator. The refusal below is kept for the
+  // axis it belongs to and dropped for the one it made unusable.
+  const profile = resolveProfile(raw);
   const dsn = env.ONCHAIN_STATE_PG_URL;
-  if (dsn === undefined) {
+  if (profile.storage === 'postgres' && dsn === undefined) {
     console.error(
       "onchain-admin: ONCHAIN_STATE_PG_URL is not set. These operations write the engine's own state (deployment.md §10.5).",
     );
@@ -37,7 +47,11 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const engine = createEngineStore(createStateClient({ env: raw }));
+  const engine = createEngineStore(
+    profile.storage === 'postgres'
+      ? createStateClient({ env: raw })
+      : createSqliteStateClient({ env: raw }),
+  );
   const available = engine.isAvailable();
   if (!available.ok) {
     console.error(`onchain-admin: ${available.reason}`);

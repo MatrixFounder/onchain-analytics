@@ -424,6 +424,10 @@ async function main() {
     const line = {
       ranAt: artifact.ranAt,
       task: TASK,
+      // Which storage/transport pair the HTTP set ran under (task 014-33). The ledger line is the
+      // only surviving evidence of a run, and without this a `network-sqlite` run and a `network`
+      // one read identically — while `onchain.provider_buckets` is covered by only one of them.
+      httpProfile: artifact.httpProfile ?? null,
       gitSha: gitSha(),
       counts,
       // The eval's own exit code, kept beside our verdict: they answer different questions, and a

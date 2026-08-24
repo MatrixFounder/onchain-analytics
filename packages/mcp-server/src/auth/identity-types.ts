@@ -162,8 +162,16 @@ export interface TokenLookupRow {
  * token's `id` and `prefix`. The journal has more readers than the authentication path, and a digest
  * is a verifier.
  *
- * **`actorUserId` is nullable, and the null has one meaning:** the seed migration that creates the
- * first admin, which has no actor to name because no admin exists yet (§4.5.3).
+ * **`actorUserId` is nullable, and the null has ONE meaning with TWO producers:** nobody could have
+ * acted, because no user existed yet.
+ *
+ * - On the Postgres axis, migration 003 seeds the first administrator and writes its two journal
+ *   rows this way (§4.5.3).
+ * - On the SQLite axis there is no migration, so `user:add` creates the first administrator of an
+ *   EMPTY store without `--actor` and writes the same shape (task 014-33).
+ *
+ * The two are one rule, not two exceptions: a store with a user in it always names its actor, and
+ * both escapes are gated on emptiness rather than on a caller's say-so.
  *
  * The caller supplies `id`, `ts` and `createdAt` rather than the store stamping them — the same
  * shape `RequestTraceRecord` and `DiagnosticsRecord` take (task 014-02), so an append is a pure
@@ -172,7 +180,7 @@ export interface TokenLookupRow {
 export interface AccessAuditEntry {
   readonly id: string; // ULID; time-sortable, so the journal reads in order
   readonly ts: number; // epoch-ms UTC
-  readonly actorUserId: string | null; // null only for the seed migration (§4.5.3)
+  readonly actorUserId: string | null; // null only when nobody could have acted — see above
   readonly action: AuditAction;
   readonly targetType: AuditTargetType;
   readonly targetId: string;

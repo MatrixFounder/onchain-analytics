@@ -111,7 +111,33 @@ export async function runAdminCommand(
           // instead of surfacing a constraint name.
           throw new AdminUsageError(`--role must be admin or user, got ${JSON.stringify(role)}`);
         }
-        const actorId = await resolveUserId(deps.users, required(flags, 'actor'));
+        // BOOTSTRAP — the first user of an EMPTY store, and the only case where `--actor` may be
+        // omitted (task 014-33).
+        //
+        // **Why it has to exist.** A user needs an actor and an actor is a user, so an empty store
+        // is a deadlock. The Postgres axis escapes it through migration 003, which seeds the first
+        // administrator and writes its two journal rows with a NULL actor. The SQLite axis has no
+        // migration, so before this there was NO WAY to create a first administrator on it at all —
+        // and `network-sqlite` exists precisely to raise the transport without Postgres. The
+        // profile starts (its pre-start checks are `network`-only), binds a port, and refuses every
+        // request, because no token can be issued to reach it.
+        //
+        // **Why it cannot be abused later.** The escape is gated on the store being EMPTY, not on a
+        // flag. Once one user exists, `--actor` is required again and resolved as before, so this
+        // widens nothing for an installation that has an administrator.
+        //
+        // **Why the first user must be an admin.** Seeding a non-admin would leave the store with a
+        // user nobody can act as, and the deadlock intact one row further in.
+        const bootstrap = !flags.has('actor') && (await deps.users.listUsers()).length === 0;
+        if (bootstrap && role !== 'admin') {
+          throw new AdminUsageError(
+            'the first user of an empty store is created without --actor and must be --role admin; ' +
+              'a first non-admin leaves nobody who can act',
+          );
+        }
+        const actorId = bootstrap
+          ? null
+          : await resolveUserId(deps.users, required(flags, 'actor'));
         const created = await deps.users.createUser({
           email: required(flags, 'email'),
           role: role as Role,

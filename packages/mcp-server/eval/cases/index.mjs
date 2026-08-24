@@ -24,6 +24,25 @@
 //   registry loading). They name a tool directly because no capability describes them:
 //     { tool: 'onchain_ping', kind: 'bootstrap', catches: '...', check: (structured) => [...] }
 //
+//   transport cases — rows that are not about a capability at all, but about the TRANSPORT in front
+//   of it: a token refused, a perimeter refused, one end-to-end call, two sessions sharing a vendor
+//   quota (task 014-33). They carry no tool and no capability:
+//     { kind: 'transport', transport: 'http', catches: '...',
+//       exercise: (ctx) => observation,     // issues the requests against a raised profile
+//       check: (observation) => string[] }  // [] means ok
+//
+//   WHY A THIRD KIND AND NOT A BOOTSTRAP IN DISGUISE. `indexByTool` in `../checks.mjs` keys cases by
+//   tool and refuses two cases claiming one tool with different `check` functions, so an
+//   `http-success` case naming `onchain_ping` would collide with `bootstrap-ping.mjs` at import. And
+//   a bootstrap `check` receives `structuredContent`, which a request refused by the token or by the
+//   perimeter never has — so neither refusal case could present the status and header it observed.
+//   The capability shape does not fit either: `toolFor` resolves a capability through the generated
+//   inventory and throws on an unknown one, and `auth-rejected` is a capability of no registry.
+//
+//   The report label comes from the FILE NAME: `http-auth-rejected.mjs` reports as
+//   `transport:http-auth-rejected`, keyed `—/transport:http-auth-rejected`. A transport row is
+//   therefore nameable in `eval/acknowledged.json` without a second source for its name.
+//
 // The tool for a capability case is NOT written here. It is resolved from the generated
 // `tool-inventory.json` (R-117): a hand-written tool name is a second source for a fact the build
 // already owns, and it survives a rename that the inventory would have caught.
@@ -63,6 +82,17 @@ function validate(file, mod) {
         'a case that cannot state that is decoration',
     );
   }
+  if (c.kind === 'transport') {
+    if (typeof c.transport !== 'string' || c.transport.trim() === '') {
+      throw new Error(`${where}: a transport case must name its transport`);
+    }
+    if (typeof c.exercise !== 'function') {
+      throw new Error(`${where}: a transport case must carry an exercise(ctx) function`);
+    }
+    // `check` and `catches` were already required above, for EVERY kind. A transport case that
+    // asserts nothing is refused by the same two lines that refuse a capability case that does.
+    return { ...c, file, kind: 'transport', label: `transport:${file.replace(/\.mjs$/, '')}` };
+  }
   const isBootstrap = c.kind === 'bootstrap';
   if (isBootstrap) {
     if (typeof c.tool !== 'string' || !c.tool) {
@@ -93,3 +123,16 @@ export const CAPABILITY_CASES = loaded.filter((c) => c.kind === 'capability');
 
 /** The two non-per-chain rows: the server answering, and the registry loading. */
 export const BOOTSTRAP_CASES = loaded.filter((c) => c.kind === 'bootstrap');
+
+/** The rows about the TRANSPORT in front of the capabilities, not about a capability (task 014-33). */
+export const TRANSPORT_CASES = loaded.filter((c) => c.kind === 'transport');
+
+/**
+ * The validator itself, exported so the offline suite can prove it REFUSES.
+ *
+ * **Why the function and not the directory.** The proof needed is "an incomplete case does not
+ * load", and a file carrying an incomplete case, placed in this directory, would throw at import
+ * for every consumer — the suite, the runner, both coverage tests. So the test hands objects to
+ * this function instead of writing them to disk.
+ */
+export { validate as validateCase };

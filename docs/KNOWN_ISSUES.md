@@ -125,6 +125,7 @@ frontmatter above (body preserved verbatim — never drop a clause); ③ add one
 - **L-19** [`pairs.active` answers an empty page wherever the native-symbol search does not return that chain](issues/l-19-pairs-active-answers-an-empty-page-wherever-the-native-symbol-search-does-not-return-that-chain.md) — severity `SEV-2`, status `fixed`, opened 2026-08-20, **fixed 2026-08-21** (TASK 014-32c): замер по всем 49 сетям — прежняя стратегия пуста на 22, а не на 4; запрос переведён на вендорский идентификатор сети с добором обёрнутым тикером, 49/49
 - **L-20** [Blockscout answers HTTP 500 for the `base` stats document, on the facade and on the public instance alike](issues/l-20-blockscout-answers-http-500-for-the-base-stats-document-on-both-routes.md) — severity `SEV-3`, status `open`, opened 2026-08-20
 - **L-21** [nine consecutive Telegram alerts failed over five days, and nothing reported it](issues/l-21-nine-consecutive-telegram-alerts-failed-over-five-days-and-nothing-reported-it.md) — severity `SEV-2`, status `open`, opened 2026-08-24
+- **L-22** [`pairs.active` loses `berachain` and `tron` under gate load, while the vendor still serves both](issues/l-22-pairs-active-loses-two-chains-under-gate-load-while-the-vendor-still-serves-them.md) — severity `SEV-3`, status `open`, opened 2026-08-24
 
 ## security
 
