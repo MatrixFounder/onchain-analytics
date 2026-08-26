@@ -677,7 +677,7 @@ Criteria:** R-36 (тест подставляет фикстуру аккаун�
   только нормализованный tool-input, ключ читается адаптером внутри `fetch()` после вычисления хеша
   (буквально M1-инвариант, не новый)
 - Снимается на cross-host редиректе существующим `SENSITIVE_HEADER_RE` в `safeFetch`
-  (`packages/core/src/net/safe-fetch.ts:83`, `/authorization\|api-?key/i`) — заголовок `apiKey`
+  (`packages/core/src/net/safe-fetch.ts:407`, `/authorization\|api-?key/i`) — заголовок `apiKey`
   **уже покрыт** (регистронезависимо; `Headers` лишает заголовок регистра до сравнения —
   верифицировано чтением кода) — новых правок regex не требуется, только regression-тест,
   доказывающий это конкретно для `nansen`

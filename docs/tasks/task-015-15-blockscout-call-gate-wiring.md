@@ -108,7 +108,7 @@
 | Класс                              | Текст                                    | Координата                                       |
 | :--------------------------------- | :--------------------------------------- | :----------------------------------------------- |
 | `RateLimitRejectedError`           | `throttle: rejected for provider "…": …` | `packages/core/src/net/rate-limit.ts:274`        |
-| `ProviderCallCeilingExceededError` | `daily call ceiling reached: …`          | `docs/architectures/system-architecture.md:4335` |
+| `ProviderCallCeilingExceededError` | `daily call ceiling reached: …`          | `docs/architectures/system-architecture.md:4357` |
 
 **Why проверяется текст, а не класс.** Класс до вызывающего не доходит:
 `resolve-capability.ts` записывает в `refusal_class` имя той ошибки, которую бросил маршрут, и на

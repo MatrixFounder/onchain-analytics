@@ -122,7 +122,7 @@ RETURNING credits_used;
    Постусловие: уборка наследует блокировку резервирования и откатывается вместе с ним.
 
 **Why уборка внутри транзакции, а не отдельным заданием.** §4.2.4 требует того же размещения, что и
-на оси SQLite (`packages/core/src/cache/budget-store.ts:410`, `this.pruneWindowStmt.run({`).
+на оси SQLite (`packages/core/src/cache/budget-store.ts:428`, `this.pruneWindowStmt.run({`).
 Дословно: `The opportunistic prune of old window rows stays inside that transaction` … `so it
 inherits the same lock instead of racing it` (`data-model.md:589-590`). Отдельное задание
 конкурировало бы за ту же блокировку строки.
@@ -145,7 +145,7 @@ inherits the same lock instead of racing it` (`data-model.md:589-590`). Отде
 `READ COMMITTED` — умолчание `pg` — уже сериализует два резервирования на одном ключе.
 
 **Why неограниченный потолок связывается как `NULL`.** `+Infinity` — объявленный признак отсутствия
-самоограничения (`packages/core/src/cache/budget-store.ts:326`, `may legitimately be`) и не имеет
+самоограничения (`packages/core/src/cache/budget-store.ts:344`, `may legitimately be`) и не имеет
 числового представления в Postgres. Параметр связывается на каждом вызове и не опускается.
 Нефинитная стоимость или `NaN` потолок отказывают до отправки statement — правило, которое
 реализация на SQLite уже применяет (`packages/core/src/cache/budget-store.ts:334`).
@@ -155,7 +155,7 @@ inherits the same lock instead of racing it` (`data-model.md:589-590`). Отде
 
 **Отказ несёт число `used`, которого нет в нулевом результате.** При отказе хранилище делает одно
 дополнительное чтение `credits_used` — только ради текста сообщения
-(`packages/core/src/cache/budget-store.ts:346`, `budget exceeded for provider=`).
+(`packages/core/src/cache/budget-store.ts:364`, `budget exceeded for provider=`).
 
 **Why это чтение не расширяет гейт.** Решение уже принято statement, и не записано ничего. Чтение
 заполняет три числа, которые операторский текст называет сегодня.
@@ -183,7 +183,7 @@ inherits the same lock instead of racing it` (`data-model.md:589-590`). Отде
 **Why реконсиляция — второй statement без потолочной границы.** §4.2.4:
 `Reconciliation is a second statement and carries no ceiling bound` (`data-model.md:582`). Возврат,
 отказанный клаузой `WHERE`, оставил бы записанными кредиты, которых никто не потратил
-(`data-model.md:583`, `strand credits nobody spent`).
+(`data-model.md:615`, `strand credits nobody spent`).
 
 **Why `calls_made` монотонен и на этой оси.** §4.2.4: `calls_made` `stays monotonic` …
 `reconciliation adjusts credits and never the call count` (`data-model.md:591-592`). Вызов к вендору

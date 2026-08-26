@@ -45,7 +45,7 @@
 
 **Why.** Прецедент репозитория: `chain.tvl` отделена от `protocol.tvl` тем же основанием — другой
 эндпоинт, другой выходной контракт, другой набор сетей
-(`packages/core/src/providers.config.ts:37`, `{ capability: 'chain.tvl', adapterIds: ['defillama'] },`).
+(`packages/core/src/providers.config.ts:40`, `{ capability: 'chain.tvl', adapterIds: ['defillama'] },`).
 Здесь выполняются все три условия.
 
 **Отвергнутая альтернатива.** Один тул с размеченным входом. Он дешевле на одну строку `ToolSpec` и

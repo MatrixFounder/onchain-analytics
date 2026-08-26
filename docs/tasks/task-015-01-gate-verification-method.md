@@ -88,7 +88,7 @@
 дефекта наблюдаются после отправки запроса.
 
 Второй признак — текст отказа. Сообщение гейта начинается с `daily call ceiling reached:`
-(`docs/architectures/system-architecture.md:4337`).
+(`docs/architectures/system-architecture.md:4357`).
 
 Третий признак — **изменение** суточного счётчика этим вызовом, а не его абсолютное значение.
 

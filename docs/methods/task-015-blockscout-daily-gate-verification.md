@@ -54,7 +54,7 @@
 
 Дискретное имя класса `ProviderCallCeilingExceededError` до оператора не доходит. На
 одноадаптерных маршрутах `refusal_class` сворачивается в `CapabilityUnavailableError` независимо от
-причины отказа (`docs/architectures/system-architecture.md:4343-4344`, «`refusal_class` does not
+причины отказа (`docs/architectures/system-architecture.md:4363-4364`, «`refusal_class` does not
 carry it on a single-adapter route»). Запись `tried[]` несёт только пару `{adapterId, reason}`, без
 отдельного поля класса (`docs/architectures/system-architecture.md:1251`,
 `tried.push({ adapterId, reason: … })`).
@@ -112,12 +112,12 @@ operator IS reading stderr» (`packages/mcp-server/src/index.ts:177-179`).
 
 **Первый признак — момент отказа относительно сетевого запроса.** Отказ гейта происходит **до**
 сетевого запроса: `ensureCallBudget` вызывается рядом с `throttle()`, перед обращением к вендору
-(`docs/architectures/system-architecture.md:4326-4328`, `beside the existing`). Все три открытых
+(`docs/architectures/system-architecture.md:4346-4348`, `beside the existing`). Все три открытых
 дефекта наблюдаются **после** отправки запроса — ответ (таймаут, HTTP 500 или дедлайн лимитера) уже
 предполагает, что запрос ушёл.
 
 **Второй признак — текст отказа.** Сообщение гейта начинается с `daily call ceiling reached:`
-(`docs/architectures/system-architecture.md:4337`, `daily call ceiling reached:`).
+(`docs/architectures/system-architecture.md:4357`, `daily call ceiling reached:`).
 
 **Третий признак — изменение суточного счётчика этим вызовом, а не его абсолютное
 значение.** Счётчик увеличивается **на допуске**, до сетевой попытки: `ensureCallBudget` вызывает

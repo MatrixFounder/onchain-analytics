@@ -21,7 +21,7 @@
 [L-18](../issues/l-18-the-registry-marks-62-dexscreener-served-chains-as-unsupported.md).
 
 **Правило не меняется, меняется инструмент.** Докстринг генератора
-(`packages/core/scripts/sync-chain-registry.ts:35-44`, `publishes no chain catalog, so this cannot be derived, only witnessed.`)
+(`packages/core/scripts/sync-chain-registry.ts:52-61`, `publishes no chain catalog, so this cannot be derived, only witnessed.`)
 запрещает выдумывать идентификаторы. Запрет остаётся в силе. Каталога у вендора нет, а
 пер-чейновый свидетель есть: маршрут пары отвечает HTTP 200 на известный сегмент сети и HTTP 400 на
 неизвестный.
@@ -181,7 +181,7 @@
 механизм требуется нетривиальный: строка вне каталога DeFiLlama помечается `deprecated` следующим
 прогоном (`packages/core/scripts/sync-chain-registry.ts:506`,
 `out.push({ ...prev, deprecated: true });`), а builder безусловно присваивает `vendors.defillama`
-(`packages/core/scripts/sync-chain-registry.ts:470`, `defillama: name,`), что противоречит
+(`packages/core/scripts/sync-chain-registry.ts:629`, `defillama: name,`), что противоречит
 требуемому `null`.
 
 ### Три состояния колонки различимы (R-33.5)
@@ -236,7 +236,7 @@
 **Файл `packages/core/src/adapters/registry.ts` — здесь строится отказ, и здесь выбирается текст:**
 
 - Единственное место, где рождается обобщённый отказ по паре (способность, сеть):
-  `packages/core/src/adapters/registry.ts:922`, `throw new CapabilityNotCoveredOnChainError({`. Оно
+  `packages/core/src/adapters/registry.ts:965`, `throw new CapabilityNotCoveredOnChainError({`. Оно
   вызывает `coverageStatus(...)` и передаёт `hint`, различающий **все три** исхода отказа —
   `excluded`, `unverified` и `vendor-serves-chain-capability-absent`
 
@@ -256,12 +256,12 @@
 начал бы утверждать вендорское исключение там, где непокрытие имеет другую причину.
 
 **Why умолчание `excluded` было бы воспроизведением L-18.** Непокрытие у соседей вендорским фактом
-не является: `packages/core/src/adapters/rpc-evm/index.ts:150`, `chain.rpcHosts !== null &&`, а
+не является: `packages/core/src/adapters/rpc-evm/index.ts:117`, `chain.rpcHosts !== null &&`, а
 `docs/architectures/data-model.md:142` читает этот `null` как нашу
 кураторскую дыру, не как отсутствие сети у вендора; `packages/core/src/adapters/dune/index.ts:25`,
 `chainSupport: (): boolean => false,` — сплошной отказ уровня M1, и «у вендора нет этой сети» ложно
 про каждую сеть, которую Dune обслуживает. Правило прямое:
-`packages/core/.AGENTS.md:1296`, `(R-58d): a false narrowing is as wrong as a false widening`.
+`packages/core/.AGENTS.md:1302`, `(R-58d): a false narrowing is as wrong as a false widening`.
 
 **Обоснование через `nansen` снято как неверное.** Манифест перечисляет обслуживаемое, но предикат
 адаптера отбрасывает сверх него: `packages/core/src/adapters/nansen/index.ts:160`,

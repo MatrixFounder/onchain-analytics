@@ -3965,6 +3965,14 @@ export interface BillingReservation {
   readonly existing: boolean;
 }
 
+/** The three values `reserve()`'s failure arm carries as `refusalClass` (task 015-04). A closed
+ * union, not `string`: the wrapper (§3.5.2) is obligated to READ this value, never to supply a
+ * literal of its own, and a fourth value becomes a compile error here rather than an unclassified
+ * string in `request_trace.refusal_class`. `ReplayWindowExpiredError` is §3.5.2a's own third value
+ * of the same field, not a separate carrier. */
+export type BillingRefusalClass =
+  'ClientCreditsExhaustedError' | 'BillingStoreUnavailableError' | 'ReplayWindowExpiredError';
+
 export interface BillingStore {
   /**
    * Idempotent by (principalId, clientRequestId) — an existing row of ANY state short-circuits a
@@ -3973,6 +3981,15 @@ export interface BillingStore {
    * NOTHING written to either table when the balance cannot cover `priceRaw` (mirrors
    * `checkAndReserve`'s "on ok:false nothing is written" contract) — see §3.5.3 for why this reads
    * R-3.3 at the taxonomy level rather than as "a row is written then reversed".
+   *
+   * **The failure arm carries `refusalClass` — REQUIRED, not optional** (task 015-04, closes
+   * architecture review round 2 MAJOR-D). The precedent is `ResolveFailure.refusalClass`
+   * (`packages/mcp-server/src/tools/resolve-capability.ts:200`), required there because
+   * `request_trace.refusal_class` is `NOT NULL` behind a `CHECK` constraint on a refusal row.
+   * `ClientCreditsExhaustedError` and `BillingStoreUnavailableError` are both returned as this
+   * VALUE, never thrown (§3.5.2 step 4) — a throw would skip both the `request_trace` row and the
+   * `tool.refused` diagnostics event the wrapper writes from `outcome`, the silence closing
+   * architecture review round 1 BLOCKING-3 removed.
    */
   reserve(input: {
     principalId: string;
@@ -3981,7 +3998,10 @@ export interface BillingStore {
     tool: string;
     capability: string | null;
     priceRaw: string;
-  }): Promise<{ ok: true; reservation: BillingReservation } | { ok: false; reason: string }>;
+  }): Promise<
+    | { ok: true; reservation: BillingReservation }
+    | { ok: false; reason: string; refusalClass: BillingRefusalClass }
+  >;
   /** Conditional `UPDATE … WHERE state = 'reserved'` (§4.6.1) — a no-op, not an error, when the row
    * already left `'reserved'`. First completer wins (§3.5.3). No balance effect (debited at reserve). */
   settle(rowId: string): Promise<void>;

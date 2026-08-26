@@ -179,7 +179,7 @@
   получает `'twenty-two'` и `'двадцать два'`; `toNumber` нормализует внутренний пробел
 
 **Why расширения словаря недостаточно.** `WORDS` читается только из `toNumber`
-(`packages/mcp-server/test/docs-counts.test.ts:71`, `function toNumber(token: string): number {`), а
+(`packages/mcp-server/test/docs-counts.test.ts:76`, `function toNumber(token: string): number {`), а
 `toNumber` вызывается на `match[1]` **уже совпавшего** шаблона. `\w` — это `[A-Za-z0-9_]`: на строке
 «of the twenty-two tools take a chain» захват берёт `twenty`, упирается в дефис вместо ` tools` и
 совпадение не состоится вовсе. Утверждение не станет неверным — оно **исчезнет**, и упадёт
@@ -188,7 +188,7 @@
 
 **Why якоря правятся тем же коммитом.** Оба входа областей перечисления литеральны намеренно, и оба
 перестают находиться при переходе на новое числительное. Отказ громкий и самоназывающий:
-`packages/mcp-server/test/docs-counts.test.ts:311`, `region cannot be located, so this gate would check nothing. Re-anchor it.`.
+`packages/mcp-server/test/docs-counts.test.ts:325`, `region cannot be located, so this gate would check nothing. Re-anchor it.`.
 Переякоривание — работа задачи, а не побочный эффект.
 
 **Файл `docs/ARCHITECTURE.md`:**
@@ -425,7 +425,7 @@ author should know it exists». Эта задача — тот самый сле
   `expect(Object.keys(TTL_SECONDS_BEFORE_THE_MOVE)).toHaveLength(26);`
 - `packages/core/test/ttl-coverage.test.ts:219`,
   `expect(Object.keys(TTL_FOR_BEFORE_THE_MOVE).sort()).toStrictEqual(routedCapabilities);`
-- `packages/core/test/ttl-coverage.test.ts:246`, `expect(fallingThrough).toStrictEqual([]);` — **второй
+- `packages/core/test/ttl-coverage.test.ts:278`, `expect(fallingThrough).toStrictEqual([]);` — **второй
   читатель того же замороженного литерала**, в отдельном `it`
   (`packages/core/test/ttl-coverage.test.ts:239`,
   `it('is unreachable for the 26 routed capabilities — enumerated, not asserted in general', () => {`).
