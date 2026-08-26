@@ -69,13 +69,20 @@ CREATE TABLE IF NOT EXISTS usage (
   provider     TEXT NOT NULL REFERENCES providers(id),
   day          INTEGER NOT NULL,           -- epoch-ms UTC bucket start: floor(ts/86400000)*86400000
   credits_used INTEGER NOT NULL DEFAULT 0, -- ADDITIVE counter, never overwritten (see note above)
+  -- The DAILY call gate (task 015-02, data-model.md §4.6.3) — the SAME denominator
+  -- usage_window.calls_made already gives at the minute bucket, one bucket width up. Mirrors R-9.2/
+  -- R-9.3, ADR-003 D6: "работа T-015 — не новая таблица, а обобщение существующего сторожа с одного
+  -- провайдера на любой." ADDITIVE and MONOTONIC — never refunded, for the same reason
+  -- usage_window.calls_made never is: the vendor round trip already happened.
+  calls_made   INTEGER NOT NULL DEFAULT 0,
   updated_at   INTEGER NOT NULL,           -- epoch-ms UTC of the last write — observability only
   PRIMARY KEY (provider, day),
   -- Enforced at the ENGINE level, not just by the MAX(0, …) in both upsert branches (adversarial
   -- cycle 1): a negative credits_used would read as free headroom in checkAndReserve and silently
   -- widen the budget. The never-negative rule was documented here but previously enforced by
   -- nothing. Portable across SQLite and Postgres (DB-SCHEMA-CONCEPT §1) — a plain column CHECK.
-  CHECK (credits_used >= 0)
+  CHECK (credits_used >= 0),
+  CHECK (calls_made >= 0)
 );
 
 -- SEC-1: the SAME additive counter as \`usage\`, bucketed by a SHORT window instead of a UTC day.
@@ -310,6 +317,51 @@ CREATE TABLE IF NOT EXISTS retention_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_retention_runs_job ON retention_runs (job, started_at);
 
+-- ══ T-015 (task 015-02) — the client billing ledger, data-model.md §4.6.1 ═══════════════════════
+--
+-- **Package boundary, stated once here.** \`client_usage\` carries \`principal_id\`/\`access_profile_id\`,
+-- so it belongs to the same family as \`request_trace\`/\`diagnostics\` above: the STORE over it is
+-- designed and written in packages/mcp-server (task 015-04 stub, replaced by 015-06/015-07),
+-- NEVER in packages/core (security.md §7.5.1, "packages/core gains no knowledge of tokens, roles or
+-- headers"). Only the DDL is declared here — the same split \`request_trace\`'s own declaration above
+-- already makes, and for the same reason (task 015-02 note: "Форма раньше писателей").
+--
+-- **The dedup key \`UNIQUE (principal_id, client_request_id)\` carries NO time component**, unlike
+-- \`request_trace\`'s own \`(principal_id, client_request_id, received_at)\` above. Time in the key
+-- there is deliberate — a retry writes a SECOND trace row. A billing key of that shape would let a
+-- retry charge twice (R-5.1, AC-12; closes ADR-003 OQ-F: "Леджеру нужен ключ без времени, иначе
+-- ретрай спишет дважды").
+--
+-- \`price_raw\` is TEXT for the same reason \`access_profiles.credits_balance_raw\` above is (§1.7):
+-- credits exceed the safe 2^53 of a JS number. \`principal_id\`/\`access_profile_id\` are labels, not
+-- foreign keys, mirroring \`request_trace.principal_id\` — the local profile's principal has no token
+-- row, and a REFERENCES clause would refuse every stdio-profile write.
+CREATE TABLE IF NOT EXISTS client_usage (
+  id                 TEXT PRIMARY KEY NOT NULL,   -- ULID
+  principal_id       TEXT NOT NULL,      -- api_tokens.id, or 'local' — a label, not a foreign key,
+                                          -- for the same reason request_trace.principal_id is one
+  access_profile_id  TEXT,               -- nullable: the local principal reaches no profile (R-7.5)
+  client_request_id  TEXT NOT NULL,      -- the accepted client value, or the server-minted id
+  tool               TEXT NOT NULL,      -- the wire name — always known at the reserve point
+  capability         TEXT,               -- the tool's STATIC declared capability, or NULL (§4.6.2)
+  price_raw          TEXT NOT NULL,      -- the applied price, copied at reserve time (§1.7 canon)
+  state              TEXT NOT NULL,      -- 'reserved' | 'settled' | 'refunded'
+  refund_reason      TEXT,               -- class name, or 'expired' — only when state='refunded'
+  reserved_at        INTEGER NOT NULL,   -- epoch-ms UTC, pinned once
+  terminal_at        INTEGER,            -- epoch-ms UTC the row left 'reserved' — the retention anchor
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL,
+  UNIQUE (principal_id, client_request_id),
+  CHECK (state IN ('reserved','settled','refunded')),
+  CHECK ((state = 'refunded') = (refund_reason IS NOT NULL)),
+  -- The retention job filters on terminal_at alone, with no separate branch on state (§4.6.1) — this
+  -- tie is what lets it do that.
+  CHECK ((state = 'reserved') = (terminal_at IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_client_usage_principal ON client_usage (principal_id, reserved_at);
+CREATE INDEX IF NOT EXISTS idx_client_usage_terminal   ON client_usage (terminal_at);
+CREATE INDEX IF NOT EXISTS idx_client_usage_reserved   ON client_usage (state, reserved_at);
+
 -- The phase 0 access profile. The id is a LITERAL, identical to the one migration 002 seeds: two
 -- engines seeding independently would mint two ids for one entity, and a token's access_profile_id
 -- would resolve on one host and dangle on the other (§4.5.3).
@@ -345,5 +397,22 @@ export const USAGE_WINDOW_COLUMNS: readonly { name: string; ddl: string }[] = [
   {
     name: 'calls_made',
     ddl: 'ALTER TABLE usage_window ADD COLUMN calls_made INTEGER NOT NULL DEFAULT 0',
+  },
+];
+
+/**
+ * Additive column migrations for `usage` (task 015-02, data-model.md §4.6.3) — the same pattern as
+ * `USAGE_WINDOW_COLUMNS` above, one bucket width up (DAY instead of minute). `SqliteBudgetStore`'s
+ * `migrateUsage()` applies these the identical idempotent way: `PRAGMA table_info` first, `ALTER`
+ * only what is missing.
+ *
+ * **Why `CHECK (calls_made >= 0)` is declared only on the `CREATE TABLE` path above, not here.**
+ * `ALTER TABLE ADD COLUMN` in SQLite cannot add a table constraint — the same asymmetry already
+ * documented for `usage_window.calls_made`, inherited rather than re-derived.
+ */
+export const USAGE_COLUMNS: readonly { name: string; ddl: string }[] = [
+  {
+    name: 'calls_made',
+    ddl: 'ALTER TABLE usage ADD COLUMN calls_made INTEGER NOT NULL DEFAULT 0',
   },
 ];

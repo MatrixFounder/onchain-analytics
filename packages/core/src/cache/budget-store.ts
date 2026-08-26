@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import type { AdapterRegistration } from '../adapters/types.js';
 import { cacheDbPath } from './data-dir.js';
-import { CACHE_DDL, USAGE_WINDOW_COLUMNS } from './ddl.js';
+import { CACHE_DDL, USAGE_COLUMNS, USAGE_WINDOW_COLUMNS } from './ddl.js';
 import { adapterRegistrations } from '../providers.config.js';
 
 /**
@@ -181,6 +181,7 @@ export class SqliteBudgetStore implements BudgetStore {
       // providers/cache_entries (no migration of either, R-34 acceptance).
       this.db.exec(CACHE_DDL);
       this.migrateUsageWindow();
+      this.migrateUsage();
       this.bootstrapProviders(options.providers ?? adapterRegistrations);
 
       this.selectUsageStmt = this.db.prepare(
@@ -260,6 +261,23 @@ export class SqliteBudgetStore implements BudgetStore {
       (this.db.pragma('table_info(usage_window)') as { name: string }[]).map((c) => c.name),
     );
     for (const column of USAGE_WINDOW_COLUMNS) {
+      if (!existing.has(column.name)) this.db.exec(column.ddl);
+    }
+  }
+
+  /**
+   * Applies every additive column `usage` has gained since it shipped (task 015-02, data-model.md
+   * §4.6.3) — the identical idempotent `PRAGMA table_info` presence check `migrateUsageWindow()`
+   * above already uses, one bucket width up (DAY instead of minute). `CREATE TABLE IF NOT EXISTS`
+   * is a no-op on a file that already has `usage`, so a column added after the table shipped needs
+   * this explicit `ALTER`. `DEFAULT 0` means an existing row is correct with no backfill: a day
+   * bucket that predates the column has, by definition, zero counted calls.
+   */
+  private migrateUsage(): void {
+    const existing = new Set(
+      (this.db.pragma('table_info(usage)') as { name: string }[]).map((c) => c.name),
+    );
+    for (const column of USAGE_COLUMNS) {
       if (!existing.has(column.name)) this.db.exec(column.ddl);
     }
   }

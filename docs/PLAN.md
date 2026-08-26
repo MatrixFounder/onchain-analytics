@@ -92,9 +92,13 @@ Supabase не применяется. Решение принадлежит за
 - **015-03** `[LOGIC]` — Postgres-миграция T-015: `onchain.client_usage`, `ALTER TABLE usage ADD
 COLUMN calls_made`, гранты роли состояния, CHECK формата на `credits_balance_raw`; тринадцатое имя
   в `STATE_TABLES` и обе сверки, которые оно ломает
-  - Требования: R-1, R-7, R-9 · Приоритет: критический · Зависимости: нет
+  - Требования: R-1, R-7, R-9 · Приоритет: критический · Зависимости: 015-02
   - Закрывает MAJOR-F раунда 2 (дом леджера), MINOR-7 раунда 2 (формат `credits_balance_raw`) и
     B-1 ревью плана (владелец `packages/core/src/pg/state-client.ts`)
+  - **Зависимость от 015-02 исправлена при исполнении (2026-08-26).** Объявлялась как «нет», но
+    собственный `TC-UNIT-08` задачи сверяет перечень колонок `client_usage` в миграции 004 с
+    `CACHE_DDL` (`packages/core/src/cache/ddl.ts`) — файлом, который создаёт 015-02. Тот же класс,
+    что `m-2` раунда 1: зависимость есть в тест-кейсе и отсутствует в объявлении
   - [tasks/task-015-03-pg-migration-billing.md](tasks/task-015-03-pg-migration-billing.md)
 
 - **015-04** `[STUB]` — интерфейс `BillingStore` и стаб: `reserve`, `settle`, `refund`,

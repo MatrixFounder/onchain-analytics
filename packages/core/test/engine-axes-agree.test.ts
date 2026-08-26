@@ -32,6 +32,21 @@ const migration = readFileSync(
   'utf8',
 );
 
+/**
+ * T-015 (task 015-03, migration 004) adds `usage.calls_made` — and its `CHECK (calls_made >= 0)` —
+ * via a SEPARATE file rather than editing 002 in place: 002 is already live on the dev VM
+ * (`deployment.md`:706, "live on the dev VM"), so its text stays a historical record rather than
+ * something this repository edits after the fact. `checksOf` below only looks inside a `CREATE
+ * TABLE` body, so it cannot see a CHECK added by a later `ALTER TABLE`; `alterAddedChecksOf` reads
+ * that ALTER form instead, and is merged into ONLY the `usage` comparison below — the same UNION
+ * `packages/core/test/pg-store-parity.test.ts`'s STATE_TABLES check reads for the thirteenth table
+ * name (TC-UNIT-11).
+ */
+const migration004 = readFileSync(
+  path.join(repoRoot, 'sql/migrations/004_t015_billing.sql'),
+  'utf8',
+);
+
 /** The eight tables of §4.5 — the ones both axes must carry. */
 const ENGINE_TABLES = [
   'users',
@@ -95,6 +110,30 @@ const checksOf = (sql: string, table: string, qualifier: string): string[] => {
     .sort();
 };
 
+/**
+ * `CHECK` predicates a LATER migration adds to an EXISTING table via a guarded
+ * `ALTER TABLE ... ADD CONSTRAINT ... CHECK (...)`, rather than inside the table's original
+ * `CREATE TABLE` (`checksOf`'s own blind spot, see the `migration004` note above).
+ *
+ * Deliberately NOT merged into every table's comparison — only `usage`'s, below. Migration 004 also
+ * adds a `CHECK` to `access_profiles` (MINOR-7, `credits_balance_raw`'s format guard), and THAT one
+ * is Postgres-only ON PURPOSE (`ddl-dialect-parity.test.ts`, TC-UNIT-09): merging it in here would
+ * make this file assert the asymmetry is a defect, contradicting the test that asserts it is
+ * deliberate.
+ */
+const alterAddedChecksOf = (sql: string, table: string, qualifier: string): string[] => {
+  const pattern = new RegExp(
+    `ALTER TABLE\\s+${qualifier}${table}\\s+ADD CONSTRAINT\\s+\\w+\\s+(CHECK\\s*\\([\\s\\S]*?\\))\\s*;`,
+    'gi',
+  );
+  return [...stripComments(sql).matchAll(pattern)].map((m) =>
+    (m[1] ?? '')
+      .replace(/^CHECK\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
+};
+
 describe('the two storage axes declare the same engine schema', () => {
   it('both axes carry all eight tables of §4.5', () => {
     for (const table of ENGINE_TABLES) {
@@ -119,8 +158,17 @@ describe('the two storage axes declare the same engine schema', () => {
   it.each([...ENGINE_TABLES, ...COUNTER_TABLES])(
     '%s declares the same CHECK predicates on both axes',
     (table) => {
+      // ONLY `usage` gets migration 004's ALTER-added CHECK merged in (see `alterAddedChecksOf`'s
+      // own note) — every other table's comparison is exactly what it was before T-015.
+      const postgresChecks =
+        table === 'usage'
+          ? [
+              ...checksOf(migration, table, 'onchain\\.'),
+              ...alterAddedChecksOf(migration004, table, 'onchain\\.'),
+            ].sort()
+          : checksOf(migration, table, 'onchain\\.');
       expect(checksOf(CACHE_DDL, table, ''), `${table} CHECK predicates differ`).toEqual(
-        checksOf(migration, table, 'onchain\\.'),
+        postgresChecks,
       );
     },
   );

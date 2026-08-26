@@ -75,13 +75,15 @@ export interface StateClient {
 }
 
 /**
- * The twelve engine tables of `data-model.md` §4.4, and the input of the runtime
+ * The thirteen engine tables of `data-model.md` §4.4/§4.6.1, and the input of the runtime
  * schema-qualification guard below (R-30.1).
  *
  * **Why the list is here rather than derived from the SQL.** A guard that inferred table names from
  * the statement it is checking would be inferring them from the text it is supposed to police. This
- * list is compared against `sql/migrations/002_t014_network_profile.sql` by
- * `packages/core/test/pg-store-parity.test.ts`, so a thirteenth table added to the migration and
+ * list is compared against the UNION of `sql/migrations/002_t014_network_profile.sql` (the first
+ * twelve) and `sql/migrations/004_t015_billing.sql` (the thirteenth, `client_usage` — task 015-03,
+ * added as a SEPARATE file rather than an edit to 002, which is already live on the dev VM) by
+ * `packages/core/test/pg-store-parity.test.ts`, so a fourteenth table added to either migration and
  * not to this list fails a test instead of silently escaping the guard.
  */
 export const STATE_TABLES = [
@@ -97,6 +99,7 @@ export const STATE_TABLES = [
   'request_trace',
   'diagnostics',
   'retention_runs',
+  'client_usage',
 ] as const;
 
 /**

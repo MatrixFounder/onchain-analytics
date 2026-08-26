@@ -826,6 +826,14 @@ third role for a future default ACL to widen silently, the exact class of risk R
 
 #### 10.9.4. Row transfer and the four-part verify gate (R-8.11, R-8.12, R-8.13, AC-36)
 
+**MAJOR-F precondition (architecture review round 2), stated once here and repeated verbatim at
+§10.9.7.** The client billing ledger, `client_usage` (`data-model.md` §4.6.1), lives ONLY on the NEW
+container this section moves rows into. It is never written on the OLD container (`supabase-db`,
+`deployment.md`:706) — migration `004_t015_billing.sql` is not applied there, by that file's own
+header — because the old container's twelve T-014 tables are dropped WHOLESALE in one irreversible
+step at §10.9.7, and a `client_usage` row written before that step would vanish with them. The old
+container therefore never carries a thirteenth engine table, only the twelve of migration 002.
+
 **Order — `DB-SCHEMA-CONCEPT` §6, applied literally (R-8.14).** The network profile is stopped
 BEFORE any row moves (`UC-6` step 3) — a window with no write reaching the old container, not a
 reconciliation performed after the fact. Rows transfer while stopped (step 4). The profile starts
@@ -955,7 +963,13 @@ rejected by R-8.15: the rollback path is a file, not tables left standing.
 
 #### 10.9.7. Decommissioning the old container's engine tables (R-8.8, AC-29)
 
-After §10.9.6's artifact exists, the thirteen engine tables are dropped from the OLD container.
+**MAJOR-F precondition (architecture review round 2), repeated verbatim from §10.9.4.** The client
+billing ledger, `client_usage`, lives ONLY on the new container — it was never written on this OLD
+container (`supabase-db`), because migration `004_t015_billing.sql` is not applied there. This
+section therefore drops the TWELVE engine tables of migration 002, not a thirteenth this container
+never carried.
+
+After §10.9.6's artifact exists, the twelve engine tables are dropped from the OLD container.
 Step 2a's postcondition (`deployment.md` §10.4.2, translated to this topology by `docs/TASK.md`
 R-8.13's own instruction) is re-measured there. `may_select` for the snapshotter's read role now
 covers `assets`, `metrics`, `snapshots` and NOTHING else, because there is nothing else. The twelve

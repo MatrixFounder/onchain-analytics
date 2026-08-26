@@ -619,12 +619,23 @@ describe('the four dialect obligations of data-model.md §4.2.4, checked on the 
     ).rejects.toThrow(/schema-qualified/);
   });
 
-  it('STATE_TABLES names exactly the tables migration 002 creates', () => {
-    const migration = readFileSync(
+  it('TC-UNIT-11: STATE_TABLES names exactly the tables migrations 002 and 004 create together', () => {
+    // T-015 (task 015-03) adds a thirteenth table, client_usage, via a SEPARATE file rather than
+    // editing 002 in place — 002 is already live on the dev VM (deployment.md:706, "live on the dev
+    // VM"), so its text stays a historical record. The comparison therefore reads the UNION of both
+    // files' CREATE TABLE statements, and falls back to reading only 002 if the union is dropped.
+    const migration002 = readFileSync(
       join(REPO_ROOT, 'sql/migrations/002_t014_network_profile.sql'),
       'utf8',
     );
-    const created = [...migration.matchAll(/CREATE TABLE IF NOT EXISTS\s+onchain\.(\w+)/gi)]
+    const migration004 = readFileSync(
+      join(REPO_ROOT, 'sql/migrations/004_t015_billing.sql'),
+      'utf8',
+    );
+    const created = [
+      ...migration002.matchAll(/CREATE TABLE IF NOT EXISTS\s+onchain\.(\w+)/gi),
+      ...migration004.matchAll(/CREATE TABLE IF NOT EXISTS\s+onchain\.(\w+)/gi),
+    ]
       .map((match) => (match[1] ?? '').toLowerCase())
       .sort();
     expect([...STATE_TABLES].sort()).toEqual(created);

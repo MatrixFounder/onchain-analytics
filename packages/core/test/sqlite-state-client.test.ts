@@ -54,7 +54,20 @@ describe('the guards run before the translation, so both axes accept the same st
   });
 
   it('names every state table in the guard', () => {
-    expect(STATE_TABLES.length).toBe(12);
+    // TC-UNIT-10 (task 015-03): thirteen names since migration 004 added client_usage.
+    expect(STATE_TABLES.length).toBe(13);
+    expect(STATE_TABLES).toContain('client_usage');
+  });
+
+  it('TC-UNIT-12: the guard sees the new name — an unqualified client_usage is refused, a qualified one resolves', async () => {
+    // Falls if 'client_usage' is removed from STATE_TABLES: the regex it feeds would stop matching
+    // the bare name and this statement would run unqualified, exactly the WI-47 class of defect.
+    await expect(
+      client().query('SELECT price_raw FROM client_usage WHERE id = $1', ['x']),
+    ).rejects.toThrow(/schema-qualified/);
+    await expect(
+      client().query('SELECT price_raw FROM onchain.client_usage WHERE id = $1', ['x']),
+    ).resolves.toStrictEqual([]);
   });
 });
 
