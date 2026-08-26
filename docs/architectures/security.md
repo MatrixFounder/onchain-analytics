@@ -5,7 +5,7 @@
 ### 7.1. Authentication and authorization
 
 The answer differs by deployment profile. A **deployment profile** is a named combination of one
-transport and one store, one per process (`docs/TASK.md:21-24`, `` `Профиль развёртывания` — режим запуска процесса ``).
+transport and one store, one per process (`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:21-24`, `` `Профиль развёртывания` — режим запуска процесса ``).
 
 **Transport and store are two independent axes** (owner decision, 2026-08-12). Three combinations
 carry a name; `system-architecture.md` §3.4.8 owns the names.
@@ -26,7 +26,7 @@ switching `.mcp.json` over. Requiring Postgres for that would be a cost with no 
 be the one configuration whose refusal path never runs.
 
 - **Local stdio** — no inbound perimeter; trust is delegated to the host process. No token is
-  required and none is checked (`docs/TASK.md:451`, `значение не требуется и не проверяется`).
+  required and none is checked (`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:518`, `значение не требуется и не проверяется`).
 - **Streamable HTTP, under either store** — every request carries a bearer token, verified before
   routing. The inbound design is §7.5; the tables it reads and writes are §4.5.
 
@@ -407,7 +407,7 @@ and never reach a tool. Step 5 is where R-26.3's `isError: true` form begins.
 
 **The checks live in the `mcp-server` package**, beside the transport that needs them.
 `packages/core` gains no knowledge of tokens, roles or headers. `createServer` keeps its signature
-(owner decision, `docs/TASK.md:84`, `не меняет сигнатуру`).
+(owner decision, `docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:87`, `не меняет сигнатуру`).
 
 **The SQL that names the identity tables therefore lives in `mcp-server` too.** The authentication
 read of `data-model.md` §4.5.4 is issued from this package.
@@ -544,7 +544,7 @@ and the literal `local` on stdio (§4.5.7).
 
 **Two roles, from R-15.3a.** Role `admin` is the operator principal of ADR-002 D8. Role `user` is the
 client. The local stdio principal has role `admin`, which is what keeps `_meta.budget` present in
-UC-3 (`docs/TASK.md:442`, `` `_meta.budget` присутствует в ответах ``).
+UC-3 (`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:509`, `` `_meta.budget` присутствует в ответах ``).
 
 **The role lives on the user, not on the token** (§4.5.3). A person's two tokens cannot disagree
 about what that person may see.
@@ -879,7 +879,7 @@ runtime dependency since M1; an `https.request` transport rewrites `safeFetch`
 **The curated allowlist is a declared precondition of the acceptance**, not a background fact. Every
 outbound host is approved by a human and committed (§7.2.1, rule 1).
 
-**AC-22 was reformulated to match what is designed** (`docs/TASK.md:487`,
+**AC-22 was reformulated to match what is designed** (`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:554`,
 `Проверенный исходящий адрес не закрепляется`). It asks for the TLS name check plus a recorded
 acceptance of the residual, and names the curated allowlist as the precondition.
 
@@ -1108,7 +1108,7 @@ non-curated outbound host
 `**Условие пересмотра — не календарь, а событие.**`).
 
 **AC-22 no longer depends on an open question.** Its current text asserts what §7.5.5 designs
-(`docs/TASK.md:487`, `Проверенный исходящий адрес не закрепляется`).
+(`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:554`, `Проверенный исходящий адрес не закрепляется`).
 
 **`OQ-T014-SEC-2`, 2026-08-13, owner Sergey: closed for T-014.** No principal receives the operator
 rendering of a refusal over the network transport, whatever its role. The client rendering carries
@@ -1125,4 +1125,23 @@ reachable from where that operator works.
 
 **AC-47 no longer depends on an open question.** Its scope is the network transport with no role
 exception (§7.5.6), which its current text asserts
-(`docs/TASK.md:510`, `Ни один ответ по сетевому транспорту не несёт операторских деталей`).
+(`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:567`, `Ни один ответ по сетевому транспорту не несёт операторских деталей`).
+
+#### 7.5.9. T-015 — the credit check is a consumer of §7.5.3a, not a new path
+
+**§7.5.3a's own table already named this row before T-015 existed:** "the credit ceiling and the
+rate limit | decided by the access profile | T-015; phase 0 declares both unlimited." T-015 delivers
+exactly that consumer — `system-architecture.md` §3.5.2 reads `credits_mode`/`credits_balance_raw`
+through the SAME `AccessProfileReader` §7.5.3a already designs, refusing with
+`ClientCreditsExhaustedError` under `credits_mode = 'metered'` with an insufficient balance. No
+second reader is introduced, and R-13.3a's static gate over `process.env` direct reads is unaffected
+— the reserve step reads no environment value of its own.
+
+**Phase 0 never reaches the refusal branch** (R-6.2). `phase0-unlimited`'s `credits_mode` is
+`'unlimited'`, seeded by the migration `data-model.md` §4.5.3 already documents, so the check runs
+and always passes — the seam is exercised, not decorative, the same standard `ADR-003` D5's "швы
+стоят" sets for every phase-0 mechanism.
+
+**The billing ledger opens no new secret channel** (§7.5.7). `client_usage` carries `principal_id`
+and `access_profile_id`, both already-established labels with no secret content — the same two
+columns `request_trace` carries today. Nothing in T-015 reads `AuthInfo.token` a second time.

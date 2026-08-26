@@ -11,6 +11,24 @@ source: SEC-2 owner decision, 2026-08-23
 
 # WI-62 — the engine's tables move to a dedicated Postgres container on the separated host
 
+> **Amendment — owner decision 2026-08-25, executed by T-015.** The host is the **dev VM**, not a
+> separated host. A dedicated Postgres container is stood up beside the existing services on the dev
+> VM, and the engine's tables move there out of the managed Supabase cluster. Everything else in this
+> record is executed literally: `SEC-2` moves to `fixed` with the §10.4.2 measurement quoted, and its
+> dev-VM acceptance is **retired rather than extended**. The separated host itself remains the
+> `OQ-T014-B` trajectory and is explicitly out of T-015's scope.
+>
+> Read the words "separated host" below — in the title, in the `What`, and in `Acceptance` — against
+> this amendment. They are left unedited on purpose, the way `ADR-002` D4 п.5 keeps its withdrawn
+> literal text: a record rewritten in place loses the trace of what changed and when.
+>
+> One clause of `Acceptance` was refuted rather than amended, and T-015's review found it: "the
+> §10.4.2 step-2a query returns no `true` outside the **two role/table pairs**" contradicts this
+> record's own body, which names three snapshotter tables for the read role and twelve engine tables
+> for the state role. T-015 replaced it with three measurements — the state role over thirteen tables
+> on the new container, no other role over any of them, and the old container re-measured after the
+> move (`docs/TASK.md` R-8.5, R-8.6, R-8.8).
+
 **What.** Stand up a plain Postgres container beside the existing services on the separated host, and
 run the network profile's twelve tables there instead of inside the managed Supabase cluster. Same
 architecture otherwise — schema `onchain`, the two roles, the same migration file, which is the whole

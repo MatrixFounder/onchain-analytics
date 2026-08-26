@@ -244,7 +244,7 @@ own fields — it is in who reported it:
 
 `platform-explorer` samples every ~5 minutes, so 11 of its 12 points shared an hour with a sibling
 and were discarded. On `privacy.shielded_pool.history` the collapse was purely destructive: the two
-participants write DIFFERENT metrics (`docs/TASK.md` §1.3), so no slot was ever contested there and
+participants write DIFFERENT metrics ([TASK-013](../tasks/task-013-series-merge-and-history-tool.md) §1.3), so no slot was ever contested there and
 every discarded point was one participant's own.
 
 **The persistence-layer argument is narrowed, not withdrawn.** 013-4 cited
@@ -349,7 +349,7 @@ is 31, the difference being this record's own 13 mentions and the five in-place 
 different tree — which is why the tree, not just the scope, is named here. None of the four is edited
 beyond its own in-place mark; `data-model.md` is left unedited entirely.
 
-**Why the wider reading.** R-174(c) (translated from the Russian original, `docs/TASK.md:565-567`, `случая СИНТЕЗИРУЕТ свою причину, а не читает`):
+**Why the wider reading.** R-174(c) (translated from the Russian original, `docs/tasks/task-013-series-merge-and-history-tool.md:565-567`, `случая СИНТЕЗИРУЕТ свою причину, а не читает`):
 "`resolution.cache` — a merged answer does not collapse to one `'hit'`/`'miss'`: if one participant
 is from cache and another is from network, both facts are reflected — the concrete shape is
 Architecture's call, the requirement fixes ONLY that the fact is not lost." A cache status is a
@@ -361,7 +361,7 @@ reports exactly ONE participant with ONE `'miss'` — silently erasing that the 
 ever asked, or that it answered from cache. That is exactly the fact R-174(c) requires never
 disappears.
 
-**The composition, named precisely.** UC-19 (`docs/TASK.md:737-744`, `Обе точки присутствуют раздельно, каждая со своей истинной`) supplies the core fact this
+**The composition, named precisely.** UC-19 (`docs/tasks/task-013-series-merge-and-history-tool.md:737-744`, `Обе точки присутствуют раздельно, каждая со своей истинной`) supplies the core fact this
 argument turns on — `platform-explorer` answering an **empty array**, which is a legitimate
 "answered" outcome, not a failure — but literal UC-19 has `pg-history` entirely UNAVAILABLE (no
 `ONCHAIN_PG_URL`) and THROWS `CapabilityUnavailableError` (R-164(c)), so it never reaches a
@@ -825,3 +825,80 @@ task.
 
 **OQ-5 — ordering relative to M3:** TASK-006 entirely **before** M3. M3's signals build on top of the
 chain layer, and building them before universalization means building them twice.
+
+### T-015 (`phase0-billing-blockscout-budget`) — appended here, out of chronological order
+
+Placed at the end of this file rather than beside the other 2026-08 entries above, deliberately. An
+insertion there would shift every line number this repository's own review corpus already cites into
+this file (`open-questions.md:247`, `:364` — confirmed live, `docs/reviews/task-015-review-round3.md`
+line 47). T-015 postdates every entry above it, and nothing below depends on ordering.
+
+**All seven open questions `docs/TASK.md` raised, plus one eighth decision, were closed by the owner
+on 2026-08-25** (`docs/TASK.md` §5). This document records their resolutions once more, at the
+architecture layer. Each one shaped a design decision above; none is quoted without consequence.
+
+- **OQ-1 — the credit's nominal value.** 1 credit = 1 tool call by default; price is an attribute of
+  a price-list row keyed by capability-or-tool, never a global constant (`data-model.md` §4.6.2).
+- **OQ-2 — an exhausted balance under `credits_mode='metered'`.** A named class,
+  `ClientCreditsExhaustedError`, refusing at the reserve step before any row is written
+  (`system-architecture.md` §3.5.2, §3.5.3).
+- **OQ-3 — a process dying between reserve and outcome.** Background reconciliation refunds a
+  `'reserved'` row older than 120 000 ms (twice the largest declared `deadlineMs`) with
+  `refund_reason = 'expired'` (`data-model.md` §4.6.5).
+- **OQ-4 — `client_usage`'s own retention.** Three years from the row's TERMINAL state
+  (`settled`/`refunded`), not from `reserved` — its own window, distinct from `request_trace`'s and
+  `diagnostics`'s (`data-model.md` §4.6.1). The number is carried over from the phrasing of the
+  accepted option, not separately measured — recorded as such, not disguised as a derivation.
+- **OQ-5 — `client_usage` for the local stdio principal.** Written there too, `access_profile_id`
+  nullable; revenue and internal use share one table, distinguished by `principal_id = 'local'` /
+  a NULL `access_profile_id` (`data-model.md` §4.6.1).
+- **OQ-6 — a live measurement of Blockscout's real ceiling.** Will not happen. The daily call gate is
+  configured by the `ADR-003` D6 ESTIMATE (≈625/day), tagged with its own origin. `ADR-003` D6's own
+  obligation — "T-015 replaces the guess with a measurement" — is left unfulfilled by this decision.
+  `ADR-003` §Revisit when's trigger stays unspent (`data-model.md` §4.6.4).
+- **OQ-9 — a `BillingStore` storage failure at reserve time.** Fail-closed: the call is refused
+  (`BillingStoreUnavailableError`), never served for free
+  (`system-architecture.md` §3.5.2 step 4).
+- **Eighth decision, not originally a numbered question — `api_tokens` at the WI-62 migration.**
+  Transfers with the other eleven data-bearing tables. The premise that it could not (the token
+  hashing pepper living inside the row) was wrong. It is corrected, not overridden
+  (`deployment.md` §10.9.4).
+
+**`OQ-G` — how long `client_request_id` idempotency lives, and what serves a replay inside that
+window. Closed by the owner one day later, 2026-08-26 — `ADR-003`'s own question, not one of
+`docs/TASK.md`'s original seven above.** The window is `min(ttlSeconds, 120 000 ms)`
+(`data-model.md` §4.6.1). A replay inside it re-runs `resolve()` rather than serving a recorded
+outcome — the choice `ADR-003` `OQ-G` left to this phase. It closes with its price stated
+(`system-architecture.md` §3.5.2a): a rare, bounded, already-partly-observed vendor cost, accepted
+over building a second storage lifecycle for a captured response. A replay past the window is refused
+by a named class, `ReplayWindowExpiredError`, before any resource is touched (`system-architecture.md`
+§3.5.2a, closes `docs/TASK.md` R-5.7). This closes architecture review round 1 MAJOR-11.
+
+**Nothing raised by this architecture phase itself is left open.** Two design choices this section
+made where `docs/TASK.md`'s wording admitted more than one reading are recorded as decisions, not as
+new questions. Each resolves inside already-decided principles rather than requiring a fresh owner
+call.
+
+- Pricing is keyed by the tool's STATIC declared capability (known before `resolve()` runs), not the
+  dynamic one task 014-30 introduced (`data-model.md` §4.6.2).
+- `ClientCreditsExhaustedError` writes no ledger row, mirroring `checkAndReserve`'s own "on refusal,
+  nothing is written" contract rather than a write-then-reverse pair
+  (`system-architecture.md` §3.5.3).
+
+### AC-42 vs. `dailyCallCeiling` — a recorded discrepancy, `docs/TASK.md` out of this phase's scope
+
+**Not resolved here — `docs/TASK.md` is accepted and out of this phase's editing scope** (architect
+brief §5: "расхождение с ней — тоже открытый вопрос, а не повод её править"). Recorded rather than
+silently patched, following architecture review round 1 MAJOR-3.
+
+AC-42 checks "`refillPerSec` and its 'not measured' comment are unchanged — diff of
+`providers.config.ts` is empty." `data-model.md` §4.6.3 requires `dailyCallCeiling` on every
+`tier: 'free'` registration, declared in that SAME file (R-9.5, R-9.7). The file's diff therefore
+cannot literally be empty once this section is applied, regardless of how `dailyCallCeiling` is
+typed or worded.
+
+**The design's own reading, stated so a reviewer can check it rather than guess it.** AC-42 names
+`refillPerSec` and its comment specifically; the design keeps both BYTE-IDENTICAL
+(`providers.config.ts:342`, `deployment.md` §10.9 makes no edit there) and adds `dailyCallCeiling` as
+an independent field beside them. Whether this reading satisfies AC-42's INTENT is the owner's call,
+not this phase's — the phase records the tension rather than deciding it away.

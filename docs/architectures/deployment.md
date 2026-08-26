@@ -30,8 +30,8 @@ correctness condition rather than a connection setting.
 #### 10.1.1. Deployment profiles (R-13)
 
 A **deployment profile** is a named combination of two independent axes, one per process. An
-**access profile** is a settings entity a token references, many per process (`docs/TASK.md:21-24`).
-Neither is abbreviated to "profile" in this section. `docs/TASK.md:538` (`в серверном профиле`)
+**access profile** is a settings entity a token references, many per process (`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:21-24`).
+Neither is abbreviated to "profile" in this section. `docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:609` (`в серверном профиле`)
 names the network profile in Russian; the two names denote the same mode.
 
 **The two axes.**
@@ -98,7 +98,7 @@ process holding the same vendor key, so this is an operating rule with no compil
 
 **AC-4 therefore scopes to two processes of the same profile over one store.** Two `network`
 processes on one Postgres, or two `local` processes on one `DATA_DIR`, share one bucket
-(`docs/TASK.md:468` `Два процесса против одного`).
+(`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:535` `Два процесса одного профиля над одним хранилищем`).
 
 `OQ-T014-DM-1` is closed by this constraint (§4.5.11). The two profiles do not share a vendor spend
 ledger, because they do not run together.
@@ -202,6 +202,14 @@ since TASK-008 (`packages/mcp-server/src/env.ts:64`), and `.env.example` documen
 | `ONCHAIN_SESSION_MAX`              | bootstrap | ceiling on concurrent sessions (R-24.1)                                                                         |
 | `ONCHAIN_SESSION_IDLE_MS`          | bootstrap | idle timeout after which a session is evicted (R-24.2)                                                          |
 | `ONCHAIN_META_NAMESPACE`           | bootstrap | namespace of the incoming `_meta` key carrying a client request id; unset → every id is minted (`OD-014-30-14`) |
+| `BLOCKSCOUT_DAILY_CALL_CAP`        | narrowing | T-015 — overrides `dailyCallCeiling` for R-12.1's verification run; unset → the ≈625 estimate                   |
+
+**T-015 adds this one key, closing architecture review round 1 MAJOR-4** (`system-architecture.md`
+§3.5.4, `data-model.md` §4.6.3). It overrides `blockscout.dailyCallCeiling` for R-12.1's synthetic
+verification run; a positive integer only, no `off` sentinel (R-9.6). It is validated by `EnvSchema`
+as a positive integer, the same discipline the three Nansen keys already get. `.env.example`
+documents it in the same commit that adds it here — the rule this section already states for every
+new key.
 
 **The response timeout is bounded from below by the capability manifest** (R-16.3,
 [interfaces.md](interfaces.md) §5.4.5).
@@ -561,7 +569,7 @@ all; after the reversal it is refused per table.
 **`search_path` is not a correctness condition.** WI-47 measured a pooler substituting its own:
 `packages/core/src/pg/read-client.ts:383` (`options: '-c search_path=onchain'`) sets it as a
 connection startup parameter, Supavisor answers with `cvj, public, extensions`, and `pg-history`
-read zero rows while 3039 rows were present (`docs/TASK.md:297-299`). A connection setting does not
+read zero rows while 3039 rows were present (`docs/tasks/task-014-t014-http-transport-auth-perimeter-profiles-shared-limiter.md:337-339`). A connection setting does not
 survive the pooler; an explicit qualification does.
 
 **One schema removes the second detector for a missing qualifier.** Under two schemas an unqualified
@@ -692,3 +700,282 @@ process-wide pepper.** Decided in `security.md` §7.5.2, carried by `ONCHAIN_TOK
 
 **Two questions of other sections are closed by this one.** §10.1.1's operating constraint closes
 `OQ-T014-DM-1`, and §10.3.1's range closes `OQ-T014-DM-2`.
+
+**T-014 status, corrected 2026-08-25.** The banner at the top of this file reads "DESIGNED, not
+built, as of 2026-08-13." T-014 shipped 2026-08-24 (`ARCHITECTURE.md` §"Delivered"); migration
+`sql/migrations/002_t014_network_profile.sql` is live on the dev VM, and §10.9 below builds on it as
+an EXISTING artifact, not a planned one. The banner is left as the record of the tree it described,
+the same `R-23.6` convention §10.3 already applies to its own stale "today" — the two sections below
+are current, not retrospective.
+
+### 10.8. T-015 — the billing ledger's background reconciliation job (R-14)
+
+**`OQ-T014-DEP-2`'s answer extends to this job: it runs outside the server process** (§10.6.1). The
+network profile gains no scheduler for it, the same standing constraint that already routes
+retention there.
+
+**Why a SEPARATE workflow from `onchain-retention`, not a fourth job inside it.** `onchain-retention`
+runs once a day; a `reserved` row can go stuck within `data-model.md` §4.6.5's 120 000 ms threshold,
+and a client charged from a request that never settles should not wait a day to be seen. One n8n
+Schedule trigger carries one cadence, so a job needing a materially shorter one needs its own
+workflow.
+
+| Element         | Value                                                                                        |
+| :-------------- | :------------------------------------------------------------------------------------------- |
+| Name            | `onchain-billing-reconcile`                                                                  |
+| Trigger         | Schedule — applied every 15 minutes, measured: none                                          |
+| Query           | `data-model.md` §4.6.5's scan, batched                                                       |
+| Credential      | the state role's Postgres credential of §10.5 — the same one §10.6.1 uses, not "Supabase DB" |
+| Writer          | one Postgres node transitioning each matched row, followed by its `retention_runs` insert    |
+| `errorWorkflow` | `onchain-error-alert`                                                                        |
+
+**Why 15 minutes, stated as a bound rather than a guess.** A row can be visibly stuck for at most
+threshold-plus-cadence, ≤135 000 ms, before this job closes it. That is an order of magnitude
+tighter than daily retention, without polling per second against a shared connection pool. This is
+`applied`, per the project's own convention for a default with no traffic yet to size it against —
+`data-model.md` §4.5.8's `applied 90 days as a floor` is the precedent for this form.
+
+**Installation requires the owner's explicit approval, exactly as `onchain-retention` does**
+(§10.6.1). This architecture proposes the workflow; it does not create or activate it.
+
+**Why the row lands in `retention_runs`, not a new table.** `job` carries no database-level `CHECK`
+(`data-model.md` §4.5.9) — only a compiled TypeScript vocabulary, the same class of closed-but-
+extensible list `diagnostics.event` already is. Adding `'client_usage.reconcile_expired'` is
+therefore additive. The reader that already understands "one run, one row, zero is a fact" inherits
+this job for free.
+
+### 10.9. WI-62 / T-015 — the engine tables move to a dedicated Postgres container on the dev VM
+
+**Scope, restated from `docs/TASK.md` R-8.9/R-8.10.** WI-62's literal text names a SEPARATE HOST.
+The owner's 2026-08-25 decision replaces the host with a dedicated CONTAINER on the SAME dev VM —
+`OQ-T014-B`'s separated-host trajectory is unaffected and stays a later step. This section designs
+the container edition; the separated-host edition remains `OQ-T014-B`'s open trajectory, not this
+one's.
+
+**What moves and what does not.** Thirteen engine tables — the twelve of §4.4 plus `client_usage`
+(`data-model.md` §4.6.1) — move to the new container. The snapshotter's `assets`, `metrics`,
+`snapshots` and the `onchain-snapshotter`/`onchain-verify`/`onchain-error-alert` workflows stay on
+the existing Supabase container, addressed by the SAME "Supabase DB" credential, unchanged (R-8.3,
+AC-18).
+
+#### 10.9.1. Provisioning the container (R-8.1, AC-16)
+
+An additive operation under skill `vm-deploy`: a second Postgres container on the dev VM, on a
+port distinct from the existing one. `.env.example` names both DSNs on
+`ubuntu-linux-2404.local:5432` today; the new container listens on a second port on the same host.
+`docker ps` names both containers; `pg_isready` answers on both ports.
+
+**Why a plain Postgres image, not another Supabase stack.** SEC-2's exception exists BECAUSE Supabase
+ships three roles with a platform-wide `SELECT` (`supabase_admin`, `postgres`,
+`supabase_read_only_user`, §10.4.2). A plain `postgres:16` container carries none of them.
+
+The postcondition R-8.9 asks for (`SEC-2` → `fixed`) is a property of the IMAGE, not of the grants
+applied to it. The grants are the SAME on both kinds of image. Only the image's built-in roles
+differ.
+
+#### 10.9.2. The migration, applied to an empty container (R-8.2)
+
+**Same file-pattern, same role/grant pattern as `sql/migrations/002_t014_network_profile.sql`,
+applied to the NEW container — thirteen tables, not twelve.** The twelve of §4.4 plus one new
+`CREATE TABLE onchain.client_usage` (`data-model.md` §4.6.1's DDL). No snapshotter table is created
+here. This container never holds `assets`/`metrics`/`snapshots`, so there is no read role to grant
+at all (R-8.6, R-8.7). The state role is the only application role this container's schema ever
+names.
+
+```
+ssh vm 'docker exec -i <new-container> psql -qU postgres -d postgres -v ON_ERROR_STOP=1 \
+  -v STATE_ROLE=onchain_engine_state' < sql/migrations/<n>_wi62_dedicated_container.sql
+```
+
+**Postcondition:** thirteen tables exist, empty, owned by the state role's grants alone. R-8.2's own
+wording, "эта миграция сама по себе создаёт пустые таблицы", holds literally here. The row transfer
+of §10.9.4 is a separate, later step.
+
+**Which roles exist on this container, named explicitly (R-8.6).** The container's superuser
+(`postgres`, created by the image, holding every privilege by construction — unavoidable and not the
+postcondition under test) and the one application role this migration creates,
+`onchain_engine_state`. No third role exists to measure — R-8.7's contrast with Supabase's three
+platform roles is total, not partial, on a freshly provisioned plain container.
+
+#### 10.9.3. Grants (R-8.5, R-8.6, AC-17, AC-17b)
+
+```sql
+GRANT USAGE ON SCHEMA onchain TO onchain_engine_state;
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+  onchain.users, onchain.access_profiles, onchain.api_tokens, onchain.access_audit,
+  onchain.provider_buckets, onchain.request_trace, onchain.diagnostics, onchain.retention_runs,
+  onchain.providers, onchain.cache_entries, onchain.usage, onchain.usage_window,
+  onchain.client_usage
+  TO onchain_engine_state;
+```
+
+The same three prohibited forms `deployment.md` §10.5.1 already names stay prohibited here
+(`GRANT … ON ALL TABLES`, `ALTER DEFAULT PRIVILEGES`, `GRANT CREATE ON SCHEMA` to the state role).
+
+**Postcondition, measured as `may_select` per role/table pair** (R-8.5, AC-17) — the SAME query
+`deployment.md` §10.4.2 step 2a already uses, re-pointed at the new container and at all thirteen
+table names. It is true for the state role on all thirteen. It is false for the state role on
+nothing else, because there is nothing else. It is false for `postgres` too: the superuser bypasses
+`may_select`'s intent by holding every privilege regardless. The postcondition is therefore stated
+over the APPLICATION roles, not over the superuser — the same qualification `deployment.md` §10.4.2's
+own load-bearing check makes for `authenticator`.
+
+**AC-17b, stated exactly.** No role but the state role and the container's own superuser reads any of
+the thirteen. On this container that enumeration is short by construction (§10.9.2): there is no
+third role for a future default ACL to widen silently, the exact class of risk RISK-5 names.
+
+#### 10.9.4. Row transfer and the four-part verify gate (R-8.11, R-8.12, R-8.13, AC-36)
+
+**Order — `DB-SCHEMA-CONCEPT` §6, applied literally (R-8.14).** The network profile is stopped
+BEFORE any row moves (`UC-6` step 3) — a window with no write reaching the old container, not a
+reconciliation performed after the fact. Rows transfer while stopped (step 4). The profile starts
+against the NEW container (step 6) only after this section's verify gate (below) has run against it
+(step 5). R-8.13's four checks stand between "rows copied" and "profile serving traffic", not after.
+
+**Which twelve tables carry rows, and why the count differs from the migration's thirteen.**
+`client_usage` is created empty in §10.9.2 and STAYS empty until the new container starts serving —
+there is no source to copy it from (it exists nowhere before this task). `provider_buckets` is
+excluded by R-8.11 (§10.9.5 states what that concedes). The remaining eleven T-014 tables plus
+`client_usage`'s empty presence account for all thirteen; **twelve tables carry a row-transfer step**,
+and eleven of those twelve carry rows to copy.
+
+**Mechanism — per-table data copy, piped over stdin, per the `vm-deploy` skill's own rule** (never
+`-f /tmp/…`, which would read a container filesystem rather than the live data):
+
+```
+ssh vm 'docker exec -i <old-container> pg_dump -U postgres -d postgres \
+  --schema=onchain --table=onchain.<name> --data-only --format=plain' \
+  | ssh vm 'docker exec -i <new-container> psql -qU postgres -d postgres -v ON_ERROR_STOP=1'
+```
+
+Run once per table, in an order that respects the foreign keys `data-model.md` §4.5 declares within
+each group. `users`/`access_profiles` come before `api_tokens`. `providers` comes before
+`provider_buckets` — excluded — and before `cache_entries`/`usage`/`usage_window`. Every table
+transfers before the ones that reference it.
+
+**`api_tokens` transfers with the rest — the prior premise that it could not was wrong, and the
+correction is recorded rather than silently applied (R-8.11).** The digest column,
+`token_hash = sha256(pepper || presented)`, is an ordinary `TEXT` value, copied and spot-checked
+byte-for-byte like any other exact column (§10.9's third check, below). The pepper itself,
+`ONCHAIN_TOKEN_HASH_SALT`, is never a column (`security.md` §7.5.2; `003_seed_engine_admin.sql:24-26`,
+"the pepper is not a parameter… living in the server's `.env`"). It lives in the SERVER's `.env`,
+which the container move does not touch. `access_profiles` and `users` — the two tables `api_tokens`
+references — transfer in the same pass, ahead of it.
+
+**`access_audit`'s copy is a ONE-TIME operation, not an idempotent re-run** (R-8.12, closes review
+round 3 MAJOR-2). The table carries no natural `UNIQUE` dedup key by design
+(`003_seed_engine_admin.sql:157-159`). Its identity is the ULID primary key alone (`data-model.md`
+§4.5.9's own recorded deviation).
+
+**Citation fix (closes architecture review round 1 MINOR-1).** An earlier draft pinned the quote
+"Two identical events one millisecond apart are two facts" to the SQL address above. It actually
+lives at `data-model.md:1651`, and is corrected here rather than left standing.
+
+An `ON CONFLICT DO NOTHING` has no column to key on, so re-running the copy above duplicates every
+row.
+**If the copy must be repeated** (a failed run, an operator error), the new container's
+`access_audit` is emptied first, inside one transaction, and the copy re-run whole:
+
+```sql
+BEGIN;
+TRUNCATE onchain.access_audit;
+-- re-run the data-only copy for this one table
+COMMIT;
+```
+
+This is a deliberate, named exception to the "copy once" rule above. It is recorded here because
+`data-model.md` §1's append-only/idempotent canon otherwise applies to every table in this migration.
+`access_audit` is the one table where a literal `ON CONFLICT DO NOTHING` reading of that canon does
+not hold.
+
+**The four verify checks, named individually, one marked not applicable (R-8.13, AC-36):**
+
+1. **Row counts** per table, old container vs new, for the eleven tables that carried rows.
+   `client_usage` is NOT APPLICABLE here — it has no old-container source (§10.9.2's own note).
+2. **`min`/`max`** on each table's own time column — `created_at`, `received_at`, `ts`, `started_at`,
+   whichever the table declares (`data-model.md` §4.5) — old vs new, equal on both bounds.
+3. **Spot-check** N random rows byte-for-byte on their exact `TEXT` columns — `token_hash` on
+   `api_tokens`, `credits_balance_raw` on `access_profiles`, and the equivalent exact column of every
+   other transferred table.
+4. **Zero orphans**, checked by an explicit `SELECT`, because neither reference carries a foreign
+   key. `data-model.md`: `principal_id` is "a label, not a foreign key"; `access_audit.target_id` is
+   the same, by construction. `access_audit` needs to record an event whose subject may already be
+   gone:
+
+   ```sql
+   SELECT 'request_trace' AS source, count(*) AS orphans
+     FROM onchain.request_trace rt
+    WHERE rt.principal_id <> 'local'
+      AND NOT EXISTS (SELECT 1 FROM onchain.api_tokens t WHERE t.id = rt.principal_id)
+   UNION ALL
+   SELECT 'access_audit', count(*)
+     FROM onchain.access_audit a
+    WHERE a.target_type = 'api_token'
+      AND NOT EXISTS (SELECT 1 FROM onchain.api_tokens t WHERE t.id = a.target_id);
+   ```
+
+   Run against the NEW container, after the copy. Zero on both rows is the postcondition; a positive
+   count on EITHER names which of the two FK-less references lost its target in the move.
+
+**"More than expected" and "less than expected" are different causes, and the check distinguishes
+them rather than collapsing into one "counts disagree" (R-8.13, closes review round 3 the second half
+of MAJOR-2).** A row count HIGHER on the new container than the old one is `access_audit`'s
+duplication hazard above, materialized; a row count LOWER names an incomplete copy. The verify report
+states which of the two occurred, per table, rather than a single pass/fail bit.
+
+**A2 (`UC-6`) — a discrepancy blocks step 10 (deletion in the old container), by construction of the
+step order above.** The verify gate stands between "profile starts on the new container" and "old
+container loses its tables". Step 10 reads this report before running.
+
+#### 10.9.5. What excluding `provider_buckets` concedes (R-8.11)
+
+**The ephemeral argument is correct as far as it goes, and incomplete on its own — named here rather
+than left implicit** (closes review round 3 MINOR-4). `provider_buckets.tokens` may be NEGATIVE — an
+accumulated backlog against the vendor ceiling, not a plain spendable balance
+(`data-model.md` §4.5.6, "`tokens` is `REAL` and may go negative… the stored value is not clamped at
+zero"). Losing the row on migration is not an inert cache reset: it FORGIVES that backlog, starting
+the bucket at a fresh, full state rather than at its true pre-migration position.
+
+The boundary is small. The backlog self-corrects within one refill cycle, seconds to low minutes at
+`blockscout`'s `refillPerSec: 2`. It is still a real, one-time relaxation of the limiter on the
+migration boundary, not a lossless no-op — recorded as such rather than asserted as harmless without
+qualification.
+
+#### 10.9.6. Rollback artifact, before any deletion (R-8.15, AC-47)
+
+```
+ssh vm 'docker exec -i <old-container> pg_dump -U postgres -d postgres \
+  --schema=onchain --format=custom' > wi62-rollback-<date>.dump
+```
+
+Stored OUTSIDE both containers (the operator's own machine, or a location neither container's
+filesystem is), retained N days. Only after this artifact exists does step 10 (`UC-6`) proceed to
+drop the thirteen engine tables in the old container. Freezing them in place instead is explicitly
+rejected by R-8.15: the rollback path is a file, not tables left standing.
+
+#### 10.9.7. Decommissioning the old container's engine tables (R-8.8, AC-29)
+
+After §10.9.6's artifact exists, the thirteen engine tables are dropped from the OLD container.
+Step 2a's postcondition (`deployment.md` §10.4.2, translated to this topology by `docs/TASK.md`
+R-8.13's own instruction) is re-measured there. `may_select` for the snapshotter's read role now
+covers `assets`, `metrics`, `snapshots` and NOTHING else, because there is nothing else. The twelve
+tables that motivated SEC-2's exception are gone from this container, and the exception has nothing
+left to except.
+
+#### 10.9.8. `api_tokens` on the new writer, without reissue (R-8.16, AC-44)
+
+After the profile switches (`UC-6` step 6), a request bearing an ALREADY-ISSUED token authenticates
+against the new container without a new token being minted. This is the direct, checkable proof that
+the copy of §10.9.4 moved not just rows but the WORKING credential — `api_tokens.token_hash` resolves
+on the new container's `SELECT` (`data-model.md` §4.5.4's authentication read, unchanged), against
+the SAME server `.env` pepper.
+
+#### 10.9.9. Installation log and record closure (R-8.17, AC-31, AC-46)
+
+The move is recorded in the installation log: date, both container names/ports, and the verify
+report's outcome — the SAME "date, hosts, verify result" form `CLAUDE.md` §Working discipline already
+names for a host move. `SEC-2` moves to `fixed`, citing this section's §10.9.3 measurement; the
+2026-08-23 dev-VM acceptance is retired, not extended (R-8.9). `WI-62` closes in the edition R-8.10
+records — a container on the dev VM, not the separated host its literal text names. These three
+record updates are operational steps taken when the migration actually runs; this section designs
+the procedure they close, and does not itself perform them.

@@ -82,6 +82,7 @@ source: TASK-007 adversarial cycle 3 # опционально: откуда пр
 ## Discovered issues / work-items
 
 <!-- feedback:discovered-issues -->
+- **WI-66** [`dune.costOf` возвращает 0 кредитов у кредитно-метрируемого вендора](backlog/wi-66-dune-costof-returns-zero-credits-for-a-credit-metered-vendor.md) — effort `S`, status `open`, opened 2026-08-25. Нулевая цена делает кредитный гейт слепым к адаптеру (`used + 0 > ceiling` ложно при любом потолке) — тот же класс, что `Q-3`/`SEC-1` на nansen и `ADR-003` D6 на blockscout. Риска сегодня нет: `isAvailable()` всегда `false`, адаптер недостижим. Заведено как действие по умолчанию TASK-015 §2.2: пункт назвала ещё T-014 в своём «что не делает», передача нигде не была записана (ревью T-014, MAJOR-8), и T-015 нашла ту же передачу второй раз. Две развилки: проставить реальную цену либо опереться на суточный счётчик вызовов, который T-015 и так вводит
 - **WI-62** [the engine's tables move to a dedicated Postgres container on the separated host](backlog/wi-62-engine-tables-move-to-a-dedicated-postgres-container-on-the-separated-host.md) — effort `M`, status `open`, opened 2026-08-23
 - **WI-59** [Слой внеончейн-контекста: новости, соцсети, календарь форков и апгрейдов](backlog/wi-59-off-chain-context-layer-news-social-fork-calendar.md) — effort `L`, status `open`, opened 2026-08-11
 - **WI-58** [Метрики нативного стейкинга и PoL-слоя сети](backlog/wi-58-native-staking-and-pol-metrics.md) — effort `M`, status `open`, opened 2026-08-11

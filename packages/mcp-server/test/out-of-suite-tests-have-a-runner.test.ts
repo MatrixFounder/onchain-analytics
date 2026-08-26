@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -33,6 +33,29 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
+
+/**
+ * Whether the declared milestone has reached planning yet.
+ *
+ * **The window this gate could not survive, found by walking into it (RF-13, 2026-08-25).** The
+ * docstring above claims the scope follows `docs/TASK.md` and therefore "keeps working on T-015
+ * with no edit". The first rotation it ever met refuted that. This file was written 2026-08-14,
+ * inside T-014's development phase, where `docs/TASK.md` named TASK-014 and
+ * `docs/tasks/task-014-*.md` already existed — so it had never once been read in the state the
+ * pipeline passes through between milestones.
+ *
+ * Measured: the analysis phase of T-015 archived TASK-014, wrote a `docs/TASK.md` declaring
+ * TASK-015, and this file went to `2 failed | 4 passed` with nothing wrong in either document.
+ * Between analysis — where `docs/TASK.md` names a NEW milestone — and planning — where
+ * `docs/tasks/task-<id>-<n>-*.md` first appear — the scope is legitimately empty, and two
+ * assertions below read that emptiness as the hole they exist to close.
+ *
+ * `docs/PLAN.md` is the discriminator because it is the pipeline's own artifact and not a flag
+ * invented for this gate: `skill-archive-task` rotates it in lockstep with `docs/TASK.md`, so it is
+ * absent for exactly as long as the current milestone is unplanned. The emptiness check still runs
+ * in both regimes — it now asserts the state it is actually in, rather than one of the two.
+ */
+const planned = existsSync(path.join(repoRoot, 'docs/PLAN.md'));
 
 /**
  * The declaration this gate keys on: a paragraph saying these tests are integration ones and are
@@ -73,7 +96,14 @@ describe('tests excluded from the suite are named in a gate', () => {
     .sort();
 
   it('finds the milestone task files at all — an empty scope would pass every assertion below', () => {
-    expect(files.length).toBeGreaterThan(0);
+    if (planned) {
+      expect(files.length).toBeGreaterThan(0);
+      return;
+    }
+    expect(
+      files,
+      'the milestone is unplanned (no docs/PLAN.md), so it must own no task files either',
+    ).toEqual([]);
   });
 
   /** Tasks that moved a test out of the default run, and the ids some gate claims to run. */
@@ -112,7 +142,14 @@ describe('tests excluded from the suite are named in a gate', () => {
   });
 
   it('a runner is declared at all — without one every excluded test is orphaned', () => {
-    expect(runnerFile).not.toBeNull();
+    if (planned) {
+      expect(runnerFile).not.toBeNull();
+      return;
+    }
+    expect(
+      runnerFile,
+      'the milestone is unplanned, so no task file exists to carry the declaration',
+    ).toBeNull();
   });
 
   it('detects the defect it was written for — a marking with no runner behind it', () => {

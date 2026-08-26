@@ -197,6 +197,27 @@
   **Why.** This section is where a reader looks up the failure taxonomy. A class documented only in
   `interfaces.md` is not found here.
 
+- **T-015 adds three named refusal classes to this taxonomy, and settles their billing consequence
+  uniformly rather than case by case** (`system-architecture.md` §3.5). `ClientCreditsExhaustedError`
+  (a `credits_mode='metered'` reservation with insufficient balance, closes `OQ-2`) and
+  `BillingStoreUnavailableError` (the ledger itself unreachable at reserve time, fail-closed, closes
+  `OQ-9`) both fire BEFORE `resolve()`, from the tool wrapper's own reserve step
+  (`system-architecture.md` §3.5.2). Neither reaches `CapabilityRegistry`, so neither is wrapped by
+  `CapabilityUnavailableError`.
+
+  `ProviderCallCeilingExceededError` (a provider's declared daily call ceiling reached, R-11.4) fires
+  INSIDE an adapter's `fetch()`, beside the existing rate limiter. It IS subject to the per-adapter
+  wrapping every adapter failure already gets. It is distinguishable from `RateLimitRejectedError` by
+  its message text, not by `refusal_class` (`system-architecture.md` §3.5.4's own note on why that is
+  the correct level to distinguish it at).
+
+  **The billing rule these three feed does not branch on which of them fired.** Every refusal —
+  named here, or a class that does not exist yet — refunds the client's reservation identically
+  (R-3.3, R-3.4; `system-architecture.md` §3.5.3). This is a stricter, simpler total function than
+  the failure taxonomy itself needs to be. The taxonomy distinguishes causes for an OPERATOR reading
+  `tried[]`. The billing rule does not need to, because every cause here means the client did not
+  get an answer.
+
 ### 9.2. Backup
 
 `DATA_DIR` (the cache) needs no backup strategy — the cache is restored by recomputation. n8n /
@@ -211,3 +232,9 @@ same pair with budget observability — a stderr warning when spend approaches t
 above) plus `_meta.budget` on the responses of the three paid tools (interfaces.md §5.1.2). That is
 the visibility architecture M1 already established for the cache, not a new channel. **FUTURE
 (M6):** pino + OpenTelemetry and a per-provider cost dashboard (ROADMAP) — not revisited here.
+
+**T-015 adds one more pass to the same "one run, one row" discipline already governing retention.**
+The background reconciliation job of `data-model.md` §4.6.5 (`deployment.md` §10.8) writes to
+`retention_runs` on every run, naming how many stuck reservations it closed and for which period —
+even zero. A run that finds nothing is a fact recorded, not a silent no-op, the same rule
+`deployment.md` §10.6 already states for the three existing retention jobs.

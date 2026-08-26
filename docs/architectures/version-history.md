@@ -2,6 +2,65 @@
 
 > Part of [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
+- 2026-08-26, **v4.12.1** — T-015, one owner decision folded in: `ADR-003` `OQ-G` closed the same
+  day it was raised (review round 1 MAJOR-11), and this pass closes it at the architecture layer too.
+  A replay of `client_request_id` is served only inside a window, `min(ttlSeconds, 120 000 ms)`,
+  derived from the row's own `reserved_at` and the capability manifest — no new column
+  (`data-model.md` §4.6.1). Inside the window the design chooses to RE-RUN `resolve()` rather than
+  serve a recorded outcome — the choice `OQ-G` itself left open. The already-built `reserve()` step
+  (§3.5.1) and its completion (§3.5.3) already run the handler on every retry, so choosing the other
+  option would have undone that already-reviewed design (`system-architecture.md` §3.5.2a). The price
+  is named rather than
+  assumed: reading `packages/core/src/cache/` shows the persistent cache layer has no capacity-based
+  eviction on either storage axis. So the accepted leak — one unbilled vendor call, at most, per
+  replayed id — comes from a best-effort cache-write failure or a TTL-window boundary race, not from
+  LRU pressure. Past the window, a replay is refused by a new named class, `ReplayWindowExpiredError`,
+  before any resource is touched. It is observed through the same channel architecture review round 1
+  BLOCKING-3 already built for the two other pre-resolve refusal classes.
+
+- 2026-08-25, **v4.12** — T-015 `phase0-billing-blockscout-budget`: **design phase, ahead of code.**
+  Accepted after three review rounds and eight owner decisions (`docs/TASK.md` §5, 2026-08-25),
+  closing `ADR-003` `OQ-F` on the way in. Three subjects, each layered on T-014's tables rather than
+  replacing any of them.
+
+  - **`BillingStore` and `client_usage`** (`data-model.md` §4.6.1, `system-architecture.md` §3.5.1–
+    §3.5.3): a ninth persistent table, in its own package (`mcp-server`, beside `request_trace`/
+    `diagnostics`, never `core`). It follows a `reserve → settle | refund` pattern, reusing
+    `checkAndReserve`'s atomicity. Its dedup key carries no `received_at` (unlike `request_trace`'s
+    own). The reserve step runs at the SAME tool-boundary wrapper T-014 built, before `resolve()` and
+    before the cache. Price is a compiled artifact, the same class as the capability manifest. It is
+    keyed by a tool's STATIC capability or its name, and copied into the row at reserve time — so a
+    later price-list edit never rewrites a settled charge.
+  - **The daily call gate** (`data-model.md` §4.6.3–§4.6.4, `system-architecture.md` §3.5.4): one
+    additive column, `usage.calls_made`, mirroring `usage_window.calls_made`'s existing pattern at
+    the day bucket instead of the minute one — no new table, the literal `ADR-003` D6 instruction.
+    `checkAndReserve` gains one optional parameter. Both `nansen`'s minute-level velocity gate and
+    `blockscout`'s day-level call gate use it, through the SAME function (AC-20). `blockscout`'s four
+    routes share one provider-level ceiling, ≈625/day, derived from the one route with a cited
+    vendor price (`entity.labels`, ≈160 credits, task-008 §1.2). The other three carry no cited
+    price and are treated as costing AT LEAST as much — the safe default review round 3 asked for.
+    This residual is named rather than hidden: nothing measures whether that inequality actually
+    holds (`OQ-6`).
+  - **WI-62, folded into this task by `ADR-003` `OQ-F`'s own closure** (`deployment.md` §10.9): the
+    twelve T-014 tables plus `client_usage` move to a dedicated Postgres container on the dev VM. It
+    is a container, not the separated host WI-62's literal text names (owner decision, R-8.10). The
+    four-part verify gate is named explicitly: row counts, `min`/`max(ts)`, a byte-for-byte spot
+    check, and an explicit orphan `SELECT` where no FK exists. `access_audit`'s copy is recorded as
+    a ONE-TIME operation rather than an idempotent re-run, because it has no natural dedup key.
+    `api_tokens` transfers with the rest — a prior premise that it could not (the hashing pepper) is
+    corrected rather than silently dropped, since the pepper lives in the server's `.env`, untouched
+    by the container move.
+  - **Background reconciliation** (`data-model.md` §4.6.5, `deployment.md` §10.8): a stuck
+    `'reserved'` row older than 120 000 ms (twice the largest declared `deadlineMs`) is refunded by a
+    periodic pass outside the server process. It follows the same "one run, one row, zero is a fact"
+    discipline `retention_runs` already carries — a new job name on that same table, not a new one.
+
+  Two design choices `docs/TASK.md`'s wording left open within already-decided principles are
+  resolved here and recorded as decisions, not new questions
+  (`open-questions.md` §"T-015 — appended out of chronological order"). Pricing keys on a tool's
+  STATIC declared capability, not the dynamic one task 014-30 introduced. `ClientCreditsExhaustedError`
+  writes no ledger row, mirroring `checkAndReserve`'s own "on refusal nothing is written" contract.
+
 - 2026-08-12, **v4.11** — T-014 `http-transport-auth-perimeter-profiles-shared-limiter`:
   **design phase, ahead of code.** Five sections written against TASK-014 (32 requirements, 49
   acceptance criteria): §4.5 adds eight persistent tables (identity, the shared vendor limiter, the
