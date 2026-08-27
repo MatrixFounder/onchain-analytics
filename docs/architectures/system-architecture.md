@@ -4179,7 +4179,7 @@ const windowMs = Math.min(
 if (now() - existingRow.reservedAt <= windowMs) {
   return { ok: true, reservation: { ...existingRow, existing: true } }; // §3.5.1's ORIGINAL contract
 }
-return { ok: false, reason: 'replay window expired', errorClass: 'ReplayWindowExpiredError' };
+return { ok: false, reason: 'replay window expired', refusalClass: 'ReplayWindowExpiredError' };
 ```
 
 ```ts
@@ -4189,17 +4189,27 @@ export class ReplayWindowExpiredError extends Error {
 }
 ```
 
-`reserve()`'s `ok: false` branch already needs an `errorClass` field for `ClientCreditsExhaustedError`
+`reserve()`'s `ok: false` branch already needs a `refusalClass` field for `ClientCreditsExhaustedError`
 and `BillingStoreUnavailableError` to reach `refusalClass` — §3.5.2's own pseudocode reads
-`reserved.errorClass`, one field the declared `BillingReservation`/`reserve()` shapes of §3.5.1 do not
-yet carry. `ReplayWindowExpiredError` is a THIRD value of that already-implied field, not a new one;
-the field itself is unchanged by this subsection and stays for the next round to declare.
+`reserved.refusalClass`, one field the declared `BillingReservation`/`reserve()` shapes of §3.5.1 do not
+yet carry. `ReplayWindowExpiredError` is a THIRD value of that already-implied field, not a new one.
+The field itself was declared by task 015-04 as a REQUIRED, closed union on the failure arm
+(`packages/mcp-server/src/engine/billing-store.ts`, `BillingRefusalClass`), so a fourth value is a
+compile error rather than an unclassified string.
 
-**Beyond the window, the refusal precedes the reserve decision, exactly as R-3.5 states it (closes
-R-5.7).** `ReplayWindowExpiredError` is thrown from inside the conflict branch above — before
-`credits_mode` is read (§3.5.2 step 1), before any balance moves, before `resolve()` runs. No
-`client_usage` row is touched: the existing row is someone else's already-terminal history and stays
-exactly as it was.
+**Beyond the window, the refusal precedes every EFFECT of the reserve, exactly as R-3.5 states it
+(closes R-5.7).** The class is RETURNED BY VALUE from the conflict branch above, never thrown —
+the same rule architecture review round 1 BLOCKING-3 set for the other two money refusals. It
+precedes any balance movement and any `resolve()` call, and no `client_usage` row is touched: the
+existing row is someone else's already-terminal history and stays exactly as it was.
+
+**It does NOT precede the `credits_mode` read, and an earlier edition of this paragraph said it
+did (corrected 2026-08-27, task 015-08).** The conflict branch is reached from three call sites, and
+two of them have already consulted the profile: `reserve()` reads `profiles.read(accessProfileId)`
+to choose the branch, so only the `accessProfileId === null` path refuses without touching the
+reader at all. Reading the mode is not an effect — it moves nothing and writes nothing — which is
+why the invariants above hold regardless. The ordering claim was simply false, and a reader
+building on "the replay refusal happens before the profile is consulted" would have built on it.
 
 **Observed the SAME way `ClientCreditsExhaustedError`/`BillingStoreUnavailableError` already are —
 reuses the fix for architecture review round 1 BLOCKING-3, not a new channel.** The refusal takes the

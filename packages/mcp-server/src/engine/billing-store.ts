@@ -1,4 +1,4 @@
-import { createSqliteStateClient } from '@onchain-intel/core';
+import { createSqliteStateClient, ttlFor } from '@onchain-intel/core';
 import type { AccessProfileReader } from '../auth/access-profile.js';
 import { ulid } from '../ulid.js';
 import { ClientCreditsExhaustedError, LedgerReadNotAuthoritativeError } from './billing-errors.js';
@@ -27,6 +27,41 @@ import type { EngineStore } from './pg-engine-store.js';
  * carry (`billing-errors.ts`), and an in-memory stub that enforces exactly the two properties of
  * `client_usage` a caller can observe without a database.
  */
+
+/**
+ * Task 015-08 — the replay window's own upper bound (`ADR-003` OQ-G, owner decision 2026-08-26):
+ * `min(ttlSeconds of the capability, this ceiling)`. The value below is not invented here — it is
+ * twice the largest declared `deadlineMs` (`data-model.md` §4.6.5's own derivation), the SAME
+ * threshold the background reconcile scan (`onchain-billing-reconcile`, task 015-18) uses for a stuck
+ * `reserved` row. R-5.6 names the two as one bound; this constant is declared once, HERE ONLY, so the
+ * two consumers cannot silently disagree (`data-model.md` §4.6.1, "One constant, two consumers, not
+ * two literals").
+ */
+export const REPLAY_AND_RECONCILE_CEILING_MS = 120_000;
+
+/**
+ * The replay window's own derivation (`system-architecture.md` §3.5.2a, `data-model.md` §4.6.1,
+ * closes `ADR-003` OQ-G) — `min(ttlFor(capability ?? tool) * 1000, REPLAY_AND_RECONCILE_CEILING_MS)`.
+ *
+ * **Why TTL is the right bound, not a compromise.** Inside TTL a replay cannot make the answer worse:
+ * a fresh call at that same instant would read the SAME bytes back out of the cache, because the
+ * entry is still alive. Past TTL it can, invisibly — the replay does not re-check the cache's own
+ * freshness contract, it just reuses the reservation.
+ *
+ * **The lookup key is `capability ?? tool`, reused rather than re-derived.** The price list already
+ * resolves a row this SAME way (`billing/price-list.ts`, `data-model.md` §4.6.2, "The lookup key is
+ * `capability ?? tool`") — one derivation over two tables, not two derivations that could disagree on
+ * which row a capability-less tool (`onchain_ping`, `onchain_list_chains`, `registry.ts:473`) falls
+ * back to.
+ *
+ * **A capability-less tool lands on the ceiling through `ttlFor`'s own miss path, not a branch added
+ * here.** `ttlFor(null ?? tool)` finds no manifest row for a bare tool name and returns
+ * `DEFAULT_TTL_SECONDS` (300 s, `packages/core/src/cache/ttl.ts:21`); `300_000` is then clamped down
+ * to the ceiling by the SAME `Math.min` every other capability goes through.
+ */
+export function replayWindowMs(row: { capability: string | null; tool: string }): number {
+  return Math.min(ttlFor(row.capability ?? row.tool) * 1000, REPLAY_AND_RECONCILE_CEILING_MS);
+}
 
 /**
  * One row's ledger-visible state, returned from `reserve()`.
@@ -303,9 +338,12 @@ ON CONFLICT (principal_id, client_request_id) DO NOTHING
 RETURNING id, state`;
 
 /** Reads the row an `ON CONFLICT DO NOTHING` swallowed — the dedup key alone, on ANY state
- * (R-5.5, AC-10/AC-11). */
+ * (R-5.5, AC-10/AC-11). Carries `tool`/`capability`/`reserved_at` beyond the bare id/state (task
+ * 015-08): the conflict branch needs them to compute `replayWindowMs()` and compare it against how
+ * long ago the row was reserved, the SAME row `existing: true` already reads, one extra read no
+ * further than the columns it already has. */
 const SELECT_BY_DEDUP_KEY_SQL = `
-SELECT id, state FROM onchain.client_usage
+SELECT id, state, tool, capability, reserved_at FROM onchain.client_usage
  WHERE principal_id = $1 AND client_request_id = $2`;
 
 /**
@@ -323,6 +361,45 @@ RETURNING id`;
 interface ClientUsageIdState {
   readonly id: string;
   readonly state: BillingLedgerRow['state'];
+}
+
+/** `SELECT_BY_DEDUP_KEY_SQL`/`pgSelectByDedupKeySql`'s own row shape — snake_case, as returned by
+ * both drivers (no camelCasing layer sits between the query and this file, same convention
+ * `pgDebitUpdateSql`'s `credits_balance_raw` already follows). */
+interface ClientUsageConflictRow {
+  readonly id: string;
+  readonly state: BillingLedgerRow['state'];
+  readonly tool: string;
+  readonly capability: string | null;
+  readonly reserved_at: number;
+}
+
+/**
+ * `reserve()`'s conflict branch, task 015-08 (`system-architecture.md` §3.5.2a) — reads the SAME row
+ * `existing: true` already reads and compares ONE value against `replayWindowMs()`. The inclusive
+ * boundary (`<=`, not `<`) lives HERE, once, shared by all three call sites (the SQLite axis's
+ * `reserve()`, and the Postgres axis's `reserveUnlimited`/`reserveMetered`) — writing the comparison
+ * separately in each would let the boundary itself drift between the two axes on the first edit to
+ * either copy (this file's own "Why правило живёт одной функцией на две оси", `data-model.md` §4.6.1).
+ *
+ * **Why this touches no row.** The conflict branch's own caller already stopped at a SELECT — this
+ * function only classifies what was read. `client_usage` gains no write on either arm: `ok: true`
+ * returns the untouched row as `existing: true` (§3.5.1's ORIGINAL contract); `ok: false` reports
+ * `ReplayWindowExpiredError` and leaves the row exactly as it was (R-3.5 — the reservation for an
+ * expired key does not exist, so there is nothing to reverse).
+ */
+function replayConflictOutcome(
+  existingRow: ClientUsageConflictRow,
+  nowMs: number,
+): BillingReserveResult {
+  const windowMs = replayWindowMs({ capability: existingRow.capability, tool: existingRow.tool });
+  if (nowMs - existingRow.reserved_at <= windowMs) {
+    return {
+      ok: true,
+      reservation: { rowId: existingRow.id, state: existingRow.state, existing: true },
+    };
+  }
+  return { ok: false, reason: 'replay window expired', refusalClass: 'ReplayWindowExpiredError' };
 }
 
 /**
@@ -456,7 +533,7 @@ export function createSqliteBillingStore(deps: SqliteBillingStoreDeps = {}): Bil
             // Empty `RETURNING`: `ON CONFLICT DO NOTHING` swallowed the insert — a row for this
             // `(principalId, clientRequestId)` pair already exists, in ANY state (R-5.5,
             // AC-10/AC-11). Read it back rather than fabricate a second answer.
-            const existing = await client.query<ClientUsageIdState>(SELECT_BY_DEDUP_KEY_SQL, [
+            const existing = await client.query<ClientUsageConflictRow>(SELECT_BY_DEDUP_KEY_SQL, [
               input.principalId,
               input.clientRequestId,
             ]);
@@ -469,12 +546,10 @@ export function createSqliteBillingStore(deps: SqliteBillingStoreDeps = {}): Bil
                 'billing-store(sqlite): reserve() conflicted but the dedup key read back no row',
               );
             }
-            const reservation: BillingReservation = {
-              rowId: existingRow.id,
-              state: existingRow.state,
-              existing: true,
-            };
-            return { ok: true, reservation };
+            // Task 015-08 — the replay window (`system-architecture.md` §3.5.2a): `ok: true` with
+            // the SAME `existing: true` shape above when the row is still inside its window, `ok:
+            // false`/`ReplayWindowExpiredError` past it. Neither arm writes to `client_usage`.
+            return replayConflictOutcome(existingRow, now());
           }),
         );
       } catch (error) {
@@ -568,7 +643,7 @@ RETURNING id, state`;
 /** Reads the row an `ON CONFLICT DO NOTHING` swallowed — the dedup key alone, on ANY state (R-5.5,
  * AC-10/AC-11), the SAME read-back rule the SQLite axis already applies. */
 function pgSelectByDedupKeySql(engine: EngineStore): string {
-  return `SELECT id, state FROM ${engine.qualify('client_usage')}
+  return `SELECT id, state, tool, capability, reserved_at FROM ${engine.qualify('client_usage')}
  WHERE principal_id = $1 AND client_request_id = $2`;
 }
 
@@ -636,10 +711,21 @@ function pgSumSettledSql(engine: EngineStore): string {
  * conditional `UPDATE … WHERE state = 'reserved'` `data-model.md` §4.6.1 declares — first completer
  * wins, a no-op rather than an error on an already-terminal row — and nothing more.
  */
+export interface PgBillingStoreDeps {
+  /** Overrides the clock `reserve()` stamps `reserved_at`/`created_at`/`updated_at` with AND compares
+   * against in the replay-window conflict branch (task 015-08). Defaults to `Date.now` — the same
+   * "production supplies nothing, a test supplies a fake" convention {@link SqliteBillingStoreDeps.now}
+   * already uses on the other axis. */
+  readonly now?: () => number;
+}
+
 export function createBillingStore(
   engine: EngineStore,
   profiles: AccessProfileReader,
+  deps: PgBillingStoreDeps = {},
 ): BillingStore {
+  const now = deps.now ?? ((): number => Date.now());
+
   /** The unlimited write — ONE operator on the common path, a second read-back only on conflict.
    * Shared by `accessProfileId === null` and by an actual `credits_mode = 'unlimited'` profile. */
   async function reserveUnlimited(input: {
@@ -650,7 +736,7 @@ export function createBillingStore(
     capability: string | null;
     priceRaw: string;
   }): Promise<BillingReserveResult> {
-    const ts = Date.now();
+    const ts = now();
     const id = ulid(ts);
     const inserted = await engine.query<ClientUsageIdState>(pgReserveInsertSql(engine), [
       id,
@@ -669,7 +755,7 @@ export function createBillingStore(
         reservation: { rowId: insertedRow.id, state: insertedRow.state, existing: false },
       };
     }
-    const existing = await engine.query<ClientUsageIdState>(pgSelectByDedupKeySql(engine), [
+    const existing = await engine.query<ClientUsageConflictRow>(pgSelectByDedupKeySql(engine), [
       input.principalId,
       input.clientRequestId,
     ]);
@@ -679,10 +765,10 @@ export function createBillingStore(
         'billing-store(postgres): reserve() conflicted but the dedup key read back no row',
       );
     }
-    return {
-      ok: true,
-      reservation: { rowId: existingRow.id, state: existingRow.state, existing: true },
-    };
+    // Task 015-08 — the replay window (`system-architecture.md` §3.5.2a); see this file's own
+    // `replayConflictOutcome` docstring for why the comparison lives in ONE function shared by both
+    // storage axes rather than written out here a second time.
+    return replayConflictOutcome(existingRow, now());
   }
 
   /** The metered transaction — idempotency-first: insert, THEN (only for a NEW row) debit. */
@@ -698,7 +784,7 @@ export function createBillingStore(
     },
   ): Promise<BillingReserveResult> {
     return engine.transaction(async (tx) => {
-      const ts = Date.now();
+      const ts = now();
       const id = ulid(ts);
       const inserted = await tx.query<ClientUsageIdState>(pgReserveInsertSql(engine), [
         id,
@@ -714,7 +800,7 @@ export function createBillingStore(
       if (insertedRow === undefined) {
         // Existing row answers this client_request_id — the balance is NOT touched, and the
         // transaction completes as a read (§3.5.1's own "транзакция завершается чтением").
-        const existing = await tx.query<ClientUsageIdState>(pgSelectByDedupKeySql(engine), [
+        const existing = await tx.query<ClientUsageConflictRow>(pgSelectByDedupKeySql(engine), [
           input.principalId,
           input.clientRequestId,
         ]);
@@ -724,10 +810,12 @@ export function createBillingStore(
             'billing-store(postgres): reserve() conflicted but the dedup key read back no row',
           );
         }
-        return {
-          ok: true,
-          reservation: { rowId: existingRow.id, state: existingRow.state, existing: true },
-        };
+        // Task 015-08 — the replay window. Inside it: `ok: true`/`existing: true`, the balance
+        // untouched (this branch never reaches the debit below). Past it: `ok: false` with
+        // `ReplayWindowExpiredError`, still without touching the balance — the transaction commits
+        // as a pure read either way (`replayConflictOutcome`'s own docstring, "Why this touches no
+        // row").
+        return replayConflictOutcome(existingRow, now());
       }
 
       const debited = await tx.query<{ credits_balance_raw: string }>(pgDebitUpdateSql(engine), [
