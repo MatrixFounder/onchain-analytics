@@ -1,3 +1,4 @@
+import { STATE_TABLES } from '@onchain-intel/core';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +28,7 @@ import { describe, expect, it } from 'vitest';
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const MIGRATION = path.join(repoRoot, 'sql/migrations/002_t014_network_profile.sql');
+const MIGRATIONS_DIR = path.join(repoRoot, 'sql/migrations');
 
 /** The gate's input, exactly as `deployment.md` §10.2.1 item 1 declares it. */
 const SCANNED_PACKAGES = ['packages/core/src', 'packages/mcp-server/src'] as const;
@@ -61,17 +62,25 @@ const PG_CLIENT_MARKERS = [
 const reachesPostgres = (body: string): boolean => PG_CLIENT_MARKERS.some((m) => m.test(body));
 
 /**
- * The table list comes from the migration, never from a literal here.
+ * The table list is the engine's own declaration, never a literal here.
  *
- * A hard-coded list diverges from the migration on the first table added, and the divergence reads
- * as "the gate passed".
+ * A hard-coded list diverges from the schema on the first table added, and the divergence reads as
+ * "the gate passed".
+ *
+ * **It parsed ONE migration file, which is that same defect one level up (found 2026-08-26, task
+ * 015-06).** The paragraph above warned against a hard-coded LIST while the FILE stayed hard-coded
+ * as `002_t014_network_profile.sql`, so the list froze at that migration's twelve names. Migration
+ * `004_t015_billing.sql` added `client_usage` as the thirteenth, and this gate went on passing over
+ * an unqualified reference to it — the exact reading the paragraph calls out.
+ *
+ * **Why `STATE_TABLES` and not "every `CREATE TABLE` under `sql/migrations`".** That was the first
+ * repair and it was wrong: `001_init.sql` creates `assets`, `metrics` and `snapshots`, which belong
+ * to the snapshotter contour and not to the engine (R-8.3). Widening the parse pulled all three in
+ * and took the list to sixteen. `STATE_TABLES` is the engine's authoritative thirteen, and it is
+ * not an unbacked literal either: `packages/core/test/pg-store-parity.test.ts` asserts it equals the
+ * tables migrations 002 and 004 create. One list, cross-checked in the package that owns it.
  */
-const engineTables = (): string[] => {
-  const sql = readFileSync(MIGRATION, 'utf8');
-  return [...sql.matchAll(/CREATE TABLE IF NOT EXISTS\s+onchain\.(\w+)/gi)].map((m) =>
-    (m[1] ?? '').toLowerCase(),
-  );
-};
+const engineTables = (): string[] => [...STATE_TABLES];
 
 const sourceFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
@@ -125,11 +134,42 @@ const scan = (roots: readonly string[], tables: readonly string[]): Finding[] =>
 };
 
 describe('schema qualification — the gate', () => {
-  it('TC-UNIT-05: reads its table list from the migration, not from a literal here', () => {
-    const tables = engineTables();
-    expect(tables).toHaveLength(12);
-    expect(tables).toContain('api_tokens');
-    expect(tables).toContain('request_trace');
+  /**
+   * **The count used to be a literal `12` here, and that is what let migration 004 pass unseen
+   * (2026-08-26, task 015-06).** A number is the same hard-coded list the paragraph on
+   * `engineTables` warns about, spelled shorter: it says nothing about WHICH tables, so a list that
+   * both gained one name and lost another would still read as "the gate passed".
+   *
+   * What replaces it is the property the list must hold: every engine table this gate polices is
+   * actually CREATED by a migration. That keeps `STATE_TABLES` from drifting into a name no schema
+   * carries, and it names the offender instead of a count. The reverse direction — a migration
+   * table missing from `STATE_TABLES` — is asserted in the package that owns the list
+   * (`packages/core/test/pg-store-parity.test.ts`), so it is not duplicated here.
+   *
+   * The snapshotter's `assets`/`metrics`/`snapshots` are asserted ABSENT: they live in `onchain`
+   * too (`001_init.sql`) and belong to the n8n contour, not the engine (R-8.3). Their absence is
+   * what makes this list "the engine's tables" rather than "every table in the schema".
+   */
+  it('TC-UNIT-05: every policed table is created by a migration, and only engine tables are', () => {
+    const created = new Set(
+      readdirSync(MIGRATIONS_DIR)
+        .filter((f) => f.endsWith('.sql'))
+        .flatMap((f) => [
+          ...readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8').matchAll(
+            /CREATE TABLE IF NOT EXISTS\s+onchain\.(\w+)/gi,
+          ),
+        ])
+        .map((m) => (m[1] ?? '').toLowerCase()),
+    );
+    const unbacked = engineTables().filter((t) => !created.has(t));
+    expect(unbacked, 'policed but created by no migration').toEqual([]);
+    expect(engineTables()).toContain('client_usage');
+    for (const snapshotter of ['assets', 'metrics', 'snapshots']) {
+      expect(
+        engineTables(),
+        `${snapshotter} belongs to the snapshotter, not the engine`,
+      ).not.toContain(snapshotter);
+    }
   });
 
   it('finds no unqualified engine-table reference in either package', () => {

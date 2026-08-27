@@ -225,6 +225,20 @@ const EXEMPTIONS: readonly Exemption[] = [
     owner: 'task 014-16',
     active: true,
   },
+  {
+    file: 'packages/mcp-server/src/engine/billing-store.ts',
+    // T-015's own application point, named by `data-model.md` §4.6.1: "credits_mode читается через
+    // существующий AccessProfileReader... Отдельного пути к таблице профилей реализация не заводит."
+    // `createBillingStore.reserve()` reads `creditsMode` to choose the unlimited/metered branch and
+    // `creditsBalanceRaw` to validate its shape BEFORE the metered transaction opens (MINOR-7, round
+    // 2) — the value itself is never re-derived from a second path to `access_profiles`; the eager
+    // debit that follows is a SEPARATE statement against the same row, inside `reserve()`'s own
+    // transaction, which `data-model.md` §4.6.1 states explicitly binds the MODE lookup to the
+    // reader, not the balance's own atomic write.
+    why: "reads creditsMode/creditsBalanceRaw through AccessProfileReader — T-015's own application point",
+    owner: 'task 015-07',
+    active: true,
+  },
 ];
 
 const EXEMPT_FILES = new Set(EXEMPTIONS.map((entry) => entry.file));

@@ -331,9 +331,16 @@ export {
 // read-only one, and they live in `mcp-server`.
 export {
   createStateClient,
-  // The twelve engine tables, exported because `mcp-server`'s access mechanism qualifies names from
-  // this list (task 014-03). One list, checked against the migration by a test in this package — a
-  // second copy in `mcp-server` would drift on the thirteenth table and read as "the gate passed".
+  // The engine tables, exported because `mcp-server`'s access mechanism qualifies names from this
+  // list (task 014-03). One list, checked against the migrations by a test in this package — a
+  // second copy in `mcp-server` would drift on the next table added and read as "the gate passed".
+  //
+  // **This sentence used to say "the twelve engine tables", and it drifted on exactly the table it
+  // named (fixed 2026-08-27, task 015-07).** Migration `004_t015_billing.sql` added `client_usage`
+  // as the thirteenth; the list grew, the count in the prose beside it did not. A count is a second
+  // copy of the list, written shorter — which is the very thing this comment warns against. The
+  // count is gone rather than corrected: `STATE_TABLES.length` is the only place it can be read
+  // without going stale, and every message that needs it derives it there.
   STATE_TABLES,
   PgStateQueryTimeoutError,
   PgStateServerRejectedError,

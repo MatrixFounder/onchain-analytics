@@ -25,7 +25,12 @@ export type EngineTable = (typeof STATE_TABLES)[number];
 export class UnknownEngineTableError extends Error {
   constructor(readonly presented: string) {
     super(
-      `unknown engine table ${JSON.stringify(presented)} — the twelve tables of data-model.md §4.4 are ${STATE_TABLES.join(', ')}`,
+      // The count is DERIVED, never a second literal beside `STATE_TABLES.join(', ')` — a list that
+      // grows without its own count edited is exactly the N-5 finding (architecture review plan
+      // round 2): this message named twelve tables and then listed thirteen, unnoticed, the moment
+      // task 015-03 appended `client_usage` to `STATE_TABLES`. `STATE_TABLES.length` cannot drift
+      // from the join beside it — both read the same array.
+      `unknown engine table ${JSON.stringify(presented)} — the ${STATE_TABLES.length} tables of data-model.md §4.4/§4.6.1 are ${STATE_TABLES.join(', ')}`,
     );
     this.name = 'UnknownEngineTableError';
   }
