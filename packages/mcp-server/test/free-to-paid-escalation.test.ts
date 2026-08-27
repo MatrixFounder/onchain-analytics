@@ -9,6 +9,7 @@ import {
   type CapabilityWalk,
 } from '@onchain-intel/core';
 import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { createDiagnostics, type Diagnostics } from '../src/engine/diagnostics.js';
 import { createDiagnosticsStore } from '../src/engine/diagnostics-store.js';
 import { createRequestTraceStore } from '../src/engine/request-trace-store.js';
@@ -149,6 +150,7 @@ function handlerOver(registry: CapabilityResolver, diagnostics: Diagnostics) {
     principal: STDIO_PRINCIPAL,
     diagnostics,
     requestTrace: createRequestTraceStore(harness.engine),
+    billing: createBillingStoreStub(),
   });
   if (captured === undefined) throw new Error('the tool did not register');
   return captured;

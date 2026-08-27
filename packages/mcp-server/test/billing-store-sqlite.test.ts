@@ -227,7 +227,7 @@ describe('BillingStore on the SQLite axis (task 015-06)', () => {
     await store.settle(rowId);
     const firstTerminalAt = readRow(db(), rowId).terminal_at;
 
-    await expect(store.settle(rowId)).resolves.toBeUndefined();
+    await expect(store.settle(rowId)).resolves.toEqual({ written: false });
 
     const row = readRow(db(), rowId);
     expect(row.terminal_at).toBe(firstTerminalAt);

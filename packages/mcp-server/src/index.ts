@@ -29,6 +29,7 @@ import { createEngineStore } from './engine/pg-engine-store.js';
 import { createDiagnostics } from './engine/diagnostics.js';
 import { createDiagnosticsStore } from './engine/diagnostics-store.js';
 import { createRequestTraceStore } from './engine/request-trace-store.js';
+import { createBillingStore, createSqliteBillingStore } from './engine/billing-store.js';
 import { createSharedRuntime } from './runtime.js';
 import { startHttpTransport } from './transport/http.js';
 
@@ -222,6 +223,18 @@ async function main(): Promise<void> {
     },
   });
 
+  // Task 015-09 (`system-architecture.md` §3.5.2, R-2.4) — built UNCONDITIONALLY, on the SAME
+  // storage axis `stores` above already follows (`profile.storage`), never gated on `identity`.
+  // `ToolContext.billing` carries no `?` (R-3.7): an unconfigured deployment must not serve a call
+  // for free, silently. Postgres wraps the SAME shared client `engineClient()` already returns — a
+  // second wrapper over one connection, not a second connection — so this construction cannot
+  // depend on `identity`, which is `null` whenever the http pepper is unset and would otherwise
+  // crash here before that misconfiguration's own clear exit further below ever runs.
+  const billing =
+    profile.storage === 'postgres'
+      ? createBillingStore(createEngineStore(engineClient()), createDefaultAccessProfileReader())
+      : createSqliteBillingStore({ env: rawEnv });
+
   const runtime = createSharedRuntime({
     env,
     version,
@@ -233,6 +246,7 @@ async function main(): Promise<void> {
     // in the engine, so the profile that has no engine has neither. On the local profile the row is
     // not written and nothing is lost — `request_trace` does not exist there either.
     ...(identity === null ? {} : { requestTrace: createRequestTraceStore(identity.engine) }),
+    billing,
     ...(profile.transport === 'http'
       ? {
           principals: createHttpPrincipalResolver(),

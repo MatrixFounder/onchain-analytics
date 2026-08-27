@@ -29,7 +29,7 @@
 
 - Гейт вызовов R-9 построен (задачи 015-13, 015-14, 015-15).
 - Продуктивный порог blockscout (значение `625`) несёт пометку происхождения рядом с собой в коде
-  (`docs/architectures/data-model.md:2047`, `D6 estimate, R-10.1`); в спецификации та же пометка
+  (`docs/architectures/data-model.md:2053`, `D6 estimate, R-10.1`); в спецификации та же пометка
   сформулирована как «оценка `ADR-003` D6, не замер» (R-10.1, AC-22).
 - Ключ `BLOCKSCOUT_DAILY_CALL_CAP` объявлен в `EnvSchema` (задача 015-16). Методика ссылается на
   него как на уже объявленный; порядок исполнения задаёт этап, не эта задача.
@@ -49,7 +49,7 @@
 | 4   | `BLOCKSCOUT_DAILY_CALL_CAP` снимается                           | раздел 6 замерен                                                     |
 
 Замер шага 2 берётся SQL-запросом к таблице `usage` (`usage.calls_made`,
-`docs/architectures/data-model.md:1988`, `usage ADD COLUMN calls_made`), не самоотчётом оснастки
+`docs/architectures/data-model.md:1994`, `usage ADD COLUMN calls_made`), не самоотчётом оснастки
 (AC-26).
 
 Дискретное имя класса `ProviderCallCeilingExceededError` до оператора не доходит. На
@@ -112,12 +112,12 @@ operator IS reading stderr» (`packages/mcp-server/src/index.ts:177-179`).
 
 **Первый признак — момент отказа относительно сетевого запроса.** Отказ гейта происходит **до**
 сетевого запроса: `ensureCallBudget` вызывается рядом с `throttle()`, перед обращением к вендору
-(`docs/architectures/system-architecture.md:4356-4358`, `beside the existing`). Все три открытых
+(`docs/architectures/system-architecture.md:4396-4398`, `beside the existing`). Все три открытых
 дефекта наблюдаются **после** отправки запроса — ответ (таймаут, HTTP 500 или дедлайн лимитера) уже
 предполагает, что запрос ушёл.
 
 **Второй признак — текст отказа.** Сообщение гейта начинается с `daily call ceiling reached:`
-(`docs/architectures/system-architecture.md:4367`, `daily call ceiling reached:`).
+(`docs/architectures/system-architecture.md:4407`, `daily call ceiling reached:`).
 
 **Третий признак — изменение суточного счётчика этим вызовом, а не его абсолютное
 значение.** Счётчик увеличивается **на допуске**, до сетевой попытки: `ensureCallBudget` вызывает
@@ -192,7 +192,7 @@ credit is». То же в самой транзакции резервации �
 
 - ключ `BLOCKSCOUT_DAILY_CALL_CAP` отсутствует в окружении процесса;
 - потолок в силе для `blockscout` равен объявленному `dailyCallCeiling`, значение `625`
-  (`docs/architectures/data-model.md:2047`, `D6 estimate, R-10.1`).
+  (`docs/architectures/data-model.md:2053`, `D6 estimate, R-10.1`).
 
 **Why возврат — шаг с замером, а не строка «вернуть как было».** Оставленный тестовый порог
 отклонит первый же продуктивный вызов и уведёт `entity.labels` фолбэком на платный nansen. Этот

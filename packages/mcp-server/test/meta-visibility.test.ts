@@ -24,6 +24,7 @@ import {
   metaFor,
   type MetaView,
 } from '../src/tools/meta-visibility.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { defineTool, type ToolContext, type ToolSpec } from '../src/tools/registry.js';
 import { toolSpecs } from '../src/tools/tool-specs.js';
 
@@ -128,6 +129,7 @@ async function render(
     registry: new CapabilityRegistry(routes, new Map()),
     principal: STDIO_PRINCIPAL,
     principals: createHttpPrincipalResolver(),
+    billing: createBillingStoreStub(),
     ...(accessProfiles ? { accessProfiles } : {}),
   };
   return (await captureCallback(publishingTool(), ctx)(
@@ -177,6 +179,7 @@ describe('TC-E2E-01 / AC-6: `_meta.budget` is withheld from `user` and present f
       registry: new CapabilityRegistry(routes, new Map()),
       principal: STDIO_PRINCIPAL,
       principals: createHttpPrincipalResolver(),
+      billing: createBillingStoreStub(),
     };
     const asUser = (await captureCallback(fresh, ctx)({}, { authInfo: toAuthInfo(USER) })) as {
       _meta?: unknown;
@@ -307,6 +310,7 @@ describe('TC-UNIT-07: a failed profile read refuses the request', () => {
       registry: new CapabilityRegistry(routes, new Map()),
       principal: STDIO_PRINCIPAL,
       accessProfiles: counting,
+      billing: createBillingStoreStub(),
     };
     const rendered = (await captureCallback(publishingTool(), ctx)({}, {})) as {
       _meta?: Record<string, unknown>;

@@ -355,13 +355,16 @@ describe('TC-DOC-01: system-architecture.md §3.5.2a names the field refusalClas
     expect(section).toContain('reserved.refusalClass');
   });
 
-  it("leaves §3.5.2's own `reserved.errorClass` line for task 015-09 — not this task's to touch", () => {
-    // §3.5.2 is OUTSIDE the §3.5.2a/§3.5.3 window checked above. This is a guard against a
-    // too-eager future edit removing it from here rather than a claim that this task edits it.
+  it("task 015-09 renamed §3.5.2's own line too — zero errorClass occurrences left in the corpus", () => {
+    // §3.5.2 is OUTSIDE the §3.5.2a/§3.5.3 window checked above. Task 015-08 (this suite) left this
+    // exact line for task 015-09 to touch — its own prior docstring said so — and 015-09 is the
+    // reader of `reserved.refusalClass` (`registry.ts`'s interception point), so it is the one that
+    // renamed the pseudocode to match what it actually reads.
     const doc = read('docs/architectures/system-architecture.md');
     const start = doc.indexOf('#### 3.5.2.');
     const end = doc.indexOf('#### 3.5.2a.');
     const section = doc.slice(start, end);
-    expect(section).toContain('refusalClass: reserved.errorClass');
+    expect(section).not.toContain('errorClass');
+    expect(section).toContain('refusalClass: reserved.refusalClass');
   });
 });

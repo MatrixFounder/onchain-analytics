@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CapabilityRegistry, routes } from '@onchain-intel/core';
 import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { DEFAULT_HTTP_RESPONSE_TIMEOUT_MS, DEFAULT_SESSION_IDLE_MS } from '../src/env.js';
 import { defineTool } from '../src/tools/registry.js';
 import {
@@ -60,6 +61,7 @@ function slowServer(gate: Promise<void>, finished: { value: boolean }): McpServe
     version: '0.0.0-test',
     registry: new CapabilityRegistry(routes, new Map()),
     principal: STDIO_PRINCIPAL,
+    billing: createBillingStoreStub(),
   });
   return server;
 }

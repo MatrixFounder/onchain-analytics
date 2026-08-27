@@ -123,7 +123,7 @@ describe('BillingStore — the four methods, and the stub implementing them', ()
     await stub.settle(rowId);
     expect(stub.rows.find((row) => row.id === rowId)?.state).toBe('settled');
 
-    await expect(stub.settle(rowId)).resolves.toBeUndefined();
+    await expect(stub.settle(rowId)).resolves.toEqual({ written: false });
     expect(stub.rows.find((row) => row.id === rowId)?.state).toBe('settled');
   });
 
@@ -134,7 +134,9 @@ describe('BillingStore — the four methods, and the stub implementing them', ()
     const { rowId } = reserved.reservation;
 
     await stub.settle(rowId); // now terminal as 'settled'
-    await expect(stub.refund(rowId, 'BillingStoreContractTest')).resolves.toBeUndefined();
+    await expect(stub.refund(rowId, 'BillingStoreContractTest')).resolves.toEqual({
+      written: false,
+    });
     expect(stub.rows.find((row) => row.id === rowId)?.state).toBe('settled');
   });
 

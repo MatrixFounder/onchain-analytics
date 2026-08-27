@@ -10,6 +10,7 @@ import type { Env } from './env.js';
 import { type ToolContext } from './tools/registry.js';
 import type { Diagnostics } from './engine/diagnostics.js';
 import type { RequestTraceStore } from './engine/request-trace-store.js';
+import { createBillingStoreStub, type BillingStore } from './engine/billing-store.js';
 import type { AccessProfileReader } from './auth/access-profile.js';
 import { STDIO_PRINCIPAL, UNRESOLVED_PRINCIPAL, type PrincipalResolver } from './auth/principal.js';
 import { toolSpecs } from './tools/tool-specs.js';
@@ -75,6 +76,15 @@ export interface CreateServerDeps {
    * the engine. The same shape `budgetStore` and `diagnostics` already use.
    */
   requestTrace?: RequestTraceStore;
+  /**
+   * The client billing ledger (task 015-09). Absent means a harmless in-memory stub
+   * (`createBillingStoreStub`) — the same INERT-default convention `registry` uses just below,
+   * never a literal `undefined` on `ToolContext.billing`, which carries no `?` (R-3.7,
+   * `system-architecture.md` §3.5.2). Production (`index.ts`) always supplies the real store for
+   * the deployment's own storage axis; a test that does not care about billing gets a store that
+   * always admits, so every existing fixture keeps compiling and passing unedited.
+   */
+  billing?: BillingStore;
   /** The clock the trace row is stamped with; injectable so a test asserts a value it chose. */
   now?: () => number;
   /**
@@ -139,6 +149,11 @@ export function createServer(deps: CreateServerDeps): McpServer {
   const context: ToolContext = {
     version: deps.version,
     registry: deps.registry ?? new CapabilityRegistry(routes, new Map()),
+    // Task 015-09 — MANDATORY on `ToolContext`, unlike every neighbor above it that spreads
+    // conditionally. `deps.billing` is what production always supplies; the stub is what every
+    // caller that never named a store gets instead — see this factory's own `CreateServerDeps.billing`
+    // docstring for why an absent VALUE here would be the wrong shape for a fail-closed field.
+    billing: deps.billing ?? createBillingStoreStub(),
     ...(deps.budgetStore ? { budgetStore: deps.budgetStore } : {}),
     ...(deps.diagnostics ? { diagnostics: deps.diagnostics } : {}),
     // The session-construction placeholder (task 014-14; corrected while writing task 014-30's

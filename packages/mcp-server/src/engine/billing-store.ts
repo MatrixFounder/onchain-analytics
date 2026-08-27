@@ -105,6 +105,24 @@ export type BillingReserveResult =
   | { ok: false; reason: string; refusalClass: BillingRefusalClass };
 
 /**
+ * `settle()`/`refund()`'s own return shape (task 015-10) — the SAME split
+ * `RequestTraceAppendResult.written` already makes (`request-trace-store.ts:163`), reused here for
+ * the identical reason: a caller that only awaits `Promise<void>` cannot tell "this call's own
+ * conditional `UPDATE` actually transitioned the row" from "the row was already terminal and this
+ * call did nothing" — and the wrapper (`tools/registry.ts`) needs exactly that distinction to name a
+ * late outcome on stderr (MAJOR-9, `docs/tasks/task-015-10-reservation-lifecycle.md`'s own "Правило
+ * позднего исхода" — "the observable trace is a stderr line naming the row id and its state").
+ *
+ * **`written: false` is not an error.** It is the STATED, first-completer-wins outcome
+ * (`system-architecture.md` §3.5.3): the conditional `UPDATE … WHERE state = 'reserved'` matched
+ * zero rows because something else — a concurrent completer, or the background reconciliation scan
+ * of `data-model.md` §4.6.5 — closed this row first.
+ */
+export interface BillingCompletionResult {
+  readonly written: boolean;
+}
+
+/**
  * `client_usage`, camelCased — the full row shape the stub holds in memory (`data-model.md` §4.6.1's
  * declared columns, minus nothing). `BillingReservation` is the SUBSET of this row a caller of
  * `reserve()` needs back; `BillingLedgerRow` is the full row a test needs to assert against, the
@@ -165,15 +183,21 @@ export interface BillingStore {
    * error, when the row already left `'reserved'` (first completer wins, `system-architecture.md`
    * §3.5.3). No balance effect: the amount was already debited at `reserve()`.
    */
-  settle(rowId: string): Promise<void>;
+  settle(rowId: string): Promise<BillingCompletionResult>;
 
   /**
    * Conditional `UPDATE … WHERE state = 'reserved'`, PLUS — under `credits_mode='metered'` — a
    * real implementation credits `priceRaw` back onto the profile's balance, in the same transaction
-   * as the state transition. A no-op, not an error, on an already-terminal row, same rule as
-   * {@link BillingStore.settle}.
+   * as the state transition.
+   *
+   * **The credit runs ONLY when this call's own conditional `UPDATE` actually returned a row**
+   * (MAJOR-C, architecture review round 2) — the same "only when" `reserve()`'s own debit uses for
+   * its step 2 ("Only when step 1 inserted a NEW row", `system-architecture.md` §3.5.1). A no-op,
+   * not an error, on an already-terminal row — same rule as {@link BillingStore.settle} — and the
+   * balance is untouched right along with the state: crediting on a zero-row `UPDATE` would return
+   * `priceRaw` a second time for a row a prior completer already refunded once.
    */
-  refund(rowId: string, reason: string): Promise<void>;
+  refund(rowId: string, reason: string): Promise<BillingCompletionResult>;
 
   /**
    * `data-model.md` §4.6.1's AC-4 aggregate — sum of `price_raw` over `settled` rows whose
@@ -273,20 +297,21 @@ export function createBillingStoreStub(options?: {
       return { ok: true, reservation: { rowId: row.id, state: row.state, existing: false } };
     },
 
-    async settle(rowId: string): Promise<void> {
+    async settle(rowId: string): Promise<BillingCompletionResult> {
       const index = rows.findIndex((row) => row.id === rowId);
-      if (index === -1) return; // unknown row — same as an UPDATE matching zero rows
+      if (index === -1) return { written: false }; // unknown row — same as an UPDATE matching zero rows
       const current = rows[index];
-      if (current === undefined || current.state !== 'reserved') return; // conditional: first completer wins
+      if (current === undefined || current.state !== 'reserved') return { written: false }; // conditional: first completer wins
       const ts = now();
       rows[index] = { ...current, state: 'settled', terminalAt: ts, updatedAt: ts };
+      return { written: true };
     },
 
-    async refund(rowId: string, reason: string): Promise<void> {
+    async refund(rowId: string, reason: string): Promise<BillingCompletionResult> {
       const index = rows.findIndex((row) => row.id === rowId);
-      if (index === -1) return;
+      if (index === -1) return { written: false };
       const current = rows[index];
-      if (current === undefined || current.state !== 'reserved') return;
+      if (current === undefined || current.state !== 'reserved') return { written: false };
       const ts = now();
       rows[index] = {
         ...current,
@@ -295,6 +320,7 @@ export function createBillingStoreStub(options?: {
         terminalAt: ts,
         updatedAt: ts,
       };
+      return { written: true };
     },
 
     // `periodFromMs`/`periodToMs` are declared on `BillingStore.sumSettled` but taken by neither
@@ -357,6 +383,45 @@ UPDATE onchain.client_usage
    SET state = $2, terminal_at = $3, updated_at = $3, refund_reason = $4
  WHERE id = $1 AND state = 'reserved'
 RETURNING id`;
+
+/**
+ * MINOR-9 — the SQLite axis's own closer for a stuck `'reserved'` row (`data-model.md` §4.6.5's
+ * Postgres-axis scan has no counterpart here). Run once per store open (below, in
+ * {@link createSqliteBillingStore}), on the SAME dedicated connection every other statement in this
+ * factory uses, queued through the SAME serialization queue.
+ *
+ * **Why this axis needs its own closer and Postgres does not.** `data-model.md` §4.6.5's scan runs
+ * OUTSIDE this process (task 015-18's n8n workflow), reaching Postgres over its own network path.
+ * The SQLite file is reachable only from THIS process's own connections — nothing else can ever run
+ * that scan here — so without this sweep a row past R-14's own threshold would sit in `'reserved'`
+ * forever on this axis, and R-3's completion guarantee would hold on Postgres and silently not hold
+ * here (`CLAUDE.md` "nothing silently").
+ *
+ * **The threshold is `REPLAY_AND_RECONCILE_CEILING_MS`, read, never re-typed as a hand-written
+ * millisecond literal** — the SAME constant `data-model.md` §4.6.5 names as shared by the
+ * reconciliation scan and the replay window (TC-UNIT-10, "one constant, two consumers, not two
+ * literals").
+ *
+ * **No balance effect.** Unlike Postgres's `refund()` (below), this axis debits no balance at
+ * `reserve()` either (task 015-06 never implemented the metered branch here — `credits_mode
+ * ='metered'` is not exercised on this axis in phase 0, `data-model.md` §4.6.1's own "Storage axis"
+ * note), so there is nothing for this closer to credit back.
+ */
+const CLOSE_EXPIRED_SQL = `
+UPDATE onchain.client_usage
+   SET state = 'refunded', refund_reason = 'expired', terminal_at = $1, updated_at = $1
+ WHERE state = 'reserved' AND reserved_at < $2`;
+
+/** A stderr writer local to this module — the SAME EPIPE-safe shape `tools/registry.ts`'s own
+ * `writeStderrLine` uses (duplicated, not imported: this is the engine layer and does not reach into
+ * `src/tools/`). Used only by the closer above, whose failure has no caller to return a value to. */
+function writeBillingStderrLine(line: string): void {
+  try {
+    process.stderr.write(`${line}\n`);
+  } catch {
+    // Best-effort; the fact being reported is not in question either way.
+  }
+}
 
 interface ClientUsageIdState {
   readonly id: string;
@@ -500,6 +565,21 @@ export function createSqliteBillingStore(deps: SqliteBillingStoreDeps = {}): Bil
     }
   }
 
+  // MINOR-9 — queued FIRST, through the SAME `enqueue` every reserve/settle/refund call below uses:
+  // this line runs synchronously, before this factory returns, so the FIRST call any caller makes on
+  // the returned store already waits behind the sweep (`enqueue`'s own queue is a promise CHAIN, not
+  // a background timer — nothing here needs a scheduler). A failure is named on stderr rather than
+  // thrown: there is no caller of `createSqliteBillingStore` waiting on a promise to reject.
+  enqueue(() => {
+    const ts = now();
+    return client.query(CLOSE_EXPIRED_SQL, [ts, ts - REPLAY_AND_RECONCILE_CEILING_MS]);
+  }).catch((error: unknown) => {
+    writeBillingStderrLine(
+      `billing-store(sqlite): the stuck-reservation closer failed on open — ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
+
   return {
     async reserve(input): Promise<BillingReserveResult> {
       try {
@@ -564,12 +644,18 @@ export function createSqliteBillingStore(deps: SqliteBillingStoreDeps = {}): Bil
       }
     },
 
-    async settle(rowId: string): Promise<void> {
-      await enqueue(() => client.query(COMPLETE_UPDATE_SQL, [rowId, 'settled', now(), null]));
+    async settle(rowId: string): Promise<BillingCompletionResult> {
+      const rows = await enqueue(() =>
+        client.query<{ id: string }>(COMPLETE_UPDATE_SQL, [rowId, 'settled', now(), null]),
+      );
+      return { written: rows.length > 0 };
     },
 
-    async refund(rowId: string, reason: string): Promise<void> {
-      await enqueue(() => client.query(COMPLETE_UPDATE_SQL, [rowId, 'refunded', now(), reason]));
+    async refund(rowId: string, reason: string): Promise<BillingCompletionResult> {
+      const rows = await enqueue(() =>
+        client.query<{ id: string }>(COMPLETE_UPDATE_SQL, [rowId, 'refunded', now(), reason]),
+      );
+      return { written: rows.length > 0 };
     },
 
     // R-7.3 — authoritative on the Postgres axis only (see this file's own `BillingStore.sumSettled`
@@ -662,13 +748,35 @@ function pgDebitUpdateSql(engine: EngineStore): string {
 RETURNING credits_balance_raw`;
 }
 
-/** Shared by `settle`/`refund` — the SAME conditional transition the SQLite axis's own
- * `COMPLETE_UPDATE_SQL` declares, qualified here through `engine.qualify(...)` instead of a literal. */
+/**
+ * Shared by `settle`/`refund` — the SAME conditional transition the SQLite axis's own
+ * `COMPLETE_UPDATE_SQL` declares, qualified here through `engine.qualify(...)` instead of a literal.
+ *
+ * **`RETURNING` carries `access_profile_id, price_raw` beyond the bare `id`** (task 015-10,
+ * MAJOR-A/MAJOR-C) — `refund()` below needs both to decide whether, and how much, to credit back,
+ * and reads them from THIS row rather than a second, independent lookup: the row this UPDATE just
+ * transitioned is the ONLY authority on what it was reserved for. `settle()` uses the same text and
+ * ignores the extra columns — no balance effect there (`priceRaw` was already spent at `reserve()`).
+ */
 function pgCompleteUpdateSql(engine: EngineStore): string {
   return `UPDATE ${engine.qualify('client_usage')}
    SET state = $2, terminal_at = $3, updated_at = $3, refund_reason = $4
  WHERE id = $1 AND state = 'reserved'
-RETURNING id`;
+RETURNING id, access_profile_id, price_raw`;
+}
+
+/**
+ * `refund()`'s own credit statement (task 015-10, MAJOR-A/MAJOR-C) — the mirror of
+ * {@link pgDebitUpdateSql}, addition instead of subtraction, same `CAST(x AS NUMERIC)` ANSI form for
+ * the same cross-dialect reason. No floor check: crediting `priceRaw` back can never push a balance
+ * below where it stood before the debit that is being reversed, so there is no analogue of the
+ * debit's own `>= CAST($2 AS NUMERIC)` guard.
+ */
+function pgCreditUpdateSql(engine: EngineStore): string {
+  return `UPDATE ${engine.qualify('access_profiles')}
+   SET credits_balance_raw = CAST(CAST(credits_balance_raw AS NUMERIC) + CAST($2 AS NUMERIC) AS TEXT)
+ WHERE id = $1
+RETURNING credits_balance_raw`;
 }
 
 /** AC-4's aggregate (`data-model.md` §4.6.1, literal text) — `CAST(... AS NUMERIC)`/`CAST(... AS
@@ -706,10 +814,13 @@ function pgSumSettledSql(engine: EngineStore): string {
  *    `BillingStoreUnavailableError`, never re-thrown (R-3.7, fail-closed; `system-architecture.md`
  *    §3.5.2 step 4: both money classes are a VALUE, never a throw, to the caller of `reserve()`).
  *
- * **`settle`/`refund` carry no balance effect here** (task 015-07's own closing note: "Их размещение
- * относительно `withTrace` и условие кредитования баланса принадлежат задаче 015-10"). Both are the
- * conditional `UPDATE … WHERE state = 'reserved'` `data-model.md` §4.6.1 declares — first completer
- * wins, a no-op rather than an error on an already-terminal row — and nothing more.
+ * **`settle`/`refund` — task 015-07 deferred their wiring to this task's own owner (015-10): "Их
+ * размещение относительно `withTrace` и условие кредитования баланса принадлежат задаче 015-10".**
+ * Both are the conditional `UPDATE … WHERE state = 'reserved'` `data-model.md` §4.6.1 declares —
+ * first completer wins, a no-op rather than an error on an already-terminal row. `settle` carries no
+ * balance effect (the amount was already debited at `reserve()`); `refund` credits `priceRaw` back,
+ * in the SAME `engine.transaction(...)` as the state transition, ONLY when this call's own
+ * conditional `UPDATE` actually returned a row (see `refund`'s own docstring below).
  */
 export interface PgBillingStoreDeps {
   /** Overrides the clock `reserve()` stamps `reserved_at`/`created_at`/`updated_at` with AND compares
@@ -886,12 +997,49 @@ export function createBillingStore(
       }
     },
 
-    async settle(rowId: string): Promise<void> {
-      await engine.query(pgCompleteUpdateSql(engine), [rowId, 'settled', Date.now(), null]);
+    // No balance effect (`priceRaw` was already debited at `reserve()`) — ONE statement, no
+    // `engine.transaction(...)` wrapper, matching `settle()`'s own declared "баланса не трогает".
+    async settle(rowId: string): Promise<BillingCompletionResult> {
+      const rows = await engine.query<{ id: string }>(pgCompleteUpdateSql(engine), [
+        rowId,
+        'settled',
+        Date.now(),
+        null,
+      ]);
+      return { written: rows.length > 0 };
     },
 
-    async refund(rowId: string, reason: string): Promise<void> {
-      await engine.query(pgCompleteUpdateSql(engine), [rowId, 'refunded', Date.now(), reason]);
+    /**
+     * Task 015-10 — MAJOR-A (`pg-engine-store.ts`'s own `transaction()`/`qualify()`, cited by the
+     * task doc) + MAJOR-C (the conditional). The state transition and the balance credit run in ONE
+     * `engine.transaction(...)`, matching `data-model.md` §4.6.1's own "in the same transaction as
+     * the row's transition to 'refunded'" and `reserve()`'s own metered branch just above (insert,
+     * THEN — only for a row THIS call actually transitioned — the money movement).
+     */
+    async refund(rowId: string, reason: string): Promise<BillingCompletionResult> {
+      return engine.transaction(async (tx) => {
+        const rows = await tx.query<{
+          id: string;
+          access_profile_id: string | null;
+          price_raw: string;
+        }>(pgCompleteUpdateSql(engine), [rowId, 'refunded', Date.now(), reason]);
+        const row = rows[0];
+        if (row === undefined) {
+          // MAJOR-9 — zero rows: the conditional `WHERE state = 'reserved'` matched nothing, because
+          // this row already left `'reserved'` (a concurrent completer, or `data-model.md` §4.6.5's
+          // own background reconciliation scan). First completer wins — a late outcome credits
+          // nothing and does not reopen what that first completer already closed.
+          return { written: false };
+        }
+        if (row.access_profile_id !== null) {
+          // MAJOR-A/MAJOR-C — credited ONLY because THIS call's own conditional `UPDATE` actually
+          // transitioned the row (the mirror of `reserve()`'s "Only when step 1 inserted a NEW
+          // row"), and only for a principal that reaches a profile at all (R-7.5 — the local
+          // principal's `access_profile_id` is `NULL`, and there is nothing to credit).
+          await tx.query(pgCreditUpdateSql(engine), [row.access_profile_id, row.price_raw]);
+        }
+        return { written: true };
+      });
     },
 
     // R-7.3, AC-15 — the Postgres axis IS the authoritative one; unlike the SQLite axis above, this

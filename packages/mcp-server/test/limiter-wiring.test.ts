@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { BudgetStore, CacheStore } from '@onchain-intel/core';
 import { loadEnv } from '../src/env.js';
 import { createSharedRuntime } from '../src/runtime.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 
 /**
  * Task 014-19 — production stops taking the module singleton (R-7, R-8, `system-architecture.md`
@@ -109,6 +110,10 @@ describe('the injected limiter is the one a resolve actually reaches', () => {
       version: '0.0.0-test',
       cacheStoreFactory: inertCache,
       budgetStoreFactory: () => ({}) as unknown as BudgetStore,
+      // Required on `SharedRuntimeDeps` (task 015-09): the field is what carries the ledger
+      // from `index.ts` to `createServer`, so a test that does not care about billing still
+      // names the stub rather than letting an omission compile into a fail-open default.
+      billing: createBillingStoreStub(),
       throttle: (providerId) => {
         asked.push(providerId);
         // Refusing here is what keeps this test offline: every adapter awaits the limiter BEFORE it

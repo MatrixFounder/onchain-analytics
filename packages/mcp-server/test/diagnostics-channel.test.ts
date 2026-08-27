@@ -210,6 +210,11 @@ const STDERR_INVENTORY: Readonly<Record<string, 'stderr' | 'level' | 'dual'>> = 
   // widening it is a schema change owned by 014-35/014-36 — recorded as a residual in the task file
   // rather than taken here.
   'packages/mcp-server/src/tools/registry.ts': 'stderr',
+  // Task 015-10. One site: the SQLite axis's own stuck-`'reserved'`-row closer (MINOR-9) names a
+  // failure on open. Stays stderr-only (R-32.1) for the same reason as `registry.ts` above —
+  // `DIAGNOSTIC_EVENTS` is a closed vocabulary, and this fires before/around store construction,
+  // not from inside a served request that could carry a `diagnostics` row of its own.
+  'packages/mcp-server/src/engine/billing-store.ts': 'stderr',
   'packages/mcp-server/src/engine/diagnostics.ts': 'dual',
 };
 

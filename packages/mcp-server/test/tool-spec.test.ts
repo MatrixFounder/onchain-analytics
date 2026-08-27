@@ -8,6 +8,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CapabilityRegistry, routes, type BudgetStore } from '@onchain-intel/core';
 import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { defineTool, type ToolContext, type ToolSpec } from '../src/tools/registry.js';
 import { toolSpecs } from '../src/tools/tool-specs.js';
 
@@ -39,6 +40,9 @@ function fullContext(): ToolContext {
     // Required since task 014-14: there is a principal on every transport, so the key is not
     // optional and this fixture supplies the local one.
     principal: STDIO_PRINCIPAL,
+    // Required since task 015-09 (R-3.7) — a fresh stub per fixture, same as `budgetStore` above;
+    // this suite is about `defineTool`'s projection, not billing, so admission is unconditional.
+    billing: createBillingStoreStub(),
   };
 }
 

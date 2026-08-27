@@ -24,6 +24,7 @@ import {
 import { toProcessEnv, type Env } from './env.js';
 import { createDiagnostics, type Diagnostics } from './engine/diagnostics.js';
 import type { RequestTraceStore } from './engine/request-trace-store.js';
+import type { BillingStore } from './engine/billing-store.js';
 import type { AccessProfileReader } from './auth/access-profile.js';
 import type { PrincipalResolver } from './auth/principal.js';
 import { createServer } from './server.js';
@@ -69,6 +70,25 @@ export interface SharedRuntimeDeps {
    * was billed. Absent means no row is written — the local profile, where the table does not exist.
    */
   readonly requestTrace?: RequestTraceStore;
+  /**
+   * The client billing ledger (task 015-09). `index.ts` builds ONE real store, on the profile's own
+   * storage axis, and passes it here UNCONDITIONALLY (R-2.4: every one of the three deployment
+   * profiles writes).
+   *
+   * **REQUIRED, unlike `requestTrace` above, and the asymmetry is deliberate.** An absent
+   * `requestTrace` means one row is not written on a profile whose table does not exist — a
+   * narrowing that costs a record. An absent `billing` would mean `createServer`'s stub default
+   * serves EVERY call for free and says nothing, because a stub that admits is indistinguishable
+   * from a ledger that charged. Owner decision on `OQ-9` is fail-closed, and a fail-OPEN default
+   * reached by omitting one line is the opposite.
+   *
+   * Making it required is what proves the wiring rather than testing it: `index.ts` builds the
+   * store and this field carries it to `createServer`, and neither half can be dropped without a
+   * compile error. The structural test in `billing-interception.test.ts` asserts the FIRST half
+   * (that `index.ts` builds and forwards); nothing asserted the second, so deleting the forward
+   * here would have left every call unbilled with every test still green.
+   */
+  readonly billing: BillingStore;
   /**
    * Resolves the principal per request (task 014-15). Supplied only on the `http` axis: absent means
    * stdio, where the constant IS the answer, and a resolver that fell back to that constant on the
@@ -223,6 +243,10 @@ export function createSharedRuntime(deps: SharedRuntimeDeps): SharedRuntime {
         budgetStore,
         diagnostics,
         ...(deps.requestTrace ? { requestTrace: deps.requestTrace } : {}),
+        // Unconditional, unlike `requestTrace` on the line above: the field is required on
+        // `SharedRuntimeDeps`, so there is no absent case to spread around — see its own docstring
+        // for why an omitted billing store is not the same kind of absence as an omitted trace.
+        billing: deps.billing,
         principals: deps.principals,
         accessProfiles: deps.accessProfiles,
       }),

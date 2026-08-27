@@ -20,6 +20,7 @@ import {
 } from '../src/transport/failure-classes.js';
 import { CapabilityRegistry, routes } from '@onchain-intel/core';
 import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { defineTool, toCallToolResult, type ToolOutcome } from '../src/tools/registry.js';
 import {
   ALLOWED_METHODS,
@@ -234,6 +235,7 @@ async function callThrough(outcome: ToolOutcome<{ note: string }>): Promise<Call
     version: '0.0.0-test',
     registry: new CapabilityRegistry(routes, new Map()),
     principal: STDIO_PRINCIPAL,
+    billing: createBillingStoreStub(),
   });
   const client = new Client({ name: 'probe', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

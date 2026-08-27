@@ -39,6 +39,7 @@ export {
 } from './request-trace-store.js';
 export {
   createBillingStoreStub,
+  type BillingCompletionResult,
   type BillingRefusalClass,
   type BillingReservation,
   type BillingReserveResult,

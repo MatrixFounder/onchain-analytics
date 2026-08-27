@@ -12,7 +12,9 @@ import {
 import type { z } from 'zod';
 import type { AccessProfileReader } from '../auth/access-profile.js';
 import { principalFor, type Principal, type PrincipalResolver } from '../auth/principal.js';
+import { priceFor } from '../billing/price-list.js';
 import type { Diagnostics } from '../engine/diagnostics.js';
+import type { BillingReserveResult, BillingStore } from '../engine/billing-store.js';
 import { toClientText } from '../transport/failure-classes.js';
 import { detectEscalation } from './escalation.js';
 import { vendorSpendColumns } from './vendor-spend-columns.js';
@@ -134,6 +136,21 @@ export interface ToolContext {
    * silent, because nothing is lost: the table does not exist on that profile either.
    */
   requestTrace?: RequestTraceStore;
+  /**
+   * The client billing ledger T-015 charges into (task 015-09, `system-architecture.md` §3.5.2).
+   * Read by the WRAPPER, never by a handler — for the same reason as `requestTrace`: a tool able to
+   * write this table would be a tool able to decide what it was charged.
+   *
+   * **REQUIRED, no `?` — unlike its neighbor `requestTrace` right above, and that difference is
+   * deliberate (closes architecture review round 1 MAJOR-8).** An absent `ctx.requestTrace` skips
+   * its write and serves the call anyway (`OD-014-30-6`, `if (ctx.requestTrace === undefined) return
+   * result;`) — observability degrades without stopping traffic. R-3.7 requires the opposite of the
+   * ledger: fail-closed. An optional `ctx.billing` would let an unconfigured deployment serve every
+   * call for free, silently — exactly the failure R-3.7 exists to forbid. `createServer` therefore
+   * always supplies a value (a harmless in-memory stub when none is injected, the real store on
+   * every one of the three deployment profiles in production).
+   */
+  billing: BillingStore;
   /**
    * The reverse-DNS namespace an incoming `_meta` key must carry for this deployment
    * (`ONCHAIN_META_NAMESPACE`, `OD-014-30-14`). Absent means no client-supplied request id is
@@ -556,10 +573,76 @@ export function defineTool<
             );
           }
 
-          const outcome = await definition.handler(
-            input,
-            project({ ...ctx, principal, registry }, needs),
-          );
+          // **The reserve — task 015-09, `system-architecture.md` §3.5.2 (R-2).** After the abort
+          // check above (a call refused there writes no trace row at all — "nothing is billed for
+          // work nobody did") and before `definition.handler(...)`, which is what makes this fire
+          // on a call that will be served from the cache: a cache HIT costs the vendor nothing and
+          // the client the full price (ADR-003 D4, R-2.2), so a hook placed after `resolve()` would
+          // undercount exactly the requests the margin is built on.
+          //
+          // The client-supplied request id is read a SECOND time, deliberately, rather than moved
+          // out of `withTrace` below: `readClientRequestId` is pure over `extra._meta` and
+          // `ctx.metaNamespace`, so the second call costs nothing and cannot disagree with the
+          // first. The server-minted fallback is the SAME `traceId` already minted above, not a
+          // fresh id — the identical rule `buildRequestTraceRow` applies below (`clientRequestId ??
+          // input.id`) — so `client_usage.client_request_id` and `request_trace.client_request_id`
+          // agree on one server-minted request.
+          const billingClientRequestId =
+            readClientRequestId(extra._meta, ctx.metaNamespace).value ?? traceId;
+
+          // The price, and the ledger's own `capability` column, both read the tool's STATIC
+          // declaration — already in the closure, before `resolve()` runs — never
+          // `resolvedCapability` below, which is known only after the handler returns, i.e. after
+          // the cache (`data-model.md` §4.6.1, "the STATIC declaration, not the dynamic resolved
+          // value").
+          const priceRaw = priceFor(definition.capability, definition.name);
+
+          const reserveOrRefuse = async (): Promise<BillingReserveResult> => {
+            try {
+              return await ctx.billing.reserve({
+                principalId: principal.principalId,
+                accessProfileId: principal.accessProfileId,
+                clientRequestId: billingClientRequestId,
+                tool: definition.name,
+                capability: definition.capability,
+                priceRaw,
+              });
+            } catch (error) {
+              // A thrown connection failure is refused the SAME way a returned `ok: false` already
+              // is (`system-architecture.md` §3.5.2, "Бросок хранилища приводится к тому же
+              // отказу") — never rethrown, or fail-closed would become an unhandled rejection with
+              // no trace row and no `tool.refused` event.
+              return {
+                ok: false,
+                reason: error instanceof Error ? error.message : String(error),
+                refusalClass: 'BillingStoreUnavailableError',
+              };
+            }
+          };
+
+          // A SYNTHETIC outcome, not an early return (closes architecture review round 1
+          // BLOCKING-3). The abort branch above returns before `withTrace` runs at all, so a money
+          // refusal routed the same way would write neither a trace row nor a `tool.refused`
+          // event — invisible. This value instead flows through the SAME post-handler pipeline
+          // every other refusal already uses: `resolvedCapability`, the escalation check,
+          // `ctx.diagnostics?.emit('tool.refused', …)` and `withTrace` below all read `outcome`
+          // exactly as they do for a handler-produced refusal, unchanged.
+          let outcome: ToolOutcome<TOutput>;
+          const reserved = await reserveOrRefuse();
+          if (!reserved.ok) {
+            outcome = { ok: false, reason: reserved.reason, refusalClass: reserved.refusalClass };
+            // `definition.handler(...)` is NEVER called — the call is refused before
+            // `resolve()`/the cache. `reserved.reservation` does not exist on this arm, so there is
+            // nothing for the completion step below (task 015-10) to close.
+          } else {
+            // `reserved.reservation.rowId` is what the completion step below (task 015-10) threads
+            // into `settle()`/`refund()` once the handler returns — `reserved` stays a plain local
+            // kept alive by this closure for that step to read.
+            outcome = await definition.handler(
+              input,
+              project({ ...ctx, principal, registry }, needs),
+            );
+          }
           // The capability this call is ABOUT: the tool's own declaration when it has one, else
           // what the handler reported resolving (task 014-30, `OD-014-30-12`). `null` only for the
           // two tools that resolve no capability at all.
@@ -605,6 +688,60 @@ export function defineTool<
               },
             });
           }
+
+          /**
+           * **The reservation lifecycle's terminal step — task 015-10, MAJOR-B (architecture review
+           * round 2).** `settle`/`refund` close the `client_usage` row `reserveOrRefuse()` opened
+           * above, in the WRAPPER's own body — never inside `withTrace` below.
+           *
+           * **Why here, and not folded into `withTrace`.** `withTrace`'s own FIRST line returns
+           * early when `ctx.requestTrace` is absent — the `local` profile's own shape
+           * (`index.ts`'s `identity === null ? {} : { requestTrace: … }`, which is exactly
+           * `transport !== 'http'`). `ctx.billing` carries no such `?` (`ToolContext.billing`'s own
+           * docstring above): the reservation opened on EVERY profile must close on every profile
+           * too, so its completion cannot sit downstream of a check that only one of them satisfies.
+           * Both branches of `outcome` reach this line identically — neither returns before it.
+           *
+           * **Nothing here reads `outcome.capability` — deliberately.** `settle`/`refund` close a
+           * money row by `rowId` alone; the capability this call resolved is `request_trace`'s
+           * concern, already computed above as `resolvedCapability`.
+           */
+          if (reserved.ok) {
+            const rowId = reserved.reservation.rowId;
+            try {
+              const completion = outcome.ok
+                ? await ctx.billing.settle(rowId)
+                : await ctx.billing.refund(rowId, outcome.refusalClass ?? 'unclassified');
+              if (!completion.written) {
+                // **MAJOR-9 — a late outcome.** Something else (a concurrent completer, or
+                // `data-model.md` §4.6.5's own background reconciliation scan) already closed this
+                // row first-completer-wins style; this call's own conditional `UPDATE` matched zero
+                // rows. The row's OWN terminal state is left exactly as that first completer set it
+                // — never reopened, never re-credited — and this line is the named, OBSERVABLE trace
+                // of the divergence (`docs/tasks/task-015-10-reservation-lifecycle.md`'s own
+                // "Наблюдаемый след"), not a new `diagnostics.event` (the vocabulary stays closed at
+                // eight, `data-model.md` §4.5.8).
+                writeStderrLine(
+                  `billing: row ${rowId} (tool=${definition.name}) was already terminal — the late ` +
+                    `${outcome.ok ? 'settle' : 'refund'} outcome changed nothing; the response is ` +
+                    `served as computed`,
+                );
+              }
+            } catch (error) {
+              // Same precedent as `withTrace`'s own catch just below (`OD-014-30-6`): a ledger
+              // failure never fails the request already computed, and never passes silently either
+              // — the row is a billing record, so a lost completion is named on stderr with the id
+              // it would have closed.
+              writeStderrLine(
+                `billing: FAILED to ${outcome.ok ? 'settle' : 'refund'} client_usage row ${rowId} ` +
+                  `(tool=${definition.name}) — the response is served regardless: ` +
+                  `${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          }
+          // `reserved.ok === false` (a refused reserve) reaches here with nothing to close —
+          // `definition.handler(...)` was never called and no `client_usage` row exists for this
+          // request at all (the comment beside `reserveOrRefuse()`'s call site above).
 
           /**
            * Writes the row and returns the client's result unchanged.

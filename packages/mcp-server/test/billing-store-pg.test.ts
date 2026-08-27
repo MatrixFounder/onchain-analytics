@@ -1,19 +1,4 @@
-import Database from 'better-sqlite3';
-import {
-  CACHE_DDL,
-  createStateClient,
-  toSqliteDialect,
-  type PgStateConnectionLike,
-  type PgStatePoolCtor,
-  type PgStatePoolLike,
-  type StateClient,
-} from '@onchain-intel/core';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  AccessProfileUnavailableError,
-  type AccessProfile,
-  type AccessProfileReader,
-} from '../src/auth/access-profile.js';
 import {
   ClientCreditsExhaustedError,
   LedgerReadNotAuthoritativeError,
@@ -24,7 +9,13 @@ import {
   createSqliteBillingStore,
   type BillingReserveResult,
 } from '../src/engine/billing-store.js';
-import { createEngineStore, type EngineStore } from '../src/engine/pg-engine-store.js';
+import { type EngineStore } from '../src/engine/pg-engine-store.js';
+import {
+  BillingPgHarness,
+  UNLIMITED_PROFILE,
+  meteredProfile,
+  profileReaderOf,
+} from './helpers/billing-pg-harness.js';
 
 /**
  * Task 015-07 — `BillingStore` on the Postgres axis, checked against a REAL engine mechanism (a real
@@ -48,139 +39,11 @@ import { createEngineStore, type EngineStore } from '../src/engine/pg-engine-sto
  * that arithmetic runs for real, on a real database, not a JS reimplementation of it. It cannot
  * observe the row lock a live Postgres would take on the `access_profiles` row across two concurrent
  * connections — that is TC-E2E ground, excluded from CI by R-21.
+ *
+ * **The harness itself moved to `test/helpers/billing-pg-harness.ts` in task 015-10**, so
+ * `reservation-lifecycle.test.ts` can reuse the SAME mechanism rather than a second, independently
+ * drifting copy — this file's own `describe` block below is otherwise unchanged.
  */
-
-const FAKE_DSN = 'postgres://engine_state:sup3r-secret-pw@db.internal:5432/postgres';
-
-/** `pg`'s own int8 parser, imitated for the one INTEGER column this suite reads back directly
- * (`reserved_at`/`terminal_at` are never asserted on here, so this is a defensive no-op today — kept
- * for the same reason `pg-store-parity.test.ts`'s own `asPgRow` states: a fake that silently stayed a
- * JS number would let a future assertion pass here and misbehave in production). */
-function asPgRow(row: unknown): unknown {
-  if (typeof row !== 'object' || row === null) return row;
-  return Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [
-      key,
-      typeof value === 'number' && Number.isInteger(value) ? String(value) : value,
-    ]),
-  );
-}
-
-class BillingPgHarness {
-  readonly db: Database.Database;
-  readonly statements: { readonly text: string; readonly values: readonly unknown[] }[] = [];
-
-  constructor() {
-    this.db = new Database(':memory:');
-    this.db.exec('PRAGMA foreign_keys = ON;');
-    this.db.exec(CACHE_DDL);
-  }
-
-  private run(text: string, values: unknown[]): { rows: unknown[] } {
-    this.statements.push({ text, values });
-    const statement = this.db.prepare(toSqliteDialect(text));
-    const bound =
-      values.length === 0 ? undefined : Object.fromEntries(values.map((v, i) => [`p${i + 1}`, v]));
-    if (!statement.reader) {
-      if (bound === undefined) statement.run();
-      else statement.run(bound as never);
-      return { rows: [] };
-    }
-    const rows = bound === undefined ? statement.all() : statement.all(bound as never);
-    return { rows: rows.map((row) => asPgRow(row)) };
-  }
-
-  poolCtor(): PgStatePoolCtor {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const harness = this;
-    return class FakePool implements PgStatePoolLike {
-      async query(text: string, values: unknown[] = []): Promise<{ rows: unknown[] }> {
-        return harness.run(text, values);
-      }
-      async connect(): Promise<PgStateConnectionLike> {
-        return {
-          query: async (text: string, values: unknown[] = []) => harness.run(text, values),
-          release: () => {},
-        };
-      }
-    };
-  }
-
-  client(): StateClient {
-    return createStateClient({
-      env: { ONCHAIN_STATE_PG_URL: FAKE_DSN } as NodeJS.ProcessEnv,
-      PoolCtor: this.poolCtor(),
-    });
-  }
-
-  engine(): EngineStore {
-    return createEngineStore(this.client());
-  }
-
-  /** The seven `access_profiles` columns this table's own NOT NULL/CHECK set requires beyond the
-   * three `AccessProfile` cares about — filled with inert values, mirroring migration 004's own
-   * phase-0 seed row shape (`cache/ddl.ts`'s own INSERT below `CREATE TABLE client_usage`). */
-  seedAccessProfile(
-    id: string,
-    creditsMode: 'unlimited' | 'metered',
-    creditsBalanceRaw: string | null,
-  ): void {
-    this.db
-      .prepare(
-        `INSERT INTO access_profiles
-           (id, name, status, credits_mode, credits_balance_raw, rate_limit_mode, rate_limit_per_min,
-            tool_allowlist_mode, tool_allowlist_json, route_disclosure_mode, created_at, updated_at)
-         VALUES (?, ?, 'active', ?, ?, 'unlimited', NULL, 'all', NULL, 'full', 0, 0)`,
-      )
-      .run(id, id, creditsMode, creditsBalanceRaw);
-  }
-
-  rows(table: string): Record<string, unknown>[] {
-    return this.db.prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[];
-  }
-
-  balanceOf(id: string): string | null {
-    const row = this.db
-      .prepare('SELECT credits_balance_raw FROM access_profiles WHERE id = ?')
-      .get(id) as { credits_balance_raw: string | null } | undefined;
-    return row?.credits_balance_raw ?? null;
-  }
-
-  close(): void {
-    this.db.close();
-  }
-}
-
-const UNLIMITED_PROFILE: AccessProfile = {
-  creditsMode: 'unlimited',
-  creditsBalanceRaw: null,
-  rateLimitMode: 'unlimited',
-  rateLimitPerMin: null,
-  toolAllowlistMode: 'all',
-  toolAllowlist: null,
-  routeDisclosureMode: 'full',
-};
-
-function meteredProfile(creditsBalanceRaw: string | null): AccessProfile {
-  return { ...UNLIMITED_PROFILE, creditsMode: 'metered', creditsBalanceRaw };
-}
-
-/** A reader over a fixed in-memory map — the mode/balance FORMAT is this suite's own input, never
- * read from `harness.db` directly, mirroring `data-model.md` §4.6.1's own narrowing: "the MODE, not
- * the atomic write, goes through `AccessProfileReader`." */
-function profileReaderOf(profiles: Readonly<Record<string, AccessProfile>>): AccessProfileReader {
-  return {
-    read(accessProfileId: string): Promise<AccessProfile> {
-      const profile = profiles[accessProfileId];
-      if (profile === undefined) {
-        return Promise.reject(
-          new AccessProfileUnavailableError(accessProfileId, 'not seeded in this test fixture'),
-        );
-      }
-      return Promise.resolve(profile);
-    },
-  };
-}
 
 function reserveInput(
   overrides: Partial<{
@@ -391,6 +254,44 @@ describe('BillingStore on the Postgres axis (task 015-07)', () => {
     expect(harness.balanceOf('ap1')).toBe('9007199254740992');
   });
 
+  /**
+   * The SAME boundary on the way back, and it had no test (added 2026-08-27, task 015-10 review).
+   *
+   * **Why the debit's test does not cover it.** `refund()` credits through its own statement
+   * (`pgCreditUpdateSql`), written separately from `pgDebitUpdateSql`; they are mirror images today
+   * and nothing makes them stay that way. A `+` path that lost `CAST(... AS NUMERIC)` — or acquired
+   * a JS `Number` on the value read back from `RETURNING` — would be invisible to every assertion
+   * in this file, because every other balance here is small enough for a float to carry exactly.
+   *
+   * Money moving back is the direction where an unnoticed rounding favours the house, which is the
+   * side a client cannot audit.
+   */
+  it('TC-UNIT-08b: the refund credit is exact past the safe 2^53 integer boundary', async () => {
+    harness = new BillingPgHarness();
+    // **The RESULT of the credit has to be the unrepresentable value, not its input.** A first
+    // draft of this case started at 2^53 - 1 and refunded back to it — and a mutation that
+    // computed the credit in `DOUBLE PRECISION` passed, because 2^53 - 1 is exactly what a float
+    // carries. The boundary is crossed only if the balance LANDS above 2^53 after the credit, so
+    // the seed is 2^53 + 1, the debit takes it below, and the refund must put it back exactly.
+    const startBalance = '9007199254740993'; // 2^53 + 1 — the first integer a float cannot hold
+    harness.seedAccessProfile('ap1', 'metered', startBalance);
+    const store = createBillingStore(
+      harness.engine(),
+      profileReaderOf({ ap1: meteredProfile(startBalance) }),
+    );
+
+    const reservation = unwrapOk(
+      await store.reserve(reserveInput({ accessProfileId: 'ap1', priceRaw: '2' })),
+    );
+    expect(harness.balanceOf('ap1')).toBe('9007199254740991');
+
+    const refunded = await store.refund(reservation.rowId, 'ReplayWindowExpiredError');
+    expect(refunded.written).toBe(true);
+    // A float computes 9007199254740991 + 2 as 9007199254740992 — one short, and silently so.
+    // Only `numeric` gives back what was taken.
+    expect(harness.balanceOf('ap1')).toBe('9007199254740993');
+  });
+
   it('TC-UNIT-09: sumSettled sums ONLY the Postgres-axis rows for the period', async () => {
     harness = new BillingPgHarness();
     const store = createBillingStore(harness.engine(), profileReaderOf({}));
@@ -487,7 +388,7 @@ describe('BillingStore on the Postgres axis (task 015-07)', () => {
 
     // Idempotent completion — first completer wins (system-architecture.md §3.5.3): a second settle
     // on an already-terminal row is a no-op, not an error.
-    await expect(store.settle(rowId)).resolves.toBeUndefined();
+    await expect(store.settle(rowId)).resolves.toEqual({ written: false });
     expect(harness.rows('client_usage')[0]?.['state']).toBe('settled');
   });
 

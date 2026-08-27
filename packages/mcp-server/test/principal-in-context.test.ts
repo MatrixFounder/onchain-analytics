@@ -4,6 +4,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CapabilityRegistry, routes } from '@onchain-intel/core';
 import { STDIO_PRINCIPAL, principalFor, type Principal } from '../src/auth/principal.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { defineTool, type ToolContext, type ToolSpec } from '../src/tools/registry.js';
 import { toolSpecs } from '../src/tools/tool-specs.js';
 
@@ -95,6 +96,7 @@ describe('TC-UNIT-02 / TC-UNIT-03: every registered tool declares and receives t
           reads.push(spec.name);
           return STDIO_PRINCIPAL;
         },
+        billing: createBillingStoreStub(),
       } as ToolContext;
       // The handler runs on an inert registry, so most of them refuse or throw — irrelevant here,
       // because the context is built before the handler is entered.
@@ -136,6 +138,7 @@ describe('TC-UNIT-04: a tool that does not declare it does not get it', () => {
       version: '0.0.0-test',
       registry: inertRegistry(),
       principal: STDIO_PRINCIPAL,
+      billing: createBillingStoreStub(),
     })({}, {});
     expect(seen).toBeDefined();
     // `Object.hasOwn`, not `in`: `in` walks the prototype chain, and a polluted
@@ -162,6 +165,7 @@ describe('TC-UNIT-04: a tool that does not declare it does not get it', () => {
       version: '0.0.0-test',
       registry: inertRegistry(),
       principal: STDIO_PRINCIPAL,
+      billing: createBillingStoreStub(),
     })({}, {});
     expect(seen).toBe(STDIO_PRINCIPAL);
   });

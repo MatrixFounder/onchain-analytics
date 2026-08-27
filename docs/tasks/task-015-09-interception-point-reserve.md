@@ -83,7 +83,7 @@ billing: BillingStore;
 ```
 
 **Why не как сосед `requestTrace?`.** Отсутствующий `ctx.requestTrace` пропускает запись и
-обслуживает вызов (`packages/mcp-server/src/tools/registry.ts:623`, `if (ctx.requestTrace === undefined) return result;`).
+обслуживает вызов (`packages/mcp-server/src/tools/registry.ts:760`, `if (ctx.requestTrace === undefined) return result;`).
 Наблюдаемость там деградирует без остановки трафика. R-3.7 требует обратного: fail-closed.
 
 **Why опциональное поле было бы дефектом, а не послаблением.** Ненастроенная установка обслуживала

@@ -8,6 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { CapabilityRegistry, routes } from '@onchain-intel/core';
 import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { createRequestTraceStore } from '../src/engine/request-trace-store.js';
 import { defineTool, type ToolContext } from '../src/tools/registry.js';
 import { createSqliteEngine, type SqliteEngine } from './helpers/sqlite-engine.js';
@@ -65,6 +66,9 @@ function gatedServer(
     version: '0.0.0-test',
     registry: new CapabilityRegistry(routes, new Map()),
     principal: STDIO_PRINCIPAL,
+    // `extra` is a `Partial<ToolContext>`, so it CAN carry its own `billing` — this base default is
+    // overridden by `...extra` when a case supplies one, same rule as every other key here.
+    billing: createBillingStoreStub(),
     ...extra,
   });
   return server;
@@ -150,6 +154,7 @@ describe('TC-UNIT-01: a call not yet started at the abort is not started', () =>
       registry: new CapabilityRegistry(routes, new Map()),
       principal: STDIO_PRINCIPAL,
       requestTrace: createRequestTraceStore(harness.engine),
+      billing: createBillingStoreStub(),
     });
     if (captured === undefined) throw new Error('the tool did not register');
     return captured as (

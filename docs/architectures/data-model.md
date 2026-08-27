@@ -1811,7 +1811,13 @@ Development phase to guess.
    `BEGIN`/`COMMIT`, mirroring `checkAndReserve`'s own atomic check-and-write (§3.4.8). `settle()`
    changes nothing on the balance: the amount was already committed at reserve, and R-4.2/R-4.3 make
    the price fixed from that point on. `refund()` credits the SAME amount back, in the same
-   transaction as the row's transition to `'refunded'`.
+   transaction as the row's transition to `'refunded'` — **and only when that transition actually
+   happened**: the credit runs off the SAME conditional `UPDATE … WHERE state = 'reserved'` this
+   section's own "Balance arithmetic" point 3 already uses for the debit ("Zero rows returned is the
+   refusal… nothing is written"), so a `refund()` that finds the row already terminal returns a row
+   count of zero and credits nothing (task 015-10, closes architecture review round 2 MAJOR-C). A
+   second `refund()` on one row — the ordinary shape of UC-2's retry reaching the completion step
+   twice — is therefore a no-op on the balance, not a second credit of `price_raw`.
 
    **Why eager debit, not a lazy one at `settle()`.** A lazy debit leaves a window between reserve and
    settle in which the balance has not yet fallen — exactly the window BLOCKING-2 named: "two parallel
@@ -2129,19 +2135,50 @@ call finish past its own deadline — the deadline bounds SPENDING, not delivery
 (`reliability.md` §9.1). A row that is genuinely still in flight at exactly one deadline's width is
 not yet stuck.
 
-**The scan, stated as a query rather than a promise:**
+**The scan closes the row AND returns its credit — one SQL operator, not a pair of nodes** (task
+015-10, closes architecture review round 2 MAJOR-A). An earlier edition of this section stated the
+scan as a bare transition (`SELECT id … LIMIT :batchSize`, then the SAME conditional `UPDATE …
+WHERE state = 'reserved'` the completion path uses) and never mentioned
+`access_profiles.credits_balance_raw` at all — the reconciliation job MARKED a stuck row without
+ever returning what it had reserved. Task 015-18's executor is `n8n`, and an n8n workflow gives no
+transaction BETWEEN two SQL nodes — each node is its own round trip, committed on its own — so a
+"transition node, then credit node" pair would leave a window in which a row is closed but not yet
+credited. The corrected form is a single statement instead — a writable CTE feeding its own credit —
+not two nodes hoping nothing runs between them:
 
 ```sql
-SELECT id FROM client_usage
- WHERE state = 'reserved' AND reserved_at < :nowMs - 120000
- ORDER BY reserved_at
- LIMIT :batchSize;
+WITH t AS (
+  UPDATE client_usage
+     SET state = 'refunded', refund_reason = 'expired', terminal_at = :nowMs
+   WHERE state = 'reserved' AND reserved_at < :nowMs - 120000
+  RETURNING access_profile_id, price_raw
+)
+UPDATE access_profiles p
+   SET credits_balance_raw = (p.credits_balance_raw::numeric + s.sum_raw)::text
+  FROM (SELECT access_profile_id, SUM(price_raw::numeric) AS sum_raw
+          FROM t WHERE access_profile_id IS NOT NULL GROUP BY 1) s
+ WHERE p.id = s.access_profile_id;
 ```
 
-Each matched row transitions `state = 'reserved' → 'refunded'`, `refund_reason = 'expired'`,
-`terminal_at = :nowMs`, through the same conditional `UPDATE … WHERE state = 'reserved'` the
-completion path uses (§4.6.1). A row the completion path closes in the same instant the scan reads
-it is not double-processed: the `UPDATE` matches zero rows for it here, never two.
+A row the completion path closes in the same instant the scan reads it is not double-processed: the
+first `UPDATE` matches zero rows for it here, never two, exactly as the ordinary completion path's
+own conditional `UPDATE … WHERE state = 'reserved'` already behaves (§4.6.1).
+
+**Why `numeric`, not `float` or a textual compare.** `numeric` is Postgres's own exact,
+arbitrary-precision type — the SAME reasoning §4.6.1's own "Balance arithmetic" point 3 states for
+the debit, and CLAUDE.md's canon ("BigInt, never Number") applied at the SQL layer: a `TEXT` compare
+reads `'9' > '10'` as true, and a `float` loses exactness past 2^53 the same way a JS `Number` does.
+
+**Why the credit is skipped when `access_profile_id IS NULL`.** The local principal reaches no
+access profile at all (R-7.5, `data-model.md` §4.6.1's own column note: "nullable: the local
+principal reaches no profile"), so there is nothing to credit back for a row reserved on its behalf
+— the `WHERE access_profile_id IS NOT NULL` on the aggregate subquery is that skip, not an
+omission.
+
+**Why the credit is written at all under `credits_mode = 'unlimited'`, when phase 0's balance never
+moves.** It is not needed today — R-6.2's one seeded profile never debits, so it never needs
+crediting back either. The operator is written for the axis R-7.3 already declares authoritative,
+and for `metered`, which switches on without a workflow edit the day a second profile is seeded.
 
 **One run, one row, the same discipline `retention_runs` already carries** (R-14.3, `CLAUDE.md`
 §Working discipline, "nothing silently"). The reconciliation job writes its own row to

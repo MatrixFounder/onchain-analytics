@@ -11,6 +11,7 @@ import {
 } from '@onchain-intel/core';
 import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
 import { EnvSchema } from '../src/env.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { createDiagnostics, type Diagnostics } from '../src/engine/diagnostics.js';
 import { createDiagnosticsStore } from '../src/engine/diagnostics-store.js';
 import { defineTool } from '../src/tools/registry.js';
@@ -136,6 +137,7 @@ function refusingServer(diagnostics: Diagnostics, reason: string = OPERATOR_TEXT
     registry: new CapabilityRegistry(routes, new Map()),
     principal: STDIO_PRINCIPAL,
     diagnostics,
+    billing: createBillingStoreStub(),
   });
   return server;
 }

@@ -21,6 +21,7 @@ import {
   toAuthInfo,
   type Principal,
 } from '../src/auth/principal.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { defineTool, type ToolContext, type ToolSpec } from '../src/tools/registry.js';
 import {
   DEFAULT_MCP_PATH,
@@ -97,6 +98,7 @@ describe('TC-E2E-02 / AC-19: the wrapper resolves the principal from what the tr
       registry: new CapabilityRegistry(routes, new Map()),
       principal: STDIO_PRINCIPAL,
       principals: createHttpPrincipalResolver(),
+      billing: createBillingStoreStub(),
     })({}, authInfo === undefined ? {} : { authInfo }).then(() => {
       if (seen === undefined) throw new Error('the handler never ran');
       return seen;
@@ -137,6 +139,7 @@ describe('TC-E2E-02 / AC-19: the wrapper resolves the principal from what the tr
       version: '0.0.0-test',
       registry: new CapabilityRegistry(routes, new Map()),
       principal: STDIO_PRINCIPAL,
+      billing: createBillingStoreStub(),
     })({}, {});
     expect(seen).toBe(STDIO_PRINCIPAL);
   });
@@ -225,6 +228,7 @@ describe('TC-UNIT-01 / TC-UNIT-04 / AC-8: the principal is not in the cache key'
         registry,
         principal: STDIO_PRINCIPAL,
         principals: createHttpPrincipalResolver(),
+        billing: createBillingStoreStub(),
       })({ chain: 'bitcoin' }, { authInfo: toAuthInfo(principal) });
 
     await call(NETWORK_PRINCIPAL);
@@ -253,6 +257,7 @@ describe('TC-UNIT-01 / TC-UNIT-04 / AC-8: the principal is not in the cache key'
         registry,
         principal: STDIO_PRINCIPAL,
         principals: createHttpPrincipalResolver(),
+        billing: createBillingStoreStub(),
       })(args, { authInfo: toAuthInfo(NETWORK_PRINCIPAL) });
 
     await call({ chain: 'bitcoin' });
@@ -295,6 +300,7 @@ describe('TC-UNIT-02 / TC-UNIT-03: the principal reaches neither stderr nor `_me
         registry: new CapabilityRegistry(routes, new Map()),
         principal: STDIO_PRINCIPAL,
         principals: createHttpPrincipalResolver(),
+        billing: createBillingStoreStub(),
       })({}, { authInfo: toAuthInfo(NETWORK_PRINCIPAL) });
     } finally {
       process.stderr.write = original;
@@ -328,6 +334,7 @@ describe('TC-UNIT-02 / TC-UNIT-03: the principal reaches neither stderr nor `_me
         registry: new CapabilityRegistry(routes, new Map()),
         principal: STDIO_PRINCIPAL,
         principals: createHttpPrincipalResolver(),
+        billing: createBillingStoreStub(),
       })({}, { authInfo: toAuthInfo(principal) });
       rendered.push(JSON.stringify(result));
     }
@@ -406,6 +413,7 @@ describe('TC-E2E-01 / AC-19: an unauthenticated call reaches neither the cache n
           registry,
           principal: STDIO_PRINCIPAL,
           principals: createHttpPrincipalResolver(),
+          billing: createBillingStoreStub(),
         });
         return server;
       },
@@ -478,6 +486,7 @@ describe('TC-E2E-01 / AC-19: an unauthenticated call reaches neither the cache n
           registry,
           principal: STDIO_PRINCIPAL,
           principals: createHttpPrincipalResolver(),
+          billing: createBillingStoreStub(),
         });
         return server;
       },

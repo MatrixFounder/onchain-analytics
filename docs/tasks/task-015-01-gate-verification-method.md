@@ -88,7 +88,7 @@
 дефекта наблюдаются после отправки запроса.
 
 Второй признак — текст отказа. Сообщение гейта начинается с `daily call ceiling reached:`
-(`docs/architectures/system-architecture.md:4367`).
+(`docs/architectures/system-architecture.md:4407`).
 
 Третий признак — **изменение** суточного счётчика этим вызовом, а не его абсолютное значение.
 
@@ -104,7 +104,7 @@
 **Why изменение, а не абсолютное значение.** Счётчик увеличивается **на допуске**, до сетевой
 попытки: `ensureCallBudget` вызывает `budgetStore.checkAndReserve(...)`
 (`docs/architectures/system-architecture.md:4320-4324`). Колонка объявлена монотонной и
-невозвращаемой (`docs/architectures/data-model.md:1994`, `Monotonic, never refunded`). То же в коде
+невозвращаемой (`docs/architectures/data-model.md:2000`, `Monotonic, never refunded`). То же в коде
 существующего аналога: `packages/core/src/cache/vendor-spend.ts:103` — «a call is not refundable the
 way a credit is». Значит вызов, упавший у вендора, счётчик уже увеличил и назад не получил.
 

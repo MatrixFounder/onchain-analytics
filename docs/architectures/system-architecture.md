@@ -4004,13 +4004,27 @@ export interface BillingStore {
   >;
   /** Conditional `UPDATE … WHERE state = 'reserved'` (§4.6.1) — a no-op, not an error, when the row
    * already left `'reserved'`. First completer wins (§3.5.3). No balance effect (debited at reserve). */
-  settle(rowId: string): Promise<void>;
+  settle(rowId: string): Promise<BillingCompletionResult>;
   /** Conditional `UPDATE … WHERE state = 'reserved'`, PLUS crediting `priceRaw` back onto the
-   * profile's balance under `metered`, in the same transaction as the state transition. */
-  refund(rowId: string, reason: string): Promise<void>;
+   * profile's balance under `metered`, in the same transaction as the state transition — **and only
+   * when THIS call's own conditional `UPDATE` actually returned a row** (task 015-10, closes
+   * architecture review round 2 MAJOR-C; the same "only when" `reserve()`'s own step 2 above uses:
+   * "Only when step 1 inserted a NEW row"). An already-terminal row's `UPDATE` returns zero rows, and
+   * a zero-row `UPDATE` credits nothing — a second `refund()` on one row (UC-2's retry reaching
+   * completion twice) is therefore a no-op on the balance, not a second credit of `priceRaw`. */
+  refund(rowId: string, reason: string): Promise<BillingCompletionResult>;
   /** `data-model.md` §4.6.1's AC-4 aggregate — Postgres axis only (R-7.3). MANDATORY, not optional
    * (§3.5.2's own note on why `ToolContext.billing` carries no `?`). */
   sumSettled(periodFromMs: number, periodToMs: number): Promise<string>;
+}
+
+/** `settle`/`refund`'s own return shape (task 015-10) — `written: true` when THIS call's own
+ * conditional `UPDATE` actually transitioned the row; `false` when it found the row already
+ * terminal (MAJOR-9's late-outcome case: something else — a concurrent completer, or `data-model.md`
+ * §4.6.5's background reconciliation scan — closed it first). `false` is not an error; it is the
+ * signal the wrapper (§3.5.3) reads to name a late outcome on stderr without reopening the row. */
+export interface BillingCompletionResult {
+  readonly written: boolean;
 }
 ```
 
@@ -4133,7 +4147,7 @@ The wrapper's `outcome` variable is declared before the reserve step, not assign
 let outcome: ToolOutcome<TOutput>;
 const reserved = await ctx.billing.reserve({/* … */});
 if (!reserved.ok) {
-  outcome = { ok: false, reason: reserved.reason, refusalClass: reserved.errorClass };
+  outcome = { ok: false, reason: reserved.reason, refusalClass: reserved.refusalClass };
   // definition.handler(...) is NEVER called — the call is refused before resolve()/the cache.
 } else {
   outcome = await definition.handler(input, project({ ...ctx, principal, registry }, needs));
@@ -4273,10 +4287,36 @@ call, never compounding." The smaller, better-understood cost is the one this de
 
 #### 3.5.3. Settle and refund at completion (R-3)
 
-**Folded into the existing `withTrace` closure**, because it already computes every input this step
-needs — `outcome.ok`, and the same `record`/`clientRequestId` `buildRequestTraceRow` builds
-(`packages/mcp-server/src/tools/registry.ts:622-683`). One call after the trace row's own write:
-`outcome.ok ? billing.settle(rowId) : billing.refund(rowId, refusalClass)`.
+**In the wrapper's own body, after `outcome` is computed — NOT folded into `withTrace`** (task
+015-10, closes architecture review round 2 MAJOR-B; corrects an earlier edition of this section that
+placed the call inside `withTrace`). `withTrace`'s own first line
+(`packages/mcp-server/src/tools/registry.ts:760`, `if (ctx.requestTrace === undefined) return
+result;`) returns early whenever `ctx.requestTrace` is absent — the `local` profile's own shape
+(`packages/mcp-server/src/index.ts:248`, `...(identity === null ? {} : { requestTrace: … })`, which
+is exactly `transport !== 'http'`, §3.4.1). `ctx.billing`
+carries no such `?` (§3.5.2's own note on why it is mandatory): a reservation opened on EVERY profile
+must close on every profile too, so its completion cannot sit downstream of a check only one of them
+satisfies. Placed inside `withTrace`, `local` would never close a single `client_usage` row — R-2.4
+and R-3 would hold on `network`/`network-sqlite` and silently not hold on the axis the ledger is
+declared to write on at all.
+
+Both branches of `outcome` reach the completion step identically — the refused-reserve arm (`!
+reserved.ok`) has no reservation to close and skips it; every other arm does — one call after
+`reserved.ok` is known true, before `withTrace` is even defined
+(`packages/mcp-server/src/tools/registry.ts:709-741`):
+`outcome.ok ? billing.settle(rowId) : billing.refund(rowId, refusalClass)`. A ledger failure here —
+`settle`/`refund` throwing — never fails the request already computed, the same precedent
+`withTrace`'s own catch states below for a lost trace row: named on stderr with the row id, never
+silently absorbed and never turned into a refusal the client did not otherwise earn.
+
+**A late outcome — the row closes once, the SECOND completer's own `written: false` is not
+silence.** `settle`/`refund` now report whether THIS call's own conditional `UPDATE` actually
+transitioned the row (`BillingCompletionResult.written`, §3.5.1). When it did not — the row was
+already terminal, closed either by a concurrent completer or by `data-model.md` §4.6.5's own
+background reconciliation scan — the wrapper names the row id on stderr rather than treating the
+no-op as though nothing happened (closes architecture review round 1 MAJOR-9). The row's own
+terminal state is left exactly as the first completer set it: a late `settle()` arriving after
+reconciliation already refunded a row as `'expired'` does not resurrect a charge for it.
 
 **The mapping is R-3, restated as one rule with one exception.** `outcome.ok === true` — whether
 `request_trace.outcome` is `'answer'` or `'partial_deadline'` — settles at the full reserved price

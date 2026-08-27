@@ -11,6 +11,7 @@ import {
   type RunningHttpTransport,
 } from '../src/transport/http.js';
 import { acceptsTestToken, bearerHeader } from './helpers/test-auth.js';
+import { createBillingStoreStub } from '../src/engine/billing-store.js';
 
 /**
  * Task 014-10 — one `McpServer` per session, over dependencies assembled once (AC-18, R-2.2).
@@ -54,6 +55,9 @@ beforeEach(async () => {
       cacheStoreBuilds += 1;
       return inertCacheStore();
     },
+    // Required on `SharedRuntimeDeps` (task 015-09) — see its docstring: an omitted billing
+    // store would be a fail-open default, not a narrowed feature.
+    billing: createBillingStoreStub(),
     budgetStoreFactory: () => {
       budgetStoreBuilds += 1;
       return inertBudgetStore();
