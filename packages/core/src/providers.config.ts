@@ -221,6 +221,8 @@ export const adapterRegistrations: AdapterRegistration[] = [
     tier: 'free',
     // Named `authoritative` by ADR-002 D9 itself.
     trust: 'authoritative',
+    // The documented limit is per-minute, already held by `rateLimit` above (task 015-12).
+    dailyCallCeiling: 'none',
   },
   {
     id: 'dexscreener',
@@ -231,6 +233,8 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // Not named by D9; ranked by the scale's own question (is the CONTENT editable by outsiders?) —
     // vendor-observed DEX pair/pool data, nobody submits it.
     trust: 'authoritative',
+    // Keyless catalog; no account-level limit found (task 015-12).
+    dailyCallCeiling: 'none',
   },
   {
     id: 'defillama',
@@ -267,6 +271,8 @@ export const adapterRegistrations: AdapterRegistration[] = [
     tier: 'free',
     // Named `authoritative` by ADR-002 D9 itself.
     trust: 'authoritative',
+    // Keyless catalog; no account-level limit found (task 015-12).
+    dailyCallCeiling: 'none',
   },
   // interface/config-stub in M1 — isAvailable() unconditionally returns false (§3.2 decision):
   {
@@ -335,10 +341,19 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // problem, sustained rate is, and 5 is also the floor that keeps a 3-token weighted call
     // satisfiable (see `WEIGHT_ADDRESS_INFO` in the adapter, and `throttle`'s own capacity guard).
     //
-    // Still open and deliberately NOT solved here: nothing ACCOUNTS for the spend. `costOf` is 0,
-    // there is no `usage` row and no budget gate — PLAN §3 ruled a Nansen-style gate out for a free
-    // vendor as costing more than it buys. That stays true until the ceiling is actually reached,
-    // at which point it becomes its own task with a measurement attached.
+    // Nothing yet ACCOUNTS for the spend AT THIS ADAPTER (task 015-12, MINOR-6 round 2 — this
+    // comment used to claim the whole machinery below was missing; it is the WIRING that is still
+    // missing, not the machinery). `costOf` is 0, and blockscout's own `fetch()` never calls
+    // `checkAndReserve`, so no request through this adapter touches the ledger at all. The generic
+    // `(provider, dayBucketMs)` usage ledger and its `calls_made` column already exist
+    // (`cache/ddl.ts`, an earlier T-015 stage) — what is new HERE is that this registration now
+    // DECLARES a value below for that ledger to be checked against, once something reads it. The
+    // reader (`createCallGate`, task 015-13), the counter transaction (task 015-14) and the wiring
+    // into THIS adapter's `fetch()` beside `throttle()` (task 015-15) are later tasks in the same
+    // milestone (R-9/R-11) — until 015-15 lands, this is a documented number, not an active
+    // refusal. The older framing this comment carried — "PLAN §3 ruled a Nansen-style gate out for
+    // a free vendor as costing more than it buys" — is exactly what R-9 revisits: a `tier: 'free'`
+    // vendor still runs out (ADR-002 D8), and 015-12…015-15 build that gate for this one.
     rateLimit: { capacity: 5, refillPerSec: 2 },
     requiresEnv: ['BLOCKSCOUT_PRO_API_KEY'],
     tier: 'free',
@@ -346,6 +361,11 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // The token/address metadata behind `entity.labels` is user-submitted, so the rank is a fact
     // about the CONTENT — it says nothing about the vendor's competence or the API's reliability.
     trust: 'community',
+    // Estimate — ADR-003 D6, not measured (task 015-12; OQ-6 owner decision 2026-08-25
+    // records that a live probe to vendor exhaustion is deliberately NOT done here). The
+    // figure is the ≈625 calls/day derived two comments above: 100_000 credits/day ÷ 160
+    // credits for `get_address_info`, this adapter's own most expensive gated route.
+    dailyCallCeiling: 625,
   },
   {
     id: 'rpc-evm',
@@ -358,6 +378,9 @@ export const adapterRegistrations: AdapterRegistration[] = [
     tier: 'free',
     // Consensus data read straight off a node — the chain itself is the origin.
     trust: 'authoritative',
+    // Curated RPC hosts — the chain itself is the source, not a metered vendor account
+    // (task 015-12).
+    dailyCallCeiling: 'none',
   },
   {
     id: 'rpc-solana',
@@ -367,6 +390,9 @@ export const adapterRegistrations: AdapterRegistration[] = [
     tier: 'free',
     // Consensus data read straight off a node — the chain itself is the origin.
     trust: 'authoritative',
+    // Curated RPC host — the chain itself is the source, not a metered vendor account
+    // (task 015-12).
+    dailyCallCeiling: 'none',
   },
   // F-3: no live host in M1 — interface + fixture-contract only; hosts get filled in whenever the
   // deferred backlog task for a live gRPC transport lands (§11):
@@ -378,6 +404,8 @@ export const adapterRegistrations: AdapterRegistration[] = [
     tier: 'free',
     // Consensus data (Platform's own state) — the chain itself is the origin.
     trust: 'authoritative',
+    // No live transport yet — interface + fixture contract only (task 015-12).
+    dailyCallCeiling: 'none',
   },
   {
     id: 'platform-explorer',
@@ -393,6 +421,8 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // the very source ADR-002 D6 turns merging on FIRST (routes `privacy.shielded_pool.history`
     // and `platform.metrics.history`), so a wrong rank would ship inside the first merge we deliver.
     trust: 'authoritative',
+    // No limit found; not measured — out of T-015 scope (task 015-12).
+    dailyCallCeiling: 'none',
   },
   // NEW (F-2) — not an HTTP host: Postgres wire protocol; the DSN itself is the access control,
   // not a hostname allowlist, so `hosts: []` is empty by nature rather than by omission.
@@ -446,6 +476,9 @@ export const adapterRegistrations: AdapterRegistration[] = [
     // dictionary in **T-016** — the conservative rank is the one that over-values nothing.
     // Replacing it before T-016 lands would be an upgrade with no mechanism behind it.
     trust: 'community',
+    // Own Postgres, not a vendor — there is no vendor-side call ceiling to declare (task
+    // 015-12).
+    dailyCallCeiling: 'none',
   },
   // 10th entry — M2 (TASK-005, R-29, task 005-1), first PAID adapter. Values copied literally
   // from ARCHITECTURE.md §3.2 "Десятый адаптер": the same conservative start already used by 5 of
@@ -504,5 +537,7 @@ export const adapterRegistrations: AdapterRegistration[] = [
     tier: 'free',
     // Objective chain aggregates published by the vendor; no user submissions in this surface.
     trust: 'authoritative',
+    // Keyless catalog; no account-level limit found (task 015-12).
+    dailyCallCeiling: 'none',
   },
 ];

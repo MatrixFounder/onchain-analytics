@@ -38,12 +38,17 @@
 **Файл `packages/mcp-server/src/runtime.ts`:**
 
 - Построить гейт и передать его в конструктор адаптера
-  (`packages/mcp-server/src/runtime.ts:186` —
+  (`packages/mcp-server/src/runtime.ts:215` —
   `['blockscout', createBlockscoutAdapter({ env: toProcessEnv(env), ...limiter })],`)
 - Вызов — `createCallGate({ provider: 'blockscout', budgetStore })`; `budgetStore` берётся из
-  параметра `buildRegistry` (`packages/mcp-server/src/runtime.ts:166` — `budgetStore: BudgetStore,`),
-  того же, который уже получает гейт nansen (`packages/mcp-server/src/runtime.ts:191` —
+  параметра `buildRegistry` (`packages/mcp-server/src/runtime.ts:187` — `budgetStore: BudgetStore,`),
+  того же, который уже получает гейт nansen (`packages/mcp-server/src/runtime.ts:220` —
   `['nansen', createProductionNansenAdapter(env, budgetStore, throttle)],`)
+
+**Барьер `packages/core/src/index.ts` уже несёт оба символа.** Задача 015-13 добавила туда
+`createCallGate` и `ProviderCallCeilingExceededError`: `runtime.ts` импортирует только из барьера
+`@onchain-intel/core`, глубоких импортов в нём нет, и без экспорта эта задача не собралась бы.
+Повторно экспортировать не нужно — вторая строка экспорта даст ошибку компиляции.
 
 **Why внедрение, а не чтение окружения.** `packages/core` не читает `process.env` для этого
 значения (R-13.3a). Та же точка внедрения зависимости уже объявлена рядом:
@@ -59,7 +64,7 @@
 | `token.holders`      | `packages/core/src/providers.config.ts:149` | `blockscout`            |
 | `entity.labels`      | `packages/core/src/providers.config.ts:172` | `blockscout`, `nansen`  |
 
-Проект называет это правило прямо: `docs/architectures/system-architecture.md:4326` — подстрока
+Проект называет это правило прямо: `docs/architectures/system-architecture.md:4400` — подстрока
 `Called once per network attempt`.
 
 **Порядок двух сторожей.** Гейт вызывается первым, `throttle()` — вторым. Оба исполняются, и любой
@@ -77,8 +82,8 @@
 | Что                         | Где                                                   | Кто                      |
 | :-------------------------- | :---------------------------------------------------- | :----------------------- |
 | форма `createCallGate`      | `packages/core/src/adapters/blockscout/call-gate.ts`  | 015-13                   |
-| вызов `createCallGate(...)` | `packages/mcp-server/src/runtime.ts:186`              | эта задача               |
-| источник `budgetStore`      | `packages/mcp-server/src/runtime.ts:166`              | существует, не заводится |
+| вызов `createCallGate(...)` | `packages/mcp-server/src/runtime.ts:202`              | эта задача               |
+| источник `budgetStore`      | `packages/mcp-server/src/runtime.ts:187`              | существует, не заводится |
 | источник переопределения    | `BLOCKSCOUT_DAILY_CALL_CAP` через `SharedRuntimeDeps` | 015-16                   |
 
 **Why построение живёт в `runtime.ts`, а не в `index.ts` и не в `packages/core`.** Адаптеры
@@ -108,7 +113,7 @@
 | Класс                              | Текст                                    | Координата                                       |
 | :--------------------------------- | :--------------------------------------- | :----------------------------------------------- |
 | `RateLimitRejectedError`           | `throttle: rejected for provider "…": …` | `packages/core/src/net/rate-limit.ts:274`        |
-| `ProviderCallCeilingExceededError` | `daily call ceiling reached: …`          | `docs/architectures/system-architecture.md:4407` |
+| `ProviderCallCeilingExceededError` | `daily call ceiling reached: …`          | `docs/architectures/system-architecture.md:4411` |
 
 **Why проверяется текст, а не класс.** Класс до вызывающего не доходит:
 `resolve-capability.ts` записывает в `refusal_class` имя той ошибки, которую бросил маршрут, и на
@@ -125,7 +130,7 @@
 Утверждение выше — «текст переносится дословно в `tried[].reason` и в `outcome.reason`» — верно на
 своём слое и заканчивается на нём. До **вызывающего** текст идёт через `toClientText`, а тот берёт
 только голову отказа до маркера обхода
-(`packages/mcp-server/src/transport/failure-classes.ts:309`, `reason.split(TRAVERSAL_MARKER)[0]`).
+(`packages/mcp-server/src/transport/failure-classes.ts:337`, `reason.split(TRAVERSAL_MARKER)[0]`).
 Отказ адаптера доходит вложенным в обход, поэтому головой оказывается `capability unavailable: …`,
 а `daily call ceiling reached:` срезается.
 
@@ -214,7 +219,7 @@ limit` и `bucket` в тексте гейта отсутствуют
 - [ ] Оба сторожа исполняются: любой из них может отказать первым
 - [ ] MINOR-6 — докстринг называет, что счёт идёт на допуске, а не на подтверждённом вендором вызове
 - [ ] MINOR-8 раунда 2 ревью плана — точка построения названа: `createCallGate` вызывается в
-      `packages/mcp-server/src/runtime.ts:186` с `provider: 'blockscout'` и с тем же `budgetStore`,
+      `packages/mcp-server/src/runtime.ts:202` с `provider: 'blockscout'` и с тем же `budgetStore`,
       что уже получает гейт nansen
 - [ ] Значения `rateLimit` и комментарий к `refillPerSec` не изменены (AC-42)
 - [ ] `TOOL_FAILURE_CLASSES` несёт класс `call-ceiling`, и `toClientText` на вложенном отказе гейта
@@ -233,7 +238,7 @@ limit` и `bucket` в тексте гейта отсутствуют
 
 Ключ `BLOCKSCOUT_DAILY_CALL_CAP` вводит задача 015-16. Значение доходит до `core` внедрением, а не
 чтением окружения внутри пакета: задача 015-16 доводит его до той же строки
-`packages/mcp-server/src/runtime.ts:186`, где эта задача строит гейт, и подставляет
+`packages/mcp-server/src/runtime.ts:202`, где эта задача строит гейт, и подставляет
 `dailyCallCeilingOverride`.
 
 Текст §3.5.4 корпуса, объявляющий сигнатуру `createCallGate`, правит задача 015-13. Эта задача

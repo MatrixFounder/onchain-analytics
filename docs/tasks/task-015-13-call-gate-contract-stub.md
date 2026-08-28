@@ -43,30 +43,30 @@
 - `PgBudgetStore.checkAndReserve` (`:210`) принимает тот же параметр на тех же условиях
 
 **Why обе реализации правятся сразу.** `PgBudgetStore` объявлен как `implements BudgetStore`
-(`packages/core/src/pg/budget-store.ts:140`). Расширенный интерфейс без правки второй реализации не
+(`packages/core/src/pg/budget-store.ts:145`). Расширенный интерфейс без правки второй реализации не
 компилируется.
 
 **Файл `docs/architectures/system-architecture.md`, §3.5.4** (документная половина этой задачи):
 
 - Объявление `createCallGate` получает поле `provider: string`
-  (`docs/architectures/system-architecture.md:4308-4313` — блок `export function createCallGate(deps:
+  (`docs/architectures/system-architecture.md:4378-4385` — блок `export function createCallGate(deps:
 {`)
 - `ensureCallBudget` принимает один параметр
-  (`docs/architectures/system-architecture.md:4315` — подстрока
-  `ensureCallBudget(provider: string, now: () => number)`)
+  (`docs/architectures/system-architecture.md:4386` — подстрока
+  `ensureCallBudget(now: () => number)`)
 - Комментарий тела читает провайдера из `deps.provider`, а не из параметра вызова
-  (`docs/architectures/system-architecture.md:4317-4322` — подстроки `for THIS provider` и
-  `checkAndReserve(provider,`)
+  (`docs/architectures/system-architecture.md:4388-4396` — подстроки `for THIS provider` и
+  `checkAndReserve(deps.provider,`)
 - Названо, что отказ на объявлении `'none'` — отказ КОНСТРУКЦИИ, потому что провайдер известен
   конструктору
 
-**Why владелец — эта задача, а не 015-15.** Блок `:4306-4324` — объявление контракта, и объявляет
+**Why владелец — эта задача, а не 015-15.** Блок `:4376-4395` — объявление контракта, и объявляет
 его здесь. Прецедент внутри того же плана: текст корпуса, утверждающий форму `reserve()`, правит
 задача 015-04 — та, что форму объявляет, — а точку чтения правит задача 015-09. Задача 015-15
-владеет текстом ТОЧКИ ВЫЗОВА (`:4326-4328`, `Called once per network attempt`), и его правка m-8 не
+владеет текстом ТОЧКИ ВЫЗОВА (`:4397-4400`, `Called once per network attempt`), и его правка m-8 не
 затронула: вызов как стоял рядом с `throttle()`, так и стоит.
 
-**Why правка обязательна.** Сигнатура `:4308-4315` отменена правкой m-8 ревью плана: провайдер
+**Why правка обязательна.** Сигнатура `:4378-4386` отменена правкой m-8 ревью плана: провайдер
 переехал в конструктор. Разработчик, читающий §3.5.4 как источник истины, напишет
 `ensureCallBudget(provider, now)` — форму, которая против поставленного кода не компилируется.
 
@@ -101,12 +101,12 @@ checkAndReserve(
 | Различие           | `VelocityLimit.maxCalls`                            | `dailyCalls.ceiling`   |
 | :----------------- | :-------------------------------------------------- | :--------------------- |
 | носитель счёта     | `usage_window(provider, window_start)`              | `usage(provider, day)` |
-| срок жизни строки  | час (`packages/core/src/cache/budget-store.ts:119`) | суточная корзина       |
+| срок жизни строки  | час (`packages/core/src/cache/budget-store.ts:144`) | суточная корзина       |
 | обязательный сосед | `windowStartMs` и кредитный `ceiling` того же окна  | ни одного              |
 
 **Why суточную сумму нельзя восстановить из минутного окна** (R-9.1). Строки `usage_window` старше
 часа выпалываются (`WINDOW_RETENTION_MS = 3_600_000`,
-`packages/core/src/cache/budget-store.ts:119`). Расширение `maxCalls` до суток потребовало бы отменить
+`packages/core/src/cache/budget-store.ts:144`). Расширение `maxCalls` до суток потребовало бы отменить
 эту прополку и удержать 1440 строк на провайдера в сутки.
 
 **Why не новое поле на `VelocityLimit`.** Поле `windowStartMs` там обязательное
@@ -222,6 +222,13 @@ export class ProviderCallCeilingExceededError extends Error {
 - `pnpm lint`, `pnpm typecheck`, `pnpm test`
 - `packages/core/test/budget-store.test.ts` и `packages/core/test/budget-velocity.test.ts` проходят
   без правок: шестой параметр необязательный
+- **`packages/core/test/adapter-registrations.test.ts`, случай `TC-DCC-07`, обновляет ЭТА задача.**
+  Задача 015-12 оставила его тестом первого прохода: он утверждает, что имя `dailyCallCeiling`
+  встречается ровно в двух файлах `src`. Докстринг стаба называет это имя, поэтому новый модуль
+  `call-gate.ts` становится третьим файлом, и случай падает: перечень файлов насчитывает три вместо
+  двух. Ожидаемое множество файлов дополняется до трёх; счёт десяти литералов в
+  `providers.config.ts` остаётся прежним. Обязательство названо в
+  015-12 (строка 147) и продублировано здесь: исполнитель читает свою задачу, а не соседнюю
 
 <!-- contract:acceptance -->
 
@@ -256,10 +263,10 @@ export class ProviderCallCeilingExceededError extends Error {
 Ключ окружения `BLOCKSCOUT_DAILY_CALL_CAP` и его класс настройки — задача 015-16. Здесь объявлена
 только точка инъекции.
 
-Текст §3.5.4 разделён между двумя владельцами: объявление (`docs/architectures/system-architecture.md:4306-4324`)
-правит эта задача, точка вызова (`docs/architectures/system-architecture.md:4326-4328`) принадлежит
+Текст §3.5.4 разделён между двумя владельцами: объявление (`docs/architectures/system-architecture.md:4376-4398`)
+правит эта задача, точка вызова (`docs/architectures/system-architecture.md:4400-4403`) принадлежит
 задаче 015-15 и правки не требует — правка m-8 её не касалась.
 
 **Точку ПОСТРОЕНИЯ гейта в продуктивной сборке эта задача не заводит.** `createCallGate(...)`
-вызывается в `packages/mcp-server/src/runtime.ts:186` — там же, где собирается адаптер blockscout;
+вызывается в `packages/mcp-server/src/runtime.ts:202` — там же, где собирается адаптер blockscout;
 владелец — задача 015-15. Здесь объявлена форма конструктора, а не его вызов.

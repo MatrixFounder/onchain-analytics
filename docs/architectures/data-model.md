@@ -2102,7 +2102,7 @@ vendor — 20 + 120 + 20 ≈ 160 credits
 
 **The other three routes carry no such number.** `token.holders` (`/v1/direct_api_call`) and the
 `/api/v2/stats` document behind `gas.price`/`chain.transactions` are each ONE upstream call — weight
-1, not 3 (`packages/core/src/adapters/blockscout/index.ts:222-226`, `WEIGHT_ADDRESS_INFO`'s own
+1, not 3 (`packages/core/src/adapters/blockscout/index.ts:223-227`, `WEIGHT_ADDRESS_INFO`'s own
 comment: "`/v1/direct_api_call`… stays at the default weight of 1"). "One upstream" bounds the SHAPE
 of the cost, not its vendor credit value — no measurement anywhere in this repository states what
 Blockscout's internal accounting charges for a single-upstream call.

@@ -177,6 +177,30 @@ export const FAILURE_CLASSES: readonly FailureClass[] = Object.freeze([
     producedAt: 'packages/core/src/net/safe-fetch.ts',
     diagnosticEvent: 'tool.refused',
   },
+  /**
+   * Task 015-15 (ADR-003 D6, R-9/R-11, `system-architecture.md` §3.5.4) — the daily call gate's
+   * refusal, distinct from `budget-exhausted` (a CREDIT ceiling) and from `limiter-saturated` (a
+   * per-second rate). Reaches the client nested exactly like `budget-exhausted` does — `blockscout`
+   * is the sole adapter on `token.holders`/`chain.transactions`, so `registry.ts` wraps its throw as
+   * `blockscout (daily call ceiling reached: …)` inside a `capability unavailable: … — tried: …`
+   * envelope, and WITHOUT this class `toClientText` would cut everything past the traversal marker
+   * and leave "unavailable" — indistinguishable from a chain this provider never serves, i.e. from
+   * NEVER instead of RETRY TOMORROW.
+   *
+   * Marker matched against `ProviderCallCeilingExceededError`'s own text
+   * (`packages/core/src/adapters/blockscout/call-gate.ts`), never against its sibling
+   * `ProviderCallGateUnavailableError` — that class's text starts `daily call gate unavailable: `
+   * and never contains `ceiling reached` (see that class's own docstring for why the two must not
+   * share a substring: a corrupted ledger is not an exhausted ceiling).
+   */
+  {
+    id: 'call-ceiling',
+    level: 'tool-execution',
+    reachesTool: true,
+    marker: /daily call ceiling reached: /i,
+    producedAt: 'packages/core/src/adapters/blockscout/call-gate.ts',
+    diagnosticEvent: 'tool.refused',
+  },
 ] satisfies readonly FailureClass[]);
 
 export const PROTOCOL_FAILURE_CLASSES: readonly ProtocolFailureClass[] = FAILURE_CLASSES.filter(
@@ -236,6 +260,10 @@ export const OPERATOR_TOKENS: readonly string[] = Object.freeze([
 export const GENERIC_REFUSAL = 'the call was refused';
 
 const BUDGET_CLASS_ID = 'budget-exhausted';
+/** Task 015-15 — the tenth class, resolved past `toClientText`'s traversal cut the SAME way
+ * `BUDGET_CLASS_ID` above already is. See that constant's own use, a few lines down, for why a
+ * class is matched against the WHOLE reason rather than patched into the traversal-cut `head`. */
+const CALL_CEILING_CLASS_ID = 'call-ceiling';
 
 function containsOperatorToken(text: string): boolean {
   const lowered = text.toLowerCase();
@@ -318,6 +346,15 @@ export function toClientText(reason: string, eventId: string | null): string {
   const budget = TOOL_FAILURE_CLASSES.find((entry) => entry.id === BUDGET_CLASS_ID);
   if (budget !== undefined && budget.marker.test(reason)) {
     return `the provider budget for this call is exhausted${suffix}`;
+  }
+  // Task 015-15 — the SAME precedent, one class down: `blockscout`'s daily-call refusal reaches a
+  // caller nested inside `capability unavailable: … — tried: blockscout (daily call ceiling
+  // reached: …)`, past the traversal cut `head` never sees. Replaced outright, not trimmed, for the
+  // identical reason the budget sentence is: the fact ("the ceiling is reached, try tomorrow")
+  // names nothing forbidden, but the reason text behind it names the provider and its counters.
+  const callCeiling = TOOL_FAILURE_CLASSES.find((entry) => entry.id === CALL_CEILING_CLASS_ID);
+  if (callCeiling !== undefined && callCeiling.marker.test(reason)) {
+    return `the daily call ceiling for this provider is reached — try again tomorrow${suffix}`;
   }
   if (head === '' || containsOperatorToken(head)) return `${GENERIC_REFUSAL}${suffix}`;
   // Appended AFTER the operator-token check, never woven into the head: the check must see the

@@ -84,4 +84,41 @@ describe('blockscout production wiring — the validated env reaches the adapter
       'blockscout is built with no env — it will read raw process.env',
     ).toContain('env:');
   });
+
+  it('TC-UNIT-07 (task 015-16): BLOCKSCOUT_DAILY_CALL_CAP reaches the gate as `dailyCallCeilingOverride`', () => {
+    // Same "weak half" reasoning as the case above: `createCallGate(...)`'s call site lives inside
+    // `buildRegistry`, which is not exported, so this scans the real production source rather than
+    // reconstructing the composition — a reconstruction would prove the WIRING WORKS IF built this
+    // way, never that `runtime.ts` actually builds it this way.
+    const sources = readdirSync(path.join(here, '../src'), { recursive: true, encoding: 'utf8' })
+      .filter((file) => file.endsWith('.ts'))
+      .map((file) => readFileSync(path.join(here, '../src', file), 'utf8'))
+      .join('\n');
+    const callSite = sources.indexOf('createCallGate(');
+    expect(callSite, 'the createCallGate construction moved or was renamed').toBeGreaterThan(-1);
+    // A balanced-paren scan, not a `[^)]*` regex: the real call site spreads a conditional object
+    // (`...(cond ? {} : { dailyCallCeilingOverride: … })`) for `exactOptionalPropertyTypes`, and
+    // that nested `{}` would truncate a naive non-greedy regex before the field it is looking for.
+    let depth = 0;
+    let end = -1;
+    for (let i = callSite + 'createCallGate'.length; i < sources.length; i++) {
+      if (sources[i] === '(') depth++;
+      else if (sources[i] === ')') {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    expect(end, 'the createCallGate(...) call never closes its parens').toBeGreaterThan(-1);
+    const call = sources.slice(callSite, end + 1);
+
+    expect(
+      call,
+      'packages/core never reads process.env for this value (R-13.3a) — EnvSchema validates ' +
+        'BLOCKSCOUT_DAILY_CALL_CAP and mcp-server must inject it as dailyCallCeilingOverride, or the ' +
+        'key does nothing',
+    ).toContain('dailyCallCeilingOverride');
+  });
 });

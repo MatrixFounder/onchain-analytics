@@ -3,6 +3,7 @@ import {
   CapabilityRegistry,
   createBudgetStore,
   createCacheStore,
+  createCallGate,
   createCoingeckoAdapter,
   createDashPlatformAdapter,
   createDefillamaAdapter,
@@ -191,6 +192,25 @@ function buildRegistry(
   // explicit `undefined` where the field is optional, and the two are not the same thing: absent
   // means "take the module singleton", which is what a test that injects nothing is asking for.
   const limiter = throttle === undefined ? {} : { throttle };
+  // Task 015-15 (MINOR-8, round 2 plan review) — the daily call gate's ONE construction point, over
+  // the SAME `budgetStore` instance `nansen`'s own gate receives below — a second instance would
+  // open a second connection over the SAME `usage` row this one counts against (see
+  // `createCallGate`'s own docstring, "Why экземпляр budgetStore тот же, а не свой"). Built here,
+  // not inline in the registration below, so the line stays short enough for prettier to keep on
+  // one line — `limiter-wiring.test.ts` locates each adapter's registration by regex on
+  // `['<id>', ...]`, which a prettier-forced line break after `[` would silently defeat.
+  // Task 015-16 — `env.BLOCKSCOUT_DAILY_CALL_CAP` narrows the ceiling `createCallGate` reads for
+  // `blockscout`; unset leaves the declared `providers.config.ts` estimate in force
+  // (`call-gate.ts`'s own `Math.min`, R-12.1 — an override above the declared value cannot widen
+  // it). Spread, not a bare property, for the same `exactOptionalPropertyTypes` reason as `limiter`
+  // above: absent must mean "no override", never an explicit `dailyCallCeilingOverride: undefined`.
+  const callGate = createCallGate({
+    provider: 'blockscout',
+    budgetStore,
+    ...(env.BLOCKSCOUT_DAILY_CALL_CAP === undefined
+      ? {}
+      : { dailyCallCeilingOverride: env.BLOCKSCOUT_DAILY_CALL_CAP }),
+  });
   const adapters = new Map<string, ProviderAdapter>([
     ['coingecko', createCoingeckoAdapter({ env: toProcessEnv(env), ...limiter })],
     ['dexscreener', createDexscreenerAdapter({ ...limiter })],
@@ -203,7 +223,7 @@ function buildRegistry(
     // R-79(a): the VALIDATED env, like every other secret-bearing adapter. It used to be built with
     // no `env` at all, so `deps.env ?? process.env` fell back to the raw process environment and the
     // one secret TASK-008 introduced was the only one bypassing `EnvSchema` (vdd-multi i2, sec M-4).
-    ['blockscout', createBlockscoutAdapter({ env: toProcessEnv(env), ...limiter })],
+    ['blockscout', createBlockscoutAdapter({ env: toProcessEnv(env), ...limiter, callGate })],
     // TASK-009: no `env` argument, and that is the whole configuration story — this adapter has no
     // secret to validate, because the vendor offers no key for the surfaces it reads.
     ['blockchain-info', createBlockchainInfoAdapter({ ...limiter })],

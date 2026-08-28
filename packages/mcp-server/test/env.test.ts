@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { capabilityManifests } from '@onchain-intel/core';
 import {
   DEFAULT_HTTP_RESPONSE_TIMEOUT_MS,
@@ -12,6 +13,7 @@ import {
   withDeclaredDefaults,
 } from '../src/env.js';
 import { PROFILE_NAMES, resolveProfile } from '../src/profile.js';
+import { SETTING_CLASSES } from '../src/settings-classification.js';
 
 /**
  * Unit tests for `src/env.ts` (task 001-3, closes R-6/R-12).
@@ -328,6 +330,69 @@ describe('BLOCKSCOUT_PRO_API_KEY (TASK-008 R-79a)', () => {
     expect(
       EnvSchema.parse({ BLOCKSCOUT_PRO_API_KEY: 'proapi_real\n' }).BLOCKSCOUT_PRO_API_KEY,
     ).toBe('proapi_real');
+  });
+});
+
+/**
+ * Task 015-16 (`docs/tasks/task-015-16-blockscout-daily-call-cap-env.md`) — the key that narrows
+ * the daily call gate `createCallGate` reads for `blockscout` (task 015-13/015-14/015-15). No `off`
+ * sentinel: R-9.6 makes a declared ceiling mandatory for this provider, so disabling the gate is not
+ * an admissible configuration (unlike `NANSEN_DAILY_CREDIT_CAP`, a money guard that DOES take one).
+ */
+describe('BLOCKSCOUT_DAILY_CALL_CAP (task 015-16, R-10.1/R-10.2/R-12.1)', () => {
+  it('TC-UNIT-01: EnvSchema.parse({}) passes without this key — the value is empty', () => {
+    const result = EnvSchema.parse({});
+    expect(result.BLOCKSCOUT_DAILY_CALL_CAP).toBeUndefined();
+  });
+
+  it('TC-UNIT-02: a raw env string coerces to a positive integer', () => {
+    const result = EnvSchema.parse({ BLOCKSCOUT_DAILY_CALL_CAP: '5' });
+    expect(result.BLOCKSCOUT_DAILY_CALL_CAP).toBe(5);
+  });
+
+  it('TC-UNIT-03: 0, a negative, a fraction and the word "off" are all rejected — no disable sentinel', () => {
+    for (const bad of ['0', '-1', '2.5', 'off']) {
+      expect(() => EnvSchema.parse({ BLOCKSCOUT_DAILY_CALL_CAP: bad })).toThrow();
+    }
+  });
+
+  it('TC-UNIT-04: an empty string equals the key being unset', () => {
+    const result = EnvSchema.parse({ BLOCKSCOUT_DAILY_CALL_CAP: '' });
+    expect(result.BLOCKSCOUT_DAILY_CALL_CAP).toBeUndefined();
+  });
+
+  it('TC-UNIT-05: the refusal names the key and never the value (D10)', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    let thrown: unknown;
+    try {
+      loadEnv({ BLOCKSCOUT_DAILY_CALL_CAP: '0' } as unknown as NodeJS.ProcessEnv);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    expect(message).toContain('BLOCKSCOUT_DAILY_CALL_CAP');
+    expect(message).not.toContain('0');
+
+    const stderrOutput = stderrSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(stderrOutput).toContain('BLOCKSCOUT_DAILY_CALL_CAP');
+  });
+
+  it('TC-UNIT-06: the class is narrowing in both the registry and §10.3 — never secret, never bootstrap', () => {
+    expect(SETTING_CLASSES.BLOCKSCOUT_DAILY_CALL_CAP).toBe('narrowing');
+
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+    const deployment = readFileSync(
+      path.join(repoRoot, 'docs/architectures/deployment.md'),
+      'utf8',
+    );
+    const row = /\|\s*`BLOCKSCOUT_DAILY_CALL_CAP`\s*\|\s*(secret|bootstrap|narrowing)\s*\|/.exec(
+      deployment,
+    );
+    expect(row, 'the §10.3 row for BLOCKSCOUT_DAILY_CALL_CAP is missing').not.toBeNull();
+    expect(row![1]).toBe('narrowing');
   });
 });
 

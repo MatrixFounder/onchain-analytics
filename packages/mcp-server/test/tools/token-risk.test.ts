@@ -44,6 +44,7 @@ function fakeBudgetStore(overrides: Partial<BudgetStore> = {}): BudgetStore {
     getUsage: async () => 6,
     getWindowUsage: async () => 0,
     getWindowCalls: async () => 0,
+    getDailyCalls: async () => 0,
     ...overrides,
   };
 }

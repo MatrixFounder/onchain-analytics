@@ -199,6 +199,38 @@ export interface AdapterRegistration {
    * code exists is a rank chosen to fit the code.
    */
   trust: AdapterTrust;
+  /**
+   * Declared daily call ceiling at this adapter's VENDOR (ADR-003 D6, task 015-12, R-9/R-11).
+   *
+   * A vendor-side ceiling counted in CALLS, not credits — the free `blockscout` account has no
+   * credit dimension at all, only a daily allowance its facade meters upstream (its own
+   * registration comment derives ≈625 calls/day). `tier: 'free'` (ADR-002 D8) means "no cost at
+   * the vendor", never "unmetered" — a free vendor still runs out, and an undeclared ceiling would
+   * be a silent unlimited grant rather than a neutral default.
+   *
+   * **Two legal values, both a form of "yes, checked":**
+   * - a positive integer — the declared ceiling, in calls/day;
+   * - the literal `'none'` — checked and recorded as having no vendor-side call ceiling (a
+   *   structural absence of a vendor account, an unmeasured absence of evidence, or a source with
+   *   no live transport yet; see the ten registrations in `providers.config.ts` for which reason
+   *   applies to which). `'none'` records TODAY's evidence — it does not assert a limit can never
+   *   exist.
+   *
+   * **Optional on the TYPE, total by GATE, not by requiredness.** `data-model.md` §4.6.3 asks for
+   * two things a required field cannot both give: totality over every `tier: 'free'` registration,
+   * and silence on the two `tier: 'paid'` ones (`dune`, `nansen`), which gate their spend on the
+   * credit ledger and would otherwise need a fabricated call ceiling just to type-check.
+   * `assertValidAdapterRegistrations()` below is what actually enforces the totality — refusing
+   * process START when a `tier: 'free'` registration omits this field, or when a declared numeric
+   * value is not a positive integer (zero, negative or fractional all invert the gate's meaning:
+   * `0` refuses the very first call of every day rather than allowing any).
+   *
+   * **Declare-only in task 015-12.** Nothing reads this field yet outside the gate above and the
+   * ten literal declarations in `providers.config.ts` — the reader is `createCallGate` (task
+   * 015-13), wired into the `blockscout` adapter's `fetch()` in task 015-15, with an env-key
+   * override (`BLOCKSCOUT_DAILY_CALL_CAP` → `dailyCallCeilingOverride`) added in task 015-16.
+   */
+  dailyCallCeiling?: number | 'none';
 }
 
 /** The declared ranks, in one place — `assertValidAdapterRegistrations()`'s allowed-value source. */
@@ -249,6 +281,37 @@ export function assertValidAdapterRegistrations(registrations: AdapterRegistrati
             `(ADR-002 D8/D9, task 012-2 — a rank that can be omitted is a rank that gets defaulted)`,
         );
       }
+    }
+
+    // Task 015-12 (ADR-003 D6, R-9/R-11, AC-33) — every `tier: 'free'` registration must declare
+    // `dailyCallCeiling`. A free VENDOR still runs out (ADR-002 D8's "free" means "no cost", never
+    // "unmetered"), so an undeclared ceiling on a free registration is a silent unlimited grant,
+    // not a neutral default — the same failure class `tier`/`trust` above already guard against.
+    // Enforced HERE rather than by making the field required on the type: a required field would
+    // also demand a value from the two PAID registrations (`dune`, `nansen`), which
+    // `data-model.md` §4.6.3 does not allow.
+    if (registration.tier === 'free' && registration.dailyCallCeiling === undefined) {
+      throw new Error(
+        `adapter registration '${id}' does not declare 'dailyCallCeiling': every tier:'free' ` +
+          `registration must state a daily call ceiling (a positive integer) or the literal ` +
+          `'none' (ADR-003 D6, task 015-12 — an undeclared ceiling is a silent unlimited grant)`,
+      );
+    }
+
+    // The range check sits beside the presence check for the same reason (MINOR-2 round 2): `0`
+    // for a call-gated provider inverts the gate's meaning from "allow N calls a day" to "refuse
+    // the very first call every day", which is as dangerous as no declaration at all, and a
+    // negative or fractional value is nonsensical for a count of calls.
+    if (
+      registration.dailyCallCeiling !== undefined &&
+      registration.dailyCallCeiling !== 'none' &&
+      !(Number.isInteger(registration.dailyCallCeiling) && registration.dailyCallCeiling > 0)
+    ) {
+      throw new Error(
+        `adapter registration '${id}' declares an invalid 'dailyCallCeiling': ` +
+          `${JSON.stringify(registration.dailyCallCeiling)} — expected a positive integer or the ` +
+          `literal 'none' (ADR-003 D6, task 015-12)`,
+      );
     }
 
     // The SSRF allowlist, checked at START rather than at the first outgoing call (task 014-21,

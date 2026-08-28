@@ -3935,7 +3935,7 @@ measured 2026-08-13, its only other occurrence is the re-export at
 `_meta.cache` is assembled per request from `resolve()`'s own result.
 
 **Why the census excludes six module-level `Set` and `Map` constants.** `blockscout/sanitize.ts:89`
-and `:92`, `blockscout/index.ts:63` and `:285`, `defillama/index.ts:539` and
+and `:92`, `blockscout/index.ts:64` and `:336`, `defillama/index.ts:539` and
 `defillama/chain-aliases.ts:13` are built at import from committed data and never written again.
 
 **Why `nansen`'s singleflight map is absent.** It is created inside `createSingleflight()`
@@ -4376,25 +4376,29 @@ module, `packages/core/src/adapters/blockscout/call-gate.ts`, exposes one functi
 ```ts
 // PLANNED — packages/core/src/adapters/blockscout/call-gate.ts
 export function createCallGate(deps: {
+  provider: string; // the ceiling looked up is THIS id's, read once at construction
   budgetStore: BudgetStore;
   /** Injected, never read from `process.env` inside `core` (R-13.3a). `undefined` ⇒ the
    * `providers.config.ts` value in force. Mirrors `NansenBudgetGateDeps.dailyCreditCap`'s own
    * injection shape (`budget-gate.ts:232`). */
   dailyCallCeilingOverride?: number;
 }): {
-  ensureCallBudget(provider: string, now: () => number): Promise<void>; // throws on refusal
+  ensureCallBudget(now: () => number): Promise<void>; // throws on refusal
 } {
-  /* looks up `dailyCallCeiling` from adapterRegistrations (refusing to construct if it reads
-     'none' for THIS provider — a call-gated provider must declare a real ceiling), applies
-     `deps.dailyCallCeilingOverride` when supplied, then calls
-     budgetStore.checkAndReserve(provider, dayBucketMs(now()), 0, Infinity, undefined,
+  /* looks up `dailyCallCeiling` from adapterRegistrations by `deps.provider` (refusing to
+     construct if it reads 'none' for THIS provider — a call-gated provider must declare a real
+     ceiling), takes the SMALLER of that ceiling and `deps.dailyCallCeilingOverride` when one is
+     supplied — never the override outright, because the key is the `narrowing` class and may only
+     restrict (`deployment.md` §10.3.1); the same `Math.min` `effectiveCeilingFor` already applies
+     to `NANSEN_DAILY_CREDIT_CAP` — then calls
+     budgetStore.checkAndReserve(deps.provider, dayBucketMs(now()), 0, Infinity, undefined,
        { ceiling: ceilingInForce }) — cost 0 and an unlimited credit ceiling, because blockscout
      has no credit dimension; only the dailyCalls branch of the SAME statement can refuse here. */
 }
 ```
 
 **Called once per network attempt, on all four gated routes, beside the existing `throttle()` call**
-(R-9.7) — `packages/core/src/adapters/blockscout/index.ts:425`, immediately before
+(R-9.7) — `packages/core/src/adapters/blockscout/index.ts:458`, immediately before
 `await throttle('blockscout', rateLimit, weight, deadlineAtMs)`. Both guards run; either may refuse
 first.
 

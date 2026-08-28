@@ -54,18 +54,23 @@
 
 **Файл `packages/mcp-server/src/tools/escalation.ts`:**
 
-- Обновить блок про отклонённое прочтение R-28.1
-  (`packages/mcp-server/src/tools/escalation.ts:9` —
-  `— "the free source was EXHAUSTED" — was rejected because we cannot observe it`, `:10` —
-  ``key meters credits at the VENDOR, this engine keeps no counter for it, and `ADR-003` assigns that``,
-  `:11` — `counter to T-015.`): счётчик, назначенный T-015, введён задачами 015-12…015-15
+- Обновить блок про отклонённое прочтение R-28.1. Счётчик, назначенный T-015, введён задачами
+  015-12…015-15
+  (`packages/mcp-server/src/tools/escalation.ts:9` — `— "the free source was EXHAUSTED" — was
+rejected because AT THE TIME this engine kept no counter`)
+- Добавлен новый абзац (`:14-21`), называющий `usage.calls_made`
+  (`adapters/blockscout/call-gate.ts`). Он объясняет, почему `detectEscalation` всё равно его не
+  читает: счётчик мерит ДОПУЩЕННЫЕ ВЫЗОВЫ против собственного объявленного потолка. Это оценка
+  неизвестного вендорского бюджета, а не вендорские КРЕДИТЫ, о которых буквально спрашивал R-28.1
+- Исправлено при исполнении 2026-08-28: позиции ниже отражают применённую правку, не черновик
+  формулировки
 - Условие `detectEscalation`
-  (`packages/mcp-server/src/tools/escalation.ts:48` —
+  (`packages/mcp-server/src/tools/escalation.ts:57` —
   `export function detectEscalation(walks: readonly CapabilityWalk[]): Escalation | null {`)
   остаётся прежним: вход бесплатного источника, затем вход платного
 
 **Why условие не переписывается на «исчерпан».** Классификация идёт по `tier`, а не по наличию
-квитанции расхода (`packages/mcp-server/src/tools/escalation.ts:19` —
+квитанции расхода (`packages/mcp-server/src/tools/escalation.ts:28` —
 ``**Why the classification is `tier` and never the presence of a spend receipt.**``). Маршрут
 `gas.price` состоит из двух бесплатных адаптеров, и вывод платности из расхода пометил бы его
 эскалацией без единого платного участника.
@@ -83,7 +88,7 @@
   (`packages/mcp-server/src/tools/request-trace-row.ts:194` —
   `escalatedToPaid: detectEscalation(input.walks) === null ? 0 : 1,`)
 - событие `source.escalated_to_paid`
-  (`packages/mcp-server/src/tools/registry.ts:589` —
+  (`packages/mcp-server/src/tools/registry.ts:672` —
   `await ctx.diagnostics?.emit('source.escalated_to_paid', {`)
 
 ### Маршруты `token.holders` и `chain.transactions` — отказ
@@ -108,8 +113,8 @@
 
 ### Общий канал наблюдаемости
 
-Отказ тула на любом из четырёх маршрутов даёт строку `diagnostics` события `tool.refused`
-(`packages/mcp-server/src/tools/registry.ts:704` —
+Отказ тула на трёх из четырёх маршрутов даёт строку `diagnostics` события `tool.refused`
+(`packages/mcp-server/src/tools/registry.ts:841` —
 `(await ctx.diagnostics?.emit('tool.refused', {`). Событие входит в закрытый словарь из восьми
 (`packages/mcp-server/src/engine/diagnostics-store.ts:51` — `'source.escalated_to_paid',`,
 `:52` — `'tool.refused',`), новых значений задача не вводит.
@@ -117,6 +122,15 @@
 **Why канал тот же, что у отсутствия объявленного потолка.** R-10.3 требует наблюдать исчерпание
 там же, где наблюдается его отсутствие (R-9.6). Второе даёт отказ гейта старта (задача 015-12),
 первое — строку `diagnostics`. Оба видны оператору без отдельного инструмента.
+
+**Четвёртый маршрут пишет другое событие, и это не исключение из правила (исправлено при
+исполнении 2026-08-28).** Первая редакция раздела говорила «на любом из четырёх маршрутов», а
+случай `TC-UNIT-08` — «на каждом из четырёх». Обе формулировки противоречили таблице маршрутов
+того же файла: `entity.labels` при исчерпании ЭСКАЛИРУЕТ на nansen и **отвечает**, то есть отказа
+тула там нет и `tool.refused` не пишется. Наблюдаемость этого маршрута несёт другое событие того же
+словаря — `source.escalated_to_paid` — плюс колонка `request_trace.escalated_to_paid`. Итого:
+`tool.refused` на трёх отказывающих маршрутах, `source.escalated_to_paid` на четвёртом, новых
+значений словаря нет ни там, ни там.
 
 <!-- contract:tests -->
 
@@ -150,7 +164,8 @@
    - Ожидаемый результат: `request_trace.escalated_to_paid` равен `0`; строки
      `source.escalated_to_paid` нет
    - Падает при мутации: вывод платности из наличия квитанции расхода
-8. **TC-UNIT-08:** отказ на каждом из четырёх маршрутов даёт строку `tool.refused`
+8. **TC-UNIT-08:** отказ на трёх отказывающих маршрутах даёт по строке `tool.refused`, а
+   эскалирующий `entity.labels` — строку `source.escalated_to_paid`
    - Ожидаемый результат: по одной строке `diagnostics` на каждый отказ; словарь событий не
      расширен
 

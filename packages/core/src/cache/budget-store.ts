@@ -59,6 +59,22 @@ export interface BudgetStore {
    * supported topology, several stdio sessions per machine — would otherwise each pass their own
    * window check against a stale read and both spend. Either BOTH limits fit and BOTH counters are
    * written, or neither is touched.
+   *
+   * **`dailyCalls`, when supplied, is a THIRD gate, checked and reserved in the SAME transaction**
+   * (R-9, task 015-13). Not a variant of `velocity.maxCalls` — three differences, not one
+   * (MINOR-7 round 1):
+   * - a DIFFERENT ledger: `usage(provider, dayBucketMs)` — the same row this call's own `cost`
+   *   reserves against — never `usage_window(provider, windowStartMs)`;
+   * - a DIFFERENT row lifetime: the daily `usage` row lives the whole UTC day, while
+   *   `usage_window` rows are pruned after `WINDOW_RETENTION_MS` (an hour, below) — restating a
+   *   day's worth of calls on that ledger would mean disabling the very prune that keeps it small;
+   * - no required neighbour: `dailyCalls` needs no `windowStartMs`, unlike `VelocityLimit`, whose
+   *   `windowStartMs` is mandatory.
+   *
+   * As of task 015-14, every implementation reads `usage.calls_made` for `(provider,
+   * dayBucketMs)` inside this SAME transaction, compares `+ 1` against `dailyCalls.ceiling`, and
+   * — only when the call is admitted, alongside the write `cost` already makes — increments it by
+   * exactly 1.
    */
   checkAndReserve(
     provider: string,
@@ -66,6 +82,7 @@ export interface BudgetStore {
     cost: number,
     ceiling: number,
     velocity?: VelocityLimit,
+    dailyCalls?: { ceiling: number },
   ): Promise<{ ok: true } | { ok: false; reason: string }>;
   /**
    * Unconditional additive write of a SIGNED delta (pre-call reservation uses a positive `cost`;
@@ -90,6 +107,13 @@ export interface BudgetStore {
   getWindowUsage(provider: string, windowStartMs: number): Promise<number>;
   /** Read-only — the accumulated `calls_made` for `(provider, windowStartMs)` (Q-3). */
   getWindowCalls(provider: string, windowStartMs: number): Promise<number>;
+  /**
+   * Read-only — the accumulated `usage.calls_made` for `(provider, dayBucketMs)` (task 015-14,
+   * data-model.md §4.6.3). The DAILY counter `dailyCalls` compares against — the same bucket
+   * `getUsage` already reads credits from, one column over. Zero when the row does not exist,
+   * matching every other reader here.
+   */
+  getDailyCalls(provider: string, dayBucketMs: number): Promise<number>;
 }
 
 /** Constructor options for `SqliteBudgetStore` (task 005-2). */
@@ -103,6 +127,7 @@ export interface SqliteBudgetStoreOptions {
 
 interface UsageRow {
   credits_used: number;
+  calls_made: number;
 }
 
 interface WindowRow {
@@ -117,6 +142,35 @@ interface WindowRow {
  * slow leak in a state directory nobody notices until it matters.
  */
 const WINDOW_RETENTION_MS = 3_600_000;
+
+/**
+ * The DETAIL half of the daily-exhaustion refusal — deliberately WITHOUT the marker
+ * `ProviderCallCeilingExceededError` (`adapters/blockscout/call-gate.ts`) itself supplies (task
+ * 015-14, defect found on the shipped text 2026-08-28: "два дефекта в тексте отказа гейта").
+ *
+ * **Defect 1, fixed by moving the marker out of here.** That class's constructor builds
+ * `daily call ceiling reached: ${reason}`. Before this constant existed, `reason` ALSO started
+ * with `daily call ceiling reached for provider=…`, so the full thrown message repeated the
+ * phrase twice. The class owns the marker; this store owns the detail — one phrase, one owner,
+ * said once.
+ *
+ * **Defect 2, fixed by giving `ensureCallBudget` a value to branch on.** Every fail-closed
+ * refusal from this same `checkAndReserve` (a corrupted `credits_used` or `calls_made` value) used
+ * to reach the caller wrapped in the SAME class, asserting "the ceiling is reached" about a
+ * refusal that never established that — the ceiling may not have been approached at all, only the
+ * ledger value was unreadable. `call-gate.ts` now tests `reason.startsWith(this)` and wraps as
+ * `ProviderCallCeilingExceededError` ONLY when it is true; every other refusal — including both
+ * fail-closed branches below — becomes `ProviderCallGateUnavailableError` instead, which never
+ * claims the ceiling was reached.
+ *
+ * **Exported and shared, not restated per axis.** `pg/budget-store.ts` imports this SAME binding
+ * for its own daily-exceeded text (`dailyRefusal`) — one constant, so the two axes cannot drift
+ * apart on the one substring `call-gate.ts` and `vendor-spend-gates.test.ts`'s AC-25 both key on.
+ *
+ * Deliberately does NOT contain the substring `daily call ceiling reached` — a value that did
+ * would defeat the whole point of separating detail from marker.
+ */
+export const DAILY_CALL_EXHAUSTED_DETAIL = 'daily calls spent for provider=';
 
 /**
  * `better-sqlite3`-backed `BudgetStore` (task 005-2, R-34/R-35, data-model.md §4.2). Opens its OWN
@@ -185,7 +239,7 @@ export class SqliteBudgetStore implements BudgetStore {
       this.bootstrapProviders(options.providers ?? adapterRegistrations);
 
       this.selectUsageStmt = this.db.prepare(
-        `SELECT credits_used FROM usage WHERE provider = ? AND day = ?`,
+        `SELECT credits_used, calls_made FROM usage WHERE provider = ? AND day = ?`,
       );
       this.selectWindowStmt = this.db.prepare(
         `SELECT credits_used, calls_made FROM usage_window WHERE provider = ? AND window_start = ?`,
@@ -230,10 +284,14 @@ export class SqliteBudgetStore implements BudgetStore {
         // `CHECK (credits_used >= 0)` in ddl.ts is then belt-and-suspenders: unreachable in normal
         // operation because both branches clamp, but it turns any future code path that bypasses
         // this statement into a loud constraint violation rather than a silently widened budget.
-        `INSERT INTO usage (provider, day, credits_used, updated_at)
-         VALUES (@provider, @day, MAX(0, @delta), @now)
+        // `@calls` is 1 on a reservation and 0 on a reconciliation delta — the same discipline
+        // `upsertWindowStmt` above already applies one bucket width down (task 015-14): a CALL is
+        // not refundable the way a credit is, so `recordDelta` binds 0 and never moves this column.
+        `INSERT INTO usage (provider, day, credits_used, calls_made, updated_at)
+         VALUES (@provider, @day, MAX(0, @delta), MAX(0, @calls), @now)
          ON CONFLICT (provider, day) DO UPDATE SET
            credits_used = MAX(0, credits_used + @delta),
+           calls_made = MAX(0, calls_made + @calls),
            updated_at = @now`,
       );
     } catch (error) {
@@ -321,11 +379,17 @@ export class SqliteBudgetStore implements BudgetStore {
     cost: number,
     ceiling: number,
     velocity?: VelocityLimit,
+    // Task 015-14 — read and compared against `usage.calls_made` below, inside this SAME
+    // transaction, between the credit-ceiling check and the velocity check (see the interface
+    // docstring above for why this is a THIRD gate on a DIFFERENT ledger, not a variant of
+    // `velocity.maxCalls`).
+    dailyCalls?: { ceiling: number },
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
     const now = Date.now();
     const attempt = this.db.transaction((): { ok: true } | { ok: false; reason: string } => {
       const row = this.selectUsageStmt.get(provider, dayBucketMs) as UsageRow | undefined;
       const used = row?.credits_used ?? 0;
+      const usedCalls = row?.calls_made ?? 0;
 
       // FAIL CLOSED when the comparison below cannot decide (cycle-4 verification pass, security
       // F-6). `used + cost > ceiling` evaluates to `false` — i.e. APPROVED — whenever an operand is
@@ -363,6 +427,40 @@ export class SqliteBudgetStore implements BudgetStore {
           ok: false,
           reason: `budget exceeded for provider=${provider}: need ${cost}, used ${used}, ceiling ${ceiling}`,
         };
+      }
+
+      // Task 015-14 (R-9, ADR-003 D6) — the DAILY call ceiling, a THIRD gate on a DIFFERENT
+      // ledger from `velocity.maxCalls` below (see the interface docstring: different row, never
+      // pruned, no required `windowStartMs`). Checked here, between the credit ceiling above and
+      // the velocity window below, so a call that breaches both the daily-credit and the
+      // daily-call bound reports the credit refusal — the same precedence the two credit/velocity
+      // checks already establish.
+      //
+      // `blockscout`'s `costOf` returns 0 for every capability, so `used + 0 > ceiling` is FALSE
+      // for the entire life of any bucket, under any credit cap (R-9.4) — this is the ONLY
+      // comparison in this function a zero-cost call cannot walk straight past.
+      if (dailyCalls !== undefined) {
+        // Fail closed on a ledger value that cannot be compared, the same rule `used` above
+        // already follows and for the same reason: a TEXT value written into `calls_made` by
+        // another writer sharing this file would turn `usedCalls + 1` into string concatenation.
+        if (typeof usedCalls !== 'number' || !Number.isFinite(usedCalls)) {
+          return {
+            ok: false,
+            reason: `daily call check failed closed for provider=${provider}: ledger value is not a finite number (calls ${String(usedCalls)})`,
+          };
+        }
+        // `NaN` and "exceeds" share one branch and one text on purpose: both mean the SAME thing
+        // to the caller — this call is not admitted today — and a caller has no different action
+        // to take for either (contrast the credit/velocity checks above, whose undecidable-value
+        // case is a distinct, config-level defect worth a distinct message).
+        if (Number.isNaN(dailyCalls.ceiling) || usedCalls + 1 > dailyCalls.ceiling) {
+          return {
+            ok: false,
+            reason:
+              `${DAILY_CALL_EXHAUSTED_DETAIL}${provider}: ${usedCalls} of ` +
+              `${dailyCalls.ceiling} calls already made today (day starts ${dayBucketMs})`,
+          };
+        }
       }
 
       // SEC-1 — the velocity check, INSIDE this same transaction and BEFORE either write. The
@@ -431,7 +529,9 @@ export class SqliteBudgetStore implements BudgetStore {
         });
       }
 
-      this.upsertUsageStmt.run({ provider, day: dayBucketMs, delta: cost, now });
+      // `calls: 1` — the reservation itself IS an admitted call (task 015-14). Reached only when
+      // every gate above passed, so this is the single write site for a successful reservation.
+      this.upsertUsageStmt.run({ provider, day: dayBucketMs, delta: cost, calls: 1, now });
       return { ok: true };
     });
 
@@ -450,7 +550,11 @@ export class SqliteBudgetStore implements BudgetStore {
     // outright) that reached only the daily ledger would leave the window still holding credits
     // nobody spent. Written in one transaction so a crash between them cannot leave them disagreeing.
     const write = this.db.transaction(() => {
-      this.upsertUsageStmt.run({ provider, day: dayBucketMs, delta: signedDelta, now });
+      // `calls: 0` — a reconciliation adjusts CREDITS, never the daily call count (task 015-14,
+      // MINOR-5), mirroring `calls: 0` on `upsertWindowStmt` below one bucket width over. The
+      // vendor round trip already happened; refunding it would let a run of cheap-then-refunded
+      // calls walk past the very limit that exists to bound that traffic.
+      this.upsertUsageStmt.run({ provider, day: dayBucketMs, delta: signedDelta, calls: 0, now });
       if (windowStartMs !== undefined) {
         // `calls: 0` — a reconciliation adjusts CREDITS, never the call count (Q-3). The vendor
         // round trip already happened; "refunding" it would let a run of cheap-then-refunded calls
@@ -479,6 +583,11 @@ export class SqliteBudgetStore implements BudgetStore {
 
   async getWindowCalls(provider: string, windowStartMs: number): Promise<number> {
     const row = this.selectWindowStmt.get(provider, windowStartMs) as WindowRow | undefined;
+    return row?.calls_made ?? 0;
+  }
+
+  async getDailyCalls(provider: string, dayBucketMs: number): Promise<number> {
+    const row = this.selectUsageStmt.get(provider, dayBucketMs) as UsageRow | undefined;
     return row?.calls_made ?? 0;
   }
 

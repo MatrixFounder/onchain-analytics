@@ -17,7 +17,7 @@
 
 **Why значение приходит инъекцией.** `packages/core` не читает `process.env` напрямую (R-13.3a).
 Ключ парсится в `mcp-server` и передаётся параметром
-(`docs/architectures/system-architecture.md:4381` — подстрока `The key is EnvSchema's, narrowing
+(`docs/architectures/system-architecture.md:4455` — подстрока `The key is EnvSchema's, narrowing
 class`).
 
 <!-- contract:changes -->
@@ -49,16 +49,16 @@ Readonly<Record<keyof Env, SettingClass>> = Object.freeze({`)
 **Файл `packages/mcp-server/src/index.ts`:**
 
 - Прочитать значение из уже валидированного `env` и передать его в сборку рантайма
-  (`packages/mcp-server/src/index.ts:225` — `const runtime = createSharedRuntime({`)
+  (`packages/mcp-server/src/index.ts:238` — `const runtime = createSharedRuntime({`)
 
 **Файл `packages/mcp-server/src/runtime.ts`:**
 
 - Довести значение до той же строки, где задача 015-15 строит гейт
-  (`packages/mcp-server/src/runtime.ts:186` —
+  (`packages/mcp-server/src/runtime.ts:215` —
   `['blockscout', createBlockscoutAdapter({ env: toProcessEnv(env), ...limiter })],`), и подставить
   его полем `dailyCallCeilingOverride` вызова `createCallGate`
 - Вызов `createCallGate` эта задача не заводит: он принадлежит задаче 015-15, а `budgetStore` для
-  него берётся из параметра `buildRegistry` (`packages/mcp-server/src/runtime.ts:166` —
+  него берётся из параметра `buildRegistry` (`packages/mcp-server/src/runtime.ts:187` —
   `budgetStore: BudgetStore,`)
 
 **Why правка `runtime.ts` названа, хотя архитектура называет `index.ts`.** Адаптеры собираются в
@@ -87,7 +87,7 @@ Readonly<Record<keyof Env, SettingClass>> = Object.freeze({`)
 
 **Why сентинела отключения нет.** R-9.6 делает объявленный потолок обязательным для этого
 провайдера, поэтому отключение гейта не является допустимой конфигурацией
-(`docs/architectures/system-architecture.md:4377` — подстрока `No `off` sentinel is offered here`).
+(`docs/architectures/system-architecture.md:4451` — подстрока `No `off` sentinel is offered here`).
 
 **Why значение только сужает.** Класс настройки — `narrowing`, а он означает, что любое допустимое
 значение ограничивает поведение движка. То же правило уже применено к трём тормозам nansen:
@@ -179,7 +179,7 @@ narrowing`. Действующий потолок поэтому равен ме
 - [ ] `EnvSchema` принимает только положительное целое; сентинел отключения не предусмотрен
 - [ ] `EnvSchema.parse({})` продолжает проходить без этого ключа
 - [ ] Значение передаётся полем `dailyCallCeilingOverride` в тот вызов `createCallGate`, который
-      задача 015-15 ставит в `packages/mcp-server/src/runtime.ts:186`; статический гейт на прямые
+      задача 015-15 ставит в `packages/mcp-server/src/runtime.ts:202`; статический гейт на прямые
       чтения `process.env` в `packages/core` остаётся зелёным
 - [ ] `.env.example` документирует ключ тем же изменением
 - [ ] Классификация настроек относит ключ к сужающему классу

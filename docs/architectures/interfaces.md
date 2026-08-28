@@ -182,7 +182,7 @@ visibility must never turn an otherwise successful call into an error.
 
 **This read names no storage engine.** `BudgetStore` has one implementation per storage axis —
 `SqliteBudgetStore` or `PgBudgetStore` (`system-architecture.md` §3.4.8). Its methods already return
-promises (`packages/core/src/cache/budget-store.ts:63`, `checkAndReserve(`), so the handler above is
+promises (`packages/core/src/cache/budget-store.ts:79`, `checkAndReserve(`), so the handler above is
 unchanged by the axis the profile selects.
 
 **T-014 adds a second condition and keeps this one.** `_meta.budget` reaches only a principal whose

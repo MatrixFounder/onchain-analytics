@@ -158,6 +158,15 @@ export const EnvSchema = z.object({
       .pipe(z.string().min(1))
       .optional(),
   ),
+  // Task 015-16 (`docs/tasks/task-015-16-blockscout-daily-call-cap-env.md`, R-10.1/R-10.2/R-12.1) —
+  // narrows `createCallGate`'s daily call ceiling for `blockscout` (`providers.config.ts`'s
+  // declared ≈625 estimate) during the synthetic low-threshold verification run UC-7 step 1 asks
+  // for. A positive integer only, like `NANSEN_MAX_CALLS_PER_MIN`'s own coerced form — but unlike
+  // every Nansen brake above, NO `off` sentinel is offered here: R-9.6 makes a declared ceiling
+  // mandatory for a call-gated provider, so disabling the gate is not an admissible configuration
+  // for this key the way it is for a money guard. Injected into `packages/core` as
+  // `dailyCallCeilingOverride` — `core` never reads `process.env` for this value (R-13.3a).
+  BLOCKSCOUT_DAILY_CALL_CAP: emptyAsUndefined(z.coerce.number().int().positive().optional()),
   ONCHAIN_PG_URL: emptyAsUndefined(z.string().url().optional()),
   DATA_DIR: emptyAsUndefined(z.string().optional()),
   // M2 (task 005-6, R-46) — see this schema's own docstring above for the 3-key rationale.

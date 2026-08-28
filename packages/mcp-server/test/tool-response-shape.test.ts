@@ -111,6 +111,7 @@ function fakeBudgetStore(): BudgetStore {
     getUsage: async () => 10,
     getWindowUsage: async () => 0,
     getWindowCalls: async () => 0,
+    getDailyCalls: async () => 0,
   };
 }
 

@@ -55,7 +55,7 @@
 **Файл `packages/core/src/providers.config.ts`:**
 
 - Добавить `dailyCallCeiling: 625` в регистрацию `blockscout`
-  (`packages/core/src/providers.config.ts:344` — `tier: 'free',`) с пометкой происхождения
+  (`packages/core/src/providers.config.ts:359` — `tier: 'free',`) с пометкой происхождения
   «оценка `ADR-003` D6, не замер»
 - Добавить `dailyCallCeiling: 'none'` с однострочной причиной в девять остальных бесплатных
   регистраций: `coingecko` (`:221`), `dexscreener` (`:230`), `defillama` (`:267`), `rpc-evm`
@@ -178,7 +178,7 @@ NOT a measured ceiling and must not be cited ``) остаётся неизмен
 ## Примечания
 
 Гейт старта исполняется на входе процесса
-(`packages/mcp-server/src/index.ts:45` — `assertValidAdapterRegistrations(adapterRegistrations);`),
+(`packages/mcp-server/src/index.ts:46` — `assertValidAdapterRegistrations(adapterRegistrations);`),
 до конструирования любого store и registry. Отказ там называет провайдера и падает при старте, а не
 на первом запросе, идущем через этот адаптер.
 

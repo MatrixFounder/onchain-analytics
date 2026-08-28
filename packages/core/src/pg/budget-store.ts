@@ -1,5 +1,9 @@
 import type { AdapterRegistration } from '../adapters/types.js';
-import type { BudgetStore, VelocityLimit } from '../cache/budget-store.js';
+import {
+  DAILY_CALL_EXHAUSTED_DETAIL,
+  type BudgetStore,
+  type VelocityLimit,
+} from '../cache/budget-store.js';
 import { adapterRegistrations } from '../providers.config.js';
 import type { StateClient, StateTransaction } from './state-client.js';
 
@@ -45,6 +49,7 @@ class ReservationRefused extends Error {
 /** One `onchain.usage` row as `pg` returns it — `BIGINT` arrives as a STRING (see `toCounter`). */
 interface UsageRow {
   credits_used: unknown;
+  calls_made: unknown;
 }
 
 interface WindowRow {
@@ -213,6 +218,11 @@ export class PgBudgetStore implements BudgetStore {
     cost: number,
     ceiling: number,
     velocity?: VelocityLimit,
+    // Task 015-14 — the SAME third gate the SQLite axis's `checkAndReserve` reads, on THIS axis
+    // expressed inside the writing statement's own `WHERE` (see the daily reservation SQL below
+    // and `dailyRefusal()`), for the same reason the credit ceiling already is (§4.2.4, "the
+    // comparison moves INTO the writing statement").
+    dailyCalls?: { ceiling: number },
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
     // FAIL CLOSED before anything is sent, on the comparisons no statement could decide. This is
     // the rule the SQLite store already applies (`cache/budget-store.ts:334`), moved earlier for
@@ -252,6 +262,15 @@ export class PgBudgetStore implements BudgetStore {
         };
       }
     }
+    // Task 015-14 — the same fail-closed rule, one more time, for the THIRD gate. `NaN` has no
+    // `BIGINT` binding here either, and `$6 IS NULL` would read a bound `NaN` as "unbounded" —
+    // the fail-OPEN direction — rather than as the undecidable input it is.
+    if (dailyCalls !== undefined && Number.isNaN(dailyCalls.ceiling)) {
+      return {
+        ok: false,
+        reason: `daily call check failed closed for provider=${provider}: undecidable comparison (ceiling ${dailyCalls.ceiling})`,
+      };
+    }
 
     await this.ready;
     const now = Date.now();
@@ -264,29 +283,41 @@ export class PgBudgetStore implements BudgetStore {
         // governs the conflict branch alone, so without the guarded `SELECT` source the first call
         // of a day would reserve a cost larger than the whole ceiling.
         //
-        // Both branches name `onchain.usage.credits_used` — the row version the statement itself
-        // locked — rather than a value this process read earlier. A concurrent transaction blocks on
-        // that lock and re-evaluates against the committed value.
+        // Both branches name `onchain.usage.credits_used`/`calls_made` — the row version the
+        // statement itself locked — rather than a value this process read earlier. A concurrent
+        // transaction blocks on that lock and re-evaluates against the committed value.
+        //
+        // Task 015-14 — `$6`/`calls_made` is the SECOND bound in this SAME statement, not a second
+        // statement: same provider, same day, same row, same transaction as the credit bound, one
+        // column over. `$6 IS NULL` leaves it unbounded exactly the way `$5 IS NULL` already does
+        // for credits (`ceilingParam`'s own contract) — `dailyCalls` undefined on the caller's side
+        // becomes SQL NULL here, and every reservation passes this bound.
         const reserved = await tx.query<UsageRow>(
-          `INSERT INTO onchain.usage (provider, day, credits_used, updated_at)
-           SELECT $1, $2, $3, $4 WHERE ($5 IS NULL OR $3 <= $5)
+          `INSERT INTO onchain.usage (provider, day, credits_used, calls_made, updated_at)
+           SELECT $1, $2, $3, 1, $4 WHERE ($5 IS NULL OR $3 <= $5) AND ($6 IS NULL OR 1 <= $6)
            ON CONFLICT (provider, day) DO UPDATE SET
              credits_used = onchain.usage.credits_used + $3,
+             calls_made   = onchain.usage.calls_made + 1,
              updated_at   = $4
            WHERE ($5 IS NULL OR onchain.usage.credits_used + $3 <= $5)
-           RETURNING credits_used`,
-          [provider, dayBucketMs, cost, now, ceilingParam(ceiling)],
+             AND ($6 IS NULL OR onchain.usage.calls_made + 1 <= $6)
+           RETURNING credits_used, calls_made`,
+          [
+            provider,
+            dayBucketMs,
+            cost,
+            now,
+            ceilingParam(ceiling),
+            ceilingParam(dailyCalls?.ceiling),
+          ],
         );
         if (reserved.length === 0) {
-          // Zero rows is a REFUSAL, not a failure, and nothing was written. The message needs
-          // `used`, which a zero-row result does not carry, so one extra read is issued for the
-          // message alone — it cannot widen the gate, because the decision is already made.
-          throw new ReservationRefused({
-            ok: false,
-            reason:
-              `budget exceeded for provider=${provider}: need ${cost}, ` +
-              `used ${await this.readUsage(tx, provider, dayBucketMs)}, ceiling ${ceiling}`,
-          });
+          // Zero rows is a REFUSAL, not a failure, and nothing was written. Neither the message nor
+          // WHICH of the two bounds refused survives a zero-row result, so one extra read is issued
+          // for the text alone — it cannot widen the gate, because the decision is already made.
+          throw new ReservationRefused(
+            await this.dailyRefusal(tx, provider, dayBucketMs, cost, ceiling, dailyCalls),
+          );
         }
 
         if (velocity !== undefined) {
@@ -380,20 +411,54 @@ export class PgBudgetStore implements BudgetStore {
     };
   }
 
-  /** The extra read behind a daily refusal message — see its call site for why it cannot widen the
-   * gate. Kept inside the same transaction, so the number printed is the one the refused statement
-   * compared against. */
-  private async readUsage(
+  /**
+   * Builds the daily refusal message from the row the refused reservation did not return (task
+   * 015-14) — the SAME shape as `windowRefusal` above, one bucket width up: a zero-row result
+   * cannot say WHICH of the two bounds on the SAME row refused, and the two call for opposite
+   * operator responses (raise a ceiling vs. wait for the next UTC day).
+   *
+   * **Credits checked first, calls second** — the same precedence `cache/budget-store.ts`'s
+   * `checkAndReserve` already establishes by testing the credit ceiling before the daily-call one:
+   * a reservation that breaches both reports the credit refusal.
+   *
+   * Kept inside the same transaction, so the numbers printed are the ones the refused statement
+   * compared against — no concurrent writer can move the row between the refusal and this read.
+   */
+  private async dailyRefusal(
     tx: StateTransaction,
     provider: string,
     dayBucketMs: number,
-  ): Promise<number> {
+    cost: number,
+    ceiling: number,
+    dailyCalls: { ceiling: number } | undefined,
+  ): Promise<{ ok: false; reason: string }> {
     const rows = await tx.query<UsageRow>(
-      `SELECT credits_used FROM onchain.usage WHERE provider = $1 AND day = $2`,
+      `SELECT credits_used, calls_made FROM onchain.usage WHERE provider = $1 AND day = $2`,
       [provider, dayBucketMs],
     );
     const row = rows[0];
-    return row === undefined ? 0 : toCounter(row.credits_used, 'credits_used');
+    const used = row === undefined ? 0 : toCounter(row.credits_used, 'credits_used');
+    const usedCalls = row === undefined ? 0 : toCounter(row.calls_made, 'calls_made');
+
+    if (used + cost > ceiling) {
+      return {
+        ok: false,
+        reason: `budget exceeded for provider=${provider}: need ${cost}, used ${used}, ceiling ${ceiling}`,
+      };
+    }
+    // Unreachable with `dailyCalls === undefined`: the statement's `$6 IS NULL` branch leaves the
+    // call bound unconditionally satisfied, so a refusal that is not the credit one above can only
+    // be this one, and `dailyCalls` must be defined for it to have fired at all.
+    //
+    // `DAILY_CALL_EXHAUSTED_DETAIL` — imported, not restated (task 015-14, defect found on the
+    // shipped text 2026-08-28) — is the SAME binding the SQLite axis's own exceeded branch reads,
+    // so the two axes cannot drift apart on the one substring `call-gate.ts` branches on.
+    return {
+      ok: false,
+      reason:
+        `${DAILY_CALL_EXHAUSTED_DETAIL}${provider}: ${usedCalls} of ` +
+        `${dailyCalls?.ceiling} calls already made today (day starts ${dayBucketMs})`,
+    };
   }
 
   /**
@@ -438,10 +503,11 @@ export class PgBudgetStore implements BudgetStore {
     const now = Date.now();
     await this.client.transaction(async (tx) => {
       await tx.query(
-        `INSERT INTO onchain.usage (provider, day, credits_used, updated_at)
-         VALUES ($1, $2, GREATEST(0, $3), $4)
+        `INSERT INTO onchain.usage (provider, day, credits_used, calls_made, updated_at)
+         VALUES ($1, $2, GREATEST(0, $3), 0, $4)
          ON CONFLICT (provider, day) DO UPDATE SET
            credits_used = GREATEST(0, onchain.usage.credits_used + $3),
+           calls_made   = onchain.usage.calls_made,
            updated_at   = $4`,
         [provider, dayBucketMs, signedDelta, now],
       );
@@ -464,12 +530,25 @@ export class PgBudgetStore implements BudgetStore {
    * does not exist, which is what "nothing spent today" looks like before the first call. */
   async getUsage(provider: string, dayBucketMs: number): Promise<number> {
     await this.ready;
+    const row = await this.readDaily(provider, dayBucketMs);
+    return row === undefined ? 0 : toCounter(row.credits_used, 'credits_used');
+  }
+
+  /** Read-only — the accumulated `usage.calls_made` for `(provider, dayBucketMs)` (task 015-14,
+   * data-model.md §4.6.3). The DAILY counter `dailyCalls` compares against, one column over from
+   * `credits_used`; zero when the row does not exist, matching every other reader here. */
+  async getDailyCalls(provider: string, dayBucketMs: number): Promise<number> {
+    await this.ready;
+    const row = await this.readDaily(provider, dayBucketMs);
+    return row === undefined ? 0 : toCounter(row.calls_made, 'calls_made');
+  }
+
+  private async readDaily(provider: string, dayBucketMs: number): Promise<UsageRow | undefined> {
     const rows = await this.client.query<UsageRow>(
-      `SELECT credits_used FROM onchain.usage WHERE provider = $1 AND day = $2`,
+      `SELECT credits_used, calls_made FROM onchain.usage WHERE provider = $1 AND day = $2`,
       [provider, dayBucketMs],
     );
-    const row = rows[0];
-    return row === undefined ? 0 : toCounter(row.credits_used, 'credits_used');
+    return rows[0];
   }
 
   /** Read-only — the accumulated `credits_used` for `(provider, windowStartMs)`. The gate never

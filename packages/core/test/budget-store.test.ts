@@ -1,9 +1,14 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { BudgetStore } from '../src/cache/budget-store.js';
-import { createBudgetStore, SqliteBudgetStore } from '../src/cache/budget-store.js';
+import {
+  createBudgetStore,
+  DAILY_CALL_EXHAUSTED_DETAIL,
+  SqliteBudgetStore,
+} from '../src/cache/budget-store.js';
 import { dayBucketMs } from '../src/cache/day-bucket.js';
 import { adapterRegistrations } from '../src/providers.config.js';
 
@@ -158,6 +163,221 @@ describe('SqliteBudgetStore (task 005-2, R-34/R-35)', () => {
       expect(result.ok).toBe(true);
       expect(await store.getUsage('nansen', BUCKET)).toBe(10);
     });
+  });
+});
+
+/**
+ * Task 015-14 (`docs/tasks/task-015-14-daily-call-counter.md`) — the DAILY call gate,
+ * `usage.calls_made`, read-and-incremented inside `checkAndReserve`'s own transaction. Every case
+ * names its task-file TC-UNIT-N counterpart in a comment.
+ *
+ * `cost: 0, ceiling: Infinity` is the pattern used throughout (matching the task doc's own
+ * TC-UNIT-02 input): it isolates the CALLS dimension from the CREDITS dimension, so a refusal in
+ * these tests can only be the daily-call gate, never the pre-existing credit one.
+ */
+describe('SqliteBudgetStore — daily call gate (task 015-14, R-9/R-11)', () => {
+  let dir: string;
+  let dbPath: string;
+  let store: SqliteBudgetStore;
+
+  beforeEach(() => {
+    ({ dir, dbPath } = tempDbPath());
+    store = new SqliteBudgetStore({ dbPath, providers: adapterRegistrations });
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('TC-UNIT-01 (AC-19): a call at the declared ceiling is accepted, the next is refused', async () => {
+    const dailyCalls = { ceiling: 3 };
+    for (let i = 0; i < 3; i++) {
+      const result = await store.checkAndReserve(
+        'blockscout',
+        BUCKET,
+        0,
+        Infinity,
+        undefined,
+        dailyCalls,
+      );
+      expect(result).toEqual({ ok: true });
+    }
+    const fourth = await store.checkAndReserve(
+      'blockscout',
+      BUCKET,
+      0,
+      Infinity,
+      undefined,
+      dailyCalls,
+    );
+    expect(fourth.ok).toBe(false);
+    expect(await store.getDailyCalls('blockscout', BUCKET)).toBe(3);
+  });
+
+  it('TC-UNIT-02: a zero-cost call is bounded by the CALL ceiling, not the credit one (R-9.4)', async () => {
+    const dailyCalls = { ceiling: 2 };
+    expect(
+      await store.checkAndReserve('blockscout', BUCKET, 0, Infinity, undefined, dailyCalls),
+    ).toEqual({ ok: true });
+    expect(
+      await store.checkAndReserve('blockscout', BUCKET, 0, Infinity, undefined, dailyCalls),
+    ).toEqual({ ok: true });
+    const third = await store.checkAndReserve(
+      'blockscout',
+      BUCKET,
+      0,
+      Infinity,
+      undefined,
+      dailyCalls,
+    );
+    expect(third.ok).toBe(false);
+  });
+
+  it('TC-UNIT-03: a refusal does not increase the daily call counter', async () => {
+    const dailyCalls = { ceiling: 1 };
+    await store.checkAndReserve('blockscout', BUCKET, 0, Infinity, undefined, dailyCalls);
+    const before = await store.getDailyCalls('blockscout', BUCKET);
+    const refused = await store.checkAndReserve(
+      'blockscout',
+      BUCKET,
+      0,
+      Infinity,
+      undefined,
+      dailyCalls,
+    );
+    expect(refused.ok).toBe(false);
+    expect(await store.getDailyCalls('blockscout', BUCKET)).toBe(before);
+  });
+
+  it('TC-UNIT-04: a call-ceiling refusal writes NO credits either', async () => {
+    const before = await store.getUsage('blockscout', BUCKET);
+    const result = await store.checkAndReserve('blockscout', BUCKET, 5, 100, undefined, {
+      ceiling: 0,
+    });
+    expect(result.ok).toBe(false);
+    expect(await store.getUsage('blockscout', BUCKET)).toBe(before);
+  });
+
+  it('TC-UNIT-05 (MINOR-5): recordDelta does not change calls_made', async () => {
+    const dailyCalls = { ceiling: 5 };
+    await store.checkAndReserve('blockscout', BUCKET, 0, Infinity, undefined, dailyCalls);
+    await store.recordDelta('blockscout', BUCKET, 5);
+    await store.recordDelta('blockscout', BUCKET, -5);
+    expect(await store.getDailyCalls('blockscout', BUCKET)).toBe(1);
+  });
+
+  it('TC-UNIT-06: the call counter is monotonic on a credit refund', async () => {
+    const dailyCalls = { ceiling: 5 };
+    await store.checkAndReserve('blockscout', BUCKET, 10, 100, undefined, dailyCalls);
+    await store.recordDelta('blockscout', BUCKET, -10);
+    expect(await store.getDailyCalls('blockscout', BUCKET)).toBe(1);
+  });
+
+  it('TC-UNIT-07: the refusal carries the DETAIL, never the marker, and borrows no neighbour text', async () => {
+    // Rewritten 2026-08-28 with the defect it used to pin in place. The store's text began with
+    // `daily call ceiling reached`, and `ProviderCallCeilingExceededError` prefixes that same
+    // phrase — so the message an operator actually read said it twice. The marker belongs to the
+    // class, the detail to this store; this case now pins that split rather than the duplication.
+    const result = await store.checkAndReserve('blockscout', BUCKET, 0, Infinity, undefined, {
+      ceiling: 0,
+    });
+    expect(result.ok).toBe(false);
+    const reason = (result as { ok: false; reason: string }).reason;
+    expect(reason.startsWith(DAILY_CALL_EXHAUSTED_DETAIL)).toBe(true);
+    expect(reason, 'the marker is the class\u2019s to add, not this store\u2019s').not.toContain(
+      'daily call ceiling reached',
+    );
+    expect(reason).not.toContain('velocity limit');
+    expect(reason).not.toContain('call rate limit');
+    expect(reason).not.toContain('budget exceeded');
+  });
+
+  it('TC-UNIT-08: an unresolvable ceiling (NaN) fails closed and leaves the counter untouched', async () => {
+    const before = await store.getDailyCalls('blockscout', BUCKET);
+    const result = await store.checkAndReserve('blockscout', BUCKET, 0, Infinity, undefined, {
+      ceiling: Number.NaN,
+    });
+    expect(result.ok).toBe(false);
+    expect(await store.getDailyCalls('blockscout', BUCKET)).toBe(before);
+  });
+
+  it('TC-UNIT-09: an absent dailyCalls parameter leaves calls unbounded (pre-015-14 behaviour preserved)', async () => {
+    for (let i = 0; i < 50; i++) {
+      expect(await store.checkAndReserve('blockscout', BUCKET, 0, Infinity)).toEqual({
+        ok: true,
+      });
+    }
+  });
+
+  describe('TC-UNIT-10 (AC-20): one code gate serves both nansen and blockscout', () => {
+    it('each provider refuses independently, at its OWN declared ceiling', async () => {
+      const blockscoutCeiling = { ceiling: 2 };
+      const nansenCeiling = { ceiling: 4 };
+      for (let i = 0; i < 2; i++) {
+        expect(
+          await store.checkAndReserve(
+            'blockscout',
+            BUCKET,
+            0,
+            Infinity,
+            undefined,
+            blockscoutCeiling,
+          ),
+        ).toEqual({ ok: true });
+      }
+      expect(
+        (
+          await store.checkAndReserve(
+            'blockscout',
+            BUCKET,
+            0,
+            Infinity,
+            undefined,
+            blockscoutCeiling,
+          )
+        ).ok,
+      ).toBe(false);
+
+      for (let i = 0; i < 4; i++) {
+        expect(
+          await store.checkAndReserve('nansen', BUCKET, 0, Infinity, undefined, nansenCeiling),
+        ).toEqual({ ok: true });
+      }
+      expect(
+        (await store.checkAndReserve('nansen', BUCKET, 0, Infinity, undefined, nansenCeiling)).ok,
+      ).toBe(false);
+    });
+
+    it("checkAndReserve's own body names no specific provider (static check)", () => {
+      const source = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '../src/cache/budget-store.ts'),
+        'utf8',
+      );
+      const start = source.indexOf('async checkAndReserve(');
+      const end = source.indexOf('\n  async recordDelta(');
+      expect(start).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(start);
+      const body = source.slice(start, end);
+      expect(body).not.toMatch(/'blockscout'|"blockscout"|'nansen'|"nansen"/);
+    });
+  });
+
+  it('TC-UNIT-11: the daily boundary and the minute window act independently', async () => {
+    const dailyCalls = { ceiling: 1 };
+    await store.checkAndReserve('blockscout', BUCKET, 0, Infinity, undefined, dailyCalls);
+    // A fresh, nowhere-near-saturated minute window — if the daily and minute gates were
+    // conflated, this call would pass.
+    const freshWindow = NOW + 1;
+    const result = await store.checkAndReserve(
+      'blockscout',
+      BUCKET,
+      0,
+      Infinity,
+      { windowStartMs: freshWindow, ceiling: 1000, maxCalls: 1000 },
+      dailyCalls,
+    );
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; reason: string }).reason).toContain(DAILY_CALL_EXHAUSTED_DETAIL);
   });
 });
 

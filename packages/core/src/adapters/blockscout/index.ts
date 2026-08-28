@@ -15,6 +15,7 @@ import { TokenHoldersSchema, type TokenHolders } from '../../types/token-holders
 import { MAX_VENDOR_NAME_LENGTH, truncateVendorText } from '../truncate-vendor-text.js';
 import type { ProviderAdapter } from '../types.js';
 import { BLOCKSCOUT_CHAIN_IDS } from './chains.js';
+import { type CallGate } from './call-gate.js';
 import {
   asPlain,
   extractTags,
@@ -250,6 +251,22 @@ export interface BlockscoutAdapterDeps {
    * the part a refactor deletes without any test noticing.
    */
   throttle?: Throttle;
+  /**
+   * The daily call gate (task 015-13/015-14/015-15, ADR-003 D6, R-9/R-11,
+   * `system-architecture.md` §3.5.4) — built OUTSIDE this module and handed the finished object,
+   * never the `BudgetStore` it closes over. `runtime.ts` is the one production call site:
+   * `createCallGate({ provider: 'blockscout', budgetStore })`, the SAME `budgetStore` instance
+   * `nansen`'s own gate already receives. `packages/core` never reads `process.env` (R-13.3a) and
+   * the ceiling lookup already happened once, at the gate's own construction — this module only
+   * calls what it is given.
+   *
+   * Optional, like `throttle` above. Every fixture test in this package that does not exercise the
+   * gate omits it, and the call site inside `request()` below simply skips the check — exactly
+   * today's behaviour for every route, before this task existed. A gate omitted in PRODUCTION is
+   * not a state `runtime.ts` leaves reachable: it constructs one unconditionally (MINOR-8, round 2
+   * plan review).
+   */
+  callGate?: CallGate;
 }
 
 interface HoldersFetchResult {
@@ -352,6 +369,10 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
   const env = deps.env ?? process.env;
   const chains = deps.chains ?? loadChainRegistry();
   const throttle = deps.throttle ?? productionThrottle;
+  // Task 015-15: no fallback. `undefined` is a real, load-bearing state — see this field's own
+  // docstring on `BlockscoutAdapterDeps` for who is expected to leave it that way (every unit test
+  // that does not exercise the gate) and who is not (production, via `runtime.ts`).
+  const callGate = deps.callGate;
 
   // M-8: the disabled-by-config shape. Every entry point declines with the same reason, so the
   // registry records it in `tried[]` and walks on, `onchain_list_chains` stops advertising the two
@@ -418,10 +439,22 @@ export function createBlockscoutAdapter(deps: BlockscoutAdapterDeps = {}): Provi
     const authHeaders: Record<string, string> =
       apiKey !== undefined && apiKey.length > 0 ? { [PRO_KEY_HEADER]: apiKey } : {};
 
-    // The limiter gets it FIRST, and that ordering is the point: `entity.labels` costs three tokens
-    // against a `{capacity: 5, refillPerSec: 2}` bucket, so a burst puts this call seconds behind a
-    // deficit it can measure against the deadline before anything is sent. Refusing a wait we know
-    // is longer than the time left is free; discovering it afterwards costs the whole wait.
+    // Task 015-15: the DAILY gate goes first, the per-second limiter second — two independent
+    // guards on one network attempt (AC-42), either of which may refuse. Gate first because its
+    // refusal never waits: `throttle()` below can sleep up to `MAX_WAIT_MS = 30_000` before it
+    // gives up, and sleeping before a refusal the day's ceiling was always going to produce is
+    // deadline budget spent for nothing. `callGate` is `undefined` in every fixture test that does
+    // not exercise it (see `BlockscoutAdapterDeps.callGate`'s own docstring) — production never
+    // reaches this branch with it unset.
+    if (callGate) {
+      await callGate.ensureCallBudget(now);
+    }
+
+    // The limiter gets it SECOND, and that ordering (relative to the network attempt below) is the
+    // point: `entity.labels` costs three tokens against a `{capacity: 5, refillPerSec: 2}` bucket,
+    // so a burst puts this call seconds behind a deficit it can measure against the deadline before
+    // anything is sent. Refusing a wait we know is longer than the time left is free; discovering
+    // it afterwards costs the whole wait.
     await throttle('blockscout', rateLimit, weight, deadlineAtMs);
 
     // M-7 (adversarial cycle 1). `safeFetch` interpolates the FULL URL into three of its own

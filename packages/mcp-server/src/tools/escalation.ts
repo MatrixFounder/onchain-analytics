@@ -6,10 +6,19 @@ import { isPaidProvider } from './budget-meta.js';
  *
  * **The condition, decided 2026-08-20 (`OQ-014-28-A`).** A free source was ENTERED on a walk and a
  * paid one was entered after it. That is `data-model.md` §4.5.7's reading; the alternative in R-28.1
- * — "the free source was EXHAUSTED" — was rejected because we cannot observe it: `blockscout`'s PRO
- * key meters credits at the VENDOR, this engine keeps no counter for it, and `ADR-003` assigns that
- * counter to T-015. Under the rejected reading the mechanism would ship and never fire once, which
- * is a green criterion over a dead feature.
+ * — "the free source was EXHAUSTED" — was rejected because AT THE TIME this engine kept no counter
+ * for it: `blockscout`'s PRO key meters credits at the VENDOR, and `ADR-003` assigned the counter
+ * that reading needed to T-015. Under the rejected reading the mechanism would have shipped and
+ * never fired once, which is a green criterion over a dead feature.
+ *
+ * **T-015 (tasks 015-12..015-15) has since built that counter** — `usage.calls_made`, behind the
+ * daily call-ceiling gate at `adapters/blockscout/call-gate.ts` — and this function still does not
+ * read it. Not an oversight, and not the rejected reading revived: that counter measures admitted
+ * CALLS against OUR OWN declared ceiling — an estimate of the vendor's undisclosed budget — never
+ * the vendor-metered CREDITS R-28.1 actually asked about, and the tier-based condition below already
+ * classifies the one route (`gas.price`) an exhaustion-based signal would get wrong (see "Why the
+ * classification is `tier`" below). A counter existing is not by itself a reason to key a settled
+ * decision on it.
  *
  * **"Entered and then a paid one was entered" already implies the free one did not satisfy.** A walk
  * stops at the source that answers, so a free adapter that satisfied is never followed by a paid

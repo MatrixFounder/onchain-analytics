@@ -174,6 +174,8 @@ schema declares **twelve** keys today (`packages/mcp-server/src/env.ts:46-96`, m
 
 **Re-measured 2026-08-24, at T-014 acceptance: `EnvSchema` declares 23 keys.** The line above is kept as the record of the tree it described — task 014-40 added the ten T-014 keys, and R-23.6 asks for the current number BESIDE the historical one rather than for the past to be rewritten. The word "today" in the sentence above now means 2026-08-13.
 
+**Re-measured 2026-08-28, at T-015 stage 4: `EnvSchema` declares 24 keys.** Task 015-16 added `BLOCKSCOUT_DAILY_CALL_CAP`, the one key of that stage. Counted by importing `EnvSchema.shape`, not by reading the table — the table is what the count checks, so counting it against itself would prove nothing. The 2026-08-24 line above stands as the record of its own tree, by the same R-23.6 rule.
+
 `BLOCKSCOUT_PRO_API_KEY` was missing from this table until 2026-08-12. The schema has declared it
 since TASK-008 (`packages/mcp-server/src/env.ts:64`), and `.env.example` documents it.
 

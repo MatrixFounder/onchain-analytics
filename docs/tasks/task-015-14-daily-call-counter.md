@@ -46,6 +46,18 @@
 - `recordDelta` (`:440-447`) присваивает `calls_made` самой себе
 - `getDailyCalls` читает колонку тем же способом, что `getWindowCalls` (`:485-489`)
 
+**Файл `packages/core/src/adapters/blockscout/call-gate.ts`** (добавлено при исполнении
+2026-08-28):
+
+- Тело `ensureCallBudget` перестаёт быть стабом задачи 015-13 и вызывает
+  `checkAndReserve(provider, dayBucketMs(now()), 0, Infinity, undefined, { ceiling })`, бросая
+  `ProviderCallCeilingExceededError` на отказе
+- Владелец назван здесь, потому что 015-15 от него отказывается прямо: «чтение и увеличение
+  `usage.calls_made` в одной транзакции принадлежит задаче 015-14; здесь гейт только включается в
+  адаптер». Первая редакция файла задачи не называла владельца ни одной из двух сторон
+- Случаи `TC-UNIT-02` и `TC-UNIT-05` в `packages/core/test/call-gate-contract.test.ts` обновляет эта
+  же задача: стаб 015-13 несёт в комментарии указание, что они обязаны отказать при замене тела
+
 **Файл `packages/core/test/budget-store.test.ts`:**
 
 - Кейсы суточного гейта, монотонности и равенства осей
@@ -62,7 +74,7 @@ if (dailyCalls !== undefined) {
     return { ok: false, reason: `daily call check failed closed for provider=${provider}: …` };
   }
   if (Number.isNaN(dailyCalls.ceiling) || usedCalls + 1 > dailyCalls.ceiling) {
-    return { ok: false, reason: `daily call ceiling reached for provider=${provider}: …` };
+    return { ok: false, reason: `${DAILY_CALL_EXHAUSTED_DETAIL}${provider}: …` };
   }
 }
 ```
@@ -76,7 +88,7 @@ if (dailyCalls !== undefined) {
 ### Оператор оси Postgres
 
 Вторая граница входит в тот же условный `INSERT … ON CONFLICT DO UPDATE`, повторяясь в обеих
-ветвях — как это уже сделано для минутного окна (`packages/core/src/pg/budget-store.ts:298-309`).
+ветвях — как это уже сделано для минутного окна (`packages/core/src/pg/budget-store.ts:330-340`).
 
 ```sql
 -- PLANNED — packages/core/src/pg/budget-store.ts, суточный оператор
@@ -106,18 +118,36 @@ RETURNING credits_used, calls_made;
 
 ### Текст отказа
 
-`daily call ceiling reached for provider=<id>: <N> of <M> calls already made today (day starts <ts>)`
+`daily calls spent for provider=<id>: <N> of <M> calls already made today (day starts <ts>)`
 
-| Отказ                   | Начало текста                | Источник                    |
-| :---------------------- | :--------------------------- | :-------------------------- |
-| суточный по кредитам    | `budget exceeded`            | `cache/budget-store.ts:346` |
-| минутный по кредитам    | `velocity limit reached`     | `cache/budget-store.ts:377` |
-| минутный по вызовам     | `call rate limit reached`    | `cache/budget-store.ts:395` |
-| **суточный по вызовам** | `daily call ceiling reached` | вводится этой задачей       |
+| Отказ                   | Начало текста                     | Источник                      |
+| :---------------------- | :-------------------------------- | :---------------------------- |
+| суточный по кредитам    | `budget exceeded`                 | `cache/budget-store.ts`       |
+| минутный по кредитам    | `velocity limit reached`          | `cache/budget-store.ts`       |
+| минутный по вызовам     | `call rate limit reached`         | `cache/budget-store.ts`       |
+| **суточный по вызовам** | `daily calls spent for provider=` | `DAILY_CALL_EXHAUSTED_DETAIL` |
 
 **Why текст не пересекается с соседями.** AC-25 проверяет класс отказа по значению, а не по факту
-падения любого исключения. Задача 015-15 строит `ProviderCallCeilingExceededError` над этим
-текстом.
+падения любого исключения.
+
+**Маркер принадлежит классу, деталь — хранилищу (исправлено при исполнении 2026-08-28).** Первая
+редакция этого раздела предписывала хранилищу начинать текст словами `daily call ceiling reached`,
+а `ProviderCallCeilingExceededError` по объявлению §3.5.4 строит `daily call ceiling reached:
+${reason}` поверх него. Измерено зондом на собранном гейте: оператор читал
+`daily call ceiling reached: daily call ceiling reached for provider=blockscout: 625 of 625 …`.
+Отсюда две стороны: хранилище отдаёт деталь без маркера через экспортируемую константу
+`DAILY_CALL_EXHAUSTED_DETAIL`, обе оси читают одну эту константу, класс добавляет маркер один раз.
+Метод 015-01, задачи 015-29 и 015-30 продолжают опираться на `daily call ceiling reached:` — они
+читают текст КЛАССА, и правка их не затрагивает.
+
+**Отказ, не решивший вопрос о потолке, не выдаёт себя за исчерпание.** Тем же измерением: обе ветви
+fail-closed этого же `checkAndReserve` — нечитаемое значение `credits_used` или `calls_made`,
+записанное посторонним процессом, ради чего ветви и заведены, — выходили наружу как
+`daily call ceiling reached: budget check failed closed …`. `ensureCallBudget` теперь ветвится по
+`DAILY_CALL_EXHAUSTED_DETAIL`: исчерпание даёт `ProviderCallCeilingExceededError`, всякий иной отказ
+— `ProviderCallGateUnavailableError` с текстом `daily call gate unavailable: …`, не содержащим
+маркера. Без этого десятый класс отказа задачи 015-15, чей признак `/daily call ceiling reached: /i`,
+маршрутизировал бы испорченный леджер как исчерпанный потолок.
 
 ### `recordDelta` колонку не трогает
 
@@ -125,7 +155,7 @@ RETURNING credits_used, calls_made;
 
 **Why присваивание самой себе выписано, а не опущено.** «Этот оператор не трогает счётчик вызовов»
 становится свойством текста, которое читатель или статический гейт проверяет, вместо отсутствия,
-которое надо заметить (`packages/core/src/pg/budget-store.ts:406-411`).
+которое надо заметить (`packages/core/src/pg/budget-store.ts:471-476`).
 
 **Why счётчик не возвращается.** Вендорский обход состоялся. Возврат вызова дал бы череде
 дешёвых-и-возвращённых вызовов пройти мимо предела, который для них и заведён
@@ -226,7 +256,7 @@ RETURNING credits_used, calls_made;
 
 Минутный счётчик `usage_window.calls_made` остаётся образцом паттерна, а не механизмом суточного
 потолка: строки старше часа выпалываются (`WINDOW_RETENTION_MS`,
-`packages/core/src/cache/budget-store.ts:119`), поэтому суточную сумму из него не восстановить
+`packages/core/src/cache/budget-store.ts:144`), поэтому суточную сумму из него не восстановить
 (R-9.1).
 
 Критерий AC-19 цитируется и сценарием UC-4. Маршрутная половина UC-4 — типизированный отказ на

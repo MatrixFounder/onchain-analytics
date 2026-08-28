@@ -221,6 +221,15 @@ export {
   createBlockscoutAdapter,
   servesChain as blockscoutServesChain,
 } from './adapters/blockscout/index.js';
+// Task 015-13/015-14 (ADR-003 D6, R-9/R-11) — the daily call-ceiling gate's constructor form,
+// `ensureCallBudget` now wired to `usage.calls_made` (task 015-14). Exported through this barrel
+// (not a deep import) so task 015-15's `runtime.ts` wiring — the gate's own notes name that as the
+// one call site — can reach it the same way every other adapter factory above does.
+export {
+  createCallGate,
+  ProviderCallCeilingExceededError,
+  ProviderCallGateUnavailableError,
+} from './adapters/blockscout/call-gate.js';
 // TASK-009 (R-81): free BTC supply. `bitcoinEmissionSat` / `bitcoinSubsidyAtHeightSat` are exported
 // beside it because the live eval needs the SAME consensus arithmetic to grade the answer against an
 // independent source — a second copy of the halving schedule in `eval/checks.mjs` would be two

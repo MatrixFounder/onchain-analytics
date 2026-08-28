@@ -5,7 +5,11 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CacheStore } from '../src/adapters/cache-store.js';
-import { SqliteBudgetStore, type BudgetStore } from '../src/cache/budget-store.js';
+import {
+  DAILY_CALL_EXHAUSTED_DETAIL,
+  SqliteBudgetStore,
+  type BudgetStore,
+} from '../src/cache/budget-store.js';
 import { CACHE_DDL } from '../src/cache/ddl.js';
 import { SqliteCacheStore } from '../src/cache/sqlite-store.js';
 import { adapterRegistrations } from '../src/providers.config.js';
@@ -193,6 +197,7 @@ interface TranscriptEntry {
   usage: number;
   windowUsage: number;
   windowCalls: number;
+  dailyCalls: number;
 }
 
 /**
@@ -209,6 +214,7 @@ async function transcript(store: BudgetStore): Promise<TranscriptEntry[]> {
       usage: await store.getUsage(PROVIDER, DAY),
       windowUsage: await store.getWindowUsage(PROVIDER, WINDOW),
       windowCalls: await store.getWindowCalls(PROVIDER, WINDOW),
+      dailyCalls: await store.getDailyCalls(PROVIDER, DAY),
     });
   };
 
@@ -252,12 +258,30 @@ async function transcript(store: BudgetStore): Promise<TranscriptEntry[]> {
   await record('reconcile -3 into the window', 'recordDelta');
   await store.recordDelta(PROVIDER, DAY, -500, WINDOW);
   await record('refund more than was ever spent', 'recordDelta');
+  // Task 015-14 — the DAILY call gate, a THIRD denominator on the SAME `(PROVIDER, DAY)` row the
+  // credit reservations above already share. `cost: 0, ceiling: 100` throughout: the credit check
+  // always passes, so a refusal here can only be the daily-call one.
+  await record(
+    'reserve a zero-cost call under a daily-call ceiling of 7',
+    await store.checkAndReserve(PROVIDER, DAY, 0, 100, undefined, { ceiling: 7 }),
+  );
+  await record(
+    'reserve a second zero-cost call, still within the daily-call ceiling',
+    await store.checkAndReserve(PROVIDER, DAY, 0, 100, undefined, { ceiling: 7 }),
+  );
+  await record(
+    'a third zero-cost call breaches the daily-call ceiling',
+    await store.checkAndReserve(PROVIDER, DAY, 0, 100, undefined, { ceiling: 7 }),
+  );
+  await store.recordDelta(PROVIDER, DAY, -1000);
+  await record('reconcile credits — the daily call counter must not move', 'recordDelta');
   entries.push({
     step: 'a provider with no rows at all',
     outcome: 'reads only',
     usage: await store.getUsage(QUIET_PROVIDER, DAY),
     windowUsage: await store.getWindowUsage(QUIET_PROVIDER, WINDOW),
     windowCalls: await store.getWindowCalls(QUIET_PROVIDER, WINDOW),
+    dailyCalls: await store.getDailyCalls(QUIET_PROVIDER, DAY),
   });
   return entries;
 }
@@ -336,17 +360,48 @@ describe('BudgetStore parity — the same inputs on both storage axes', () => {
       windowCalls: 2,
     });
     // TC-UNIT-09: a refund larger than the balance clamps at zero and never goes negative — the
-    // `GREATEST(0, …)` obligation of §4.2.4. `calls_made` still does not move.
+    // `GREATEST(0, …)` obligation of §4.2.4. `calls_made` still does not move. Five reservations
+    // succeeded before this point (the two 30s, the ceiling-off 1, the window 5, and the window
+    // zero-cost second call) — `dailyCalls` counts admitted calls REGARDLESS of whether a
+    // `dailyCalls` bound was ever supplied, the same way `credits_used` counts spend regardless of
+    // enforcement (task 015-14).
     expect(byStep.get('refund more than was ever spent')).toMatchObject({
       usage: 0,
       windowUsage: 0,
       windowCalls: 2,
+      dailyCalls: 5,
+    });
+    // Task 015-14 — the daily-call gate, exercised on the SAME row. Ceiling 7, five calls already
+    // counted above: the sixth and seventh are admitted, the eighth is refused BY THE CALL bound
+    // (never the credit one, cost is 0 throughout) with a text naming the daily boundary.
+    expect(byStep.get('reserve a zero-cost call under a daily-call ceiling of 7')).toMatchObject({
+      outcome: { ok: true },
+      dailyCalls: 6,
+    });
+    expect(
+      byStep.get('reserve a second zero-cost call, still within the daily-call ceiling'),
+    ).toMatchObject({
+      outcome: { ok: true },
+      dailyCalls: 7,
+    });
+    expect(byStep.get('a third zero-cost call breaches the daily-call ceiling')).toMatchObject({
+      outcome: {
+        ok: false,
+        reason: `${DAILY_CALL_EXHAUSTED_DETAIL}nansen: 7 of 7 calls already made today (day starts ${DAY})`,
+      },
+      dailyCalls: 7,
+    });
+    // A credit reconciliation must not move the call counter (MINOR-5, mirrors TC-UNIT-08 above).
+    expect(byStep.get('reconcile credits — the daily call counter must not move')).toMatchObject({
+      usage: 0,
+      dailyCalls: 7,
     });
     // TC-UNIT-11.
     expect(byStep.get('a provider with no rows at all')).toMatchObject({
       usage: 0,
       windowUsage: 0,
       windowCalls: 0,
+      dailyCalls: 0,
     });
   });
 
@@ -665,8 +720,11 @@ describe('the two branches a paraphrase would drop, proven load-bearing on the s
     return found;
   };
 
+  // `$6` — the daily-call-ceiling param this task adds — is bound `null` (unbounded) throughout
+  // this describe block: these cases exercise the CREDIT bound's `$5` branch specifically, and an
+  // unbounded `$6` keeps the call dimension out of their way (`$6 IS NULL` always satisfied).
   it('TC-E2E-04: with the `$5 IS NULL` branch, an unlimited ceiling reserves', () => {
-    const rows = harness.run(dailyReservation(), [PROVIDER, DAY, 7, 1, null]).rows;
+    const rows = harness.run(dailyReservation(), [PROVIDER, DAY, 7, 1, null, null]).rows;
     expect(rows).toHaveLength(1);
   });
 
@@ -674,18 +732,31 @@ describe('the two branches a paraphrase would drop, proven load-bearing on the s
     // `… <= NULL` is NULL, not false — the statement returns zero rows and the store reads that as
     // a refusal. This is the paraphrase `system-architecture.md` §3.4.8 warns about, executed.
     const mutant = dailyReservation().replace(/\$5 IS NULL OR /g, '');
-    expect(harness.run(mutant, [PROVIDER, DAY, 7, 1, null]).rows).toHaveLength(0);
+    expect(harness.run(mutant, [PROVIDER, DAY, 7, 1, null, null]).rows).toHaveLength(0);
     expect(harness.rows('usage')).toHaveLength(0);
   });
 
   it('the repeated WHERE on the insert branch is what bounds the FIRST call of a day', () => {
     // With the guard present, a cost larger than the whole ceiling is refused on a fresh row.
-    expect(harness.run(dailyReservation(), [PROVIDER, DAY, 500, 1, 100]).rows).toHaveLength(0);
+    expect(harness.run(dailyReservation(), [PROVIDER, DAY, 500, 1, 100, null]).rows).toHaveLength(
+      0,
+    );
     // Mutant: drop the source's own WHERE and the conflict branch's guard no longer covers the
     // fresh-row path, so the first call of a day reserves more than the ceiling allows.
     const mutant = dailyReservation().replace(/WHERE \(\$5 IS NULL OR \$3 <= \$5\)/, '');
-    expect(harness.run(mutant, [PROVIDER, DAY, 500, 1, 100]).rows).toHaveLength(1);
+    expect(harness.run(mutant, [PROVIDER, DAY, 500, 1, 100, null]).rows).toHaveLength(1);
     expect(harness.rows('usage')).toHaveLength(1);
+  });
+
+  // Task 015-14 — the SIXTH param, on the SAME statement: `$6` bounds `calls_made + 1`, and a
+  // reservation that fits the credits `$5` bound but not `$6` is refused too.
+  it('the SIXTH param bounds calls_made the same way the fifth bounds credits_used', () => {
+    // Credits unbounded ($5 null), calls capped at 1 ($6): the FIRST call reserves...
+    expect(harness.run(dailyReservation(), [PROVIDER, DAY, 1, 1, null, 1]).rows).toHaveLength(1);
+    // ...and the SECOND, on the same (provider, day) row, is refused by `$6` alone.
+    expect(harness.run(dailyReservation(), [PROVIDER, DAY, 1, 2, null, 1]).rows).toHaveLength(0);
+    const row = harness.rows('usage')[0] as { calls_made: number };
+    expect(row.calls_made).toBe(1);
   });
 
   it('calls_made is monotonic BECAUSE the reconciliation statement says so', async () => {
@@ -715,6 +786,35 @@ describe('the two branches a paraphrase would drop, proven load-bearing on the s
     expect(mutant).not.toBe(reconciliation);
     harness.run(mutant, [PROVIDER, WINDOW, -10, Date.now()]);
     const row = harness.rows('usage_window')[0] as { calls_made: number };
+    expect(row.calls_made).toBe(0);
+  });
+
+  // Task 015-14 — the SAME obligation, one bucket width up: `onchain.usage.calls_made` (the DAILY
+  // counter) is monotonic BECAUSE `recordDelta`'s reconciliation statement says so, not by accident
+  // of the numbers this particular test happens to pick.
+  it('daily calls_made is monotonic BECAUSE the reconciliation statement says so', async () => {
+    const store = new PgBudgetStore({ client: harness.client(), providers: [] });
+    await store.checkAndReserve(PROVIDER, DAY, 10, 100, undefined, { ceiling: 5 });
+    expect(await store.getDailyCalls(PROVIDER, DAY)).toBe(1);
+
+    await store.recordDelta(PROVIDER, DAY, -10);
+    expect(await store.getDailyCalls(PROVIDER, DAY)).toBe(1);
+    expect(await store.getUsage(PROVIDER, DAY)).toBe(0);
+
+    // Mutant: the same statement with the call count moved by the credit delta — the shape a
+    // "symmetric" refactor would produce. It drops the count to zero, which is the path a run of
+    // cheap-then-refunded calls would walk past the limit through.
+    const reconciliation = sqlLiterals('budget-store.ts').find(
+      (sql) => /INSERT INTO onchain\.usage\s*\([\s\S]*VALUES/i.test(sql) && !/window/i.test(sql),
+    );
+    expect(reconciliation).toBeDefined();
+    const mutant = (reconciliation ?? '').replace(
+      /calls_made\s+= onchain\.usage\.calls_made,/,
+      'calls_made   = GREATEST(0, onchain.usage.calls_made + $3),',
+    );
+    expect(mutant).not.toBe(reconciliation);
+    harness.run(mutant, [PROVIDER, DAY, -10, Date.now()]);
+    const row = harness.rows('usage')[0] as { calls_made: number };
     expect(row.calls_made).toBe(0);
   });
 });

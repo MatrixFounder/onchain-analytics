@@ -39,6 +39,10 @@ const PROBE: AdapterRegistration = {
   requiresEnv: [],
   tier: 'free',
   trust: 'authoritative',
+  // task 015-12 — PROBE is `tier: 'free'` and the startup gate now requires every such
+  // registration to declare a ceiling; 100 is an arbitrary valid value, deliberately distinct
+  // from the real `blockscout` figure (625) so a test that leaks the wrong number is visible.
+  dailyCallCeiling: 100,
 };
 
 describe('TC-UNIT-01/02 — `tier` and `trust` are REQUIRED fields of AdapterRegistration', () => {
@@ -576,5 +580,175 @@ describe('TC-UNIT-06 — no source file derives paidness from costOf() (R-150(c)
       const tier = costOf(cap, args) > 0 ? 'paid' : 'free';
     `;
     expect(paidnessDerivedFromCostOf(urlThenDerivation)).not.toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Task 015-12 — `dailyCallCeiling`: declared form on `AdapterRegistration`, ten `tier: 'free'`
+// registrations carrying a value and a reason, and the startup gate that makes an undeclared or
+// out-of-range value a process-start failure rather than a silent unlimited grant (ADR-003 D6,
+// R-9/R-11, AC-33).
+//
+// **Naming note.** The task file numbers its eight test cases TC-UNIT-01..08 — the SAME id space
+// this file already occupies, for the unrelated task 012-2/012-3 `describe` blocks above (which
+// run from TC-UNIT-01 through TC-UNIT-06). Reusing those ids here would collide rather than
+// extend them, so the cases below are named TC-DCC-01..08 (dailyCallCeiling), one-to-one with the
+// task's own numbering — each `it` names its counterpart in a comment.
+// ---------------------------------------------------------------------------------------------
+describe('TC-DCC — task 015-12: `dailyCallCeiling` declared form + startup gate', () => {
+  const FREE_IDS = [
+    'blockscout',
+    'coingecko',
+    'dexscreener',
+    'defillama',
+    'rpc-evm',
+    'rpc-solana',
+    'dash-platform',
+    'platform-explorer',
+    'pg-history',
+    'blockchain-info',
+  ];
+
+  it('TC-DCC-01 (task TC-UNIT-01): ten free registrations carry dailyCallCeiling, two paid do not', () => {
+    const free = adapterRegistrations.filter((r) => r.tier === 'free');
+    const paid = adapterRegistrations.filter((r) => r.tier === 'paid');
+
+    expect(free.map((r) => r.id).sort()).toEqual([...FREE_IDS].sort());
+    for (const r of free) {
+      expect(r.dailyCallCeiling, `${r.id} (tier:'free') must declare dailyCallCeiling`).not.toBe(
+        undefined,
+      );
+    }
+
+    expect(paid.map((r) => r.id).sort()).toEqual(['dune', 'nansen']);
+    for (const r of paid) {
+      expect(r.dailyCallCeiling, `${r.id} (tier:'paid') must NOT declare dailyCallCeiling`).toBe(
+        undefined,
+      );
+    }
+  });
+
+  it('TC-DCC-02 (task TC-UNIT-02): values pinned BY NAME, not by count', () => {
+    // Same discipline as the OD-5 assignment table above (TC-UNIT-05): every id listed
+    // explicitly, so a permutation or a silently-dropped entry fails here rather than passing on
+    // a coincidental count.
+    const EXPECTED_DAILY_CALL_CEILING: Readonly<Record<string, number | 'none'>> = {
+      blockscout: 625,
+      coingecko: 'none',
+      dexscreener: 'none',
+      defillama: 'none',
+      'rpc-evm': 'none',
+      'rpc-solana': 'none',
+      'dash-platform': 'none',
+      'platform-explorer': 'none',
+      'pg-history': 'none',
+      'blockchain-info': 'none',
+    };
+    const actual = Object.fromEntries(
+      adapterRegistrations.filter((r) => r.tier === 'free').map((r) => [r.id, r.dailyCallCeiling]),
+    );
+    expect(actual).toEqual(EXPECTED_DAILY_CALL_CEILING);
+  });
+
+  it("TC-DCC-03 (task TC-UNIT-03): a tier:'free' registration with no dailyCallCeiling fails startup, naming the provider", () => {
+    const broken: AdapterRegistration = { ...PROBE, id: 'probe-no-ceiling', tier: 'free' };
+    // PROBE itself now carries a valid `dailyCallCeiling` (needed to keep it a minimal VALID
+    // registration for every other test in this file) — deleted here at runtime, the same move
+    // TC-UNIT-03 above makes for `trust`, so this case actually exercises the ABSENT-field path.
+    delete (broken as Partial<AdapterRegistration>).dailyCallCeiling;
+    let thrown: unknown;
+    try {
+      assertValidAdapterRegistrations([broken]);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    expect(message).toContain('probe-no-ceiling');
+    expect(message).toContain('dailyCallCeiling');
+  });
+
+  it('TC-DCC-04 (task TC-UNIT-04): zero, negative and fractional ceilings are all rejected, naming provider and value', () => {
+    const cases: Array<{ id: string; value: number }> = [
+      { id: 'probe-zero-ceiling', value: 0 },
+      { id: 'probe-negative-ceiling', value: -1 },
+      { id: 'probe-fractional-ceiling', value: 1.5 },
+    ];
+    for (const { id, value } of cases) {
+      const broken: AdapterRegistration = { ...PROBE, id, tier: 'free', dailyCallCeiling: value };
+      let thrown: unknown;
+      try {
+        assertValidAdapterRegistrations([broken]);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, `${id} (dailyCallCeiling=${value}) must throw`).toBeInstanceOf(Error);
+      const message = (thrown as Error).message;
+      expect(message, `${id}: must name the provider`).toContain(id);
+      expect(message, `${id}: must name the presented value`).toContain(String(value));
+    }
+  });
+
+  it("TC-DCC-05 (task TC-UNIT-05): the literal 'none' is NOT rejected by the range check", () => {
+    const ok: AdapterRegistration = {
+      ...PROBE,
+      id: 'probe-none-ceiling',
+      tier: 'free',
+      dailyCallCeiling: 'none',
+    };
+    expect(() => assertValidAdapterRegistrations([ok])).not.toThrow();
+  });
+
+  it('TC-DCC-06 (task TC-UNIT-06): the real adapterRegistrations passes the startup gate', () => {
+    // Same contract the pre-existing "does NOT throw on the real adapterRegistrations" test above
+    // already exercises (TC-UNIT-03/04 describe block) — restated here because the task lists it
+    // as its own acceptance case for this field specifically.
+    expect(() => assertValidAdapterRegistrations(adapterRegistrations)).not.toThrow();
+  });
+
+  it('TC-DCC-07 (task TC-UNIT-07, updated by task 015-13): dailyCallCeiling is read only in its declaration, its ten literals and its first reader', () => {
+    const IDENTIFIER = /\bdailyCallCeiling\b/g;
+    const files = everyPackageSrcFile();
+    expect(files.length).toBeGreaterThan(50); // sign of work — the walk found something
+
+    const matchesByFile = new Map<string, number>();
+    for (const file of files) {
+      const count = (readFileSync(file, 'utf8').match(IDENTIFIER) ?? []).length;
+      if (count > 0) matchesByFile.set(path.relative(repoRoot, file), count);
+    }
+
+    const typesFile = path.join('packages', 'core', 'src', 'adapters', 'types.ts');
+    const configFile = path.join('packages', 'core', 'src', 'providers.config.ts');
+    // Task 015-13's own `call-gate.ts` — the first READER of `dailyCallCeiling` (its docstring
+    // names the field it looks up in `adapterRegistrations`), landing as the THIRD file exactly as
+    // this test's previous-pass comment predicted. Updated here rather than left to bit-rot,
+    // because 015-13 is the pairing task that comment named (task file's own "тест первого
+    // прохода" note, `docs/tasks/task-015-13-call-gate-contract-stub.md` "Регрессионные тесты").
+    const callGateFile = path.join(
+      'packages',
+      'core',
+      'src',
+      'adapters',
+      'blockscout',
+      'call-gate.ts',
+    );
+
+    // The FILE SET is the load-bearing assertion: exactly these three, no more and no fewer —
+    // task 015-14 (the counter's own read-and-increment) and task 015-15 (the wiring call site)
+    // are each expected to add readers of their own, updating this set again when they do.
+    expect([...matchesByFile.keys()].sort()).toEqual([callGateFile, configFile, typesFile].sort());
+
+    // `providers.config.ts` carries exactly ten literal `dailyCallCeiling:` assignments — one per
+    // `tier: 'free'` registration — and nothing else in that file spells the identifier out.
+    expect(matchesByFile.get(configFile)).toBe(10);
+  });
+
+  it('TC-DCC-08 (task TC-UNIT-08): blockscout refillPerSec and its "not measured" mark are untouched', () => {
+    const source = readFileSync(
+      path.join(repoRoot, 'packages', 'core', 'src', 'providers.config.ts'),
+      'utf8',
+    );
+    expect(source).toContain('refillPerSec: 2');
+    expect(source).toContain('NOT a measured ceiling');
   });
 });

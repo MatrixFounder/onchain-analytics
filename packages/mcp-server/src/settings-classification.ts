@@ -99,6 +99,9 @@ export const SETTING_CLASSES: Readonly<Record<keyof Env, SettingClass>> = Object
   COINGECKO_PRO_API_KEY: 'secret',
   DUNE_API_KEY: 'secret',
   BLOCKSCOUT_PRO_API_KEY: 'secret',
+  // Task 015-16 — every admissible value only narrows `createCallGate`'s daily ceiling for
+  // `blockscout`, never widens it past the declared estimate (`call-gate.ts`'s own `Math.min`).
+  BLOCKSCOUT_DAILY_CALL_CAP: 'narrowing',
   NANSEN_API_KEY: 'secret',
   ONCHAIN_PG_URL: 'bootstrap',
   DATA_DIR: 'bootstrap',

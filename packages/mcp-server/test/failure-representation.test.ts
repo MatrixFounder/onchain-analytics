@@ -262,6 +262,13 @@ const REAL_TEXTS: Readonly<Record<string, string>> = {
     'capability unavailable: entity.labels on bitcoin — tried: no route registered for this capability/chain',
   'deadline-expired':
     'capability deadline exceeded: token.holders on ethereum — tried: no source was attempted — the requested deadline had already passed',
+  // Task 015-15 — the daily call gate's refusal, nested inside `tried[]` exactly like
+  // `budget-exhausted` above (`registry.ts`'s `adapterId (reason)` wrap, `blockscout` being the
+  // ONLY adapter on this route, per `providers.config.ts`).
+  'call-ceiling':
+    'capability unavailable: token.holders on ethereum — tried: blockscout (daily call ceiling ' +
+    'reached: daily calls spent for provider=blockscout: 625 of 625 calls already made today ' +
+    '(day starts 1735689600000))',
 };
 
 describe('TC-UNIT-01 / AC-33: no tool-execution failure is rendered with isError: false', () => {
@@ -304,6 +311,8 @@ describe('TC-UNIT-01 / AC-33: no tool-execution failure is rendered with isError
       // L-26: the producer names the PHASE, so the pin follows it. Kept as a substring that stops
       // BEFORE the interpolation, which is what makes it a pin on the sentence rather than on a value.
       'deadline-expired': 'deadline exceeded in ${phase} (deadlineAtMs=',
+      // Task 015-15 — stops BEFORE the `${reason}` interpolation, same discipline as the row above.
+      'call-ceiling': 'daily call ceiling reached: ${reason}',
     };
     for (const declared of TOOL_FAILURE_CLASSES) {
       const source = readFileSync(path.join(repoRoot, declared.producedAt), 'utf8');
@@ -345,8 +354,10 @@ describe('TC-UNIT-02: a handler returning ok:true with a refusal inside drops th
 });
 
 describe('TC-UNIT-03: every class carries a declared level', () => {
-  it('nine classes, each with a level, and the two levels partition them', () => {
-    expect(FAILURE_CLASSES).toHaveLength(9);
+  it('ten classes, each with a level, and the two levels partition them', () => {
+    // Task 015-15 added the tenth, `call-ceiling` — see the `TC-UNIT-2X` block below for why it
+    // needed a class rather than a `toClientText` patch.
+    expect(FAILURE_CLASSES).toHaveLength(10);
     expect(PROTOCOL_FAILURE_CLASSES.length + TOOL_FAILURE_CLASSES.length).toBe(
       FAILURE_CLASSES.length,
     );
@@ -445,5 +456,36 @@ describe('TC-UNIT-22: the limiter’s SECOND refusal class also names its phase'
 
   it('and still keeps the provider name on the operator’s side', () => {
     expect(toClientText(WOULD_EXCEED, '01EV')).not.toContain('defillama');
+  });
+});
+
+/**
+ * Task 015-15 — the tenth failure class, `call-ceiling`. Without it the daily-gate refusal is
+ * indistinguishable from "capability unavailable" once it crosses `toClientText`'s traversal cut
+ * (`packages/core/src/adapters/blockscout/index.ts`'s call-gate wiring nests the refusal inside
+ * `tried[]`, exactly where `budget-exhausted` already lives — see that class's own precedent a few
+ * lines above `toClientText`'s definition).
+ */
+describe('TC-UNIT-2X (task 015-15): the call-ceiling refusal survives the traversal cut', () => {
+  it('renders text distinguishable from a plain capability-unavailable refusal', () => {
+    const ceilingText = REAL_TEXTS['call-ceiling'] ?? '';
+    const plainUnavailable = REAL_TEXTS['capability-unavailable'] ?? '';
+
+    const rendered = toClientText(ceilingText, null);
+
+    expect(rendered).not.toBe(toClientText(plainUnavailable, null));
+    expect(rendered).not.toContain('capability unavailable');
+    // The operator half stays on the operator's side (R-20) — the client text says the CEILING was
+    // reached, never which provider's.
+    expect(rendered).not.toContain('blockscout');
+  });
+
+  it('the marker reaches the client — it is not truncated away with the traversal', () => {
+    // The defect this class exists to close: BEFORE it, `toClientText` cut everything past
+    // ` — tried: `, so the client read only `capability unavailable: token.holders on ethereum`
+    // and never learned the ceiling — indistinguishable from "this chain is never served".
+    const rendered = toClientText(REAL_TEXTS['call-ceiling'] ?? '', '01TESTEVENT');
+    expect(rendered).toContain('01TESTEVENT');
+    expect(rendered).toMatch(/ceiling/i);
   });
 });
