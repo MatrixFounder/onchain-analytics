@@ -44,8 +44,8 @@ absent from it is refused in `prepare`,``; карта — `:139`…`:142`). Но
 **Файл `n8n-workflows/exported/onchain-retention.json`:**
 
 - Семь узлов Postgres ссылаются на credential по имени
-  (`n8n-workflows/exported/onchain-retention.json:108` — `"name": "Onchain engine state"`, и то же
-  на `:146`, `:170`, `:208`, `:232`, `:270`, `:308`); имя не меняется
+  (`n8n-workflows/exported/onchain-retention.json:114` — `"name": "Onchain engine state"`, и то же
+  на `:152`, `:176`, `:214`, `:238`, `:276`, `:376`); имя не меняется
 - Поле `credentials.<type>.id` в экспортируемом JSON остаётся идентификатором инстанса-источника и
   перелинковывается по имени при импорте — правке вручную не подлежит
 

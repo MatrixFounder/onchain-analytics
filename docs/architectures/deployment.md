@@ -275,7 +275,7 @@ before the first session exists, and raising either one widens what the process 
 | Setting                                                | Class     | Carrier in T-014                                                                               |
 | :----------------------------------------------------- | :-------- | :--------------------------------------------------------------------------------------------- |
 | `credits_balance`, `rate_limit`, `tool_allowlist_json` | narrowing | access-profile code defaults, read through one asynchronous interface (R-13.2, R-13.3, §4.5.3) |
-| the three retention windows below                      | narrowing | the parameter node of the `onchain-retention` workflow (§10.6.1)                               |
+| the four retention windows below                       | narrowing | the parameter node of the `onchain-retention` workflow (§10.6.1)                               |
 | route disclosure on a successful response              | narrowing | the same access-profile interface (R-13.2, R-13.3, §4.5.3)                                     |
 
 **The route-disclosure setting controls three fields of a successful response** (owner decision
@@ -301,11 +301,12 @@ of the server process. `$env` is blocked on this instance (CLAUDE.n8n.md).
 **Why a refusal and not a clamp.** A clamped window deletes rows the operator asked to keep, and
 `retention_runs` would record the clamped period as the requested one.
 
-| Window                   | Floor                            | Maximum               | Default  |
-| :----------------------- | :------------------------------- | :-------------------- | :------- |
-| `diagnostics.purge`      | 90 days — RAW tier, DB-SCHEMA §4 | the NORMALIZED window | 90 days  |
-| `request_trace.raw_null` | 90 days — RAW tier, DB-SCHEMA §4 | the NORMALIZED window | 90 days  |
-| `request_trace.purge`    | 365 days — NORMALIZED tier       | 730 days, applied     | 365 days |
+| Window                   | Floor                             | Maximum               | Default   |
+| :----------------------- | :-------------------------------- | :-------------------- | :-------- |
+| `diagnostics.purge`      | 90 days — RAW tier, DB-SCHEMA §4  | the NORMALIZED window | 90 days   |
+| `request_trace.raw_null` | 90 days — RAW tier, DB-SCHEMA §4  | the NORMALIZED window | 90 days   |
+| `request_trace.purge`    | 365 days — NORMALIZED tier        | 730 days, applied     | 365 days  |
+| `client_usage.purge`     | 1095 days — owner decision, R-7.6 | 2190 days, applied    | 1095 days |
 
 **Why the two RAW maxima are the NORMALIZED window.** `tried_json` is a column of `request_trace`,
 so its payload is deleted with its row. A diagnostics row kept longer than the trace it explains has
@@ -626,19 +627,20 @@ there (§10.5).
 **Why the table is not a duplicate of the log.** On HTTP neither the client nor its operator reads
 the process stderr, and AC-48 requires an administrator to reach the event without it.
 
-Cleanup is three named jobs, each writing one row to `onchain.retention_runs` — how many rows, for
+Cleanup is four named jobs, each writing one row to `onchain.retention_runs` — how many rows, for
 which period, and with what outcome (§4.5.9, R-32.3).
 
-| Job                      | Target                  | Action                                        |
-| :----------------------- | :---------------------- | :-------------------------------------------- |
-| `diagnostics.purge`      | `onchain.diagnostics`   | deletes rows older than the window            |
-| `request_trace.raw_null` | `onchain.request_trace` | sets `tried_json` to NULL past the RAW window |
-| `request_trace.purge`    | `onchain.request_trace` | deletes rows past the NORMALIZED window       |
+| Job                      | Target                  | Action                                              |
+| :----------------------- | :---------------------- | :-------------------------------------------------- |
+| `diagnostics.purge`      | `onchain.diagnostics`   | deletes rows older than the window                  |
+| `request_trace.raw_null` | `onchain.request_trace` | sets `tried_json` to NULL past the RAW window       |
+| `request_trace.purge`    | `onchain.request_trace` | deletes rows past the NORMALIZED window             |
+| `client_usage.purge`     | `onchain.client_usage`  | deletes rows whose `terminal_at` is past the window |
 
 A pass that deleted zero rows still writes its row, because "nothing to delete" and "the job did not
 run" are different facts (DB-SCHEMA §4).
 
-#### 10.6.1. The three jobs run as an n8n workflow (R-32.3)
+#### 10.6.1. The four jobs run as an n8n workflow (R-32.3)
 
 **`OQ-T014-DEP-2` is closed: the executor is one n8n workflow, `onchain-retention`** (owner
 decision 2026-08-13). It is scheduled beside the snapshotter, and the server process gains no
@@ -657,7 +659,7 @@ Its shape, in the conventions CLAUDE.n8n.md fixes:
 | Element         | Value                                                                   |
 | :-------------- | :---------------------------------------------------------------------- |
 | Trigger         | Schedule, daily                                                         |
-| Parameter node  | a Set node holding the three windows of §10.3.1                         |
+| Parameter node  | a Set node holding the four windows of §10.3.1                          |
 | Credential      | a Postgres credential for the state role of §10.5, not "Supabase DB"    |
 | Writers         | one Postgres node per job, each followed by its `retention_runs` insert |
 | `errorWorkflow` | `onchain-error-alert`                                                   |
@@ -693,7 +695,10 @@ moved from a namespace boundary to a per-table privilege, and §10.5.2 states wh
 
 **OQ-T014-DEP-2 — CLOSED: the three retention jobs run as the `onchain-retention` n8n workflow.**
 Recorded in §10.6.1, with installation conditional on the owner's explicit approval. R-32.3 and
-AC-48 now have a named executor.
+AC-48 now have a named executor. The count in this closure is the count at the time it was decided
+and is not rewritten: T-015 task 015-19 added a FOURTH job, `client_usage.purge`, to the same
+workflow, and §10.3.1/§10.6 above carry it. The decision that closed this question — n8n rather than
+an in-engine scheduler — is unchanged by the arrival of a fourth job under it.
 
 **OQ-T014-DEP-3 — CLOSED: the stored digest is `sha256(pepper || presented)`, with one
 process-wide pepper.** Decided in `security.md` §7.5.2, carried by `ONCHAIN_TOKEN_HASH_SALT` in
@@ -722,20 +727,31 @@ and a client charged from a request that never settles should not wait a day to 
 Schedule trigger carries one cadence, so a job needing a materially shorter one needs its own
 workflow.
 
-| Element         | Value                                                                                        |
-| :-------------- | :------------------------------------------------------------------------------------------- |
-| Name            | `onchain-billing-reconcile`                                                                  |
-| Trigger         | Schedule — applied every 15 minutes, measured: none                                          |
-| Query           | `data-model.md` §4.6.5's scan, batched                                                       |
-| Credential      | the state role's Postgres credential of §10.5 — the same one §10.6.1 uses, not "Supabase DB" |
-| Writer          | one Postgres node transitioning each matched row, followed by its `retention_runs` insert    |
-| `errorWorkflow` | `onchain-error-alert`                                                                        |
+| Element         | Value                                                                                                                |
+| :-------------- | :------------------------------------------------------------------------------------------------------------------- |
+| Name            | `onchain-billing-reconcile`                                                                                          |
+| Trigger         | Schedule — applied every 15 minutes, measured: none                                                                  |
+| Query           | `data-model.md` §4.6.5's scan, batched — `BatchSize = 500`, `MaxBatches = 20` (task 015-18)                          |
+| Credential      | the state role's Postgres credential of §10.5 — the same one §10.6.1 uses, not "Supabase DB"                         |
+| Writer          | one Postgres node closing and crediting each matched row (task 015-10), then a `retention_runs` insert (task 015-18) |
+| `errorWorkflow` | `onchain-error-alert`                                                                                                |
 
 **Why 15 minutes, stated as a bound rather than a guess.** A row can be visibly stuck for at most
-threshold-plus-cadence, ≤135 000 ms, before this job closes it. That is an order of magnitude
-tighter than daily retention, without polling per second against a shared connection pool. This is
-`applied`, per the project's own convention for a default with no traffic yet to size it against —
-`data-model.md` §4.5.8's `applied 90 days as a floor` is the precedent for this form.
+threshold-plus-cadence — 120 000 + 900 000 = 1 020 000 ms — before this job closes it. That is an
+order of magnitude tighter than daily retention, without polling per second against a shared
+connection pool. This is `applied`, per the project's own convention for a default with no traffic
+yet to size it against — `data-model.md` §4.5.8's `applied 90 days as a floor` is the precedent for
+this form.
+
+**Batch size and overflow — MINOR-10 round 2.** `BatchSize = 500` per pass; the run drains while a
+batch comes back full, capped at `MaxBatches = 20`. Hitting the cap while still full is not a
+failure: a run that closed every stuck row it found still writes `outcome = 'ok'`. It is not silent
+either — the row's `detail_json` carries `batchExhausted = true`, and the workflow's terminal gate
+throws so the alert reaches Telegram through `errorWorkflow` (task 015-18).
+
+**The `retention_runs` row's period — MINOR-8 round 1.** `period_from = 0`,
+`period_to = startedAt − ThresholdMs` — the SAME horizon the scan's own `WHERE` clause reads, so the
+row can never name a period the run did not actually cover (task 015-18).
 
 **Installation requires the owner's explicit approval, exactly as `onchain-retention` does**
 (§10.6.1). This architecture proposes the workflow; it does not create or activate it.

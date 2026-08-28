@@ -5,9 +5,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## onchain-retention — retention cleanup (task 014-41, deployment.md §10.6)\n\n**Daily.** Three jobs, each deleting or nulling data past its window, each writing ONE row to\n`onchain.retention_runs` in the same pass — including a pass that deleted nothing\n(`rows_affected = 0`, `outcome = 'ok'`). \"Nothing to delete\" and \"the job did not run\" are different\nfacts and only the written row tells them apart.\n\n| job | target | action | default window |\n| --- | --- | --- | --- |\n| `diagnostics.purge` | `onchain.diagnostics` | delete rows past the window | 90d (floor 90, max = NORMALIZED) |\n| `request_trace.raw_null` | `onchain.request_trace` | set `tried_json` to NULL past the window | 90d (floor 90, max = NORMALIZED) |\n| `request_trace.purge` | `onchain.request_trace` | delete rows past the window | 365d (floor 365, max 730) |\n\n**The three windows live in `Set Parameters` and nowhere else.** Changing one edits that node; no\nquery node is touched. The BOUNDS live in `Plan jobs`, because a setting that carried its own maximum\ncould widen itself.\n\n**A window out of range is REFUSED, not clamped.** The job deletes nothing, its row is written with\n`outcome = 'failed'` and the rejected setting named in `detail_json`, and `Check outcomes` throws so\nthe refusal reaches Telegram through `onchain-error-alert`. A clamped window would delete rows the\noperator asked to keep and record the clamped period as the requested one.\n\n**Credential: `Onchain engine state`, NOT `Supabase DB`.** The snapshotter's role has no privilege on\nthe twelve engine tables (§10.5). Reading `onchain.snapshots` with this credential must be refused by\nPostgres — that is the check, not a convention.\n\n**Every write binds base64 as one `$1` parameter.** `queryReplacement` is positional CSV: a comma\nbreaks it and an empty value silently shifts every later `$N`. Nothing is interpolated into SQL.\n\n`retention_runs` is never itself cleaned: the job that cleaned it would write to it (§4.5.9).",
-        "height": 1388,
-        "width": 2272,
+        "content": "## onchain-retention — retention cleanup (tasks 014-41 / 015-19, deployment.md §10.6 / §10.3.1)\n\n**Daily.** Four jobs, each deleting or nulling data past its window, each writing ONE row to\n`onchain.retention_runs` in the same pass — including a pass that deleted nothing\n(`rows_affected = 0`, `outcome = 'ok'`). \"Nothing to delete\" and \"the job did not run\" are different\nfacts and only the written row tells them apart.\n\n| job | target | action | default window |\n| --- | --- | --- | --- |\n| `diagnostics.purge` | `onchain.diagnostics` | delete rows past the window | 90d (floor 90, max = NORMALIZED) |\n| `request_trace.raw_null` | `onchain.request_trace` | set `tried_json` to NULL past the window | 90d (floor 90, max = NORMALIZED) |\n| `request_trace.purge` | `onchain.request_trace` | delete rows past the window | 365d (floor 365, max 730) |\n| `client_usage.purge` | `onchain.client_usage` | delete rows whose `terminal_at` is past the window | 1095d (floor 1095, max 2190) |\n\n**`client_usage.purge` counts from `terminal_at`, not `reserved_at`** (task 015-19, R-7.6, AC-40) —\nthe owner named three years from the row's own terminal state, a different clock than the other\nthree jobs' RAW/NORMALIZED windows. A row still `reserved` never matches: the table CHECK ties\n`terminal_at IS NULL` to `state = 'reserved'` (`data-model.md:1743`).\n\n**The four windows live in `Set Parameters` and nowhere else.** Changing one edits that node; no\nquery node is touched. The BOUNDS live in `Plan jobs`, because a setting that carried its own maximum\ncould widen itself.\n\n**A window out of range is REFUSED, not clamped.** The job deletes nothing, its row is written with\n`outcome = 'failed'` and the rejected setting named in `detail_json`, and `Check outcomes` throws so\nthe refusal reaches Telegram through `onchain-error-alert`. A clamped window would delete rows the\noperator asked to keep and record the clamped period as the requested one.\n\n**Credential: `Onchain engine state`, NOT `Supabase DB`.** The snapshotter's role has no privilege on\nthe twelve engine tables (§10.5). Reading `onchain.snapshots` with this credential must be refused by\nPostgres — that is the check, not a convention.\n\n**Every write binds base64 as one `$1` parameter.** `queryReplacement` is positional CSV: a comma\nbreaks it and an empty value silently shifts every later `$N`. Nothing is interpolated into SQL.\n\n`retention_runs` is never itself cleaned: the job that cleaned it would write to it (§4.5.9).",
+        "height": 1420,
+        "width": 3520,
         "color": 4
       },
       "id": "Overview",
@@ -57,6 +57,12 @@
               "name": "tracePurgeDays",
               "value": 365,
               "type": "number"
+            },
+            {
+              "id": "w4",
+              "name": "clientUsagePurgeDays",
+              "value": 1095,
+              "type": "number"
             }
           ]
         },
@@ -73,7 +79,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// onchain-retention — the plan (task 014-41, deployment.md §10.3.1 / §10.6.1).\n//\n// ONE pass computes every job's window, validates it against the bounds the JOB carries, mints its\n// ULID and freezes `startedAt`. Nothing downstream re-derives any of it: the row a job writes must\n// name the period that job's own statement covered, and a second clock would let the two disagree.\n//\n// **A window out of range is REFUSED, never clamped** (§10.3.1). A clamped window deletes rows the\n// operator asked to keep, and `retention_runs` would then record the clamped period as the requested\n// one. So an invalid job carries `valid: false`, its statement deletes nothing, and its row is\n// written with `outcome: 'failed'` and the rejected setting named in `detail_json`.\n//\n// **The NORMALIZED window is validated FIRST, because the two RAW maxima are defined in terms of\n// it** (§10.3.1: \"the maximum is the NORMALIZED window\"). If it is itself out of range, the RAW\n// bounds have no value to be measured against — so all three jobs refuse rather than one of them\n// being measured against a number that was already rejected.\nconst DAY_MS = 86400000;\nconst params = $('Set Parameters').first().json;\nconst startedAt = Date.now();\n\n// ULID, Crockford base32: 10 chars of epoch-ms + 16 of randomness (DB-SCHEMA §1.2 — the app\n// generates ids, never the engine's autoincrement). Written out because a Code node has no library.\nconst B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';\nfunction ulid(ms) {\n  let time = '';\n  let rest = ms;\n  for (let i = 0; i < 10; i += 1) {\n    time = B32[rest % 32] + time;\n    rest = Math.floor(rest / 32);\n  }\n  let rand = '';\n  for (let i = 0; i < 16; i += 1) rand += B32[Math.floor(Math.random() * 32)];\n  return time + rand;\n}\n\nconst asDays = (value) => (typeof value === 'number' && Number.isInteger(value) ? value : NaN);\n// The RAW value is kept beside the parsed one. `NaN` serialises to `null` in JSON, so a detail line\n// built from the parsed value would report a setting of `ninety` as `null` — and this record exists\n// precisely to NAME the rejected setting to whoever has to change it.\nconst raw = {\n  'diagnostics.purge': params.diagnosticsPurgeDays,\n  'request_trace.raw_null': params.traceRawNullDays,\n  'request_trace.purge': params.tracePurgeDays,\n};\nconst normalizedDays = asDays(params.tracePurgeDays);\nconst normalizedOk = normalizedDays >= 365 && normalizedDays <= 730;\nconst shown = (key) => JSON.stringify(raw[key]) ?? String(raw[key]);\n\nconst SPECS = [\n  {\n    job: 'diagnostics.purge',\n    targetTable: 'onchain.diagnostics',\n    days: asDays(params.diagnosticsPurgeDays),\n    floor: 90,\n    max: normalizedOk ? normalizedDays : null,\n    maxName: 'the NORMALIZED window',\n  },\n  {\n    job: 'request_trace.raw_null',\n    targetTable: 'onchain.request_trace',\n    days: asDays(params.traceRawNullDays),\n    floor: 90,\n    max: normalizedOk ? normalizedDays : null,\n    maxName: 'the NORMALIZED window',\n  },\n  {\n    job: 'request_trace.purge',\n    targetTable: 'onchain.request_trace',\n    days: normalizedDays,\n    floor: 365,\n    max: 730,\n    maxName: '730 days, applied not measured',\n  },\n];\n\nconst jobs = {};\nconst b64 = {};\nfor (const spec of SPECS) {\n  const reasons = [];\n  if (!Number.isFinite(spec.days)) {\n    reasons.push(`window is ${shown(spec.job)}, not a whole number of days`);\n  } else {\n    if (spec.days < spec.floor) reasons.push(`window ${spec.days}d is below the floor of ${spec.floor}d`);\n    if (spec.max === null) {\n      reasons.push(\n        `the NORMALIZED window (${shown('request_trace.purge')}) is itself out of its 365..730d ` +\n          'range, so this job has no maximum to be measured against',\n      );\n    } else if (spec.days > spec.max) {\n      reasons.push(`window ${spec.days}d is above the maximum of ${spec.max}d (${spec.maxName})`);\n    }\n  }\n  const valid = reasons.length === 0;\n  // The period is recorded even when the job refuses: it is what was ASKED for, and a row saying\n  // \"this was requested and refused\" is the whole point of writing a failed row. `periodFrom` is 0 —\n  // these jobs act on everything older than the cutoff, so the period opens at the epoch.\n  const cutoff = Number.isFinite(spec.days) ? startedAt - spec.days * DAY_MS : startedAt;\n  const descriptor = {\n    id: ulid(startedAt),\n    job: spec.job,\n    targetTable: spec.targetTable,\n    startedAt,\n    periodFrom: 0,\n    periodTo: cutoff,\n    valid,\n    // `null` when the job refuses: the statement binds this, and a null cutoff cannot match a row\n    // even if the guard above were removed. Two independent reasons nothing is deleted.\n    cutoff: valid ? cutoff : null,\n    detail: JSON.stringify({\n      // The setting AS CONFIGURED, not as parsed — see `shown` above.\n      requestedSetting: raw[spec.job],\n      requestedDays: Number.isFinite(spec.days) ? spec.days : null,\n      floorDays: spec.floor,\n      maxDays: spec.max,\n      maxSource: spec.maxName,\n      refused: reasons,\n      note: 'periodFrom=0 — this job acts on everything older than periodTo',\n    }),\n  };\n  jobs[spec.job] = descriptor;\n  b64[spec.job] = Buffer.from(JSON.stringify(descriptor)).toString('base64');\n}\n\nreturn [{ json: { startedAt, jobs, b64 } }];\n"
+        "jsCode": "// onchain-retention — the plan (task 014-41, deployment.md §10.3.1 / §10.6.1).\n//\n// ONE pass computes every job's window, validates it against the bounds the JOB carries, mints its\n// ULID and freezes `startedAt`. Nothing downstream re-derives any of it: the row a job writes must\n// name the period that job's own statement covered, and a second clock would let the two disagree.\n//\n// **A window out of range is REFUSED, never clamped** (§10.3.1). A clamped window deletes rows the\n// operator asked to keep, and `retention_runs` would then record the clamped period as the requested\n// one. So an invalid job carries `valid: false`, its statement deletes nothing, and its row is\n// written with `outcome: 'failed'` and the rejected setting named in `detail_json`.\n//\n// **The NORMALIZED window is validated FIRST, because the two RAW maxima are defined in terms of\n// it** (§10.3.1: \"the maximum is the NORMALIZED window\"). If it is itself out of range, the RAW\n// bounds have no value to be measured against — so all three jobs refuse rather than one of them\n// being measured against a number that was already rejected.\nconst DAY_MS = 86400000;\nconst params = $('Set Parameters').first().json;\nconst startedAt = Date.now();\n\n// ULID, Crockford base32: 10 chars of epoch-ms + 16 of randomness (DB-SCHEMA §1.2 — the app\n// generates ids, never the engine's autoincrement). Written out because a Code node has no library.\nconst B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';\nfunction ulid(ms) {\n  let time = '';\n  let rest = ms;\n  for (let i = 0; i < 10; i += 1) {\n    time = B32[rest % 32] + time;\n    rest = Math.floor(rest / 32);\n  }\n  let rand = '';\n  for (let i = 0; i < 16; i += 1) rand += B32[Math.floor(Math.random() * 32)];\n  return time + rand;\n}\n\nconst asDays = (value) => (typeof value === 'number' && Number.isInteger(value) ? value : NaN);\n// The RAW value is kept beside the parsed one. `NaN` serialises to `null` in JSON, so a detail line\n// built from the parsed value would report a setting of `ninety` as `null` — and this record exists\n// precisely to NAME the rejected setting to whoever has to change it.\nconst raw = {\n  'diagnostics.purge': params.diagnosticsPurgeDays,\n  'request_trace.raw_null': params.traceRawNullDays,\n  'request_trace.purge': params.tracePurgeDays,\n  'client_usage.purge': params.clientUsagePurgeDays,\n};\nconst normalizedDays = asDays(params.tracePurgeDays);\nconst normalizedOk = normalizedDays >= 365 && normalizedDays <= 730;\nconst shown = (key) => JSON.stringify(raw[key]) ?? String(raw[key]);\n\nconst SPECS = [\n  {\n    job: 'diagnostics.purge',\n    targetTable: 'onchain.diagnostics',\n    days: asDays(params.diagnosticsPurgeDays),\n    floor: 90,\n    max: normalizedOk ? normalizedDays : null,\n    maxName: 'the NORMALIZED window',\n  },\n  {\n    job: 'request_trace.raw_null',\n    targetTable: 'onchain.request_trace',\n    days: asDays(params.traceRawNullDays),\n    floor: 90,\n    max: normalizedOk ? normalizedDays : null,\n    maxName: 'the NORMALIZED window',\n  },\n  {\n    job: 'request_trace.purge',\n    targetTable: 'onchain.request_trace',\n    days: normalizedDays,\n    floor: 365,\n    max: 730,\n    maxName: '730 days, applied not measured',\n  },\n  {\n    job: 'client_usage.purge',\n    targetTable: 'onchain.client_usage',\n    days: asDays(params.clientUsagePurgeDays),\n    floor: 1095,\n    max: 2190,\n    maxName: '2190 days, applied not measured',\n  },\n];\n\nconst jobs = {};\nconst b64 = {};\nfor (const spec of SPECS) {\n  const reasons = [];\n  if (!Number.isFinite(spec.days)) {\n    reasons.push(`window is ${shown(spec.job)}, not a whole number of days`);\n  } else {\n    if (spec.days < spec.floor) reasons.push(`window ${spec.days}d is below the floor of ${spec.floor}d`);\n    if (spec.max === null) {\n      reasons.push(\n        `the NORMALIZED window (${shown('request_trace.purge')}) is itself out of its 365..730d ` +\n          'range, so this job has no maximum to be measured against',\n      );\n    } else if (spec.days > spec.max) {\n      reasons.push(`window ${spec.days}d is above the maximum of ${spec.max}d (${spec.maxName})`);\n    }\n  }\n  const valid = reasons.length === 0;\n  // The period is recorded even when the job refuses: it is what was ASKED for, and a row saying\n  // \"this was requested and refused\" is the whole point of writing a failed row. `periodFrom` is 0 —\n  // these jobs act on everything older than the cutoff, so the period opens at the epoch.\n  const cutoff = Number.isFinite(spec.days) ? startedAt - spec.days * DAY_MS : startedAt;\n  const descriptor = {\n    id: ulid(startedAt),\n    job: spec.job,\n    targetTable: spec.targetTable,\n    startedAt,\n    periodFrom: 0,\n    periodTo: cutoff,\n    valid,\n    // `null` when the job refuses: the statement binds this, and a null cutoff cannot match a row\n    // even if the guard above were removed. Two independent reasons nothing is deleted.\n    cutoff: valid ? cutoff : null,\n    detail: JSON.stringify({\n      // The setting AS CONFIGURED, not as parsed — see `shown` above.\n      requestedSetting: raw[spec.job],\n      requestedDays: Number.isFinite(spec.days) ? spec.days : null,\n      floorDays: spec.floor,\n      maxDays: spec.max,\n      maxSource: spec.maxName,\n      refused: reasons,\n      note: 'periodFrom=0 — this job acts on everything older than periodTo',\n    }),\n  };\n  jobs[spec.job] = descriptor;\n  b64[spec.job] = Buffer.from(JSON.stringify(descriptor)).toString('base64');\n}\n\nreturn [{ json: { startedAt, jobs, b64 } }];\n"
       },
       "id": "Plan jobs",
       "name": "Plan jobs",
@@ -273,14 +279,76 @@
     },
     {
       "parameters": {
-        "jsCode": "// onchain-retention — one `retention.cleanup` row per PASS (§4.5.8, §10.6.1).\n//\n// This workflow is that event's only writer. One row per pass, not per job: the three job rows in\n// `retention_runs` carry the per-job detail, and a second per-job copy here would be the same fact\n// in two places.\nconst plan = $('Plan jobs').first().json;\nconst outcomes = ['diagnostics.purge', 'request_trace.raw_null', 'request_trace.purge'].map((key) => ({\n  job: key,\n  outcome: plan.jobs[key].valid ? 'ok' : 'failed',\n}));\nconst failed = outcomes.filter((o) => o.outcome === 'failed').map((o) => o.job);\nconst now = Date.now();\n\nconst B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';\nlet time = '';\nlet rest = now;\nfor (let i = 0; i < 10; i += 1) { time = B32[rest % 32] + time; rest = Math.floor(rest / 32); }\nlet rand = '';\nfor (let i = 0; i < 16; i += 1) rand += B32[Math.floor(Math.random() * 32)];\n\nconst rowsAffected = {\n  'diagnostics.purge': $('Row diagnostics.purge').first().json.rows_affected,\n  'request_trace.raw_null': $('Row request_trace.raw_null').first().json.rows_affected,\n  'request_trace.purge': $('Row request_trace.purge').first().json.rows_affected,\n};\n\nconst event = {\n  id: time + rand,\n  ts: now,\n  // `error` when any job refused its window: the severity is the pass's, and a refused window is an\n  // operator setting that needs changing, not an informational note.\n  severity: failed.length > 0 ? 'error' : 'info',\n  event: 'retention.cleanup',\n  detail_json: JSON.stringify({ startedAt: plan.startedAt, finishedAt: now, outcomes, failed, rowsAffected }),\n  created_at: now,\n};\nreturn [{ json: { event_b64: Buffer.from(JSON.stringify([event])).toString('base64'), failed } }];"
+        "operation": "executeQuery",
+        "query": "WITH plan AS (SELECT convert_from(decode($1,'base64'),'utf8')::jsonb AS p),\n     touched AS (\n       DELETE FROM onchain.client_usage\n        WHERE (SELECT (p->>'valid')::boolean FROM plan) IS TRUE\n          AND terminal_at < (SELECT (p->>'cutoff')::bigint FROM plan)\n       RETURNING 1\n     )\nSELECT count(*)::bigint AS rows_affected FROM touched;",
+        "options": {
+          "queryReplacement": "={{ $('Plan jobs').first().json.b64['client_usage.purge'] }}"
+        }
+      },
+      "id": "Purge client_usage",
+      "name": "Purge client_usage",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2416,
+        272
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "MjsP4aIFWZd25tik",
+          "name": "Onchain engine state"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// onchain-retention — the `retention_runs` row for `client_usage.purge` (task 015-19, R-7.6, AC-40).\n//\n// Built HERE, in the same pass as the statement above, because a row written by a later pass cannot\n// name the period that deletion covered. `rows_affected` is read from the statement's own single\n// result row; the id, the period and `startedAt` come from the plan, so both halves of the pair\n// describe one act.\n//\n// Window measured from `terminal_at`, not `reserved_at` (R-7.6): three years from the row's OWN\n// terminal transition, never from the reserve that started it — a row still `reserved` cannot\n// satisfy `terminal_at < cutoff` at all, because the table CHECK ties the two together\n// (`data-model.md:1743`, `CHECK ((state = 'reserved') = (terminal_at IS NULL))`).\n//\n// Base64, bound as ONE `$1` parameter: `queryReplacement` is positional CSV, so a value holding a\n// comma breaks it and an empty value silently shifts every later `$N`. Base64 has neither, and it is\n// driver-bound rather than interpolated — the SQLi shape vdd-multi caught on the snapshotter.\nconst plan = $('Plan jobs').first().json;\nconst job = plan.jobs['client_usage.purge'];\nconst result = $input.first().json;\nconst rowsAffected = Number(result?.rows_affected ?? 0);\n\nconst row = {\n  id: job.id,\n  job: job.job,\n  target_table: job.targetTable,\n  period_from: job.periodFrom,\n  period_to: job.periodTo,\n  rows_affected: Number.isFinite(rowsAffected) ? rowsAffected : 0,\n  started_at: job.startedAt,\n  finished_at: Date.now(),\n  // A run that deleted nothing still writes `ok`: \"nothing to delete\" and \"the job did not run\" are\n  // different facts, and only the written row tells them apart (DB-SCHEMA §4.5.9).\n  outcome: job.valid ? 'ok' : 'failed',\n  detail_json: job.detail,\n};\n\nreturn [{ json: {\n  row_b64: Buffer.from(JSON.stringify([row])).toString('base64'),\n  job: row.job,\n  outcome: row.outcome,\n  rows_affected: row.rows_affected,\n} }];"
+      },
+      "id": "Row client_usage.purge",
+      "name": "Row client_usage.purge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2624,
+        272
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO onchain.retention_runs\n  (id, job, target_table, period_from, period_to, rows_affected, started_at, finished_at, outcome, detail_json)\nSELECT id, job, target_table, period_from, period_to, rows_affected, started_at, finished_at, outcome, detail_json\nFROM jsonb_to_recordset(convert_from(decode($1,'base64'),'utf8')::jsonb)\n  AS x(id text, job text, target_table text, period_from bigint, period_to bigint,\n       rows_affected bigint, started_at bigint, finished_at bigint, outcome text, detail_json text)\nON CONFLICT (job, period_from, period_to, started_at) DO NOTHING;",
+        "options": {
+          "queryReplacement": "={{ $('Row client_usage.purge').first().json.row_b64 }}"
+        }
+      },
+      "id": "Write run client_usage.purge",
+      "name": "Write run client_usage.purge",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2832,
+        272
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "MjsP4aIFWZd25tik",
+          "name": "Onchain engine state"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// onchain-retention — one `retention.cleanup` row per PASS (§4.5.8, §10.6.1).\n//\n// This workflow is that event's only writer. One row per pass, not per job: the four job rows in\n// `retention_runs` carry the per-job detail, and a second per-job copy here would be the same fact\n// in two places.\nconst plan = $('Plan jobs').first().json;\nconst outcomes = ['diagnostics.purge', 'request_trace.raw_null', 'request_trace.purge', 'client_usage.purge'].map((key) => ({\n  job: key,\n  outcome: plan.jobs[key].valid ? 'ok' : 'failed',\n}));\nconst failed = outcomes.filter((o) => o.outcome === 'failed').map((o) => o.job);\nconst now = Date.now();\n\nconst B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';\nlet time = '';\nlet rest = now;\nfor (let i = 0; i < 10; i += 1) { time = B32[rest % 32] + time; rest = Math.floor(rest / 32); }\nlet rand = '';\nfor (let i = 0; i < 16; i += 1) rand += B32[Math.floor(Math.random() * 32)];\n\nconst rowsAffected = {\n  'diagnostics.purge': $('Row diagnostics.purge').first().json.rows_affected,\n  'request_trace.raw_null': $('Row request_trace.raw_null').first().json.rows_affected,\n  'request_trace.purge': $('Row request_trace.purge').first().json.rows_affected,\n  'client_usage.purge': $('Row client_usage.purge').first().json.rows_affected,\n};\n\nconst event = {\n  id: time + rand,\n  ts: now,\n  // `error` when any job refused its window: the severity is the pass's, and a refused window is an\n  // operator setting that needs changing, not an informational note.\n  severity: failed.length > 0 ? 'error' : 'info',\n  event: 'retention.cleanup',\n  detail_json: JSON.stringify({ startedAt: plan.startedAt, finishedAt: now, outcomes, failed, rowsAffected }),\n  created_at: now,\n};\nreturn [{ json: { event_b64: Buffer.from(JSON.stringify([event])).toString('base64'), failed } }];"
       },
       "id": "Pass event",
       "name": "Pass event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2400,
+        3040,
         272
       ],
       "alwaysOutputData": true
@@ -298,7 +366,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        2608,
+        3248,
         272
       ],
       "alwaysOutputData": true,
@@ -311,14 +379,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// onchain-retention — the terminal gate (L-2: a diagnostic nobody reads is not a diagnostic).\n//\n// `Plan jobs` computes a health signal — which windows were refused — and three tables record it.\n// None of those is a READER: a refused window would sit in `retention_runs` looking like a row\n// nobody queries, exactly as the snapshotter's `dropped` array did for four days.\n//\n// This node is that reader. It throws with the job names, and the throw reaches Telegram through\n// `errorWorkflow` (`onchain-error-alert`).\n//\n// **The message names the JOBS and points at the table for the reasons, and that shape was forced\n// by a measurement** (task 014-41 acceptance, 2026-08-24). An earlier version carried every reason\n// inline, separated by ` | `. n8n splits a Code-node error on the LAST `: ` — head into\n// `description`, tail into `message` — and `onchain-error-alert` reads `message`. The delivered\n// alert therefore named ONE cause and no job at all, while the full text survived only in the stack\n// trace nobody reads. So: no `: ` in this string, the jobs named in it, and the reasons left where\n// they are already queryable. L-4 again — a monitoring change is proven by the message ARRIVING,\n// and by arriving useful.\n//\n// **Chained, not fanned out beside the writers** (CLAUDE.n8n.md): with `executionOrder: v1` the\n// relative order of parallel branches follows node geometry, so a gate that must observe completed\n// side effects needs an EDGE. Every upstream node carries `alwaysOutputData` so an empty result\n// cannot skip it.\nconst failed = $('Pass event').first().json.failed ?? [];\nif (failed.length > 0) {\n  const startedAt = $('Plan jobs').first().json.startedAt;\n  throw new Error(\n    `onchain-retention refused ${failed.length} of 3 windows and deleted nothing for them — ` +\n      `${failed.join(', ')}. Each refusal is recorded in onchain.retention_runs.detail_json for ` +\n      `started_at=${startedAt}. The windows live in the \"Set Parameters\" node (§10.3.1).`,\n  );\n}\nreturn [{ json: { ok: true, jobs: 3 } }];\n"
+        "jsCode": "// onchain-retention — the terminal gate (L-2: a diagnostic nobody reads is not a diagnostic).\n//\n// `Plan jobs` computes a health signal — which windows were refused — and four tables record it.\n// None of those is a READER: a refused window would sit in `retention_runs` looking like a row\n// nobody queries, exactly as the snapshotter's `dropped` array did for four days.\n//\n// This node is that reader. It throws with the job names, and the throw reaches Telegram through\n// `errorWorkflow` (`onchain-error-alert`).\n//\n// **The message names the JOBS and points at the table for the reasons, and that shape was forced\n// by a measurement** (task 014-41 acceptance, 2026-08-24). An earlier version carried every reason\n// inline, separated by ` | `. n8n splits a Code-node error on the LAST `: ` — head into\n// `description`, tail into `message` — and `onchain-error-alert` reads `message`. The delivered\n// alert therefore named ONE cause and no job at all, while the full text survived only in the stack\n// trace nobody reads. So: no `: ` in this string, the jobs named in it, and the reasons left where\n// they are already queryable. L-4 again — a monitoring change is proven by the message ARRIVING,\n// and by arriving useful.\n//\n// **The denominator is 4, not 3, since task 015-19 added `client_usage.purge` as a fourth job**\n// (R-7.6, AC-40). Counting from a stale literal here would be the same class of defect as L-2: a\n// gate that silently under-reports its own scope.\n//\n// **Chained, not fanned out beside the writers** (CLAUDE.n8n.md): with `executionOrder: v1` the\n// relative order of parallel branches follows node geometry, so a gate that must observe completed\n// side effects needs an EDGE. Every upstream node carries `alwaysOutputData` so an empty result\n// cannot skip it.\nconst failed = $('Pass event').first().json.failed ?? [];\nif (failed.length > 0) {\n  const startedAt = $('Plan jobs').first().json.startedAt;\n  throw new Error(\n    `onchain-retention refused ${failed.length} of 4 windows and deleted nothing for them — ` +\n      `${failed.join(', ')}. Each refusal is recorded in onchain.retention_runs.detail_json for ` +\n      `started_at=${startedAt}. The windows live in the \"Set Parameters\" node (§10.3.1).`,\n  );\n}\nreturn [{ json: { ok: true, jobs: 4 } }];\n"
       },
       "id": "Check outcomes",
       "name": "Check outcomes",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2800,
+        3456,
         272
       ]
     }
@@ -446,6 +514,39 @@
       ]
     },
     "Write run request_trace.purge": {
+      "main": [
+        [
+          {
+            "node": "Purge client_usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Purge client_usage": {
+      "main": [
+        [
+          {
+            "node": "Row client_usage.purge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Row client_usage.purge": {
+      "main": [
+        [
+          {
+            "node": "Write run client_usage.purge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write run client_usage.purge": {
       "main": [
         [
           {
