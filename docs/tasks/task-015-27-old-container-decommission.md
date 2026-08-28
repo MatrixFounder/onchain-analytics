@@ -91,8 +91,8 @@ SELECT t.table_name,
 Ожидаемый результат: `may_select` истинно для `assets`, `metrics`, `snapshots` и ни для чего
 больше — потому что больше в схеме ничего нет.
 
-**Why это тот же запрос, что шаг 2a.** `deployment.md:390` — `2a. **Measure the READ role before
-granting anything to it, and correct it if it over-reaches.**`, постусловие — `deployment.md:404` —
+**Why это тот же запрос, что шаг 2a.** `deployment.md:393` — `2a. **Measure the READ role before
+granting anything to it, and correct it if it over-reaches.**`, постусловие — `deployment.md:407` —
 ``Postcondition: `may_select` is true for `assets`, `metrics` and `snapshots`, and false for
 every``. R-8.8 требует перемерить его здесь, а не завести новую проверку.
 

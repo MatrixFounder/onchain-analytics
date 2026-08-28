@@ -13,7 +13,7 @@
 токеном аутентифицируется без переиздания.
 
 **Why эта проверка — прямой признак корректности переноса.** Аутентификация читает
-`api_tokens.token_hash` (`docs/architectures/deployment.md:965` — подстрока
+`api_tokens.token_hash` (`docs/architectures/deployment.md:997` — подстрока
 `on the new writer, without reissue`). Успех означает, что перенесены не строки вообще,
 а РАБОЧАЯ учётная запись.
 
@@ -30,9 +30,9 @@
 **Файл `.env.example`:**
 
 - Дописать к комментарию `ONCHAIN_STATE_PG_URL`, что ключ указывает на выделенный контейнер движка
-  (`.env.example:247` — подстрока `ONCHAIN_STATE_PG_URL=postgres://`)
+  (`.env.example:255` — подстрока `ONCHAIN_STATE_PG_URL=postgres://`)
 - Дописать к комментарию `ONCHAIN_PG_URL`, что ключ остаётся на существующем контейнере Supabase
-  (`.env.example:124` — подстрока `ONCHAIN_PG_URL=postgres://`)
+  (`.env.example:132` — подстрока `ONCHAIN_PG_URL=postgres://`)
 - Оставить в закомментированных образцах порт-плейсхолдер, а не фактический порт прогона
 
 **Why два ключа расходятся по контейнерам, а не по хостам.** Оба контейнера стоят на одной dev-VM.

@@ -17,7 +17,7 @@
 
 **Why пустые таблицы.** Перенос строк — отдельное обязательство R-8.11 и отдельная задача 015-23.
 Миграция сама по себе создаёт таблицы пустыми
-(`docs/architectures/deployment.md:776` — `#### 10.9.2. The migration, applied to an empty container
+(`docs/architectures/deployment.md:794` — `#### 10.9.2. The migration, applied to an empty container
 (R-8.2)`).
 
 <!-- contract:changes -->
@@ -55,6 +55,21 @@
 | суперпользователь применения | `postgres` образа, не `supabase_admin`                                                                               |
 | колонка суточного счётчика   | `calls_made BIGINT NOT NULL DEFAULT 0` и `CHECK (calls_made >= 0)` внутри `CREATE TABLE onchain.usage`               |
 | ограничение формата баланса  | именованное `CHECK (credits_balance_raw IS NULL OR credits_balance_raw ~ '^-?[0-9]+$')` на `onchain.access_profiles` |
+| **создание схемы**           | `CREATE SCHEMA IF NOT EXISTS onchain;` — добавлено при исполнении 2026-08-28, см. ниже                               |
+
+**Why шестое отличие добавлено при исполнении (2026-08-28).** Первая редакция таблицы называла пять
+отличий. Файл 002 схему не создаёт намеренно: его собственный комментарий на строке 23 объясняет,
+что `001_init.sql` на его цели уже отработал, и `CREATE SCHEMA` здесь скрыл бы факт, что не
+отработал. Для нового контейнера это предусловие ложно — измерено перед применением: `pg_namespace`
+содержал только `public`. Без `CREATE SCHEMA IF NOT EXISTS onchain;` файл 005 отказал бы на первой
+же команде `CREATE TABLE onchain.…`. Буквальное прочтение «пять отличий и ничего больше» дало бы
+миграцию, которую нельзя применить.
+
+**Why охрана параметра не возвращает код отказа.** Форма `\quit 1` скопирована из файла 002 и на
+обеих целевых версиях psql (15.8 и 16.13) печатает `extra argument "1" ignored` и возвращает ноль:
+аргумент кода возврата появился в PostgreSQL 17. Скрипт при этом действительно встаёт до первой
+команды DDL, поэтому свойство безопасности держится, а наблюдаемость отказа — нет. Дефект записан
+как `L-28` и правится во всех пяти файлах разом, а не в этом одном.
 
 **Why четвёртое отличие названо.** Файл 002 объявляет `onchain.usage` четырьмя колонками
 (`sql/migrations/002_t014_network_profile.sql:63` — `CREATE TABLE IF NOT EXISTS onchain.usage (`), и
@@ -135,7 +150,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 `sql/migrations/002_t014_network_profile.sql:289` — `GRANT SELECT, INSERT, UPDATE, DELETE ON`.
 
 Три формы запрещены и в этом файле не встречаются
-(`docs/architectures/deployment.md:812` — подстрока `The same three prohibited forms`):
+(`docs/architectures/deployment.md:830` — подстрока `The same three prohibited forms`):
 
 - `GRANT … ON ALL TABLES IN SCHEMA onchain`
 - `ALTER DEFAULT PRIVILEGES IN SCHEMA onchain GRANT …`
@@ -151,7 +166,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 
 Ролей на контейнере две: суперпользователь образа (`postgres`) и роль состояния, создаваемая
 оператором до применения файла. Третьей роли не существует
-(`docs/architectures/deployment.md:794` — подстрока `Which roles exist on this container, named
+(`docs/architectures/deployment.md:812` — подстрока `Which roles exist on this container, named
 explicitly`).
 
 Перечень снимается запросом, а не переписывается из этого документа:
@@ -288,7 +303,7 @@ the password`.
 **Предусловие среды.** dev-VM обязана быть доступной. На момент планирования `ssh vm` отвечал
 таймаутом устойчиво.
 
-Проектные координаты: `docs/architectures/deployment.md:776` (§10.9.2, миграция) и
-`docs/architectures/deployment.md:800` (§10.9.3, гранты).
+Проектные координаты: `docs/architectures/deployment.md:794` (§10.9.2, миграция) и
+`docs/architectures/deployment.md:818` (§10.9.3, гранты).
 
 Требования: R-8.2, R-8.5, R-8.6, R-8.7.

@@ -94,7 +94,7 @@ engine state». После задачи 015-22 запись идёт в новы
 
 **Файл `docs/architectures/deployment.md`:**
 
-- Правка утверждения `docs/architectures/deployment.md:758` — подстрока `addressed by the SAME
+- Правка утверждения `docs/architectures/deployment.md:776` — подстрока `addressed by the SAME
 "Supabase DB" credential, unchanged`: воркфлоу `onchain-verify` и `onchain-error-alert` пишут
   `onchain.diagnostics` под credential «Onchain engine state», и после переезда она указывает на
   новый контейнер
@@ -168,7 +168,7 @@ engine state». После задачи 015-22 запись идёт в новы
 - [ ] Снапшоттерская половина запроса остаётся на credential «Supabase DB» без правки credential
 - [ ] Оба воркфлоу активны; порядок активации — сначала `onchain-error-alert`
 - [ ] Отчёт `onchain-verify` ДОСТАВЛЕН в Telegram и содержит строку возраста пульса
-- [ ] `deployment.md:758` больше не утверждает, что оба воркфлоу остаются на «Supabase DB» без
+- [ ] `deployment.md:776` больше не утверждает, что оба воркфлоу остаются на «Supabase DB» без
       изменений
 - [ ] Возраст пульса считается по одним часам: `alert_last_ts` и `now_ms` приходят из узла
       `Pulse query`, и верхнеуровневой `now_ms` в `Verify query` не остаётся

@@ -85,7 +85,7 @@ MAJOR-7 раунда 1 ревью архитектуры. Число «двен�
 ### Объём дампа — перечень таблиц, не схема (MAJOR-7 раунда 1)
 
 Проектная команда §10.9.6 ограничивает дамп схемой:
-`docs/architectures/deployment.md:948` — подстрока `--schema=onchain --format=custom`. Схема
+`docs/architectures/deployment.md:974` — подстрока `--schema=onchain --format=custom`. Схема
 `onchain` — общая: в ней же живут три таблицы снапшоттера, и `--schema=onchain` захватывает контур,
 к переезду не относящийся (R-8.3). Это находка MAJOR-7 раунда 1.
 
@@ -233,7 +233,7 @@ ssh vm 'docker exec -i <old-container> pg_dump -U postgres -d postgres --format=
 Задача 015-27 удаляет таблицы в старом контейнере и требует явного подтверждения владельца по skill
 `vm-deploy`. Существование этого артефакта — одно из трёх её предусловий.
 
-Проектная координата: `docs/architectures/deployment.md:944` —
+Проектная координата: `docs/architectures/deployment.md:970` —
 `#### 10.9.6. Rollback artifact, before any deletion (R-8.15, AC-47)`.
 
 Требования: R-8.15, MAJOR-7 раунда 1 ревью архитектуры.

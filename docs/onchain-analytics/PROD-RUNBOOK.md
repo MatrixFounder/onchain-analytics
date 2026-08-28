@@ -258,6 +258,192 @@ blind to a grant to `PUBLIC`, to a privilege inherited through a group role, and
 roles are not enabled in the session. SEC-2 is an instance of the second: the privilege appears in no
 table ACL and is real.
 
+## Engine dedicated Postgres container — dev VM  *(T-015 task 015-20, §10.9.1, R-8.1/R-8.10, AC-16)*
+
+Separate from `## Database — Profile B` above: that section is the SNAPSHOTTER's database. This one
+is the engine's own state, which task 015-27 will make the only copy of `api_tokens.token_hash`,
+`access_profiles.credits_balance_raw` and the billing ledger.
+
+**Provisioned 2026-08-28 on the dev VM.** Actual values of the run, not a plan:
+
+| Element         | Value                                                        |
+| :-------------- | :----------------------------------------------------------- |
+| Container       | `onchain-engine-db`                                          |
+| Image           | `postgres:16-alpine` — server reports PostgreSQL 16.13        |
+| Published port  | `5433` on the VM host (Supabase keeps `5432`)                |
+| Named volume    | `onchain-engine-pgdata` → `/var/lib/postgresql/data`         |
+| `PGDATA`        | `/var/lib/postgresql/data/pgdata`                            |
+| Restart policy  | `unless-stopped`                                             |
+| Superuser       | `postgres`, password from `/home/parallels/.onchain-engine-pg.env` (mode 0600, VM-local) |
+
+The password was generated ON the VM and never entered this repository, a terminal transcript, or a
+container image layer; the file is passed to `docker run` as `--env-file`. Regenerating it means
+recreating the container against the same named volume.
+
+```bash
+docker volume create onchain-engine-pgdata
+docker run -d --name onchain-engine-db --restart unless-stopped \
+  --env-file /home/parallels/.onchain-engine-pg.env \
+  -e PGDATA=/var/lib/postgresql/data/pgdata \
+  -v onchain-engine-pgdata:/var/lib/postgresql/data \
+  -p 5433:5432 postgres:16-alpine
+```
+
+**Postconditions measured 2026-08-28, all six.**
+
+| Check     | Command                                                     | Result                                                     |
+| :-------- | :---------------------------------------------------------- | :--------------------------------------------------------- |
+| TC-OPS-01 | `docker ps`                                                 | `onchain-engine-db` on `5433`, `supabase-db` on `5432`     |
+| TC-OPS-02 | `pg_isready -h 10.211.55.3 -p 5432` and `-p 5433`           | both `accepting connections`                                |
+| TC-OPS-03 | image tag of the new row                                    | `postgres:16-alpine` — no Supabase stack name in the tag   |
+| TC-OPS-04 | `docker inspect supabase-db` id and `StartedAt`, before/after | `af7c4bab1297…`, `2026-08-28T12:58:54.345261211Z` — equal |
+| TC-OPS-05 | row counts of `assets`, `metrics`, `snapshots`, before/after | `2 / 11 / 5281` — equal                                    |
+| TC-OPS-06 | `docker restart`, then port and row count                   | port answers; probe table kept 7 of 7 rows                 |
+
+`pg_isready` is not installed on the VM host, so both port checks are run from INSIDE a container
+against the host address `10.211.55.3`. Checking `127.0.0.1` inside the new container would have
+proven only that the server is up, not that the published port is reachable — which is the property
+`ONCHAIN_STATE_PG_URL` will depend on.
+
+**No regular backup of this container is provisioned by this task.** Until one exists, the move
+leaves a single copy of the money data. The obligation is recorded in `docs/PLAN.md`.
+
+### The migration — thirteen tables, the state role, grants  *(task 015-21, §10.9.2/§10.9.3, UC-6 step 2)*
+
+**The state role, split the same way `## Engine network profile — the two database roles` above
+splits it — no secret in the first half:**
+
+```sql
+-- no secret: safe to script, safe to paste in a review
+CREATE ROLE onchain_engine_state NOLOGIN;
+```
+
+```bash
+# the password, generated ON the VM and never entered this repository, a terminal transcript, or a
+# container image layer — the second half of PROD-RUNBOOK.md:201's split
+ssh vm 'bash -s' <<'REMOTE'
+PW=$(openssl rand -base64 32 | tr -d '\n')
+umask 177
+printf 'POSTGRES_STATE_PASSWORD=%s\n' "$PW" > /home/parallels/.onchain-engine-state-pg.env
+chmod 0600 /home/parallels/.onchain-engine-state-pg.env
+docker exec -i onchain-engine-db psql -qU postgres -d postgres -v ON_ERROR_STOP=1 <<SQL
+ALTER ROLE onchain_engine_state LOGIN PASSWORD '$PW';
+SQL
+REMOTE
+```
+
+Role name: **`onchain_engine_state`** — the same name already occupied on `supabase-db`, per
+task-015-21's own precondition that the two must match. Password file: VM-local,
+`/home/parallels/.onchain-engine-state-pg.env`, mode 0600, alongside the container superuser's own
+`.onchain-engine-pg.env` from the section above.
+
+**Applied 2026-08-28**, over stdin per the `vm-deploy` skill (never `-f /tmp/…`):
+
+```bash
+ssh vm 'docker exec -i onchain-engine-db psql -qU postgres -d postgres -v ON_ERROR_STOP=1 \
+  -v STATE_ROLE=onchain_engine_state' < sql/migrations/005_wi62_dedicated_container.sql
+```
+
+**Verify-block output, this run, verbatim:**
+
+```
+── verify 1/4: the thirteen engine tables exist in onchain, nothing in public ──
+ engine_tables_present | expected
+-----------------------+----------
+                    13 |       13
+(1 row)
+
+ objects_created_in_public
+---------------------------
+                         0
+(1 row)
+
+── verify 2/4: may_select under the state role, true for exactly the thirteen ──
+    table_name    | may_select
+------------------+------------
+ access_audit     | t
+ access_profiles  | t
+ api_tokens       | t
+ cache_entries    | t
+ client_usage     | t
+ diagnostics      | t
+ provider_buckets | t
+ providers        | t
+ request_trace    | t
+ retention_runs   | t
+ usage            | t
+ usage_window     | t
+ users            | t
+(13 rows)
+
+── verify 3/4: the roles that exist on this container — measured, not assumed (R-8.6) ──
+       rolname        | rolsuper | rolcanlogin
+----------------------+----------+-------------
+ onchain_engine_state | f        | t
+ postgres             | t        | t
+(2 rows)
+
+── verify 4/4: has_table_privilege per application role x per engine table (AC-17b) ──
+       rolname        |    table_name    | may_select
+----------------------+------------------+------------
+ onchain_engine_state | access_audit     | t
+ onchain_engine_state | access_profiles  | t
+ onchain_engine_state | api_tokens       | t
+ onchain_engine_state | cache_entries    | t
+ onchain_engine_state | client_usage     | t
+ onchain_engine_state | diagnostics      | t
+ onchain_engine_state | provider_buckets | t
+ onchain_engine_state | providers        | t
+ onchain_engine_state | request_trace    | t
+ onchain_engine_state | retention_runs   | t
+ onchain_engine_state | usage            | t
+ onchain_engine_state | usage_window     | t
+ onchain_engine_state | users            | t
+(13 rows)
+```
+
+**Roles measured on this container after the migration: two, exactly as §10.9.2 predicts.**
+`postgres` is the image's own superuser (`rolsuper=t`) — excluded from the AC-17b postcondition, the
+same exclusion §10.4.2 already makes for `authenticator`. `onchain_engine_state` is the one
+application role (`rolsuper=f`, `rolcanlogin=t`). No third role exists to measure.
+
+**Row counts after the migration:** all thirteen tables are empty except `access_profiles`, which
+carries the one seeded `phase0-unlimited` row — TC-OPS-04's own expected result, and the row-transfer
+of task 015-23 has not run yet.
+
+**TC-OPS-08 (re-apply) and TC-OPS-09 (004 after 005), both run this session.** Re-applying
+`005_wi62_dedicated_container.sql` a second time reproduced the verify-block output above
+byte-for-byte — only `NOTICE: … already exists, skipping` lines were added, one per object. Applying
+`004_t015_billing.sql` afterward, with the same `-v STATE_ROLE=onchain_engine_state`, changed
+nothing: not `onchain.usage`'s column list, not `onchain.client_usage`'s column list, not
+`onchain.access_profiles`'s constraint list — all measured before and after via `pg_constraint`. The
+guarded `ALTER TABLE … ADD CONSTRAINT` blocks in 004 found `usage_calls_made_non_negative` and
+`client_usage_balance_is_integer` already registered under those exact names, and skipped both. That
+is the property TC-OPS-09 exists to prove, and the reason the two names were kept identical between
+files 004 and 005.
+
+**Two things measured this session that the task's own text did not anticipate, recorded here rather
+than silently worked around:**
+
+- **TC-OPS-12's literal input exercises a different, pre-existing constraint, not the new one.**
+  `UPDATE onchain.access_profiles SET credits_balance_raw = 'NaN' WHERE name = 'phase0-unlimited'` is
+  refused — but by `access_profiles_check` (the unnamed `(credits_mode = 'metered') = (credits_balance_raw
+  IS NOT NULL)` tie already shipped in file 002), not by the new `client_usage_balance_is_integer`
+  guard. `phase0-unlimited` is `credits_mode='unlimited'`, which requires `credits_balance_raw IS
+  NULL` — so ANY non-null value on that one seeded row trips the mode tie before the format check is
+  ever reached in a way visible to the caller. Verified separately, in a rolled-back probe insert
+  against a `credits_mode='metered'` row: `client_usage_balance_is_integer` does refuse `'NaN'` on its
+  own. The migration's guard is correct; the task's test-case input names the wrong row to observe it
+  in isolation.
+- **`\quit 1`'s exit code is not observed on either psql client this project targets.** psql's
+  `\quit`/`\q` gained an exit-status argument only in PostgreSQL 17. `supabase-db` ships psql 15.8;
+  `onchain-engine-db` ships psql 16.13 — both measured this session. On both, `\quit 1` prints
+  `\quit: extra argument "1" ignored` and the process still exits `0`. This is the SAME pre-check
+  pattern task-015-21 directs this file to copy from `002_t014_network_profile.sql`, so it is not new
+  to this file. TC-OPS-07's substantive property still holds: the script halts before `BEGIN;` and no
+  DDL runs. But an operator or CI step gating on `$?` after a missing-`STATE_ROLE` run would see
+  success, not the failure the comment beside `\quit 1` implies.
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are
