@@ -632,6 +632,80 @@ leaves every count and every bound identical. Without the spot-check the move wo
 review and failed at the first authenticated request, after the old container was already dropped.
 
 
+### Retargeting the `Onchain engine state` credential  *(task 015-22, §10.9, UC-6 step 6, part)*
+
+This is the ONLY step of the move that edits live configuration rather than adding to it. It changes
+where three workflows write. The rollback marker therefore goes in this file BEFORE the edit, not
+after.
+
+**The state BEFORE the edit, measured 2026-08-31 — not read from a document.**
+
+| Field | Value |
+| :---- | :---- |
+| credential name / id | `Onchain engine state` / `MjsP4aIFWZd25tik` |
+| host, port | `supabase-db`, `5432` |
+| database, user | `postgres`, `onchain_engine_state` |
+| server it reached | PostgreSQL **15.8** — the old container |
+| password | not in this repo; the DSN carrying it is `.env:248` on the operator's machine |
+| workflows using it | `onchain-verify`, `onchain-error-alert`, `onchain-retention` — those three and nothing else |
+
+**AFTER the edit:** host `10.211.55.3`, port `5433`, same database and user. Nothing else changes —
+the name stays, because `import_with_relink.py` maps credentials by NAME and refuses a name absent
+from its map.
+
+**The host is `10.211.55.3`, and this is not interchangeable with the name used elsewhere.** From
+INSIDE the n8n container, `ubuntu-linux-2404.local` resolves to an IPv6 address that is not routable
+(`connect ENETUNREACH fdb2:2c26:…`) — so the host string that works from the Mac does NOT work from
+n8n. Published port `5432` on the VM is the Supabase POOLER, not `supabase-db`: it answers
+`Tenant or user not found`, which is a pooler error and not a Postgres one. Three vantage points,
+three different correct answers:
+
+| From | To the old container | To the new container |
+| :--- | :------------------- | :------------------- |
+| the n8n container | `supabase-db:5432` (docker alias) | `10.211.55.3:5433` |
+| the VM host | `docker exec -i supabase-db psql` | `docker exec -i onchain-engine-db psql` |
+| the operator's Mac | `ubuntu-linux-2404.local:5432` → the pooler | `ubuntu-linux-2404.local:5433` |
+
+**How reachability was established without ever handling the password.** A deliberately wrong
+password distinguishes the two failures that matter: an unreachable host answers `Connection
+refused` / `Host not found` / `ENETUNREACH`, while a reachable one carrying the role answers
+`password authentication failed for user "onchain_engine_state"`. The second message is the
+positive result. It proves host, port, database and role in one request, and it proves the ROLE
+EXISTS on the target — all without the secret.
+
+**The edit runs ON the VM, so the secret never leaves it.** The password lives in
+`/home/parallels/.onchain-engine-state-pg.env` (mode 0600). The request body is assembled there and
+sent to `localhost:5678`; the value never enters this repository, a terminal transcript on the
+operator's machine, or a command line.
+
+```bash
+# the API key is piped in, so it is not visible in `ps`; the password is read on the VM
+printf '%s' "$N8N_API_KEY" | ssh vm 'KEY=$(cat); PW=$(. /home/parallels/.onchain-engine-state-pg.env;   printf %s "$POSTGRES_STATE_PASSWORD");   python3 -c "
+import json,os,urllib.request
+body=json.dumps({"name":"Onchain engine state","type":"postgres","data":{
+  "host":"10.211.55.3","port":5433,"database":"postgres",
+  "user":"onchain_engine_state","password":os.environ["PW"],
+  "ssl":"disable","maxConnections":10,"allowUnauthorizedCerts":False,"sshTunnel":False}}).encode()
+r=urllib.request.Request("http://localhost:5678/api/v1/credentials/MjsP4aIFWZd25tik",
+  data=body, method="PATCH",
+  headers={"X-N8N-API-KEY":os.environ["KEY"],"Content-Type":"application/json"})
+print(urllib.request.urlopen(r).status)" '
+```
+
+**`PATCH /api/v1/credentials/:id` is not in n8n's documented public API, so it was proven on a
+throwaway credential first.** A disposable `postgres` credential was created, PATCHed to a host with
+a distinctive name, and probed: the error came back naming the NEW host, so the write takes effect.
+A `PATCH` with an empty body returns `200` and bumps `updatedAt` WITHOUT changing the data — checked
+against the live credential, which kept working afterward. Do not read a `200` here as proof that
+anything changed; probe.
+
+**Verification after the edit** — a throwaway workflow with a Webhook trigger set to
+`responseMode: lastNode` and one Postgres node on this credential running
+`SELECT current_setting('server_version')`. The HTTP response carries the answer directly, so there
+is no execution list to poll and no stale read to misinterpret. `16.13` is the new container;
+`15.8` is the old one. Delete the probe afterward.
+
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are
