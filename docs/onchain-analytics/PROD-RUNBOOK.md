@@ -444,6 +444,194 @@ than silently worked around:**
   DDL runs. But an operator or CI step gating on `$?` after a missing-`STATE_ROLE` run would see
   success, not the failure the comment beside `\quit 1` implies.
 
+### Row transfer — stopping every writer, then twelve tables  *(task 015-23, §10.9.4, UC-6 steps 3-4)*
+
+**Step 3 — the window. FOUR writers, not three.** Idempotency deduplicates two writers only inside
+ONE database (`DB-SCHEMA-CONCEPT` §6). Here there are two, so a row written to the old container
+after the snapshot never reaches the new one. Every writer stops before the first copy command.
+
+| Writer | Writes | How it is stopped |
+| :----- | :----- | :---------------- |
+| engine network profile | all eleven tables | the process is stopped |
+| `onchain-verify` | `onchain.diagnostics` | workflow deactivated |
+| `onchain-error-alert` | `onchain.diagnostics` | workflow deactivated |
+| `onchain-retention` | `retention_runs`, `diagnostics`, `request_trace` — INSERT **and DELETE** | workflow deactivated |
+
+All three workflows share ONE credential, `Onchain engine state` (n8n id `MjsP4aIFWZd25tik`), so
+task 015-22 retargets one record and all three move together. `onchain-snapshotter` stays active: it
+writes `assets`/`metrics`/`snapshots` on the old container and does not move (R-8.3).
+
+**The postcondition is TWO measurements, both taken before the first copy.** A stopped process and a
+closed connection are different events, and an n8n node's connections are transient — a zero count
+alone does not forbid a write a minute later.
+
+```bash
+# 1. no state-role connection on the old container
+ssh vm 'docker exec -i supabase-db psql -qtA -U supabase_admin -d postgres' <<'SQL'
+SELECT count(*) FROM pg_stat_activity WHERE usename = 'onchain_engine_state';
+SQL
+# 2. none of the three workflows is active (the n8n MCP servers may be down; the REST API is not)
+curl -s -H "X-N8N-API-KEY: $KEY" "$N8N_URL/api/v1/workflows?limit=250" \
+  | python3 -c "import json,sys;[print(w['name'],w['active']) for w in json.load(sys.stdin)['data'] if w['name'].startswith('onchain-')]"
+```
+
+**Measured 2026-08-31, window open `11:55:48Z`, declared bound `+24h`:** zero connections under
+`onchain_engine_state` (and none under any `onchain%` role); `onchain-error-alert`,
+`onchain-verify`, `onchain-retention` inactive; `onchain-snapshotter` active; the other 38 active
+workflows on the instance untouched.
+
+**PR-9 — deactivation DOES stop an `errorWorkflow` call. Measured, both directions.**
+`onchain-error-alert` runs by reference from other workflows' failures, not by its own trigger, so
+the lever had never been measured. A throwaway probe settles it: a Webhook trigger (an activated
+workflow's production URL, so a plain `GET` yields a **`webhook`**-mode execution, not `manual` —
+`errorWorkflow` does not fire for `manual`, WI-64) into one node that fails on `http://127.0.0.1:9/`,
+with `settings.errorWorkflow` pointing at `onchain-error-alert`. Create, activate, fire, read, delete.
+
+| Run | `onchain-error-alert` | Probe execution | Handler execution | `alert.delivered` |
+| :-- | :-------------------- | :-------------- | :---------------- | :---------------- |
+| control | ACTIVE | `46804` `error` `webhook` | `46805` `success` | 5 → **6** |
+| main | inactive | `46810` `error` `webhook` | none | 6 → **6** |
+
+**Run the control FIRST, and never skip it.** "No new row appeared" has two explanations — the lever
+worked, or the probe never reached the handler at all (a typo in `settings.errorWorkflow`, the wrong
+execution mode, a node that does not actually fail). One run cannot tell them apart. The control also
+sends one real Telegram message, necessarily: the delivery row is written AFTER the Telegram node
+(WI-64), so a measurement of delivery cannot avoid delivering.
+
+**Step 4 — order, and the pipeline.** Copy one table at a time, through stdin, in foreign-key order.
+Never `-f /tmp/…` inside the container: that reads the container's filesystem and runs a stale copy
+(skill `vm-deploy` §4). Never `--schema=onchain` as one dump: it would sweep in the three snapshotter
+tables that stay (R-8.3).
+
+```bash
+ssh vm "docker exec -i supabase-db pg_dump -U supabase_admin -d postgres \
+  --schema=onchain --table=onchain.<name> --data-only --format=plain --no-owner --no-acl" \
+| ssh vm "docker exec -i onchain-engine-db psql -qU postgres -d postgres -v ON_ERROR_STOP=1"
+```
+
+Order: `providers` → `users` → [`access_profiles`: verify, do not copy] → `api_tokens` →
+`access_audit` (see below) → `cache_entries` → `usage` → `usage_window` → `request_trace` →
+`diagnostics` → `retention_runs` → `client_usage` (no source, the step is empty).
+`provider_buckets` is excluded (R-8.11).
+
+**`access_profiles` is verified, never copied.** Its single row `01JPHASE00000000000000000A` is
+seeded by the DDL on BOTH sides (`002_t014_network_profile.sql:287` and
+`005_wi62_dedicated_container.sql:357`), so a `COPY` would hit the primary key and, under
+`ON_ERROR_STOP=1`, abort the transfer on the third table of twelve. Compare by VALUE, not by count —
+a row count of `1` and `1` matches whatever the rows contain:
+
+```bash
+# same md5 on both containers = the seeds are identical
+… psql -qtA … <<'SQL'
+SELECT md5(string_agg(x::text, chr(10) ORDER BY x::text)) FROM onchain.access_profiles x;
+SQL
+```
+
+**`access_audit` — one-shot, and the repeat branch needs the owner's word.** A plain repeat of the
+pipeline is REFUSED, not doubled: the table carries `PRIMARY KEY (id)`, so the second `COPY` dies
+with `duplicate key value violates unique constraint "access_audit_pkey"` and exit `3`, leaving row
+count and content untouched (`COPY` is one statement — all or nothing). Measured 2026-08-31. What
+the repeat branch is actually FOR is rows already sitting in the target before the copy:
+
+```bash
+{ echo "BEGIN;"; echo "TRUNCATE onchain.access_audit;"
+  ssh vm "docker exec -i supabase-db pg_dump … --table=onchain.access_audit --data-only"
+  echo "COMMIT;"
+} | ssh vm "docker exec -i onchain-engine-db psql -qU postgres -d postgres -v ON_ERROR_STOP=1"
+```
+
+`TRUNCATE` is on skill `vm-deploy` §5's list and needs the owner's explicit confirmation every time.
+The rule `access_audit_no_delete` does not block it (rules do not apply to `TRUNCATE`) and
+`access_audit_no_update` is not a `TRUNCATE` trigger — checked before running it. Apply it ONLY on
+the new container: on the old one these rows are the source until §10.9.7.
+
+**What was measured after the transfer, 2026-08-31.**
+
+| Check | Result |
+| :---- | :----- |
+| row counts, 13 tables, old vs new | all match; `provider_buckets` `0` by exclusion |
+| `min`/`max` of each time column | identical on both sides |
+| full-row content `md5`, 12 tables | identical on both sides — stronger than spot-checking ids |
+| `token_hash` | same id, `length` 64, same `md5` |
+| orphans, five relations | zero |
+| `provider_buckets`, `client_usage` on new | table exists, zero rows |
+| foreign keys are live | a bogus `user_id` is refused by `api_tokens_user_id_fkey`; the SAME row with a real one inserts — both in rolled-back transactions |
+
+**Rows transferred: 25** — `users` 1, `api_tokens` 1, `access_audit` 2, `diagnostics` 9,
+`retention_runs` 12; the other seven tables are empty on both sides. `access_profiles` 1 is present
+on both by DDL and is not counted as transferred.
+
+**Prove a negative check with a control too.** The first foreign-key probe was refused by
+`api_tokens_prefix_check` (`length(prefix) >= 8`) — the row never reached the foreign key at all. A
+check that fails for the wrong reason has measured nothing. The pair above — bogus id refused, real
+id accepted, both rolled back — is what the assertion needs.
+
+
+### The verify gate — five checks, run BEFORE anything is dropped  *(task 015-24, §10.9.4, UC-6 step 5)*
+
+`sql/verify/wi62_verify.sql`. It runs on EACH container and only READS — a test in
+`packages/core/test/pg-migration-guards.test.ts` holds that property, because this gate runs against
+the old container while it is still the only copy of the data.
+
+**Why the script lives in the repo and not on the VM.** `DB-SCHEMA-CONCEPT` §5.3 requires it: the
+same gate runs at the next host move (§6). Container names are arguments of the calling command,
+never text inside the file.
+
+**Why one database does not read the other.** The containers share no role that can read across
+them. The old side's report travels as a VALUE — one base64 line — not over a connection.
+
+```bash
+# 1. the OLD side: prints its numbers and one base64 line
+ssh vm 'docker exec -i supabase-db psql -qX -U supabase_admin -d postgres \
+  -v SIDE=old -v SAMPLE=20' < sql/verify/wi62_verify.sql
+
+# 2. the NEW side: same script, plus the line the old side printed
+ssh vm "docker exec -i onchain-engine-db psql -qX -U postgres -d postgres \
+  -v SIDE=new -v SAMPLE=20 -v OLD_REPORT=$B64" < sql/verify/wi62_verify.sql
+```
+
+**The blocking rule.** Anything but `equal`/`not_applicable` in check 1; any bound mismatch in
+check 2; any row printed by check 3; any non-zero in check 4; anything but `1` in check 5 — **UC-6
+step 10 does not run**. The script prints this as one line: `PASS — UC-6 step 10 may proceed` or
+`BLOCKED — UC-6 step 10 must NOT run`. The report names the fact; this rule is what to do with it.
+
+**Every guard exits 3, measured 2026-08-31.** Missing `SIDE`, missing `SAMPLE`, `SIDE` that is
+neither `old` nor `new`, `SIDE=new` without `OLD_REPORT`, and an `OLD_REPORT` that is itself a
+new-side report — all five refuse with exit `3`; the correct invocation exits `0`. `SIDE` is checked
+through `\gset` rather than inside the `DO` block: psql does not substitute `:'VAR'` inside a
+dollar-quoted string, so a guard written that way would fail as an undefined parameter — for the
+wrong reason, after looking correct in review.
+
+**Measured on the live move, 2026-08-31.** Eleven applicable tables `equal`; both time bounds equal
+on all ten with a time column; spot-check compared 26 rows across six non-empty tables with zero
+disagreements; four orphan checks zero; `usage.calls_made` present. Verdict **PASS**.
+
+**The gate was proven against defects, not only against clean data.** Five synthetic defects were
+injected into the live new container inside transactions that were ROLLED BACK, and the real script
+was run against each:
+
+| Injected defect | What the gate said |
+| :-------------- | :----------------- |
+| an extra `access_audit` row | `more_on_new`, bounds `DIFFERS`, spot-check names the row `only_on_new` |
+| one `diagnostics` row missing | `less_on_new`, spot-check names the missing row `only_on_old` |
+| one byte changed in `token_hash` | counts and bounds still `equal` — **only** the spot-check catches it, printing both values |
+| a `client_usage` row whose `principal_id` has no token | orphans `1` on `client_usage.principal_id` |
+| an in-window `alert.delivered` row AND a duplicated `access_audit` row together | both `more_on_new`, told apart by table AND by bounds |
+
+All five produced `BLOCKED`. After the runs, the container's row counts, time bounds and
+`token_hash` were re-measured and matched the post-transfer snapshot exactly.
+
+**Read the last row carefully — it is the one the gate was argued about.** A write that lands during
+the move window and a duplicated row both raise `more_on_new`, and the task feared they would be
+indistinguishable. They are not: a late write pushes the table's `max` bound PAST the old side's,
+while a duplicate reuses an existing timestamp and leaves both bounds `equal`. The direction plus
+the bounds separate the two causes before anyone reads the row's `event`.
+
+**And the third row is why counts alone are not a gate.** A single flipped byte in `token_hash`
+leaves every count and every bound identical. Without the spot-check the move would have passed
+review and failed at the first authenticated request, after the old container was already dropped.
+
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are

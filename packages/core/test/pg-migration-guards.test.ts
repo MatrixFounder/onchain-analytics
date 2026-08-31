@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * L-28 — every migration guard must report its refusal in the process exit code.
+ * L-28 — every psql guard must report its refusal in the process exit code.
  *
  * **The defect these assertions close.** Ten guards across five migration files ended in
  * `\quit 1`. The exit-status argument to `\quit` arrived in PostgreSQL 17; measured 2026-08-28 on
@@ -18,10 +18,16 @@ import { describe, expect, it } from 'vitest';
  * these guard against is a NEW guard added in the old form, which no behavioural coverage of the
  * existing ones would catch. The live measurement was taken once, by hand, and is recorded in
  * `docs/issues/l-28-…` and in the header comment of each file.
+ *
+ * **Why the scan covers `sql/verify` too.** The defect is a property of the GUARD FORM, not of
+ * migrations: the verify gate of task 015-24 takes three psql variables and refuses without them,
+ * exactly like a migration does. Scoping the scan to one directory would have let the next such
+ * file reintroduce `\quit 1` while this test stayed green — the same shape of hole the issue
+ * records.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const MIGRATIONS_DIR = path.join(repoRoot, 'sql/migrations');
+const SQL_DIRS = ['sql/migrations', 'sql/verify'] as const;
 
 /**
  * Statements only, PAIRED WITH THEIR ORIGINAL LINE NUMBERS. The old form quoted inside a `--`
@@ -40,24 +46,26 @@ const statementsOf = (text: string): string =>
     .map(({ line }) => line)
     .join('\n');
 
-const migrationFiles = (): string[] =>
-  readdirSync(MIGRATIONS_DIR)
-    .filter((name) => name.endsWith('.sql'))
-    .sort();
+/** Repo-relative paths, so a failure names the directory as well as the file. */
+const sqlFiles = (): string[] =>
+  SQL_DIRS.flatMap((dir) =>
+    readdirSync(path.join(repoRoot, dir))
+      .filter((name) => name.endsWith('.sql'))
+      .sort()
+      .map((name) => `${dir}/${name}`),
+  );
+
+const readSql = (rel: string): string => readFileSync(path.join(repoRoot, rel), 'utf8');
 
 /** A file carries guards if it can refuse to run at all — `001_init.sql` takes no parameter. */
 const guardedFiles = (): string[] =>
-  migrationFiles().filter((name) =>
-    statementsOf(readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8')).includes('\\echo '),
-  );
+  sqlFiles().filter((rel) => statementsOf(readSql(rel)).includes('\\echo '));
 
 describe('L-28 — a migration guard reports its refusal in the exit code', () => {
   it('no migration ends a guard with `\\quit 1`, which exits 0 on psql 15 and 16', () => {
     const offenders: string[] = [];
-    for (const name of migrationFiles()) {
-      for (const { line, lineNo } of statementLines(
-        readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8'),
-      )) {
+    for (const name of sqlFiles()) {
+      for (const { line, lineNo } of statementLines(readSql(name))) {
         if (/^\s*\\quit\s+\S/.test(line)) offenders.push(`${name}:${lineNo}: ${line.trim()}`);
       }
     }
@@ -72,10 +80,7 @@ describe('L-28 — a migration guard reports its refusal in the exit code', () =
     // the operator remembers a flag is observable by luck. The `\set` makes the raise below fatal
     // on its own terms.
     const missing = guardedFiles().filter(
-      (name) =>
-        !statementsOf(readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8')).includes(
-          '\\set ON_ERROR_STOP on',
-        ),
+      (name) => !statementsOf(readSql(name)).includes('\\set ON_ERROR_STOP on'),
     );
     expect(
       guardedFiles().length,
@@ -94,7 +99,7 @@ describe('L-28 — a migration guard reports its refusal in the exit code', () =
     const unpaired: string[] = [];
     let guards = 0;
     for (const name of guardedFiles()) {
-      const rows = statementLines(readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8'));
+      const rows = statementLines(readSql(name));
       for (const [index, row] of rows.entries()) {
         if (!/^\s*\\echo\s+'FATAL:/.test(row.line)) continue;
         guards += 1;
@@ -126,7 +131,7 @@ describe('L-28 — a migration guard reports its refusal in the exit code', () =
     // the tag makes that visible at the call site.
     const bare: string[] = [];
     for (const name of guardedFiles()) {
-      const rows = statementLines(readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8'));
+      const rows = statementLines(readSql(name));
       for (const [index, row] of rows.entries()) {
         if (!/^\s*DO\s+\$\$/.test(row.line)) continue;
         const block = rows
@@ -141,13 +146,33 @@ describe('L-28 — a migration guard reports its refusal in the exit code', () =
     );
   });
 
+  it('a verify script only reads — no write statement reaches a live container', () => {
+    // The verify gate runs against BOTH containers while the move is mid-flight, and on the old one
+    // it runs BEFORE the irreversible drop. A write inside it would change the very numbers it
+    // exists to compare, and would do so on the side that is still the only copy of the data.
+    //
+    // Scoped to `sql/verify` on purpose: migrations write by definition. `TRUNCATE` is listed
+    // because skill `vm-deploy` §5 treats it as destructive, and a gate is not the place for it.
+    const writes =
+      /\b(INSERT\s+INTO|UPDATE\s+\S+\s+SET|DELETE\s+FROM|TRUNCATE|DROP\s+(TABLE|SCHEMA|DATABASE|ROLE)|ALTER\s+TABLE|GRANT|REVOKE)\b/i;
+    const verifyFiles = sqlFiles().filter((rel) => rel.startsWith('sql/verify/'));
+    const offenders: string[] = [];
+    for (const name of verifyFiles) {
+      for (const { line, lineNo } of statementLines(readSql(name))) {
+        if (writes.test(line)) offenders.push(`${name}:${lineNo}: ${line.trim()}`);
+      }
+    }
+    expect(verifyFiles.length, 'no verify script found — the scan has drifted').toBeGreaterThan(0);
+    expect(offenders, `a verify script must not write:\n${offenders.join('\n')}`).toStrictEqual([]);
+  });
+
   it('no guard interpolates a psql variable into the raised message', () => {
     // `003` documents why: psql does not substitute `:'VAR'` inside a dollar-quoted string, so the
     // reference would reach the server verbatim and fail as an undefined parameter — after looking
     // correct in review. A guard that fails for the wrong reason is not a guard.
     const interpolated: string[] = [];
     for (const name of guardedFiles()) {
-      const body = statementsOf(readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8'));
+      const body = statementsOf(readSql(name));
       for (const match of body.matchAll(/RAISE EXCEPTION '([^']*(?:''[^']*)*)'/g)) {
         if (/:'?[A-Z_]{3,}'?/.test(match[1] ?? '')) interpolated.push(`${name}: ${match[1]}`);
       }

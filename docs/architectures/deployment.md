@@ -852,11 +852,34 @@ header — because the old container's twelve T-014 tables are dropped WHOLESALE
 step at §10.9.7, and a `client_usage` row written before that step would vanish with them. The old
 container therefore never carries a thirteenth engine table, only the twelve of migration 002.
 
-**Order — `DB-SCHEMA-CONCEPT` §6, applied literally (R-8.14).** The network profile is stopped
+**Order — `DB-SCHEMA-CONCEPT` §6 (R-8.14, first sentence).** The network profile is stopped
 BEFORE any row moves (`UC-6` step 3) — a window with no write reaching the old container, not a
 reconciliation performed after the fact. Rows transfer while stopped (step 4). The profile starts
 against the NEW container (step 6) only after this section's verify gate (below) has run against it
 (step 5). R-8.13's four checks stand between "rows copied" and "profile serving traffic", not after.
+
+**Deliberate deviation from R-8.14's SECOND sentence, recorded rather than performed silently
+(MINOR-9, review round 2).** R-8.14 has two readings of when the verify gate runs, and this
+architecture follows one of them.
+
+| Source                                     | Where it puts the gate                                                             |
+| :----------------------------------------- | :--------------------------------------------------------------------------------- |
+| R-8.14's own text (`docs/TASK.md:263-265`) | "сразу после запуска профиля на новом контейнере" — right AFTER the profile starts |
+| `UC-6` step 5 (`docs/TASK.md:588`)         | "пока профиль ещё остановлен" — while the profile is still stopped                 |
+| This section                               | follows `UC-6`                                                                     |
+
+**Why `UC-6` wins.** The gate's first two checks compare two databases — row counts, and the
+`min`/`max` of each time column. A writer running during the comparison makes those numbers
+incomparable: a difference produced by a legitimate write after the snapshot is indistinguishable
+from a row the copy failed to move. Running the gate against a live writer would make the very
+signal it exists to raise unreadable, so R-8.14's second sentence is followed in intent (a gate
+before any deletion) and departed from in letter (its position relative to the start).
+
+**Why this is written down rather than just done.** Two readings of one requirement, of which
+exactly one is executed, is a decision — and a decision that leaves no record is indistinguishable
+from an oversight to the next reader. The same form is already applied to R-8.10 in the `WI-62`
+record. §10.9.7 carries a pointer back here, because the decommissioning step is the one place
+where the ordering becomes irreversible and its reader has to know which reading the gate followed.
 
 **Which twelve tables carry rows, and why the count differs from the migration's thirteen.**
 `client_usage` is created empty in §10.9.2 and STAYS empty until the new container starts serving —
@@ -986,6 +1009,11 @@ billing ledger, `client_usage`, lives ONLY on the new container — it was never
 container (`supabase-db`), because migration `004_t015_billing.sql` is not applied there. This
 section therefore drops the TWELVE engine tables of migration 002, not a thirteenth this container
 never carried.
+
+**Which reading of R-8.14 the verify gate followed — see §10.9.4.** This is the step after which
+nothing is recoverable from this container, so its reader must know that the gate of §10.9.4 ran
+while the profile was still STOPPED (`UC-6` step 5), not after it started (R-8.14's own second
+sentence). The deviation and its reason are recorded there.
 
 After §10.9.6's artifact exists, the twelve engine tables are dropped from the OLD container.
 Step 2a's postcondition (`deployment.md` §10.4.2, translated to this topology by `docs/TASK.md`
