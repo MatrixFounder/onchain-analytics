@@ -1028,6 +1028,99 @@ platform-wide `SELECT`; this container has exactly one non-superuser role and it
 its own thirteen tables.
 
 
+### The rollback artifact, before anything is dropped  *(task 015-26, §10.9.6, R-8.15, AC-47, UC-6 step 10a)*
+
+Additive: it reads the old container and changes nothing there — the thirteen-table snapshot was
+re-taken after the dump and was identical. The drop it protects is task 015-27, which needs the
+owner's explicit word.
+
+**Taken 2026-08-31.**
+
+| Property | Value |
+| :------- | :---- |
+| dump | `/Users/sergey/onchain-backups/wi62-rollback-20260831T213751Z.dump`, 36 891 bytes, mode 0600 |
+| sha256 | `5204fc9aa6a5d8d6f25b3c5c249daed763dff1226f77f30fb6435f61c309d1a0` |
+| companion | `/Users/sergey/onchain-backups/wi62-rollback-20260831T213751Z.guards.sql`, 707 bytes |
+| companion sha256 | `65423e4fc25c8027089399342c18124e1415660155eda4af6a3050cb624ee327` |
+| location | the operator's machine — outside BOTH containers' filesystems, and outside the repository |
+| retention | **30 days** from the date taken (applied, not derived: R-8.15 says "N days" and never fixes N) |
+
+**Named tables, never `--schema=onchain`, and the deviation from AC-47's letter is deliberate.**
+
+| Wording | What it says |
+| :------ | :----------- |
+| AC-47 (`docs/TASK.md:720`) | `pg_dump --schema=onchain`, TWELVE tables |
+| architecture 10.9.6 | `--schema=onchain --format=custom` |
+| executed | THIRTEEN `--table` names, no `--schema` |
+
+A schema-wide dump would sweep in the snapshotter's `assets`, `metrics` and `snapshots`, which live
+in the same schema and are not moving (R-8.3) — MAJOR-7 of architecture review round 1. The name list
+is checked against the DROP list of task 015-27 rather than against a count: **the two sets are
+equal, 13 = 13, verified by diff.** The specification text is left as accepted; the divergence is
+recorded here.
+
+**`client_usage` EXISTS on the old container — the premise that it "was never created there" is
+FALSE (measured 2026-08-31).** MAJOR-F, task 015-03 and `docs/PLAN.md` all record the decision that
+migration `004_t015_billing.sql` is not applied to `supabase-db`. It was applied. Three independent
+fingerprints:
+
+| Evidence | Reading |
+| :------- | :------ |
+| `usage_calls_made_non_negative` and `client_usage_balance_is_integer` both present | those two constraint names exist only in `004` |
+| `onchain.usage` carries `calls_made` | `004` is what adds that column |
+| `client_usage` has oid 53502, above every `002` table (53183-53351) | it was created later than the `002` set |
+
+Consequences, none of them silent:
+
+- the artifact holds THIRTEEN tables, not the twelve the task predicted — more complete, and safe;
+- task 015-27's `DROP TABLE IF EXISTS onchain.client_usage` is NOT the empty operation its text
+  assumes; it drops a real table. That task's own guard still holds: the table is EMPTY, which is
+  the condition it requires before proceeding;
+- the verify gate of task 015-24 marked `client_usage` `not_applicable` for "no source on the old
+  container". The verdict stands — there are no ROWS to copy — but the stated reason was imprecise:
+  the table is there, and empty.
+
+**A table-scoped dump does not carry schema-level objects, and `pg_restore` exits 0 anyway.**
+Restoring into an empty database reproduced every row count exactly (13 tables, zero mismatches
+against the old container) and left `access_audit` **updatable**:
+
+| | live container | restored from the dump alone |
+| :-- | --: | --: |
+| triggers on `access_audit` | 1 | **0** |
+| functions in schema `onchain` | 1 | **0** |
+| rules on `access_audit` | 1 | 1 |
+
+`pg_restore` printed `could not execute query: ERROR: function onchain.access_audit_no_update() does
+not exist`, then `warning: errors ignored on restore: 1` — and **exited 0**. A rollback gated on
+`$?` would have reported success while handing back an audit table whose append-only guarantee was
+half gone: the DELETE rule survives, because a rule is attached to the table; the UPDATE trigger does
+not, because its function is a schema-level object no `--table` filter can select.
+
+**Hence the companion file, and it is part of the artifact rather than a note.** It carries
+`onchain.access_audit_no_update()` and its trigger, extracted from the live container with
+`pg_get_functiondef` and `pg_get_triggerdef`. Applied to the restored copy it brings triggers and
+functions back to 1 — and the protection was then EXERCISED, not assumed: `UPDATE` raises
+`onchain.access_audit is append-only`, `DELETE` leaves the row count at 2.
+
+**Restore procedure — both files, in this order.**
+
+```sh
+createdb <target>
+psql -d <target> -c 'CREATE SCHEMA onchain'
+pg_restore -U postgres -d <target> --no-owner --no-acl < wi62-rollback-20260831T213751Z.dump
+psql -d <target> -f wi62-rollback-20260831T213751Z.guards.sql      # NOT optional
+```
+
+Then re-measure: thirteen tables with the row counts of the old container, `triggers=1 rules=1
+functions=1`, and an `UPDATE onchain.access_audit` that raises. **Do not read `pg_restore`'s exit
+code as the check** — this is exactly the shape issue `L-28` records for `\quit 1`.
+
+**A temporary database `wi62_restore_check` remains on `onchain-engine-db`** — the restore target of
+this verification. It holds a second copy of `api_tokens.token_hash`. Removing it is a
+`DROP DATABASE`, which skill `vm-deploy` section 5 puts behind the owner's explicit word, so it is
+named here rather than removed quietly.
+
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are
