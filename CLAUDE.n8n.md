@@ -196,12 +196,32 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
   1.1 s: `task-runners-main` had logged nothing since a failed handshake on 2026-08-13. Read that
   error as "the MAIN runner is wedged", not as a defect in the Code node — and do not restart the
   container, it is shared with 20+ other workflows.
+- **The public API's workflow schema is NARROWER than the workflow's own settings.** `POST` and
+  `PUT /api/v1/workflows` reject `settings.binaryMode` outright (`request/body/settings must NOT have
+  additional properties`) while accepting `availableInMCP`; `PATCH` is `405`. Measured 2026-08-31 by
+  bisecting on a throwaway workflow, because the error names no key. Send the settings WITHOUT
+  `binaryMode` — n8n MERGES the settings object rather than replacing it, so a value already stored
+  survives the write (also measured: `binaryMode: "separate"` was still there on read-back).
+  `import_with_relink.py:33-35` already whitelists settings and says so in a comment; note that its
+  whitelist also omits `availableInMCP`, which the API WOULD accept — so a re-import drops a setting
+  that did not have to be dropped.
 - **"Workflow is not available in MCP" is a plain setting, not a UI-only toggle:**
   `settings.availableInMCP: true`. Set it with `n8n_update_partial_workflow` → `updateSettings`
   (pass the whole settings object; new workflows are created without it). Don't ask the operator to
   click through the UI for this.
 
 **Export / re-import (hard-won)**
+- **`export.sh` can move the repo BACKWARDS when the file is ahead of the instance.** The script
+  re-reads the live instance and overwrites `exported/<name>.json` with whatever is there. If a
+  workflow was authored in the repo but not yet installed — which is the normal state between
+  writing one and getting approval to install it — a routine export after editing some OTHER
+  workflow silently reverts it. Caught 2026-08-31: `onchain-retention.json` in the repo is task
+  015-19's FOUR-job version (19 nodes, 9 Postgres, adds `client_usage.purge`); the instance still
+  runs task 014-41's THREE-job version (16 nodes, 7 Postgres). One `./export.sh` run for
+  `onchain-verify` deleted 119 lines from the retention file. **Always read `git diff
+  n8n-workflows/exported/` after an export and `git checkout --` the files you did not intend to
+  change** — the diff is the only thing that tells "the instance changed" apart from "the instance
+  is behind".
 - `export.sh` writes each workflow to `exported/<name>.json` — **keyed on workflow NAME, not id**. Two
   same-named workflows collide → the later export **silently clobbers** the earlier. This bit us: a
   soft-deleted (archived) duplicate `onchain-error-alert` overwrote the live export. `export.sh` now

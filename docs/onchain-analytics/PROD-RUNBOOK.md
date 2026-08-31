@@ -779,6 +779,71 @@ shell variable `$PW`, and twice a test fixture whose DSN is literally
 raised an incident. Read the lines.
 
 
+### Splitting the pulse query and reactivating  *(task 015-33, UC-6 step 6, part — closes the window)*
+
+**Why the query had to be split.** `onchain-verify` reads BOTH databases in one run: the snapshotter
+tables under `Supabase DB`, and `onchain.diagnostics` — which moved — for the WI-64 pulse. After the
+credential retarget the write went to the new container and the read stayed on the old one, so the
+report would have said "no confirmed delivery" every day while deliveries were being recorded
+elsewhere, and after §10.9.7 it would have failed on a missing relation. `onchain-verify` is the only
+workflow that reads across the split; the other two just write.
+
+| Node | Credential | Reads |
+| :--- | :--------- | :---- |
+| `Verify query` | `Supabase DB` | `snapshots`, `metrics`, `assets` |
+| `Pulse query` (new) | `Onchain engine state` | `max(ts)` of `alert.delivered` in `onchain.diagnostics`, **and its own `now_ms`** |
+
+Chain: `Daily 08:07 UTC → Set Parameters → Verify query → Pulse query → Format report → Report →
+Record delivery → Write delivery`. Both query nodes carry `alwaysOutputData: true` so an empty
+result cannot silently skip the renderer.
+
+**`now_ms` travels with the timestamp, and this is the whole point of the change.** The renderer
+computes the pulse age as `now_ms - alert_last_ts`. Leaving `now_ms` on `Verify query` would make
+that a subtraction between the clocks of two different databases — and nothing in the report could
+show it, because both values are plausible epoch-ms. One database supplies the mark and its own
+"now". The bound stays in `Set Parameters` (L-3).
+
+**Running it in production without waiting for 08:07.** `n8n_test_workflow` drives only
+webhook/form/chat triggers, and the public API has no execute endpoint. Add a Webhook trigger node
+wired to `Set Parameters`, activate, `GET` the production URL — that yields a **`webhook`**-mode
+execution, which is production, not `manual` (`errorWorkflow` does not fire for `manual`, WI-64) —
+then REMOVE the node and re-activate. Verify afterwards that the workflow's only trigger is its own.
+
+**Measured 2026-08-31.** Execution `46872`, status `success`, mode `webhook`.
+`Pulse query` returned `alert_last_ts 1788176504715` and `now_ms 1788186568117` — both from the new
+container. The message that arrived carried
+`📡 alert channel: 3h since last confirmed delivery (bound 26h)`, and `alert.delivered` on the NEW
+container went 6 → 7 with the new row written by `onchain-verify`.
+
+**The delivery row is the witness, not the query result.** `Write delivery` is chained AFTER the
+Telegram node, so the row exists only if Telegram accepted the message (L-4: a monitoring change is
+proven by the message arriving). A correct query result with no message is not acceptance.
+
+**Reactivation order, and why.**
+
+| # | Workflow | Why here |
+| :- | :------- | :------- |
+| 1 | `onchain-error-alert` | it is the handler for the other two; the reverse order leaves a gap in which their failures reach nobody |
+| 2 | `onchain-verify` | the report is what proves the new topology end to end |
+| 3 | `onchain-retention` | the only one that DELETES — it must not run before the first post-move report has been delivered and read |
+
+**The alert-channel silence window.**
+
+| Field | Value |
+| :---- | :---- |
+| opened | `2026-08-31T11:55:48Z` — three workflows deactivated (task 015-23) |
+| closed | `2026-08-31T14:30:07Z` — all three active again |
+| duration | **2h 34m** |
+| declared bound | 24h (task 015-23); early reactivation of `onchain-error-alert` alone was permitted after the credential move and was not needed |
+
+**`onchain-retention` on the instance is task 014-41's THREE-job version.** The repository's
+`n8n-workflows/exported/onchain-retention.json` is task 015-19's FOUR-job version, which adds
+`client_usage.purge`; installing it is still pending the owner's approval. Both versions write the
+same three transferred tables, so the move is unaffected — but `./n8n-workflows/export.sh` re-reads
+the INSTANCE and will silently revert the repo file to the older shape. Read
+`git diff n8n-workflows/exported/` after every export.
+
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are

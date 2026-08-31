@@ -771,10 +771,29 @@ the container edition; the separated-host edition remains `OQ-T014-B`'s open tra
 one's.
 
 **What moves and what does not.** Thirteen engine tables — the twelve of §4.4 plus `client_usage`
-(`data-model.md` §4.6.1) — move to the new container. The snapshotter's `assets`, `metrics`,
-`snapshots` and the `onchain-snapshotter`/`onchain-verify`/`onchain-error-alert` workflows stay on
-the existing Supabase container, addressed by the SAME "Supabase DB" credential, unchanged (R-8.3,
-AC-18).
+(`data-model.md` §4.6.1) — move to the new container. The snapshotter's `assets`, `metrics` and
+`snapshots` stay on the existing Supabase container, addressed by the SAME "Supabase DB" credential,
+unchanged (R-8.3, AC-18).
+
+**What moves is a CREDENTIAL, not a workflow — and three workflows straddle both (corrected
+2026-08-31, task 015-33).** This paragraph used to say the `onchain-snapshotter`, `onchain-verify`
+and `onchain-error-alert` workflows "stay … addressed by the SAME 'Supabase DB' credential,
+unchanged". That is true of the snapshotter alone. The other two — and `onchain-retention`, absent
+from the old sentence — write `onchain.diagnostics` under the SEPARATE `Onchain engine state`
+credential, and `onchain.diagnostics` is one of the thirteen tables that move.
+
+| Workflow              | `Supabase DB`                               | `Onchain engine state`                                                  |
+| :-------------------- | :------------------------------------------ | :---------------------------------------------------------------------- |
+| `onchain-snapshotter` | writes `assets`/`metrics`/`snapshots`       | —                                                                       |
+| `onchain-verify`      | `Verify query` reads the snapshotter tables | `Pulse query` reads and `Write delivery` writes `diagnostics`           |
+| `onchain-error-alert` | —                                           | `Write delivery` writes `diagnostics`                                   |
+| `onchain-retention`   | —                                           | writes `retention_runs`, deletes from `diagnostics` and `request_trace` |
+
+`onchain-verify` is the one that reads BOTH databases in a single run, which is why its query had to
+become two nodes (§10.9.4's own note and task 015-33): no credential can see both sides, so no single
+statement can. The three workflows are not edited as workflows — one credential record is retargeted
+and all three follow it; only `onchain-verify` needed a structural change, because it alone reads
+across the split.
 
 #### 10.9.1. Provisioning the container (R-8.1, AC-16)
 
