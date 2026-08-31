@@ -924,6 +924,24 @@ one input, and the token's length is printed so "something was read" is visible.
 | prefix true, digest false | `ONCHAIN_TOKEN_HASH_SALT` is not the pepper the seeded digest was computed with |
 | both true | the refusal is in the code path, not in the inputs — escalate with the diagnostics row id |
 
+**A bare `tools/list` cannot answer AC-44 — it gets 400, and 400 is not 401.** Streamable HTTP
+refuses a request that carries no `Mcp-Session-Id` and is not an `initialize`: "a request with no
+session and no `initialize` has nothing to attach to" (`src/transport/http.ts`). The smallest
+sequence that reaches a tool handler is `initialize` → `notifications/initialized` → `tools/list`
+carrying the session id. `./scripts/probe-token-request.sh` performs it and prints statuses only.
+
+**Read the two failure codes apart.** `401` is the authentication refusal and writes an
+`auth.rejected` row; `400` comes from the layer AFTER authentication and writes none. A `400`
+therefore means the token WAS accepted — which is how the 2026-08-31 21:28:28 attempt was read: the
+`auth.rejected` count did not move, so the second token authenticated even though the call itself
+went no further.
+
+**Why the discriminators are ROW COUNTS and not scan counters.** A first attempt used
+`pg_stat_user_tables` scan counts on `api_tokens` — and the measuring query itself scanned that
+table, so each measurement moved the number it was reading by one. Both containers showed `+1` and
+the comparison said nothing. Row counts of `request_trace`, `api_tokens` and the `auth.rejected`
+diagnostics cannot be moved by a read, and the diagnostics row names the outcome outright.
+
 **Why the second outcome has no repair by re-hashing.** `token-store.ts` states it in advance:
 rotating the pepper invalidates every issued token at once and there is no re-hash path, because the
 presented secret is never stored. The repair is to seed a new admin token against the CURRENT pepper
