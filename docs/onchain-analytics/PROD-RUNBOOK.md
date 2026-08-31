@@ -902,18 +902,30 @@ The writer switch works; it is the credential being presented that does not reso
 **Two candidates remain, and one command tells them apart** — run by the token holder, printing two
 booleans and nothing else:
 
-```bash
+```sh
+# `printf` + bare `read -rs`, NOT `read -rs -p`. The prompting form of `read` is not portable:
+# in zsh — the shell this project's operator uses — `-p` means "read from the coprocess", so
+# `read -rs -p 'token: ' T` fails with `read: -p: no coprocess`, leaves T UNSET, and every check
+# below then answers `false` about the empty string. A check that fails for the wrong reason is
+# not a check, so the guard on an empty value is mandatory, not decorative.
 cd /Users/sergey/dev-projects/onchain-analytics
-read -rs -p 'token: ' T; echo
+printf 'token: '; read -rs T; echo
+[ -n "$T" ] || { echo 'REFUSED: nothing was read — do not read the booleans below'; }
 EXPECTED=$(ssh vm "docker exec -i onchain-engine-db psql -qtA -U postgres -d postgres \
   -c \"SELECT token_hash FROM onchain.api_tokens\"")
 T="$T" EXPECTED="$EXPECTED" node -e '
   process.loadEnvFile();
   const { createHash } = require("node:crypto");
-  const t = process.env.T;
-  const d = createHash("sha256").update(process.env.ONCHAIN_TOKEN_HASH_SALT + t, "utf8").digest("hex");
+  const t = process.env.T ?? "";
+  const expected = (process.env.EXPECTED ?? "").trim();
+  const pepper = process.env.ONCHAIN_TOKEN_HASH_SALT;
+  // Refuse rather than answer about an input that was never supplied.
+  if (!t) { console.log("REFUSED: the token variable is empty"); process.exit(1); }
+  if (!pepper) { console.log("REFUSED: ONCHAIN_TOKEN_HASH_SALT is not set"); process.exit(1); }
+  if (expected.length !== 64) { console.log("REFUSED: no digest came back from the container"); process.exit(1); }
+  console.log("token length                :", t.length);
   console.log("prefix is the one on record :", t.slice(0, 11) === "oi_oWJB9vKU");
-  console.log("digest matches the row      :", d === process.env.EXPECTED.trim());
+  console.log("digest matches the row      :", createHash("sha256").update(pepper + t, "utf8").digest("hex") === expected);
 '
 unset T EXPECTED
 ```
