@@ -1,0 +1,107 @@
+# onchain-engine-db — the engine's own Postgres (WI-62 / T-015 task 015-20, deployment.md §10.9.1).
+#
+# WHY THIS FILE EXISTS AND `docker run` DOES NOT. The container was first created with a `docker run`
+# one-liner. That leaves the configuration in one person's shell history: it cannot be reviewed, it
+# does not appear in a diff, and reproducing the host means trusting a transcript. Everything this
+# project keeps about the move — the migrations, the verify gate, the runbook — is a file in the
+# repository, and the container definition is not an exception to that rule.
+#
+# WHY ITS OWN COMPOSE PROJECT AND NOT THE VM'S EXISTING ONE. The dev VM already runs a compose
+# project named `n8n-project` (/home/parallels/AI/docker-compose.yml) carrying 26 containers: n8n,
+# its workers, and the whole Supabase stack that 20+ other people's workflows depend on. Adding a
+# service there would put our container's lifecycle inside theirs — `docker compose down` in that
+# directory would take ours with it, and vice versa. A separate project name keeps the two blast
+# radii separate.
+#
+# WHY A PLAIN POSTGRES IMAGE AND NOT ANOTHER SUPABASE STACK. Issue SEC-2 exists BECAUSE Supabase
+# ships three roles with a platform-wide SELECT (`supabase_admin`, `postgres`,
+# `supabase_read_only_user`). A stock `postgres:16-alpine` carries none of them, so the exception is
+# removed by the choice of image rather than by grants that a later migration could widen again.
+#
+# DEPLOY (from the repo root):
+#   scp deploy/onchain-engine-db/compose.yaml vm:/home/parallels/onchain-engine/compose.yaml
+#   ssh vm 'cd /home/parallels/onchain-engine && docker compose config -q && docker compose up -d'
+#
+# ⚠ VALIDATE WITH `docker compose config -q`, NEVER WITHOUT THE FLAG. The non-quiet form renders the
+# fully interpolated configuration — INCLUDING every value read from `env_file` — to stdout. Run
+# against this file it prints POSTGRES_PASSWORD in clear text into whatever captures that output: a
+# terminal transcript, a CI log, a paste. This happened on 2026-08-31 and cost a password rotation.
+# `-q` validates and prints nothing, which is the whole job. If you genuinely need to inspect the
+# merged config, comment out `env_file` first or pipe through a redaction filter.
+#
+# The data lives in the EXTERNAL named volume below, so recreating the container is safe and
+# `docker compose down` cannot take the database with it.
+
+name: onchain-engine
+
+services:
+  db:
+    image: postgres:16-alpine # server reports 16.13; pinned to the major, upgrades are deliberate
+    container_name: onchain-engine-db
+
+    # WHY `unless-stopped` AND NOT `always`. The dev VM is rebooted by hand. `always` would restart
+    # a container an operator had deliberately stopped mid-investigation.
+    restart: unless-stopped
+
+    # The superuser password, user and database. The file is VM-LOCAL and mode 0600; its value is
+    # generated ON the VM and enters neither this repository nor an image layer (D10: secrets live
+    # in .env, never in code or config). An absolute path on purpose — the secret must NOT sit next
+    # to this file, because this file is versioned and that one must never be.
+    #
+    # The value in place since 2026-08-31 is the SECOND one. The first was rendered into a terminal
+    # transcript by `docker compose config` without `-q` (see the warning at the top of this file)
+    # and was rotated the same hour: `ALTER ROLE postgres PASSWORD` inside the container, this file
+    # rewritten, then both directions measured — the leaked value rejected, the new one accepted.
+    # Rotating an exposed credential is cheap; the expensive mistake is deciding it was probably
+    # fine because the transcript was private.
+    env_file:
+      - /home/parallels/.onchain-engine-pg.env
+
+    environment:
+      # WHY PGDATA IS A SUBDIRECTORY OF THE MOUNT. `initdb` refuses a non-empty directory, and a
+      # fresh Linux volume can carry `lost+found`. Pointing PGDATA one level down makes the first
+      # start work on any host rather than only on one where the volume happened to be clean.
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+    ports:
+      # Supabase keeps 5432 on this host — that published port is its POOLER, not its Postgres.
+      # From inside another container on this VM the reachable address is 10.211.55.3:5433, NOT
+      # `ubuntu-linux-2404.local`, which resolves to an unroutable IPv6 address there.
+      - '5433:5432'
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    # WHY A LONG GRACE PERIOD. Compose's default stop timeout is 10s. Postgres treats SIGTERM as a
+    # "smart shutdown" and waits for clients to disconnect; being SIGKILLed partway leaves the
+    # cluster needing crash recovery on next start. This container holds `api_tokens.token_hash`
+    # and the billing ledger — the one copy of both after task 015-27.
+    stop_grace_period: 60s
+
+    healthcheck:
+      # `pg_isready` is not installed on the VM host, so health is asked from inside the container.
+      # This says "the server answers", not "the published port is reachable" — that second property
+      # is checked from ANOTHER container against 10.211.55.3:5433 (PROD-RUNBOOK, TC-OPS-02).
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    logging:
+      # An unbounded json-file log on a dev VM is a slow disk leak nobody attributes to this
+      # container until the host is full.
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  pgdata:
+    # `name` pins the volume to the one that already holds the data; without it compose would
+    # create `onchain-engine_pgdata` and start an EMPTY cluster beside the real one.
+    name: onchain-engine-pgdata
+    # `external: true` means compose neither creates nor removes it. That is the point: it makes
+    # `docker compose down -v` — the flag that exists to wipe volumes — unable to destroy this
+    # database. Creating it is a deliberate one-off: `docker volume create onchain-engine-pgdata`.
+    external: true

@@ -280,14 +280,62 @@ The password was generated ON the VM and never entered this repository, a termin
 container image layer; the file is passed to `docker run` as `--env-file`. Regenerating it means
 recreating the container against the same named volume.
 
+**The container is defined by a compose file in this repository — never by `docker run`
+(owner's instruction, 2026-08-31).** A `docker run` one-liner leaves the configuration in one
+person's shell history: it cannot be reviewed, it never appears in a diff, and reproducing the host
+means trusting a transcript. Everything else about this move is a file under version control, and
+the container definition is not an exception.
+
 ```bash
-docker volume create onchain-engine-pgdata
-docker run -d --name onchain-engine-db --restart unless-stopped \
-  --env-file /home/parallels/.onchain-engine-pg.env \
-  -e PGDATA=/var/lib/postgresql/data/pgdata \
-  -v onchain-engine-pgdata:/var/lib/postgresql/data \
-  -p 5433:5432 postgres:16-alpine
+# once, deliberately — the volume is external so nothing can wipe it by accident
+ssh vm 'docker volume create onchain-engine-pgdata'
+
+# thereafter, from the repo root
+scp deploy/onchain-engine-db/compose.yaml vm:/home/parallels/onchain-engine/compose.yaml
+ssh vm 'cd /home/parallels/onchain-engine && docker compose config -q && docker compose up -d'
 ```
+
+The file is [`deploy/onchain-engine-db/compose.yaml`](../../deploy/onchain-engine-db/compose.yaml);
+the reasoning for every setting lives beside it in the file.
+
+**⚠ Validate with `docker compose config -q`, never without the flag.** The non-quiet form renders
+the fully interpolated configuration — INCLUDING everything read from `env_file` — to stdout, which
+means `POSTGRES_PASSWORD` in clear text in whatever captured that output. This happened on
+2026-08-31 and cost a rotation: `ALTER ROLE postgres PASSWORD` inside the container, the env file
+rewritten at mode 0600, then BOTH directions measured — the leaked value rejected with
+`password authentication failed`, the new one accepted. `-q` validates and prints nothing, which is
+the entire job.
+
+**Converted from `docker run` to compose on 2026-08-31, with the data in place.** The order matters:
+
+| Step | Why |
+| :--- | :--- |
+| `pg_dump --format=custom` of schema `onchain` to `/home/parallels/onchain-engine/backups/` | outside both containers, before anything is removed |
+| `docker stop` + `docker rm onchain-engine-db` | compose cannot adopt a container it did not create; `container_name` collides otherwise |
+| `docker compose up -d` | reattaches the SAME external volume |
+
+**Why removing the container was safe, and how that was established rather than assumed.**
+`docker inspect` showed exactly one mount — the named volume `onchain-engine-pgdata` — so the
+container held no writable state of its own. After the swap, the verify-gate snapshot of all
+thirteen tables was re-taken and was byte-identical to the post-transfer one.
+
+**Measured after the conversion.**
+
+| Check | Result |
+| :---- | :----- |
+| `docker compose ls` | two projects: `n8n-project` (26 containers, not ours) and `onchain-engine` (1) |
+| compose labels on the container | `project=onchain-engine`, `service=db`, config file path recorded |
+| image, restart policy, port, stop grace | `postgres:16-alpine`, `unless-stopped`, `5433:5432`, `60` |
+| healthcheck | `healthy` |
+| published port from ANOTHER container | `10.211.55.3:5433 - accepting connections` |
+| the `onchain_engine_state` role (the n8n credential's role) | authenticates, reads `api_tokens` |
+| thirteen-table snapshot before vs after | identical |
+| `supabase-db` container id | unchanged — the neighbouring stack was not touched |
+
+**Our container is its OWN compose project on purpose.** The VM already runs `n8n-project` from
+`/home/parallels/AI/docker-compose.yml` with 26 containers — n8n, its workers and the whole Supabase
+stack that 20+ other people's workflows depend on. A service added there would put our lifecycle
+inside theirs: `docker compose down` in that directory would take our database's container with it.
 
 **Postconditions measured 2026-08-28, all six.**
 
@@ -704,6 +752,31 @@ anything changed; probe.
 `SELECT current_setting('server_version')`. The HTTP response carries the answer directly, so there
 is no execution list to poll and no stale read to misinterpret. `16.13` is the new container;
 `15.8` is the old one. Delete the probe afterward.
+
+**Measured after the edit, 2026-08-31 (edit applied by the owner):**
+
+| Check | Credential | Result |
+| :---- | :--------- | :----- |
+| the retarget took | `Onchain engine state` | `16.13`, `onchain_engine_state`, `postgres`; sees the transferred `api_tokens` 1 and `diagnostics` 9 |
+| the engine role cannot reach the snapshotter | `Onchain engine state` | `relation "onchain.snapshots" does not exist` |
+| the snapshotter credential is untouched | `Supabase DB` | `15.8`, `snapshots` 5419 |
+| the snapshotter still writes | — | newest `onchain.snapshots` row 58 minutes old on an hourly schedule |
+
+**The engine-state separation is now stronger than a grant.** The old container refused the
+snapshotter tables to this role by PRIVILEGE; the new container has no such tables at all, so the
+answer is `does not exist`. A privilege can be granted by a later migration; an absent table cannot
+be reached by one.
+
+**`onchain-snapshotter`'s execution list shows only failures, and that is not a fault.** The
+workflow carries `saveDataSuccessExecution: "none"`, so successful runs are never recorded. Read
+the list as "the last four times it FAILED", not "the last four times it ran" — the data is the
+witness that it runs, not the execution list.
+
+**Do not read a secret scan by its count.** A regex sweep of this milestone's diff for DSNs and
+password literals returns three hits; all three are false — a runbook command template holding the
+shell variable `$PW`, and twice a test fixture whose DSN is literally
+`postgres://engine_state:sup3r-secret-pw@db.internal:5432/postgres`. The count alone would have
+raised an incident. Read the lines.
 
 
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
