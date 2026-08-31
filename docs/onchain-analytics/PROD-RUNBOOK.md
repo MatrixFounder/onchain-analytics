@@ -899,36 +899,24 @@ The writer switch works; it is the credential being presented that does not reso
 | the pepper is malformed in `.env` | 64 hex characters, no quotes, no surrounding space, no trailing CR; `loadEnvFile` parses it to the same 64 characters |
 | the writer points at the wrong container | the refusal's own diagnostics row landed on the new container |
 
-**Two candidates remain, and one command tells them apart** — run by the token holder, printing two
-booleans and nothing else:
+**Two candidates remain, and one script tells them apart** — run by the token holder. It prints
+three lines and nothing else; the token, the pepper and the digest never reach the screen.
 
 ```sh
-# `printf` + bare `read -rs`, NOT `read -rs -p`. The prompting form of `read` is not portable:
-# in zsh — the shell this project's operator uses — `-p` means "read from the coprocess", so
-# `read -rs -p 'token: ' T` fails with `read: -p: no coprocess`, leaves T UNSET, and every check
-# below then answers `false` about the empty string. A check that fails for the wrong reason is
-# not a check, so the guard on an empty value is mandatory, not decorative.
 cd /Users/sergey/dev-projects/onchain-analytics
-printf 'token: '; read -rs T; echo
-[ -n "$T" ] || { echo 'REFUSED: nothing was read — do not read the booleans below'; }
-EXPECTED=$(ssh vm "docker exec -i onchain-engine-db psql -qtA -U postgres -d postgres \
-  -c \"SELECT token_hash FROM onchain.api_tokens\"")
-T="$T" EXPECTED="$EXPECTED" node -e '
-  process.loadEnvFile();
-  const { createHash } = require("node:crypto");
-  const t = process.env.T ?? "";
-  const expected = (process.env.EXPECTED ?? "").trim();
-  const pepper = process.env.ONCHAIN_TOKEN_HASH_SALT;
-  // Refuse rather than answer about an input that was never supplied.
-  if (!t) { console.log("REFUSED: the token variable is empty"); process.exit(1); }
-  if (!pepper) { console.log("REFUSED: ONCHAIN_TOKEN_HASH_SALT is not set"); process.exit(1); }
-  if (expected.length !== 64) { console.log("REFUSED: no digest came back from the container"); process.exit(1); }
-  console.log("token length                :", t.length);
-  console.log("prefix is the one on record :", t.slice(0, 11) === "oi_oWJB9vKU");
-  console.log("digest matches the row      :", createHash("sha256").update(pepper + t, "utf8").digest("hex") === expected);
-'
-unset T EXPECTED
+./scripts/check-token-digest.sh
 ```
+
+**Why a script file and not a block to paste.** A pasted block containing an interactive `read`
+cannot work: the paste IS the input, so `read` consumes the next line of the block as the token and
+the remaining lines run as commands. Delivered as a file, `read` takes the terminal. (Measured the
+hard way, 2026-08-31: the pasted form ate its own `EXPECTED=` line.)
+
+**Why the script refuses instead of answering `false`.** `read -rs -p 'token: '` is a bashism; in
+zsh `-p` means "read from the coprocess" and fails with `read: -p: no coprocess`, leaving the
+variable unset — after which both comparisons answer `false` about the empty string, which is
+indistinguishable from a real negative. Each missing input now produces a REFUSED line naming that
+one input, and the token's length is printed so "something was read" is visible.
 
 | Outcome | Reading |
 | :------ | :------ |
