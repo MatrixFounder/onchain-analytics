@@ -874,7 +874,45 @@ anyone who does not hold the token — which is the property working, not an obs
 `ONCHAIN_STATE_PG_URL` back at the old container, find the cause before retrying. The old container
 still carries all thirteen tables at this point; the drop is task 015-27, deliberately later.
 
-**AC-44 FAILED on the first attempt, 2026-08-31 21:09:20 UTC.** The request with the already-issued
+**AC-44 SATISFIED, 2026-08-31 21:33:55 UTC** — on the third attempt, after two of this file's own
+instructions turned out to be measuring something else. Measured, both sides:
+
+| Container | `request_trace` | `api_tokens` | `access_audit` |
+| :-------- | --------------: | -----------: | -------------: |
+| `onchain-engine-db` (new) | **1** | 1 | 2 |
+| `supabase-db` (old) | 0 | 1 | 2 |
+
+```
+utc      | principal_id               | transport | tool         | outcome | served_from
+21:33:55 | 01M0NFF892RKZ7PG135TBRASMY | http      | onchain_ping | answer  | none
+```
+
+**The decisive value is `principal_id`.** `01M0NFF892RKZ7PG135TBRASMY` is the id of the api_tokens
+row that was COPIED in task 015-23 — the same id, on the new container, resolved from a digest the
+caller presented. That is the claim AC-44 makes: the move carried a working credential, not bytes.
+`api_tokens` stayed at 1 and `access_audit` at 2 on both containers, so nothing was reissued and no
+issuance was journalled; had the request minted a token, all three numbers would have moved.
+
+**Three attempts, and the first two failed for reasons in the INSTRUCTION, not in the system.**
+
+| Attempt | Result | What was actually wrong |
+| :------ | :----- | :---------------------- |
+| 21:09:20 | `401`, `auth.unknown_token` | a 64-character value was presented; a minted token is 55 characters, `oi_` + 8 + `_` + 43 (`token-store.ts`) |
+| 21:28:28 | `400` | a bare `tools/list` carries no session and is not an `initialize`, so the transport refuses it BEFORE any handler |
+| 21:33:55 | `200` | `initialize` → `notifications/initialized` → `tools/call onchain_ping` |
+
+**`tools/list` cannot satisfy AC-44 even when it returns 200.** It is a protocol method;
+`request_trace` is written by the tool-call wrapper and its columns are about a tool invocation —
+`tool`, `capability`, `served_from`, vendor spend (`tools/request-trace-row.ts`). A run that lists
+tools reaches no handler and writes no row. `./scripts/probe-token-request.sh` therefore calls
+`onchain_ping`: no parameters, no vendor, no credits.
+
+**Attribute the counters before reading them.** `auth.rejected` moved 16 → 17 → 18 across this
+sequence, and NONE of those three came from the owner's requests: 21:09:20 was the first failed
+attempt, 21:30:06 and 21:33:13 were the probe's own bogus-token sensitivity runs. Reading a
+measuring instrument's output as the measurement is the same error as the scan-counter one below.
+
+**AC-44 failed on the first attempt, 2026-08-31 21:09:20 UTC.** The request with the already-issued
 token was refused: `onchain.diagnostics` on the NEW container carries
 `event=auth.rejected`, `refusalClass=auth.unknown_token`. The profile was stopped; task 015-27 is
 blocked, as its preconditions require.
