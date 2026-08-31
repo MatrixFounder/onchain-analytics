@@ -874,6 +874,61 @@ anyone who does not hold the token — which is the property working, not an obs
 `ONCHAIN_STATE_PG_URL` back at the old container, find the cause before retrying. The old container
 still carries all thirteen tables at this point; the drop is task 015-27, deliberately later.
 
+**AC-44 FAILED on the first attempt, 2026-08-31 21:09:20 UTC.** The request with the already-issued
+token was refused: `onchain.diagnostics` on the NEW container carries
+`event=auth.rejected`, `refusalClass=auth.unknown_token`. The profile was stopped; task 015-27 is
+blocked, as its preconditions require.
+
+**The move is NOT implicated, and this was established rather than assumed.** `auth.unknown_token`
+means the digest lookup returned NO ROW — `classifyToken` returns it only for `row === null`
+(`packages/mcp-server/src/auth/authenticate.ts`). The digest is `sha256(pepper || presented)`, and
+`api_tokens.token_hash` is byte-identical on both containers (`md5` equal, prefix equal, measured
+twice — at the transfer and again here). A digest that finds no row on the new container finds none
+on the old one either, so pointing the DSN back would reproduce the same refusal while undoing
+verified work. The `ONCHAIN_STATE_PG_URL` rollback is therefore HELD, not skipped: nothing is
+serving while the profile is down, and it will be performed if the diagnosis below implicates the
+container after all.
+
+**What the refusal DID prove.** The `auth.rejected` diagnostics row was written to the NEW container.
+The writer switch works; it is the credential being presented that does not resolve.
+
+| Ruled out | How |
+| :-------- | :--- |
+| the copied digest differs | `md5(token_hash)` equal on both containers |
+| the token row is unusable | `status=active`, `expires_at` and `revoked_at` both null, user `active`, profile `active` |
+| the pepper is malformed in `.env` | 64 hex characters, no quotes, no surrounding space, no trailing CR; `loadEnvFile` parses it to the same 64 characters |
+| the writer points at the wrong container | the refusal's own diagnostics row landed on the new container |
+
+**Two candidates remain, and one command tells them apart** — run by the token holder, printing two
+booleans and nothing else:
+
+```bash
+cd /Users/sergey/dev-projects/onchain-analytics
+read -rs -p 'token: ' T; echo
+EXPECTED=$(ssh vm "docker exec -i onchain-engine-db psql -qtA -U postgres -d postgres \
+  -c \"SELECT token_hash FROM onchain.api_tokens\"")
+T="$T" EXPECTED="$EXPECTED" node -e '
+  process.loadEnvFile();
+  const { createHash } = require("node:crypto");
+  const t = process.env.T;
+  const d = createHash("sha256").update(process.env.ONCHAIN_TOKEN_HASH_SALT + t, "utf8").digest("hex");
+  console.log("prefix is the one on record :", t.slice(0, 11) === "oi_oWJB9vKU");
+  console.log("digest matches the row      :", d === process.env.EXPECTED.trim());
+'
+unset T EXPECTED
+```
+
+| Outcome | Reading |
+| :------ | :------ |
+| prefix false | a different token was presented — the one on record starts `oi_oWJB9vKU` |
+| prefix true, digest false | `ONCHAIN_TOKEN_HASH_SALT` is not the pepper the seeded digest was computed with |
+| both true | the refusal is in the code path, not in the inputs — escalate with the diagnostics row id |
+
+**Why the second outcome has no repair by re-hashing.** `token-store.ts` states it in advance:
+rotating the pepper invalidates every issued token at once and there is no re-hash path, because the
+presented secret is never stored. The repair is to seed a new admin token against the CURRENT pepper
+(PROD-RUNBOOK's own "first admin" section), not to recover the old one.
+
 **State before the switch, measured 2026-08-31:**
 
 | Container | `api_tokens` | `request_trace` | `access_audit` |
