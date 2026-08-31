@@ -844,6 +844,79 @@ the INSTANCE and will silently revert the repo file to the older shape. Read
 `git diff n8n-workflows/exported/` after every export.
 
 
+### Switching the writer, and re-measuring the two postconditions  *(task 015-25, UC-6 steps 6-9)*
+
+**Order, and it is not interchangeable.** verify report taken with no divergence (015-24) →
+credential retargeted (015-22) → profile stopped → `ONCHAIN_STATE_PG_URL` switched → profile started
+→ request with an ALREADY-ISSUED token → postconditions re-measured → outcome recorded. Starting the
+writer before the verify report would put rows into a database whose contents had not been compared,
+and "not copied" could no longer be told from "written afterwards".
+
+**The two DSNs part by PORT, not by host.** Both containers sit on the same dev VM:
+`ONCHAIN_STATE_PG_URL` moves to the engine container's port, `ONCHAIN_PG_URL` stays on Supabase's —
+it serves the `pg-history` adapter and sees `assets`, `metrics`, `snapshots`, which did not move
+(R-8.3, UC-6 step 9). `.env.example` keeps a PLACEHOLDER port in both samples: a sample carrying a
+real port number reads as a commitment to keep that number.
+
+**Why the check uses an already-issued token and not a fresh one.** Reissuing would mint a new row
+on the new container and prove the issuing path works — a different claim. What is under test is
+whether the COPIED row still authenticates, i.e. that the move carried a working credential and not
+merely bytes. The pepper is not involved in the move at all: `ONCHAIN_TOKEN_HASH_SALT` lives in the
+server's `.env`, never in a container (`003_seed_engine_admin.sql`, "WHY THE PEPPER IS NOT A
+PARAMETER").
+
+**The plaintext token exists only with the owner, by design.** `003` records it: the owner mints the
+token, computes `sha256(pepper || token)` outside the file and passes only the hex, so "the plaintext
+reaches neither this repository nor the installation's disk". This check therefore cannot be run by
+anyone who does not hold the token — which is the property working, not an obstacle to route around.
+
+**Rollback branch (UC-6 A3).** Authentication refused → stop the profile, point
+`ONCHAIN_STATE_PG_URL` back at the old container, find the cause before retrying. The old container
+still carries all thirteen tables at this point; the drop is task 015-27, deliberately later.
+
+**State before the switch, measured 2026-08-31:**
+
+| Container | `api_tokens` | `request_trace` | `access_audit` |
+| :-------- | -----------: | --------------: | -------------: |
+| `supabase-db` (old) | 1 | 0 | 2 |
+| `onchain-engine-db` (new) | 1 | 0 | 2 |
+
+Both discriminators come from that table: a request that authenticates must leave `api_tokens`
+UNCHANGED (nothing reissued) and must grow `request_trace` on the NEW container only.
+
+#### Step 8 of UC-6 — AC-17 and AC-17b re-measured on the POPULATED container
+
+Re-run after the rows moved, not only on the empty tables of task 015-21 — `has_table_privilege`
+measures a privilege rather than data, so the two runs agreeing is the postcondition, not a
+coincidence. The role list is re-taken at the moment of measurement: a role created between the two
+steps would be invisible to the first one, and AC-17b is a claim about ALL application roles.
+
+**Measured 2026-08-31.** 16 roles exist; 14 are built-in `pg_*`. The state role reads all 13 engine
+tables. Exactly two roles can read any of them: `postgres` (superuser, named separately) and
+`onchain_engine_state`.
+
+| Role | superuser | engine tables readable |
+| :--- | :-------- | ---------------------: |
+| `postgres` | yes | 13 |
+| `onchain_engine_state` | no | 13 |
+
+**The "exactly thirteen" half is trivially true here, so the NEGATIVE half was measured separately.**
+On the old container `onchain` also holds the three snapshotter tables, so "true for exactly the
+engine tables" excluded something. On this container the schema holds nothing but the thirteen, and
+13-of-13 passes by construction. What actually carries the claim here is the outside:
+
+| Negative check | Result |
+| :------------- | :----- |
+| tables the state role can `SELECT` outside schema `onchain` | none |
+| `CREATE` on schema `public` / on schema `onchain` | false / false |
+| member of `pg_read_all_data` | false |
+| `CONNECT` on the database | true |
+
+That is SEC-2's postcondition stated from both sides: Supabase shipped three roles with a
+platform-wide `SELECT`; this container has exactly one non-superuser role and it reaches nothing but
+its own thirteen tables.
+
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are
