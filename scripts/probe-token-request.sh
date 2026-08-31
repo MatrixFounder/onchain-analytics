@@ -73,11 +73,23 @@ const payload = (text) => {
 
   const list = await call({ jsonrpc: "2.0", id: 2, method: "tools/list" }, sid);
   console.log("tools/list                  :", list.status);
-  const parsed = payload(list.text);
-  const tools = parsed?.result?.tools;
+  const tools = payload(list.text)?.result?.tools;
   console.log("tools returned              :", Array.isArray(tools) ? tools.length : "(none)");
-  console.log(Array.isArray(tools) && tools.length > 0
+
+  // `tools/list` is a PROTOCOL method, not a tool invocation: it reaches no handler and therefore
+  // writes no `request_trace` row (that table records a tool call — tool, capability, served_from,
+  // vendor spend). AC-44 asks whether the token reaches a HANDLER, so the probe calls one.
+  // `onchain_ping` takes no parameters, contacts no vendor and spends no credits.
+  const ping = await call({
+    jsonrpc: "2.0", id: 3, method: "tools/call",
+    params: { name: "onchain_ping", arguments: {} },
+  }, sid);
+  console.log("tools/call onchain_ping     :", ping.status);
+  const result = payload(ping.text)?.result;
+  const ok = result !== undefined && result?.isError !== true;
+  console.log("handler answered            :", ok);
+  console.log(ok
     ? "=> AC-44 SATISFIED: an already-issued token reached a tool handler"
-    : "=> reached the transport but no tool list came back");
+    : "=> the transport answered but the handler did not");
 })().catch((e) => { console.log("REFUSED:", e.message); process.exit(1); });
 '
