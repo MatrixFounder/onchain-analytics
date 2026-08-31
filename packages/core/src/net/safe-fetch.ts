@@ -283,12 +283,21 @@ export class DeadlineExceededError extends Error {
     at: string,
     public readonly deadlineAtMs: number,
     /**
-     * Defaulted to `wire` ONLY so that no existing call site becomes a compile error while the
-     * producers are being labelled; every producer in this repository passes it explicitly, and a
-     * test asserts that. A new producer that forgets it is the one case this default covers, and it
-     * guesses the commonest answer rather than inventing a sixth value.
+     * REQUIRED, and it used to carry a default of `wire` (L-26/L-27, made required 2026-08-28).
+     *
+     * The default existed so a producer added without the argument "still said something true-ish".
+     * That is a guess, and this project forbids guesses in exactly this position: L-2's rule is
+     * "refuse rather than guess — a fallback that always yields something is a fabrication engine",
+     * and `data-model.md` applies the same rule to a derived metric. The harm here is specific. A
+     * forgotten phase reported `wire`, which sends the next investigation to the vendor when the
+     * truth may be our own queue — the one distinction L-26 and L-27 exist to preserve, and the one
+     * both records bet their fix path on.
+     *
+     * With no default, a producer that forgets is a COMPILE error rather than a confident wrong
+     * answer. TC-UNIT-20's source scan is kept as a second line: it also covers the case of a
+     * producer passing a variable the compiler accepts but the closed set does not describe.
      */
-    public readonly phase: DeadlinePhase = 'wire',
+    public readonly phase: DeadlinePhase,
   ) {
     const safe = redactContext(at);
     super(`deadline exceeded in ${phase} (deadlineAtMs=${deadlineAtMs}) at ${safe}`);

@@ -39,9 +39,23 @@ Which leaves the candidate, stated as a candidate: all DeFiLlama capabilities sh
 (`{capacity: 10, refillPerSec: 5}`, per provider), and by the time the walk reaches
 `protocol.incidents` on its first chain it has already issued `chain.tvl`, `chain.tvl.history`,
 `dex.volume.history`, `protocol.tvl`, `protocol.tvl.history` and `protocol.list` on that same bucket.
-That is the queue to measure. It is NOT established: the arithmetic of a ten-token bucket refilling
-at five per second does not obviously reach fifteen seconds, and L-25 is the record of what happens
-when a plausible mechanism is written down as a finding.
+That is the queue to measure. It is NOT established — but the arithmetic is now exact rather than
+"not obvious", and it does NOT refute the candidate (computed 2026-08-28 from the limiter's own
+formula, which `providers.config.ts` already states for this bucket).
+
+| Величина | Значение |
+| :------- | :------- |
+| ожидание k-го резерва | `200 мс × (k − 10)` при `{capacity: 10, refillPerSec: 5}` |
+| порог 15 000 мс | ровно **85** непогашенных резервов |
+| порог отказа (`MAX_WAIT_MS = 30 000`) | **150** резервов |
+
+So a 15 s wait requires 85 outstanding reservations and is admissible: 85 sits inside the band
+below the 150 at which the limiter stops waiting and starts refusing outright. The earlier wording
+here — "does not obviously reach fifteen seconds" — was an impression, and it pointed the wrong way.
+What the next occurrence has to be checked against is a NUMBER: was the backlog near 85?
+
+This does not make the candidate a finding. L-25 is the record of what happens when a plausible
+mechanism is written down as one, and the backlog at the moment of the failure was not measured.
 
 **Why it matters beyond the gate.** The first caller of every shared document is a real caller, and
 this is the shape a client meets on a cold process: the answer that costs 0.46 s for everyone after
@@ -53,6 +67,12 @@ declared done.
 
 1. **Wait for the next occurrence and read the phase.** It now says `[phase: limiter]` if it is our
    queue. This is the cheapest discriminator that exists and it costs nothing to wait for.
+
+   **Strengthened 2026-08-28.** The phase field carried a default of `'wire'`, so a producer added
+   without the argument reported the vendor when the answer may have been our queue — see L-26's
+   item 1a. The field is now required and a producer that omits it does not compile. This record's
+   whole fix path rests on the phase telling the truth, and until now a forgotten argument would
+   have made it lie in the one direction that matters here.
 2. **If it is the bucket**, the question is scope rather than size — `rpc-evm` already declares
    `scopeKey: 'chain'` so one saturated chain cannot delay another, and a per-capability scope is the
    same argument. Raising `capacity` would buy a bigger queue for a problem that is the queue.

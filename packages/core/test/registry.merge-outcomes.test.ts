@@ -439,7 +439,7 @@ describe('the deadline is a precondition on all four branches, not a fifth branc
     const second = makeAdapter({
       id: 'second',
       fetchImpl: async () => {
-        throw new DeadlineExceededError('provider "second"', Date.now());
+        throw new DeadlineExceededError('provider "second"', Date.now(), 'limiter');
       },
     });
     const registry = buildMergeRegistry({ adapters: [first, second], deadlineMs: 30_000 });

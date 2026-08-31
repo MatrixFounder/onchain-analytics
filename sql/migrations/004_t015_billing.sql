@@ -38,10 +38,28 @@
 --
 -- Type map for this dialect (§4.5.1, DB-SCHEMA-CONCEPT §5): TEXT → TEXT, INTEGER → BIGINT.
 
+-- ── L-28: how these guards report their refusal ──────────────────────────────
+-- `\quit 1` does NOT return 1. The exit-status argument to `\quit` arrived in PostgreSQL 17;
+-- measured 2026-08-28 on both targets — psql 15.8 (`supabase-db`) and 16.13 (`onchain-engine-db`)
+-- — it prints `\quit: extra argument "1" ignored` and the process exits 0. A caller reading `$?`
+-- therefore saw SUCCESS on a refusal and went on believing the file had applied.
+--
+-- Each guard below now raises instead. `RAISE EXCEPTION` exits 3, and the `\set` on the next line
+-- makes that independent of whether the caller passed `-v ON_ERROR_STOP=1` — the guard must not
+-- rely on the operator remembering a flag in order to be observable. `\quit` is kept after the
+-- raise as the belt to that brace; under ON_ERROR_STOP the script never reaches it.
+--
+-- The `\echo` above each raise is kept deliberately: it prints without a server round trip, so the
+-- reason survives even a connection that cannot execute `DO`.
+\set ON_ERROR_STOP on
+
 \if :{?STATE_ROLE}
 \else
   \echo 'FATAL: -v STATE_ROLE=<role> is required (deployment.md §10.4.2 step 2)'
-  \quit 1
+  DO $guard$ BEGIN
+    RAISE EXCEPTION 'FATAL: -v STATE_ROLE=<role> is required (deployment.md §10.4.2 step 2)';
+  END $guard$;
+  \quit
 \endif
 
 BEGIN;

@@ -257,8 +257,16 @@ describe('T-014 admin seed migration — the secret never reaches the file', () 
       expect(preamble, `${parameter} is pre-checked`).toContain(`\\if :{?${parameter}}`);
       expect(preamble, `the refusal names ${parameter}`).toContain(parameter);
     }
-    expect((preamble.match(/\\quit 1/g) ?? []).length).toBeGreaterThanOrEqual(
+    // Counted on the RAISE, not on `\quit 1` (L-28, fixed 2026-08-28). `\quit` takes no exit
+    // status before PostgreSQL 17, so the old form printed its reason and exited 0 — the guard
+    // halted correctly and reported success. This count is what makes "one refusal per parameter"
+    // an assertion rather than a comment; `pg-migration-guards.test.ts` owns the FORM of the
+    // refusal across all five files, this owns the ARITY of it for the seed's own parameters.
+    expect((preamble.match(/RAISE EXCEPTION 'FATAL:/g) ?? []).length).toBeGreaterThanOrEqual(
       SEED_PARAMETERS.length,
+    );
+    expect(preamble, 'the guard must not depend on the caller passing the flag').toContain(
+      '\\set ON_ERROR_STOP on',
     );
   });
 

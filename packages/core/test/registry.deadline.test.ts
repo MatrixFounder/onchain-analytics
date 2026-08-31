@@ -490,7 +490,8 @@ describe('resolve() ends a spent walk with the THIRD outcome (task 012-8, R-145/
       id: 'a',
       fetchImpl: async (_cap, _args, deadlineAtMs) => {
         attempt += 1;
-        if (attempt === 1) throw new DeadlineExceededError('provider "a"', deadlineAtMs ?? 0);
+        if (attempt === 1)
+          throw new DeadlineExceededError('provider "a"', deadlineAtMs ?? 0, 'limiter');
         return { fresh: true };
       },
     });
@@ -775,7 +776,7 @@ describe('the terminal branch catches a SWALLOWED typed error (task 012-8, C-1 b
       fetch: async (_cap, _args, deadlineAtMs) => {
         blockFor(60);
         throw new Error('swallows: transport failure from example.test (DeadlineExceededError)', {
-          cause: new DeadlineExceededError('https://example.test/x', deadlineAtMs ?? 0),
+          cause: new DeadlineExceededError('https://example.test/x', deadlineAtMs ?? 0, 'wire'),
         });
       },
       normalize: (_cap, raw) => raw,

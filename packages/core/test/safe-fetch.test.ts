@@ -931,7 +931,10 @@ describe('WI-36 — every pass-through transport error redacts its own context',
     // HOST here, i.e. the most it could ever be given.
     ['SsrfBlockedError', new SsrfBlockedError('mcp.blockscout.com')],
     ['SafeFetchTimeoutError', new SafeFetchTimeoutError(URL_WITH_SECRET, 5_000)],
-    ['DeadlineExceededError', new DeadlineExceededError(URL_WITH_SECRET, 1_700_000_000_000)],
+    [
+      'DeadlineExceededError',
+      new DeadlineExceededError(URL_WITH_SECRET, 1_700_000_000_000, 'wire'),
+    ],
     [
       'SafeFetchResponseTooLargeError',
       new SafeFetchResponseTooLargeError(URL_WITH_SECRET, 99_999_999, 1024),

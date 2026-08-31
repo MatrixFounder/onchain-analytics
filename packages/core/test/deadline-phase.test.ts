@@ -24,10 +24,24 @@ describe('TC-UNIT-19 — the deadline error names its phase', () => {
     expect(err.at).toContain('coingecko');
   });
 
-  it('defaults to `wire`, the commonest answer, rather than inventing a sixth value', () => {
-    // The default exists only so a NEW producer that forgets the argument still says something
-    // true-ish rather than nothing. The test below is what stops that default from being used.
-    expect(new DeadlineExceededError('https://example.invalid/x', 1).phase).toBe('wire');
+  it('has no default — a producer that omits the phase does not compile', () => {
+    // Replaced the `defaults to 'wire'` case of the first pass (L-26/L-27, 2026-08-28). That
+    // default let a forgotten phase report `wire`, which is a confident WRONG answer: it sends the
+    // next investigation to the vendor when the truth may be our own queue, and that distinction is
+    // the entire reason both records asked for a phase. L-2's rule applies here as it does to a
+    // derived metric — refuse rather than guess.
+    //
+    // The compiler is the real guard now, so this case asserts the SOURCE says so: a default
+    // silently reintroduced would restore the defect while every behavioural test stayed green.
+    const declaration = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'net', 'safe-fetch.ts'),
+      'utf8',
+    );
+    expect(declaration).toContain('public readonly phase: DeadlinePhase,');
+    expect(
+      declaration,
+      'a default on `phase` would make a forgotten argument a wrong answer instead of a build error',
+    ).not.toMatch(/public readonly phase: DeadlinePhase\s*=/);
   });
 });
 

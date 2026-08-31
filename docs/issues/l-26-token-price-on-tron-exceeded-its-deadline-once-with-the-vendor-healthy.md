@@ -36,6 +36,14 @@ deficit accumulates across the sweep. And this adapter already bounds its limite
 caller's ceiling (`throttle('coingecko', RATE_LIMIT, 1, deadlineAtMs)`, and the same `deadlineAtMs`
 into `safeFetch`), so even a queue overrun here would be the deadline being HONOURED, not a defect.
 
+**The pacing claim above was re-checked 2026-08-28 and holds.** It rests on `COINGECKO_THROTTLE_MS`
+applying to every CoinGecko-backed call, and the eval applies it to `onchain_get_token` alone
+(`eval/run.mjs`, the ternary on the pacing line). CoinGecko serves exactly two capabilities —
+`token.price` and `token.metadata` — and `token.metadata` is called by NO tool
+(`eval/capabilities.mjs`, `eval/README.md`: «`onchain_get_token` routes through `token.price` on
+purpose»). So `onchain_get_token` is the only CoinGecko path in the gate, and the six-second pacing
+covers all of it. The elimination stands.
+
 *A single slow response from the keyless tier* — consistent with every observation above and
 unproven. CoinGecko's free tier throttles by slowing as well as by 429, and a lone response past
 15 s would produce exactly this row and leave no other trace.
@@ -71,6 +79,23 @@ window closed answers a question nobody asked.
    it is the safety net asserting a refusal carries `isError`, and narrowing it would stop it
    catching what it exists for. What changed is that the prose recording "these two are
    indistinguishable on the wire" is no longer true, and was rewritten rather than left standing.
+1a. **The phase has no default any more (2026-08-28).** Item 1 shipped `phase` with a default of
+   `'wire'`, documented as letting a producer that forgets the argument "still say something
+   true-ish". That is a guess in the one position this record cannot afford one. A forgotten phase
+   reported `wire`, sending the next investigation to the VENDOR when the truth may be our own
+   queue — the exact distinction item 1 exists to preserve.
+
+   The field is now required. A producer that omits it is a compile error, not a confident wrong
+   answer. Measured before the change: all nine producers in `packages/core` already passed it
+   explicitly, and none in `packages/mcp-server` construct the class. Removing the default therefore
+   broke only five test call sites, each of which now names the phase it simulates.
+
+   `TC-UNIT-19` asserts the SOURCE carries no default. A default silently restored would bring the
+   defect back while every behavioural test stayed green; the assertion is proven by mutation.
+
+   The rule applied is the project's own: L-2 — refuse rather than guess, because a fallback that
+   always yields something is a fabrication engine.
+
 2. **Do NOT raise `deadlineMs`.** Measured: this route answers in 0.46–0.91 s. A capability that
    needs more than 15 s for a 0.5 s document does not have a deadline problem.
 3. **Do NOT loosen the bucket.** `{capacity: 10, refillPerSec: 0.5}` is set to the keyless tier this
