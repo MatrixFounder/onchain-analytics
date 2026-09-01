@@ -33,6 +33,7 @@ import { TRANSPORT_CASES } from './cases/index.mjs';
 import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS, unwiredCapabilities } from './capabilities.mjs';
 import { renderLink, startLinkProbe } from './link-probe.mjs';
 import { stateTargetLabel, storageOf } from './profiles.mjs';
+import { buildFreshnessRefusal } from './build-freshness.mjs';
 
 const evalDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(evalDir, '..');
@@ -62,6 +63,17 @@ try {
     console.error(`eval: warning: could not load the repo-root .env (${error?.code ?? 'unknown'})`);
   }
 }
+// BEFORE anything is spawned and long before a provider is called (task 015-30). The eval raises
+// the server from source but loads `@onchain-intel/core` from its build, so a stale `dist` makes a
+// live run measure code that is not the code under test — silently, at the cost of the whole run.
+{
+  const refusal = buildFreshnessRefusal(repoRoot);
+  if (refusal !== null) {
+    console.error(`eval: ${refusal}`);
+    process.exit(1);
+  }
+}
+
 const PROTOCOL_VERSION = '2025-11-25';
 const CALL_TIMEOUT_MS = 30_000;
 const THROTTLE_MS = Number(process.env.ONCHAIN_EVAL_THROTTLE_MS ?? 350);
@@ -811,6 +823,14 @@ function transportContext(baseUrl, token, { dataDir, stdioDataDir }) {
     // The same constant the server and both `admin()` calls were given. A case must not reach for
     // `process.env` here: it could then read a different database than the run wrote to.
     stateDsn: HTTP_STATE_PG_URL,
+    // Likewise the ceiling the SERVER was raised with (task 015-30). `PHASE_ENV` sets
+    // `BLOCKSCOUT_DAILY_CALL_CAP` on the CHILD processes; this process never has it, so a case
+    // reading `process.env.BLOCKSCOUT_DAILY_CALL_CAP` gets the fallback and silently believes a
+    // different ceiling than the one being enforced. Measured 2026-09-01: raised to 5 for a re-run,
+    // the case still assumed 3, decided there was no headroom left and reported that nothing was
+    // measured — while the server would have served two more calls. It hid until then because the
+    // two defaults happened to be the same number.
+    dailyCallCap: HTTP_DAILY_CALL_CAP,
   };
 }
 

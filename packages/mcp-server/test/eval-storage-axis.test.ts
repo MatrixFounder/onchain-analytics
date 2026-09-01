@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -138,6 +138,23 @@ describe('the eval follows the storage axis of the profile it raised', () => {
     // profile of its own would be the same defect again.
     const declarations = runner.match(/ONCHAIN_PROFILE: /g) ?? [];
     expect(declarations).toHaveLength(3);
+  });
+
+  it('a case takes the phase settings from the CONTEXT, never from its own environment', () => {
+    // `PHASE_ENV` sets the DSN and the ceiling on the CHILD processes. The runner — where the cases
+    // themselves execute — never receives either, so a case reading `process.env` gets a fallback
+    // and quietly believes something the server does not. Measured 2026-09-01: with the ceiling
+    // raised to 5 for a re-run, the ceiling case still assumed 3, concluded there was no headroom
+    // and reported that nothing was measured, while the server would have served two more calls.
+    // It hid until then only because the two defaults were the same number.
+    expect(runner).toContain('dailyCallCap: HTTP_DAILY_CALL_CAP,');
+    const caseDir = path.join(evalDir, 'cases');
+    for (const file of readdirSync(caseDir).filter((f) => f.endsWith('.mjs'))) {
+      const text = readFileSync(path.join(caseDir, file), 'utf8');
+      expect(text, `${file} reads a phase setting from its own environment`).not.toMatch(
+        /process\.env\.(BLOCKSCOUT_DAILY_CALL_CAP|ONCHAIN_STATE_PG_URL|ONCHAIN_META_NAMESPACE)/,
+      );
+    }
   });
 
   it('the Postgres axis is authorised by a NAMED administrator, never by a guessed one', () => {

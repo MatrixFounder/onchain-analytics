@@ -292,15 +292,45 @@ export class PgBudgetStore implements BudgetStore {
         // column over. `$6 IS NULL` leaves it unbounded exactly the way `$5 IS NULL` already does
         // for credits (`ceilingParam`'s own contract) — `dailyCalls` undefined on the caller's side
         // becomes SQL NULL here, and every reservation passes this bound.
+        //
+        // **THE TWO CEILINGS CARRY A CAST, AND IT IS NOT DECORATION** (task 015-30, measured
+        // 2026-09-01 against PostgreSQL 16.13). Uncast, this statement never prepared at all:
+        // `ERROR: inconsistent types deduced for parameter $3 — text versus bigint`. PostgreSQL
+        // infers a parameter's type from every context it appears in and requires them to agree.
+        // `$3 <= $5` compares two PARAMETERS, so neither types the other and both fall back to
+        // `text`; two lines down `onchain.usage.credits_used + $3` deduces `bigint` from the column.
+        // The contradiction is fatal at PREPARE, before a single value is bound — so on the
+        // `network` profile EVERY blockscout call was refused with
+        // `capability unavailable: … (SQLSTATE 42P08)` while `onchain.usage` stayed empty. The daily
+        // call gate this file exists to enforce was not enforcing; it was failing closed, and a gate
+        // that refuses everything looks from the outside like a vendor that answers nothing.
+        //
+        // **Why the CEILINGS are cast and the COST is not.** One typed side is enough: with `$5`
+        // and `$6` pinned, `$3` takes `bigint` from the column arithmetic and every context agrees.
+        // Casting `$3` as well would be the broader change and the worse one — `CAST(0.5 AS BIGINT)`
+        // ROUNDS in PostgreSQL and TRUNCATES in SQLite, so a cast on the cost would put a
+        // divergence into the one value both axes must agree on.
+        //
+        // **Why `CAST(x AS BIGINT)` and not `x::bigint`.** `toSqliteDialect` translates by
+        // substitution and strips nothing (`sqlite/state-client.ts`), so `::bigint` would reach
+        // SQLite verbatim and fail to parse. The standard form runs unedited on both engines, which
+        // is the rule §4.2.4 already states for every other difference here.
+        //
+        // SQLite is dynamically typed and ran the uncast form happily, which is why 1738 core tests
+        // stayed green through it — the same asymmetry as `recordDelta` below, whose
+        // `GREATEST(0, $3)` DOES pin a type and therefore needed no change. Only a live run on the
+        // Postgres axis could catch this class, and that is what caught it.
         const reserved = await tx.query<UsageRow>(
           `INSERT INTO onchain.usage (provider, day, credits_used, calls_made, updated_at)
-           SELECT $1, $2, $3, 1, $4 WHERE ($5 IS NULL OR $3 <= $5) AND ($6 IS NULL OR 1 <= $6)
+           SELECT $1, $2, $3, 1, $4
+            WHERE (CAST($5 AS BIGINT) IS NULL OR $3 <= CAST($5 AS BIGINT))
+              AND (CAST($6 AS BIGINT) IS NULL OR 1 <= CAST($6 AS BIGINT))
            ON CONFLICT (provider, day) DO UPDATE SET
              credits_used = onchain.usage.credits_used + $3,
              calls_made   = onchain.usage.calls_made + 1,
              updated_at   = $4
-           WHERE ($5 IS NULL OR onchain.usage.credits_used + $3 <= $5)
-             AND ($6 IS NULL OR onchain.usage.calls_made + 1 <= $6)
+           WHERE (CAST($5 AS BIGINT) IS NULL OR onchain.usage.credits_used + $3 <= CAST($5 AS BIGINT))
+             AND (CAST($6 AS BIGINT) IS NULL OR onchain.usage.calls_made + 1 <= CAST($6 AS BIGINT))
            RETURNING credits_used, calls_made`,
           [
             provider,
@@ -330,13 +360,14 @@ export class PgBudgetStore implements BudgetStore {
             `INSERT INTO onchain.usage_window
                (provider, window_start, credits_used, calls_made, updated_at)
              SELECT $1, $2, $3, 1, $6
-              WHERE ($4 IS NULL OR $3 <= $4) AND ($5 IS NULL OR 1 <= $5)
+              WHERE (CAST($4 AS BIGINT) IS NULL OR $3 <= CAST($4 AS BIGINT))
+                AND (CAST($5 AS BIGINT) IS NULL OR 1 <= CAST($5 AS BIGINT))
              ON CONFLICT (provider, window_start) DO UPDATE SET
                credits_used = onchain.usage_window.credits_used + $3,
                calls_made   = onchain.usage_window.calls_made + 1,
                updated_at   = $6
-             WHERE ($4 IS NULL OR onchain.usage_window.credits_used + $3 <= $4)
-               AND ($5 IS NULL OR onchain.usage_window.calls_made + 1 <= $5)
+             WHERE (CAST($4 AS BIGINT) IS NULL OR onchain.usage_window.credits_used + $3 <= CAST($4 AS BIGINT))
+               AND (CAST($5 AS BIGINT) IS NULL OR onchain.usage_window.calls_made + 1 <= CAST($5 AS BIGINT))
              RETURNING credits_used, calls_made`,
             [
               provider,

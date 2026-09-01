@@ -57,6 +57,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { renderLink } from '../eval/link-probe.mjs';
+import { buildFreshnessRefusal } from '../eval/build-freshness.mjs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -388,6 +389,12 @@ function report({ counts, unacknowledged, known, expired, defects, blocked, link
 }
 
 async function main() {
+  // A gate that could not run has not passed, and a gate that ran against last week's build has not
+  // run. Checked here as well as in `run.mjs` so the message names the gate rather than surfacing as
+  // "the eval left no readable artifact" (task 015-30).
+  const staleBuild = buildFreshnessRefusal(path.resolve(packageRoot, '../..'));
+  if (staleBuild !== null) return die(staleBuild);
+
   let artifact;
   let evalExitCode = null;
 

@@ -46,6 +46,17 @@ import type { LimiterStore } from '../src/net/limiter-store.js';
  * Between the two, the claim that survives is: the statements say what they must, and they do what
  * they say on the arithmetic they share.
  *
+ * **The third limit, added by the defect that walked through it** (task 015-30, 2026-09-01). This
+ * harness cannot observe PostgreSQL's PARAMETER TYPE INFERENCE, because SQLite has none: every
+ * parameter there is dynamically typed at bind time. So a statement whose parameter contexts
+ * CONTRADICT — `$3 <= $5` types neither operand while `credits_used + $3` types one of them — runs
+ * perfectly here and is refused by PostgreSQL at PREPARE, before any value is bound. That is exactly
+ * what shipped: the daily reservation below never prepared on the `network` profile, every
+ * blockscout call was refused with SQLSTATE 42P08, and all 38 tests in this file were green. The
+ * instrument that catches this class is the live gate on the Postgres axis
+ * (`packages/mcp-server/eval/cases/blockscout-daily-gate.mjs`), and it caught it on its first run.
+ * Naming the limit here is the point: a harness whose blind spots are unlisted reads as complete.
+ *
  * **Why parity is also asserted absolutely and not only against SQLite.** Two implementations that
  * are wrong in the same way agree perfectly. The transcript comparison is therefore paired with a
  * block of expected numbers and expected refusal texts that neither axis produced.
@@ -712,6 +723,27 @@ describe('the two branches a paraphrase would drop, proven load-bearing on the s
   /** The canonical daily reservation, taken from the module rather than retyped here — a copy in
    * the test would be a second source of the one statement, and the copy is always the one that
    * drifts. */
+  /**
+   * Applies a mutation to a shipped statement and REFUSES a no-op.
+   *
+   * A textual mutant is only a mutant while its pattern still matches. When task 015-30 added
+   * `CAST(… AS BIGINT)` around the two ceiling parameters, both patterns below stopped matching —
+   * and a mutation that changes nothing turns its test into an assertion about the UNMUTATED
+   * statement, which is a check that no longer checks anything. These two happened to fail loudly
+   * because their expectations are directional; a mutant whose expectation happens to hold for the
+   * original would have gone green while measuring nothing.
+   */
+  const mutate = (sql: string, pattern: RegExp, replacement: string): string => {
+    const mutant = sql.replace(pattern, replacement);
+    if (mutant === sql) {
+      throw new Error(
+        `the mutation ${String(pattern)} matched nothing — the statement changed and this mutant ` +
+          'is now a no-op, so the test below would assert against the original',
+      );
+    }
+    return mutant;
+  };
+
   const dailyReservation = (): string => {
     const found = sqlLiterals('budget-store.ts').find((sql) =>
       /INSERT INTO onchain\.usage\s*\(/i.test(sql),
@@ -731,7 +763,7 @@ describe('the two branches a paraphrase would drop, proven load-bearing on the s
   it('TC-E2E-04 (mutant): without it, EVERY reservation under an unlimited ceiling is refused', () => {
     // `… <= NULL` is NULL, not false — the statement returns zero rows and the store reads that as
     // a refusal. This is the paraphrase `system-architecture.md` §3.4.8 warns about, executed.
-    const mutant = dailyReservation().replace(/\$5 IS NULL OR /g, '');
+    const mutant = mutate(dailyReservation(), /CAST\(\$5 AS BIGINT\) IS NULL OR /g, '');
     expect(harness.run(mutant, [PROVIDER, DAY, 7, 1, null, null]).rows).toHaveLength(0);
     expect(harness.rows('usage')).toHaveLength(0);
   });
@@ -743,7 +775,11 @@ describe('the two branches a paraphrase would drop, proven load-bearing on the s
     );
     // Mutant: drop the source's own WHERE and the conflict branch's guard no longer covers the
     // fresh-row path, so the first call of a day reserves more than the ceiling allows.
-    const mutant = dailyReservation().replace(/WHERE \(\$5 IS NULL OR \$3 <= \$5\)/, '');
+    const mutant = mutate(
+      dailyReservation(),
+      /WHERE \(CAST\(\$5 AS BIGINT\) IS NULL OR \$3 <= CAST\(\$5 AS BIGINT\)\)/,
+      '',
+    );
     expect(harness.run(mutant, [PROVIDER, DAY, 500, 1, 100, null]).rows).toHaveLength(1);
     expect(harness.rows('usage')).toHaveLength(1);
   });

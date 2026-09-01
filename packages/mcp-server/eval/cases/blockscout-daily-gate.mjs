@@ -35,14 +35,21 @@ const TOOL = 'onchain_chain_transactions';
 // refusal that WAS the ceiling. `test/eval-transport-cases.test.ts` renders a ceiling reason
 // through the real function and checks this literal against it, so the guess cannot come back.
 const CEILING_MARKER = 'the daily call ceiling for this provider is reached';
-// One chain per call, all distinct. Enough for a threshold of up to five plus the call that must be
-// refused; the runner's synthetic cap is smaller than this list by construction.
+// One chain per call, all distinct. The case takes as many as it needs — the HEADROOM left under
+// the ceiling plus the one call that must be refused — so the list bounds how much headroom a single
+// run can exercise, not the ceiling itself.
 const CHAINS = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'gnosis'];
 
 const textOf = (answer) => {
   const parts = answer?.result?.content ?? [];
   const joined = parts.map((p) => String(p?.text ?? '')).join(' ');
   return `${joined} ${String(answer?.error?.message ?? '')}`;
+};
+
+/** `'hit' | 'miss' | null` — where the answer came from, as the tool itself reports it. */
+const cacheStatusOf = (answer) => {
+  const status = answer?.result?._meta?.cache?.status;
+  return status === 'hit' || status === 'miss' ? status : null;
 };
 
 export default {
@@ -53,23 +60,63 @@ export default {
     'refusal that cannot be told from a saturated bucket or a vendor outage, and an exhausted ' +
     'free provider escalating to the paid one',
   exercise: async (ctx) => {
-    const cap = Number(process.env.BLOCKSCOUT_DAILY_CALL_CAP ?? 3);
+    // FROM THE CONTEXT, never from this process's environment: the phase sets
+    // `BLOCKSCOUT_DAILY_CALL_CAP` on the server it spawns, not on the runner the cases execute in.
+    const cap = Number(ctx.dailyCallCap);
+    const store = httpStore(ctx);
+    // WHAT THE COUNTER ALREADY HOLDS, read BEFORE the first call.
+    //
+    // On the SQLite axis the store is a fresh temporary file and this is always zero. On the
+    // Postgres axis it is the engine's own `onchain.usage`, and the row SURVIVES the run — so the
+    // second gate run of a calendar day starts from whatever the first one left. Assuming zero made
+    // this case silently unrepeatable: measured 2026-09-01, the first acceptance run left
+    // `calls_made = 3` against a ceiling of 3, and a re-run would have met a refusal on its FIRST
+    // call and reported it as "the ceiling fired before it was reached".
+    //
+    // Reading it turns a hidden precondition into the claim the gate actually makes: the ceiling
+    // bounds the CUMULATIVE count for the day, not the count since this process started.
+    const before = await readUsage(store.storage, store.location);
+    const already = before
+      .filter((x) => String(x.provider) === 'blockscout')
+      .reduce((sum, x) => sum + Number(x.calls_made ?? 0), 0);
+    const remaining = cap - already;
+
     const session = await ctx.openSession();
     try {
-      const answers = [];
+      // WALK UNTIL A REFUSAL, SKIPPING CACHE HITS.
+      //
+      // A cached answer is served before the gate is consulted at all, so it neither consumes
+      // headroom nor tests anything — it is not an admitted call and must not be counted as one.
+      // The case's own header says a repeat never reaches the gate; what this loop adds is that on
+      // the Postgres axis the cache SURVIVES THE RUN, so "different chains" stops being enough the
+      // second time the gate runs in a TTL. Measured 2026-09-01: `optimism` came back from an entry
+      // the 13:37 run had written, and the case read it as a served call past the ceiling.
+      //
       // Sequential on purpose: the ceiling is a count, and concurrent calls would make "the call
       // after the Nth" ambiguous.
-      for (const chain of CHAINS.slice(0, cap + 1)) {
+      const answers = [];
+      let admitted = 0;
+      let ceilingMet = false;
+      for (const chain of CHAINS) {
         const answer = await session.callTool(TOOL, { chain });
-        answers.push({
-          chain,
-          isError: Boolean(answer.error) || answer.result?.isError === true,
-          text: textOf(answer),
-        });
+        const text = textOf(answer);
+        const isError = Boolean(answer.error) || answer.result?.isError === true;
+        const cached = cacheStatusOf(answer) === 'hit';
+        const isCeiling = isError && text.includes(CEILING_MARKER);
+        answers.push({ chain, isError, cached, isCeiling, text });
+        if (isCeiling) {
+          ceilingMet = true;
+          break; // the deciding refusal — the walk is over
+        }
+        // ONLY the ceiling ends the walk, and only a cache hit fails to count. A vendor failure
+        // (`L-20` was live on `base` all day on 2026-09-01) is an ADMITTED call: the gate let it
+        // through, the counter moved, the vendor then failed it. Stopping on any `isError` would
+        // hand a filed vendor defect the role of the deciding refusal — RISK-6 wearing the
+        // costume of the thing it imitates.
+        if (!cached) admitted += 1;
       }
-      const store = httpStore(ctx);
       const usage = await readUsage(store.storage, store.location);
-      return { cap, answers, usage };
+      return { cap, already, remaining, admitted, ceilingMet, answers, usage };
     } finally {
       await session.close();
     }
@@ -77,11 +124,55 @@ export default {
   check: (r) => {
     const problems = [];
     const cap = Number(r?.cap ?? 0);
+    const already = Number(r?.already ?? 0);
+    const remaining = Number(r?.remaining ?? 0);
     const answers = r?.answers ?? [];
 
-    if (answers.length !== cap + 1) {
-      problems.push(`expected ${String(cap + 1)} attempts, made ${String(answers.length)}`);
+    // Not enough headroom under the ceiling to make even one admitted call. Reported as a PROBLEM
+    // rather than skipped: a case that quietly passes when it could not run is the shape this whole
+    // file exists to refuse. The operator's remedy is a larger `ONCHAIN_EVAL_BLOCKSCOUT_CAP` for
+    // the run, or waiting for the day bucket to roll over.
+    if (remaining < 1) {
+      problems.push(
+        `the ceiling (${String(cap)}) was already reached before this case ran — ` +
+          `usage.calls_made was ${String(already)}. Nothing about the gate was measured. Raise ` +
+          'ONCHAIN_EVAL_BLOCKSCOUT_CAP above the standing count for this run',
+      );
       return problems;
+    }
+
+    const admitted = Number(r?.admitted ?? 0);
+    const cached = answers.filter((a) => a.cached).map((a) => String(a.chain));
+    const last = answers[answers.length - 1];
+
+    if (r?.ceilingMet !== true) {
+      problems.push(
+        `the walk ran out of chains without meeting the ceiling: ${String(admitted)} call(s) were ` +
+          `admitted against headroom of ${String(remaining)}` +
+          (cached.length === 0
+            ? ''
+            : `, and ${String(cached.length)} answer(s) came from CACHE (${cached.join(', ')}), ` +
+              'which never reach the gate. On the Postgres axis the cache outlives the run, so a ' +
+              'second run inside the TTL has fewer usable chains than the list suggests') +
+          '. Nothing about the ceiling was measured',
+      );
+      return problems;
+    }
+
+    if (admitted !== remaining) {
+      // The vendor failures are NAMED here rather than counted silently: they were admitted calls
+      // (the gate let them through and the counter moved), so they belong in this arithmetic, and a
+      // reader who does not see them listed cannot tell this from a gate that miscounted.
+      const vendorFailures = answers.filter((a) => a.isError && !a.isCeiling).map((a) => a.chain);
+      problems.push(
+        `the refusal came after ${String(admitted)} admitted call(s), but the headroom under the ` +
+          `ceiling of ${String(cap)} was ${String(remaining)} (the counter already held ` +
+          `${String(already)})` +
+          (vendorFailures.length === 0
+            ? ''
+            : `. ${String(vendorFailures.length)} of those were admitted and then failed at the ` +
+              `vendor (${vendorFailures.join(', ')}) — counted, as the gate counts them`),
+      );
     }
 
     // BY THE TEXT, not by the shape — the same discriminator UC-7 A1 fixes for the call after the
@@ -90,29 +181,23 @@ export default {
     // admitted, the vendor failed it, and `usage.calls_made` below still counts it. Judging these
     // by `isError` made a filed vendor defect read as a misfiring gate — RISK-6 in the other
     // direction, and the reason this case exists.
-    const served = answers.slice(0, cap);
-    const refusedEarly = served.filter((a) => String(a.text).includes(CEILING_MARKER));
-    if (refusedEarly.length > 0) {
+    // The walk stops AT the ceiling, so a ceiling refusal in any earlier position is impossible by
+    // construction — the checks that remain are that the LAST one is the ceiling, and that the
+    // admitted count before it matches the headroom.
+    if (last?.isCeiling !== true) {
       problems.push(
-        `the ceiling fired before it was reached: ${refusedEarly.map((a) => a.chain).join(', ')} ` +
-          `refused within the first ${String(cap)} calls`,
-      );
-    }
-
-    const last = answers[answers.length - 1];
-    if (!last?.isError) {
-      problems.push(`call ${String(cap + 1)} (${String(last?.chain)}) was SERVED past the ceiling`);
-    } else if (!String(last.text).includes(CEILING_MARKER)) {
-      problems.push(
-        `call ${String(cap + 1)} was refused but not by the ceiling: its text does not contain ` +
+        `the deciding call (${String(last?.chain)}) did not carry the ceiling's own text ` +
           `"${CEILING_MARKER}", so a saturated bucket or a vendor outage is indistinguishable ` +
-          `from exhaustion. Got: ${String(last.text).slice(0, 200)}`,
+          `from exhaustion. Got: ${String(last?.text).slice(0, 200)}`,
       );
     }
 
     const rows = r?.usage ?? [];
     const blockscout = rows.filter((x) => String(x.provider) === 'blockscout');
     const counted = blockscout.reduce((sum, x) => sum + Number(x.calls_made ?? 0), 0);
+    // The CUMULATIVE count, not this case's own calls: the ceiling bounds the day, so after the
+    // refusal the counter must sit exactly ON the ceiling whatever it started the case at. One
+    // higher would mean the refused call was admitted and counted anyway.
     if (counted !== cap) {
       problems.push(
         `usage.calls_made for blockscout must equal the ceiling (${String(cap)}); found ` +
