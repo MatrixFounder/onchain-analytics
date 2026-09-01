@@ -1750,7 +1750,7 @@ CREATE INDEX IF NOT EXISTS idx_client_usage_reserved   ON client_usage (state, r
 - **Primary key:** `id`. **Natural UNIQUE dedup key:** `(principal_id, client_request_id)`.
 - **Indexes:** `(principal_id, reserved_at)` for a per-principal period query; `(terminal_at)` for the
   retention job (§4.6.1's own paragraph below); `(state, reserved_at)` for the reconciliation scan
-  (§4.6.4).
+  (§4.6.5).
 - **Serves:** R-1.1 through R-1.4, R-2.1 through R-2.4, R-5.1 through R-5.5, R-7.1 through R-7.6.
 
 **Why a separate table, not a column on `BudgetStore`'s `usage`** (R-1.1). `ADR-003` D4: "Слить их в
@@ -1793,7 +1793,7 @@ row leaving `'reserved'`, so a query filtering on it never has to branch on `sta
 `diagnostics`'s windows** (`DB-SCHEMA-CONCEPT` §4; R-7.6). The number is a working figure carried
 over verbatim from the phrasing the owner selected on 2026-08-25, not a separately derived one — the
 same qualification `docs/TASK.md` §5 states about it. The retention job is designed beside the
-reconciliation job it shares a discipline with (§4.6.4).
+reconciliation job it shares a discipline with (§4.6.5).
 
 **Storage axis — only Postgres rows are authoritative** (R-7.2, R-7.3; closes `ADR-003` `OQ-F`). On
 SQLite (`local`, `network-sqlite`) the row is written — the seam exercises without a database — but
@@ -2076,7 +2076,7 @@ therefore checks exactly the mechanical condition it can check: presence of the 
 
 **One provider-level number bounds all four blockscout routes** (R-9.7) — `entity.labels`,
 `token.holders`, `chain.transactions`, `gas.price`. `checkAndReserve` is called with
-`provider = 'blockscout'` on every one of them, not per route. §4.6.5 states what that number rests
+`provider = 'blockscout'` on every one of them, not per route. §4.6.4 states what that number rests
 on and what it does not.
 
 **A recorded discrepancy, not a silent one: `dailyCallCeiling` living in `providers.config.ts`
@@ -2128,8 +2128,13 @@ when, "if measurement shows the real ceiling is lower than ≈625/day".
 **Purpose.** A process that dies between reserving and completing a request leaves a `client_usage`
 row in `'reserved'` forever, unless something closes it.
 
-**Threshold — twice the largest declared `deadlineMs`, applied `120_000` ms** (R-14.2). Measured:
-`packages/core/src/capability-manifest.ts` carries 28 declarations, the largest `deadlineMs: 60_000`.
+**Threshold — twice the largest declared `deadlineMs`, applied `120_000` ms** (R-14.2). Measured by
+`grep -cE '^\s*deadlineMs: [0-9_]+,' packages/core/src/capability-manifest.ts`: 27 rows carry a
+value, and the largest is `deadlineMs: 60_000`. A plain `grep -c 'deadlineMs:'` answers 28. The
+extra line is the interface field (`packages/core/src/capability-manifest.ts:158` —
+`  deadlineMs: number;`), which declares the type rather than a deadline. The threshold `120_000`
+and the maximum `60_000` are unaffected: this correction moves the counter, not the bound.
+
 **Why double, and not the single maximum.** `ADR-002` D4 п.2 (R-17) lets an already-accepted paid
 call finish past its own deadline — the deadline bounds SPENDING, not delivery
 (`reliability.md` §9.1). A row that is genuinely still in flight at exactly one deadline's width is

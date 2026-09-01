@@ -854,8 +854,11 @@ architecture layer. Each one shaped a design decision above; none is quoted with
   a NULL `access_profile_id` (`data-model.md` §4.6.1).
 - **OQ-6 — a live measurement of Blockscout's real ceiling.** Will not happen. The daily call gate is
   configured by the `ADR-003` D6 ESTIMATE (≈625/day), tagged with its own origin. `ADR-003` D6's own
-  obligation — "T-015 replaces the guess with a measurement" — is left unfulfilled by this decision.
-  `ADR-003` §Revisit when's trigger stays unspent (`data-model.md` §4.6.4).
+  obligation (translated from the Russian original,
+  `docs/onchain-analytics/ADR-003-network-transport-and-billing.md:321`,
+  `T-015 заменяет догадку измерением`) — "T-015 replaces the guess with a measurement" — is left
+  unfulfilled by this decision. `ADR-003` §Revisit when's trigger stays unspent
+  (`data-model.md` §4.6.4).
 - **OQ-9 — a `BillingStore` storage failure at reserve time.** Fail-closed: the call is refused
   (`BillingStoreUnavailableError`), never served for free
   (`system-architecture.md` §3.5.2 step 4).
@@ -874,7 +877,7 @@ over building a second storage lifecycle for a captured response. A replay past 
 by a named class, `ReplayWindowExpiredError`, before any resource is touched (`system-architecture.md`
 §3.5.2a, closes `docs/TASK.md` R-5.7). This closes architecture review round 1 MAJOR-11.
 
-**Nothing raised by this architecture phase itself is left open.** Two design choices this section
+**Nothing raised by this architecture phase itself is left open.** Three design choices this section
 made where `docs/TASK.md`'s wording admitted more than one reading are recorded as decisions, not as
 new questions. Each resolves inside already-decided principles rather than requiring a fresh owner
 call.
@@ -884,6 +887,10 @@ call.
 - `ClientCreditsExhaustedError` writes no ledger row, mirroring `checkAndReserve`'s own "on refusal,
   nothing is written" contract rather than a write-then-reverse pair
   (`system-architecture.md` §3.5.3).
+- R-6.1 names `credits_mode` and `credits_balance_raw` together and forbids a separate path. It is
+  read as binding the MODE lookup only. The balance debit runs as its own statement inside
+  `reserve()`'s transaction, because an async supplier behind that interface cannot promise
+  atomicity with a concurrent write (`data-model.md` §4.6.1).
 
 ### AC-42 vs. `dailyCallCeiling` — a recorded discrepancy, `docs/TASK.md` out of this phase's scope
 

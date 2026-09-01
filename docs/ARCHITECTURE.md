@@ -379,7 +379,10 @@ Postgres container on the dev VM. It is a container, not the separated host WI-6
 names.
 
 This closes `SEC-2`'s exception rather than extending it. A four-part verify gate is named
-explicitly. A rollback artifact is required before any deletion.
+explicitly: row counts on both sides, the `min`/`max` of each time column, a byte-for-byte spot-check
+of the exact columns, and zero orphan rows. A rollback artifact is required before any deletion — a
+`pg_dump` of the old container's `onchain` schema, stored outside BOTH containers, taken before the
+thirteen tables are dropped.
 
 §10.8 designs the billing ledger's background reconciliation job. It is a second n8n workflow
 beside `onchain-retention`. Installation needs the same explicit owner approval.
