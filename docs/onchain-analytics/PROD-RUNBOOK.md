@@ -1187,6 +1187,56 @@ The thirteen names diff equal against the rollback artifact's table list.
 is a grant that outlived its table. Anything but `POSTCONDITION HOLDS` and exit 0 means the step did
 not complete, and the path back is the artifact of task 015-26, both files, in order.
 
+#### EXECUTED 2026-09-01 10:00 UTC, on the owner's explicit instruction
+
+Exit **0**. Thirteen tables listed, dropped in one transaction; postcondition printed three rows,
+all `may_select` true, and `POSTCONDITION HOLDS`. State before the run was identical to the state
+the rollback artifact captured — same counts, no drift — and the artifact was verified present
+immediately beforehand.
+
+**What SEC-2 looks like now on the old container.** The exception existed because Supabase ships
+roles with a platform-wide `SELECT`. They are still there and still all-seeing; what changed is that
+there is nothing of the engine's left for them to see.
+
+| Role | onchain tables readable, before | after |
+| :--- | ------------------------------: | ----: |
+| `supabase_admin` | 16 | **3** |
+| `postgres` | 16 | **3** |
+| `supabase_read_only_user` | 16 | **3** |
+| `onchain_engine_read` | 3 | 3 |
+| `onchain_engine_state` | 13 | **0** |
+
+The three that remain are the snapshotter's `assets`, `metrics`, `snapshots`, which never moved
+(R-8.3). `onchain_engine_state` drops to zero there because its grants died with the tables — the
+engine's state now lives only on `onchain-engine-db`.
+
+**Everything else still works, measured after the drop rather than assumed:**
+
+| Check | Result |
+| :---- | :----- |
+| new container | 13 tables |
+| network profile | still listening on `127.0.0.1:8848` |
+| snapshotter | 5 596 rows, newest `2026-09-01 09:00 UTC` |
+| `onchain-retention` | ran on the new container overnight — `retention_runs` 12 → 15 |
+| all four `onchain-*` workflows | active |
+| **`onchain-verify` report** | **DELIVERED** on the post-drop topology at 10:03 UTC — `alert.delivered` 7 → 8 |
+
+**The delivered report is the check that matters here.** Its `Verify query` reads the snapshotter
+tables on the OLD container and its `Pulse query` reads `onchain.diagnostics` on the NEW one, so a
+message that arrives proves both halves of the split survived the drop. A query returning the right
+rows would not have proven it (L-4). The message read:
+`rows: 5596 · buckets: 652 · metrics: 11/11 seen · 📡 alert channel: 20h since last confirmed
+delivery (bound 26h)`.
+
+**The `⚠️` in that report is not a defect of this step.** It names the derived metric
+`shielded_pool_balance_credits` — the L-2 self-healing working and declining to hide itself.
+
+**`onchain-verify`'s schedule fires when the VM is up, not daily.** Its scheduled runs were 08-24
+14:35, 08-27 11:27 and 08-29 14:30 UTC — nowhere near its own `Daily 08:07 UTC`. The dev VM is not
+powered continuously, so the trigger catches up at start. The pulse bound of 26 h is measured against
+DELIVERIES, and a VM that sleeps two days will breach it for reasons that have nothing to do with
+the alert channel. Worth knowing before reading a `📵` on this instance as an incident.
+
 
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
