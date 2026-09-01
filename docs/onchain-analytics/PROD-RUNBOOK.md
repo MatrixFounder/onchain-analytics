@@ -1121,6 +1121,73 @@ this verification. It holds a second copy of `api_tokens.token_hash`. Removing i
 named here rather than removed quietly.
 
 
+### Dropping the engine tables from the old container  *(task 015-27, §10.9.7, R-8.8, AC-29, UC-6 step 10b)*
+
+**The only irreversible operation of the move. It does not run without the owner's explicit word**
+(skill `vm-deploy` section 5), and the file itself carries that sentence.
+
+```sh
+ssh vm 'docker exec -i supabase-db psql -qU supabase_admin -d postgres \
+  -v ON_ERROR_STOP=1 -v READ_ROLE=onchain_engine_read' \
+  < sql/migrations/006_wi62_drop_engine_tables_old_container.sql
+```
+
+**Preconditions, each one somebody else's measurement, all four met before this was written:**
+
+| # | Precondition | Evidence |
+| :- | :----------- | :------- |
+| 1 | verify gate passed with no divergence | task 015-24 — `PASS`, thirteen tables |
+| 2 | an already-issued token authenticated on the new container | task 015-25 — AC-44, 21:33:55Z, `principal_id` = the copied row |
+| 3 | rollback artifact exists outside both containers | task 015-26 — dump + `*.guards.sql`, restored and exercised |
+| 4 | `onchain-verify`'s report DELIVERED on the new topology | task 015-33 — 21:33 UTC, pulse line present |
+| 5 | the owner's explicit word, with a date | **outstanding** |
+
+**Four guards, and the first one is not in the task's own list.**
+
+| Guard | Refuses when | Why it exists |
+| :---- | :----------- | :------------ |
+| `READ_ROLE` | the parameter is absent | the postcondition re-measure needs it; L-28 form, raises rather than `\quit 1` |
+| **this is the old container** | `assets`/`metrics`/`snapshots` are not all three present | the thirteen names exist on BOTH containers; pointed at `onchain-engine-db` this file would destroy the copy the move created, and every `DROP` would succeed |
+| `client_usage` is empty | it holds rows | those rows are not in the artifact; the task's own rule |
+| `request_trace` is empty | it holds rows | the writer moved in 015-25, so a row here means one came back after the snapshot and the artifact does not carry it |
+
+**Why the container guard is a POSITIVE discriminator.** "The tables I am about to drop are present"
+is true on both sides and identifies nothing. What only the old container has is the snapshotter's
+three tables, which stay behind by R-8.3.
+
+**Rehearsed end to end on a disposable copy, 2026-08-31 — never on the real container.** The rig was
+the restore-check database from task 015-26: the same thirteen tables, plus three empty stand-ins
+for the snapshotter so the container guard would pass. Every guard was exercised against the state
+that must trip it, and the target was re-counted after each run:
+
+| Run | Target | Result |
+| :-- | :----- | :----- |
+| no `READ_ROLE` | the OLD container | exit 3; its 16 tables untouched |
+| all guards, no stand-ins | a copy that looks like the ENGINE container | exit 3, "this is not the old container"; its 13 tables untouched |
+| a row in `client_usage` | the rig | exit 3; 16 tables untouched |
+| a row in `request_trace` | the rig | exit 3; 16 tables untouched |
+| clean | the rig | exit 0; thirteen dropped in one transaction, exactly three left |
+
+**The rehearsal found a defect in the file's own postcondition.** The first draft PRINTED "expected:
+exactly three rows … all true" and CHECKED only the count. On the rig every `may_select` came back
+false — no grants there — and the file still announced "postcondition holds". A printed expectation
+with no reader is the shape this project keeps finding (L-2, RF-14). The check now covers all three
+claims and was proven both ways on the rig: red with no grants, green after `GRANT SELECT`.
+
+The comparison uses `\gset` rather than a `DO` block because psql does not substitute `:'VAR'`
+inside a dollar-quoted string — written there, `:'READ_ROLE'` would reach the server verbatim and
+fail as an undefined parameter, which is a guard failing for the wrong reason.
+
+**Structural checks:** one `BEGIN`/`COMMIT` pair, thirteen `DROP TABLE IF EXISTS`, and `CASCADE`
+appears only in the two comments that explain why it is refused — zero occurrences outside comments.
+The thirteen names diff equal against the rollback artifact's table list.
+
+**Expected postcondition on the real run:** three rows — `assets`, `metrics`, `snapshots` — all
+`may_select` true under `onchain_engine_read`. A fourth row is an engine table left behind; a false
+is a grant that outlived its table. Anything but `POSTCONDITION HOLDS` and exit 0 means the step did
+not complete, and the path back is the artifact of task 015-26, both files, in order.
+
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are
