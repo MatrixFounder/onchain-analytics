@@ -159,7 +159,7 @@ describe('the eval follows the storage axis of the profile it raised', () => {
     const fn = /function issueToken\(dataDir\) \{[\s\S]*?\n\}/.exec(runner)?.[0] ?? '';
     expect(fn).not.toBe('');
     expect(fn.indexOf("'token:issue'")).toBeLessThan(fn.indexOf("'user:add'"));
-    expect(fn).toMatch(/catch \{[\s\S]*'user:add'/);
+    expect(fn).toMatch(/catch \([\w]+\) \{[\s\S]*'user:add'/);
   });
 
   it('the capability phase hands its DATA_DIR to the HTTP phase', () => {

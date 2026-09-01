@@ -607,18 +607,33 @@ function issueToken(dataDir) {
   let lines;
   try {
     lines = issue();
-  } catch {
-    // The identity is not there yet. `--actor` is omitted on the SQLite axis so the empty-store
-    // bootstrap applies, and supplied on Postgres where it is required.
-    admin(dataDir, [
-      'user:add',
-      '--email',
-      HTTP_ADMIN_EMAIL,
-      '--role',
-      'admin',
-      ...(HTTP_ADMIN_ACTOR === null ? [] : ['--actor', HTTP_ADMIN_ACTOR]),
-    ]);
-    lines = issue();
+  } catch (first) {
+    // The identity is not there yet — OR the store is unreachable, and the two are indistinguishable
+    // from here. `--actor` is omitted on the SQLite axis so the empty-store bootstrap applies, and
+    // supplied on Postgres where it is required.
+    try {
+      admin(dataDir, [
+        'user:add',
+        '--email',
+        HTTP_ADMIN_EMAIL,
+        '--role',
+        'admin',
+        ...(HTTP_ADMIN_ACTOR === null ? [] : ['--actor', HTTP_ADMIN_ACTOR]),
+      ]);
+      lines = issue();
+    } catch (second) {
+      // BOTH, because the second failure is the one that would otherwise be reported and it is the
+      // less informative of the two: a store that cannot be reached fails `token:issue` first and
+      // then `user:add` for the identical reason, and naming only the retry sends the reader after
+      // a missing user that was never the problem.
+      throw new Error(
+        `could not obtain the phase's token. token:issue said: ${String(first?.message ?? first)} — ` +
+          `and creating the identity then said: ${String(second?.message ?? second)}`,
+        // `cause` is this block's own error; the FIRST one survives in the text above, which is
+        // the half a reader would otherwise never see.
+        { cause: second },
+      );
+    }
   }
   const value = lines.find((l) => l.startsWith('oi_'));
   const idLine = lines.find((l) => l.startsWith('id='));
