@@ -861,7 +861,7 @@ real port number reads as a commitment to keep that number.
 **Why the check uses an already-issued token and not a fresh one.** Reissuing would mint a new row
 on the new container and prove the issuing path works — a different claim. What is under test is
 whether the COPIED row still authenticates, i.e. that the move carried a working credential and not
-merely bytes. The pepper is not involved in the move at all: `ONCHAIN_TOKEN_HASH_SALT` lives in the
+bytes alone. The pepper is not involved in the move at all: `ONCHAIN_TOKEN_HASH_SALT` lives in the
 server's `.env`, never in a container (`003_seed_engine_admin.sql`, "WHY THE PEPPER IS NOT A
 PARAMETER").
 
@@ -1184,7 +1184,7 @@ The thirteen names diff equal against the rollback artifact's table list.
 
 **Expected postcondition on the real run:** three rows — `assets`, `metrics`, `snapshots` — all
 `may_select` true under `onchain_engine_read`. A fourth row is an engine table left behind; a false
-is a grant that outlived its table. Anything but `POSTCONDITION HOLDS` and exit 0 means the step did
+is a grant whose table is gone. Anything but `POSTCONDITION HOLDS` and exit 0 means the step did
 not complete, and the path back is the artifact of task 015-26, both files, in order.
 
 #### EXECUTED 2026-09-01 10:00 UTC, on the owner's explicit instruction
