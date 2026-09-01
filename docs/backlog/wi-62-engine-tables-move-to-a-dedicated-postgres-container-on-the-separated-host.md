@@ -1,15 +1,45 @@
 ---
 id: WI-62
 type: work-item
-status: open
+status: done
 opened_at: 2026-08-23
 slug: wi-62-engine-tables-move-to-a-dedicated-postgres-container-on-the-separated-host
 effort: M
 value: 'restores the §10.4.2 postcondition that a managed Supabase cluster cannot satisfy, and closes SEC-2 by construction rather than by acceptance'
 source: SEC-2 owner decision, 2026-08-23
+resolved_at: 2026-09-01
+resolved_by: TASK 015 (stage 6, UC-6 steps 1-11)
 ---
 
 # WI-62 — the engine's tables move to a dedicated Postgres container on the separated host
+
+> **DONE 2026-09-01, in the R-8.10 edition — the dev VM, not a separated host.** Read this line with
+> the amendment below: the destination is a dedicated container beside the existing services, and
+> the separated host stays the `OQ-T014-B` trajectory.
+>
+> **Three measurements close this record, not the one its `Acceptance` names.** That clause said the
+> step-2a query returns no `true` outside "the two role/table pairs" — refuted during T-015's review
+> and replaced, not amended:
+>
+> | # | Measurement | Result |
+> | :- | :---------- | :----- |
+> | 1 | the state role over the thirteen tables of the NEW container (R-8.5) | true for all thirteen; false outside schema `onchain` |
+> | 2 | every other application role over those thirteen (R-8.6) | none — only the image's own superuser, named separately |
+> | 3 | the OLD container re-measured after the move (R-8.8) | schema `onchain` holds only `assets`, `metrics`, `snapshots` |
+>
+> **What was actually moved, and what it cost.** Twenty-five rows across eleven tables, verified by a
+> five-check gate that compared row counts, both time bounds, full-row content, orphans and the shape
+> of `usage` — `PASS`, zero mismatches. `api_tokens` moved WITH the rest and an already-issued token
+> authenticated against the new container without reissue (AC-44), which is the check that proves a
+> working credential travelled rather than bytes. The alert channel was silent for 2 h 34 min against
+> a declared bound of 24 h.
+>
+> **Two premises of the plan were refuted by measurement along the way**, both recorded where the
+> next reader will meet them: `onchain-retention` was a live writer of three transferred tables
+> (the plan said it was not installed), and `client_usage` DID exist on the old container (MAJOR-F
+> said migration 004 was never applied there — it was).
+>
+> `SEC-2` moves to `fixed` in the same pass, with its dev-VM acceptance retired rather than extended.
 
 > **Amendment — owner decision 2026-08-25, executed by T-015.** The host is the **dev VM**, not a
 > separated host. A dedicated Postgres container is stood up beside the existing services on the dev

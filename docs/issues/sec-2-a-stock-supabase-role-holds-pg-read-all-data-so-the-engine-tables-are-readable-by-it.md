@@ -1,14 +1,56 @@
 ---
 id: SEC-2
 type: known-issue
-status: documented
+status: fixed
 opened_at: 2026-08-22
 category: security
 severity: SEV-2
+resolved_at: 2026-09-01
+resolved_by: TASK 015 (task 015-27, UC-6 step 10; recorded by task 015-28)
 slug: sec-2-a-stock-supabase-role-holds-pg-read-all-data-so-the-engine-tables-are-readable-by-it
 ---
 
 # SEC-2 — a stock Supabase role holds `pg_read_all_data`, so every engine table is readable by it
+
+> **FIXED 2026-09-01 — by construction, not by a grant.** The engine's thirteen tables left the
+> managed cluster. Direction 3 of the fix path was executed: a dedicated `postgres:16-alpine`
+> container (`onchain-engine-db`) on the dev VM, described by
+> [`deploy/onchain-engine-db/compose.yaml`](../../deploy/onchain-engine-db/compose.yaml). A stock
+> image ships none of the three platform roles this record is about — the postcondition is a
+> property of the IMAGE, not of grants somebody has to keep correct.
+>
+> **The measurement on the NEW container, taken after the rows moved and the writer started
+> (UC-6 step 8, task 015-25), not on the empty tables of step 2.** Sixteen roles exist; fourteen are
+> built-in `pg_*`. Exactly two can read any engine table:
+>
+> | Role | superuser | engine tables readable |
+> | :--- | :-------- | ---------------------: |
+> | `postgres` | yes — the image's own superuser, named separately | 13 |
+> | `onchain_engine_state` | no | 13 |
+>
+> The "exactly thirteen" half is trivially true where the schema holds nothing else, so the negative
+> half was measured too: outside schema `onchain` the state role can `SELECT` nothing; it holds
+> `CREATE` on neither `public` nor `onchain`; it is not a member of `pg_read_all_data`.
+>
+> **The measurement on the OLD container, re-taken after the drop (task 015-27, 2026-09-01
+> 10:00 UTC).** The three platform roles are still there and still all-seeing. What changed is that
+> the engine has nothing left there to see:
+>
+> | Role | onchain tables readable, before | after |
+> | :--- | ------------------------------: | ----: |
+> | `supabase_admin` | 16 | **3** |
+> | `postgres` | 16 | **3** |
+> | `supabase_read_only_user` | 16 | **3** |
+> | `onchain_engine_state` | 13 | **0** |
+>
+> The three that remain are the snapshotter's `assets`, `metrics`, `snapshots`, which never moved
+> (R-8.3) and are not what this record is about.
+>
+> **The 2026-08-23 acceptance is RETIRED, not extended** (R-8.9). It carried a pinned re-measurement
+> tied to leaving the managed cluster. The leaving is done and the re-measurement is spent.
+>
+> **This file stays.** The two withdrawn fix paths below remain a measured fact about a managed
+> cluster, and the next host should read them BEFORE its own measurement, not after.
 
 > Origin: the step-2a measurement of `deployment.md` §10.4.2, run before applying migration 002 to
 > the dev VM on 2026-08-22 and re-run after. Filed because the measurement found what that step

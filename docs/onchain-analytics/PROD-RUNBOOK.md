@@ -1358,6 +1358,35 @@ is a verifier, and this listing has more readers than the authentication path.
   silently (§6).
 - Backup from **day 1** (§8.6): `pg_dump -Fc --schema=onchain` on a schedule → off-site (R2/B2/minio).
 
+### Install log
+
+One line per move, appended and never rewritten afterwards. A log whose entries get corrected in
+place stops being the thing it is kept for (`DB-SCHEMA-CONCEPT` §5). "Hosts" here reads as
+CONTAINERS: R-8.17 and `deployment.md` §10.9.9 translate §6's wording to a topology of two containers
+on one VM.
+
+**2026-09-01 · `supabase-db` (`supabase-db:5432`) → `onchain-engine-db` (VM `10.211.55.3:5433`) ·
+verify `0/0/0/0` + shape `1` · thirteen engine tables absent from the old container ·
+windows: alert-channel silence `2026-08-31T11:55:48Z` → `2026-08-31T14:30:07Z` = **2 h 34 min**
+against a declared bound of **24 h**; WI-64 pulse divergence opened `2026-08-31T13:55:34Z`
+(credential retarget, task 015-22) and closed `2026-08-31T14:29:28Z`, proven by the delivered report,
+= **34 min**.**
+
+Reading the fields:
+
+| Field | Why it is written this way |
+| :---- | :------------------------- |
+| verify `0/0/0/0` + shape `1` | the four gate numbers QUOTED, not folded into a word: count mismatches, bound mismatches, spot mismatches, orphans, plus `usage.calls_made` present. "Matched" would not separate *more* on the new side from *fewer*, and those have different causes |
+| both containers with ports | the two are told apart by PORT, not host — they share the VM. `5432` published on that VM is the Supabase POOLER, so the old container is named by its docker alias |
+| two windows, one line | different tasks opened them (015-23 and 015-22) and ONE action closed both (015-33). Two entries would drift apart at the first edit of either |
+| timestamps, not dates | the silence bound is stated in HOURS. A date cannot be checked against an hours bound |
+| duration as a number | "within bounds" does not distinguish 20 hours from 40, and risk PR-8 declares the detector to be the overrun itself |
+
+**What the line does not say, deliberately.** It records the move, not the work: the refuted
+premises, the guards added during execution and the defects found in this runbook's own instructions
+are written where they will be met — in the sections above, in `SEC-2`, in `WI-62` and in
+`CLAUDE.n8n.md`.
+
 ## Alternative — transfer existing history (instead of a fresh start)
 Only if you want existing rows in the new instance. **Don't** hand-run `001` (it collides with the
 dump): after bootstrap (Profile B) or on a fresh Supabase schema, `pg_dump -Fc --schema=onchain` →
