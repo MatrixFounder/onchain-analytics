@@ -14,6 +14,19 @@
 //
 // WHAT A CASE FILE LOOKS LIKE (default export):
 //
+//   TRANSPORT CASE CONTEXT (task 015-29 added the last three fields):
+//     baseUrl, token, request, openSession — the raised profile, its token, one HTTP call, a session
+//     dataDir       — this phase's temporary DATA_DIR; the SQLite axis keeps `cache.sqlite3` there
+//     stdioDataDir  — the CAPABILITY phase's DATA_DIR, so a case can compare a local principal's
+//                     ledger rows against an authenticated one (AC-28). It outlives this phase by
+//                     the runner's existing order, not by anything held open here
+//     storage       — the raised profile's axis, `'postgres'` or `'sqlite'`. A reader wired to a
+//                     FILENAME reads empty on `network` (cache and budget both go to Postgres there)
+//                     and the case then asserts against its own zero
+//     stateDsn      — the phase's ONE declared Postgres target. A case must not read
+//                     `process.env` for it: the server and both `admin()` calls were given this
+//                     value, and reaching past it can read a different database than the run wrote
+//
 //   capability cases — one per capability the registry can declare:
 //     { capability: 'chain.tvl',
 //       args: (chain, probe) => ({ chain }) | null,   // null => "no probe input curated"

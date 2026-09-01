@@ -33,6 +33,30 @@ after it, against a second process raised on its own profile, and covers exactly
 reach — a token refused, a perimeter refused, one end-to-end call, two concurrent sessions, and the
 aggregate vendor RATE those two sessions produce.
 
+**The HTTP set also carries the T-015 billing checks** (task 015-29): the ledger on a cache hit and
+a miss, a retry under one `client_request_id`, and the blockscout daily call ceiling firing on a
+SYNTHETIC threshold. Three things follow for anyone adding a case beside them.
+
+- **The phase sets `BLOCKSCOUT_DAILY_CALL_CAP` to single digits.** A new case that calls a
+  blockscout-routed capability inside this phase will meet that ceiling. No existing case does —
+  they use `onchain_ping`, `onchain_chain_tvl` and `wallet.balances.native` — so the constraint is
+  written down here rather than discovered.
+- **The phase sets `ONCHAIN_META_NAMESPACE`.** Without it the server accepts no client-supplied
+  request id at all and mints a server-side one per call, and a retry case would measure two
+  independent requests while reporting on a repeat.
+- **A case that reads the store must follow `ctx.storage`, not a filename.** On `network` both the
+  cache and the budget live in Postgres and `DATA_DIR/cache.sqlite3` is never created; a reader
+  hard-wired to that path returns zero rows and the case passes by reading nothing.
+
+**The acceptance run is `ONCHAIN_EVAL_HTTP_PROFILE=network`** (AC-28b). The runner's default is
+`network-sqlite`, and the same cases are green there on the SQLite axis — the pair is written into
+the run artifact and the ledger line, so an acceptance run is distinguishable from a default one.
+Under `network` the phase needs a Postgres target: it is named ONCE, as
+`ONCHAIN_EVAL_STATE_PG_URL` (falling back to `ONCHAIN_STATE_PG_URL`), and handed to the server AND
+to both `admin()` calls. Set for the server alone, the phase token would be issued into one database
+and read from another, and every transport case would answer "authentication refused" — a run that
+looks like broken cases rather than a misdirected store.
+
 That last one (`http-shared-limiter-rate.mjs`, WI-63) is the one case that deliberately spends wall
 clock: about 19 s of full-refill waits and throttle wait at today's `rpc-evm` bucket, on 18 keyless
 RPC calls and no credits. It measures whether two sessions share ONE token bucket, by comparing the

@@ -67,16 +67,23 @@ describe('TC-UNIT-04 — an incomplete transport case does not load', () => {
 });
 
 describe('TC-UNIT-05 — the transport files load and stay off the capability axis', () => {
-  it('five transport cases are loaded, and every one names http', () => {
+  it('eight transport cases are loaded, and every one names http', () => {
+    // Named individually rather than counted. Adding a file under `eval/cases/` is how coverage
+    // grows (RF-5), so the list is the thing under review: a case that vanished and a case that was
+    // added are different events, and a count conflates them.
     const transport = TRANSPORT_CASES as LoadedCase[];
-    expect(transport).toHaveLength(5);
     expect(transport.map((c) => c.file).sort()).toStrictEqual([
+      // T-015 task 015-29 — the ledger, the retry and the daily call ceiling.
+      'billing-ledger.mjs',
+      'billing-retry.mjs',
+      'blockscout-daily-gate.mjs',
       'http-auth-rejected.mjs',
       'http-perimeter-rejected.mjs',
       'http-shared-limiter-rate.mjs',
       'http-shared-limiter.mjs',
       'http-success.mjs',
     ]);
+    expect(transport).toHaveLength(8);
     for (const c of transport) expect(c.transport).toBe('http');
   });
 

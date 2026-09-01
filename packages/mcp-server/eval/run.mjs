@@ -32,6 +32,7 @@ import { crossChecks, grade } from './checks.mjs';
 import { TRANSPORT_CASES } from './cases/index.mjs';
 import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS, unwiredCapabilities } from './capabilities.mjs';
 import { renderLink, startLinkProbe } from './link-probe.mjs';
+import { storageOf } from './profiles.mjs';
 
 const evalDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(evalDir, '..');
@@ -140,7 +141,11 @@ function startServer() {
       /* temp dir cleanup is best-effort */
     }
   };
-  return { send, notify, stop, stderr };
+  // `dataDir` travels out because the HTTP phase reads the ledger rows THIS phase wrote, to
+  // compare a local principal against an authenticated one (AC-28). The directory outlives the
+  // HTTP phase by the existing order alone: `runHttpPhase` is called before the `finally` that
+  // calls `server.stop()`, and the removal happens there. Nothing is held open on purpose.
+  return { send, notify, stop, stderr, dataDir };
 }
 
 /**
@@ -415,7 +420,7 @@ async function main() {
 
     // The HTTP set, after the capability matrix and on its own profile. It raises a second process
     // with its own temporary DATA_DIR, so nothing above is affected by it.
-    await runHttpPhase(record);
+    await runHttpPhase(record, { stdioDataDir: server.dataDir });
   } finally {
     server.stop();
   }
@@ -442,6 +447,67 @@ const HTTP_PEPPER = 'onchain-eval-transport-pepper';
 const HTTP_ADMIN_EMAIL = 'eval-transport@onchain.invalid';
 const LISTEN_TIMEOUT_MS = 30_000;
 
+/** The storage axis the raised profile actually uses — see `eval/profiles.mjs`. */
+const HTTP_STORAGE = storageOf(HTTP_PROFILE);
+
+/**
+ * The namespace the phase accepts a client-supplied request id under.
+ *
+ * Without it the server takes no client id at all and mints a server-side one per call
+ * (`src/server.ts`), so a retry case would be measuring two independent requests rather than a
+ * repeat.
+ */
+const HTTP_META_NAMESPACE = 'onchain-eval';
+
+/**
+ * A SYNTHETIC daily ceiling for blockscout, in single calls.
+ *
+ * The productive figure is an estimate (`ADR-003` D6, ~625/day) and stays labelled as one; a live
+ * case must not walk toward it, and must not starve the shared limiter on the way. Task 015-16
+ * introduced this key for exactly this run.
+ */
+const HTTP_DAILY_CALL_CAP = Number(process.env.ONCHAIN_EVAL_BLOCKSCOUT_CAP ?? 3);
+
+/**
+ * Where the `network` profile's state goes, NAMED rather than inherited.
+ *
+ * **Why one constant read by every process of the phase.** `admin()` and `startHttpServer` both
+ * spread `process.env`, and the runner has already loaded the repo-root `.env` into its own
+ * environment. Setting this for the server alone would split them: the server would write to the
+ * named database while `admin()` issued the phase token into whatever the operator's environment
+ * happened to point at. Every transport case would then answer "authentication refused", and the
+ * pre-start check for active tokens would pass against the MIGRATED rows of the real container —
+ * a run that looks like broken cases rather than a misdirected store.
+ *
+ * **Why named at all.** A run whose state target is not stated is indistinguishable from a run
+ * against somebody else's database, and the run artifact would not say which it was.
+ */
+const HTTP_STATE_PG_URL =
+  process.env.ONCHAIN_EVAL_STATE_PG_URL ?? process.env.ONCHAIN_STATE_PG_URL ?? null;
+
+/**
+ * What the phase adds to EVERY child process it starts — the server and both `admin()` calls.
+ *
+ * Built once so the three cannot drift apart. `ONCHAIN_STATE_PG_URL` is omitted entirely when it is
+ * not set, so the SQLite axis is unaffected by its presence in this table.
+ */
+const PHASE_ENV = Object.freeze({
+  ONCHAIN_META_NAMESPACE: HTTP_META_NAMESPACE,
+  BLOCKSCOUT_DAILY_CALL_CAP: String(HTTP_DAILY_CALL_CAP),
+  ...(HTTP_STATE_PG_URL === null ? {} : { ONCHAIN_STATE_PG_URL: HTTP_STATE_PG_URL }),
+});
+
+/** The DSN's address WITHOUT its credentials — safe to print, unlike the DSN (D10). */
+function stateTargetLabel() {
+  if (HTTP_STATE_PG_URL === null) return null;
+  try {
+    const u = new URL(HTTP_STATE_PG_URL);
+    return `${u.hostname}:${u.port || '5432'}${u.pathname}`;
+  } catch {
+    return '(unparseable DSN)';
+  }
+}
+
 /** A free localhost port, taken by binding one and releasing it. */
 async function freePort() {
   const { createServer } = await import('node:net');
@@ -465,6 +531,9 @@ function admin(dataDir, argv) {
       DATA_DIR: dataDir,
       ONCHAIN_PROFILE: HTTP_PROFILE,
       ONCHAIN_TOKEN_HASH_SALT: HTTP_PEPPER,
+      // The same table the server gets. Under `network` this is what decides which database the
+      // token is issued INTO — see `PHASE_ENV`.
+      ...PHASE_ENV,
     },
   });
   if (child.status !== 0) {
@@ -513,6 +582,8 @@ async function startHttpServer(dataDir, port) {
       ONCHAIN_TOKEN_HASH_SALT: HTTP_PEPPER,
       ONCHAIN_HTTP_BIND: '127.0.0.1',
       ONCHAIN_HTTP_PORT: String(port),
+      // The same table both `admin()` calls get — see `PHASE_ENV`.
+      ...PHASE_ENV,
     },
   });
   const stderr = [];
@@ -552,7 +623,7 @@ async function startHttpServer(dataDir, port) {
 }
 
 /** The context every transport case receives. */
-function transportContext(baseUrl, token) {
+function transportContext(baseUrl, token, { dataDir, stdioDataDir }) {
   const request = async ({ method = 'POST', body = '', headers = {} } = {}) => {
     const response = await fetch(`${baseUrl}/mcp`, {
       method,
@@ -629,12 +700,17 @@ function transportContext(baseUrl, token) {
         return id;
       },
       initialized: !init.error,
-      callTool: (name, args) =>
+      // `meta` lands at `params._meta`, NOT inside `arguments`: that is where the SDK surfaces it
+      // as `extra._meta`, which is what `readClientRequestId` reads
+      // (`src/tools/registry.ts`). Passed inside `arguments` it would be validated as a tool
+      // parameter — rejected by a `.strict()` schema, or silently ignored — and a retry case built
+      // on it would measure two independent requests while reporting on a repeat.
+      callTool: (name, args, meta) =>
         send({
           jsonrpc: '2.0',
           id: (nextId += 1),
           method: 'tools/call',
-          params: { name, arguments: args },
+          params: { name, arguments: args, ...(meta === undefined ? {} : { _meta: meta }) },
         }),
       close: async () => {
         if (id === null) return;
@@ -646,7 +722,24 @@ function transportContext(baseUrl, token) {
     };
   };
 
-  return { baseUrl, token, request, openSession };
+  // Three fields beyond the four a transport case has always had (task 015-29):
+  //   `dataDir`      — this phase's temporary DATA_DIR (the SQLite axis reads its cache file)
+  //   `stdioDataDir` — the capability phase's, so a case can compare a LOCAL principal's ledger
+  //                    rows against an authenticated one (AC-28)
+  //   `storage`      — the raised profile's axis, so a ledger reader follows the store rather
+  //                    than a filename that would read empty on `network` and assert the zero
+  return {
+    baseUrl,
+    token,
+    request,
+    openSession,
+    dataDir,
+    stdioDataDir,
+    storage: HTTP_STORAGE,
+    // The same constant the server and both `admin()` calls were given. A case must not reach for
+    // `process.env` here: it could then read a different database than the run wrote to.
+    stateDsn: HTTP_STATE_PG_URL,
+  };
 }
 
 /**
@@ -655,7 +748,7 @@ function transportContext(baseUrl, token) {
  * Every failure mode records rows rather than throwing past the caller: a phase that could not run
  * must be VISIBLE in the matrix, and `record` is the only channel the report reads.
  */
-async function runHttpPhase(record) {
+async function runHttpPhase(record, { stdioDataDir } = {}) {
   const label = (c) => c.label;
   if (TRANSPORT_CASES.length === 0) return;
 
@@ -667,7 +760,10 @@ async function runHttpPhase(record) {
     issued = issueToken(dataDir);
     const port = await freePort();
     server = await startHttpServer(dataDir, port);
-    const ctx = transportContext(`http://127.0.0.1:${String(port)}`, issued.token);
+    const ctx = transportContext(`http://127.0.0.1:${String(port)}`, issued.token, {
+      dataDir,
+      stdioDataDir,
+    });
 
     for (const c of TRANSPORT_CASES) {
       const started = Date.now();
@@ -812,7 +908,19 @@ function report(results, stderrLines, references = {}, link = null) {
         // `link` (WI-65) is what makes a run's numbers admissible as a MEASUREMENT rather than an
         // observation: the owner's rule of 2026-08-24 sets a bound from two consecutive runs whose
         // link was stable, and without this field neither the gate nor a later reader can tell.
-        { ranAt: new Date().toISOString(), httpProfile: HTTP_PROFILE, link, counts, results },
+        {
+          ranAt: new Date().toISOString(),
+          httpProfile: HTTP_PROFILE,
+          // The axis the HTTP set ran on and WHERE its state went — address only, never the DSN
+          // (D10). Without these two a run against the engine's own container is indistinguishable
+          // in the record from a run against a throwaway SQLite file, and the billing claims of
+          // AC-28b mean different things in the two cases.
+          httpStorage: HTTP_STORAGE,
+          stateTarget: stateTargetLabel(),
+          link,
+          counts,
+          results,
+        },
         null,
         2,
       ),
