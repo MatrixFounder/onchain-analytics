@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — the eval is plain .mjs by design (no build step); only its data is read
-import { PROFILE_STORAGE, storageOf } from '../eval/profiles.mjs';
+import { PROFILE_STORAGE, stateTargetLabel, storageOf } from '../eval/profiles.mjs';
+import { EnvSchema } from '../src/env.js';
 import { PROFILES } from '../src/profile.js';
 
 /**
@@ -74,12 +75,69 @@ describe('the eval follows the storage axis of the profile it raised', () => {
     // D10 on one side, and on the other: a run against the engine's own container must be
     // distinguishable IN THE RECORD from a run against a throwaway SQLite file, because the same
     // billing assertions mean different things in the two cases.
-    expect(runner).toContain('function stateTargetLabel()');
     expect(runner).toContain('httpStorage: HTTP_STORAGE,');
-    expect(runner).toContain('stateTarget: stateTargetLabel(),');
-    // The helper must be USED, not merely defined — a label nobody writes is not a record.
-    expect((runner.match(/stateTargetLabel\(\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(runner).toContain('stateTarget: stateTargetLabel(HTTP_STORAGE, HTTP_STATE_PG_URL),');
     expect(runner).not.toMatch(/console\.(log|error)\([^)]*HTTP_STATE_PG_URL/);
+  });
+
+  it('the state target follows the AXIS, so an inherited DSN cannot mislabel a SQLite run', () => {
+    // The runner loads the repo-root `.env`, which has carried `ONCHAIN_STATE_PG_URL` since the
+    // WI-62 move — so the key is set on every run, including the ones that never open Postgres.
+    // Labelling those with the engine's address would claim a run touched the live container when
+    // its state went to a temporary file: the field's own confusion, inverted.
+    const dsn = 'postgres://someone:secret@db.example:5433/onchain_engine';
+    expect(stateTargetLabel('postgres', dsn)).toBe('db.example:5433/onchain_engine');
+    expect(stateTargetLabel('sqlite', dsn)).not.toContain('db.example');
+    // …and neither answer may carry the credentials (D10).
+    for (const storage of ['postgres', 'sqlite'] as const) {
+      const label = String(stateTargetLabel(storage, dsn));
+      expect(label).not.toContain('secret');
+      expect(label).not.toContain('someone');
+    }
+    // A Postgres run with no named target is `null` — unstated, not guessed.
+    expect(stateTargetLabel('postgres', null)).toBeNull();
+    expect(stateTargetLabel('postgres', 'not a url')).toBe('(unparseable DSN)');
+  });
+
+  it('every value the phase sets is one EnvSchema ACCEPTS, not merely one it is handed', () => {
+    // The grep above proves the keys are PASSED. Only the schema proves the VALUES are taken, and
+    // they were not: `onchain-eval` carries no dot, `isMetaNamespace` demands reverse-DNS form, and
+    // the first live run died at `admin user:add` with "invalid environment configuration for:
+    // ONCHAIN_META_NAMESPACE" — all eight transport rows, on code the suite called green. A
+    // spelling assertion about a value nothing parses is the printed-expectation defect (L-2).
+    const namespace = /const HTTP_META_NAMESPACE = '([^']+)'/.exec(runner)?.[1];
+    const cap = /const HTTP_DAILY_CALL_CAP = Number\(process\.env\.\w+ \?\? (\d+)\)/.exec(
+      runner,
+    )?.[1];
+    expect(namespace, 'the runner must declare a namespace literal').toBeDefined();
+    expect(cap, 'the runner must declare a ceiling literal').toBeDefined();
+    expect(() =>
+      EnvSchema.parse({ ONCHAIN_META_NAMESPACE: namespace, BLOCKSCOUT_DAILY_CALL_CAP: cap }),
+    ).not.toThrow();
+  });
+
+  it('the retry case composes its _meta key FROM the namespace the phase declares', () => {
+    // Two files, one vocabulary. `billing-retry.mjs` says in a comment that it is "kept in step
+    // with HTTP_META_NAMESPACE" — a comment is not a check, and a drift here does not fail: the
+    // server silently accepts no client id, mints one per call, and the case then measures two
+    // independent requests while reporting on a retry.
+    const namespace = /const HTTP_META_NAMESPACE = '([^']+)'/.exec(runner)?.[1];
+    const retryCase = readFileSync(path.join(evalDir, 'cases', 'billing-retry.mjs'), 'utf8');
+    const key = /const META_KEY = '([^']+)'/.exec(retryCase)?.[1];
+    expect(key).toBe(`${String(namespace)}/client-request-id`);
+  });
+
+  it('the capability phase DECLARES the local profile rather than inheriting one', () => {
+    // `local` is the only profile that raises a stdio transport (`src/profile.ts`), and this phase
+    // speaks JSON-RPC over pipes. Since the WI-62 move the repo-root `.env` sets
+    // `ONCHAIN_PROFILE=network`, so an inherited value made the matrix spawn a process that binds
+    // an HTTP port — the live server's own, out of the same file — and answers nothing on stdout.
+    // Every capability row would be a timeout on a machine where the server works.
+    expect(runner).toContain("ONCHAIN_PROFILE: 'local',");
+    // One per spawner: the stdio server, `admin()` and the HTTP server. A fourth child with no
+    // profile of its own would be the same defect again.
+    const declarations = runner.match(/ONCHAIN_PROFILE: /g) ?? [];
+    expect(declarations).toHaveLength(3);
   });
 
   it('the capability phase hands its DATA_DIR to the HTTP phase', () => {

@@ -7,6 +7,10 @@ import { checks } from '../eval/checks.mjs';
 import { PLAN } from '../eval/cases/http-shared-limiter-rate.mjs';
 import { adapterRegistrations } from '@onchain-intel/core';
 import { toolSpecs } from '../src/tools/tool-specs.js';
+import { toClientText } from '../src/transport/failure-classes.js';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * The third kind of eval case, offline (task 014-33).
@@ -262,5 +266,44 @@ describe('TC-UNIT-16 — the shared-limiter rate case decides between two hypoth
     });
     expect(problems.some((p) => p.includes('connection reset'))).toBe(true);
     expect(problems.some((p) => p.includes('capability unavailable'))).toBe(true);
+  });
+});
+
+describe('TC-UNIT-17 — the ceiling case recognises the refusal a CLIENT actually receives', () => {
+  const caseFile = readFileSync(
+    path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../eval/cases/blockscout-daily-gate.mjs',
+    ),
+    'utf8',
+  );
+  const marker = /const CEILING_MARKER = '([^']+)'/.exec(caseFile)?.[1] ?? '';
+
+  // The reason the store throws, nested exactly as the tool boundary nests it — past the traversal
+  // cut, which is why `toClientText` replaces the sentence outright rather than trimming it.
+  const ceilingReason =
+    'capability unavailable: chain.transactions on arbitrum — tried: blockscout ' +
+    '(daily call ceiling reached: provider=blockscout calls=3 ceiling=3)';
+
+  it('the marker is what the boundary RENDERS, not what the store throws', () => {
+    // The case is a client. It never sees `daily call ceiling reached` — that text names the
+    // provider and its counters and stops at the boundary. Guessing it made the 2026-09-01
+    // rehearsal report "refused but not by the ceiling" about a refusal that was the ceiling, and
+    // no offline assertion could contradict the guess because none rendered anything.
+    expect(marker).not.toBe('');
+    expect(toClientText(ceilingReason, '01ABC')).toContain(marker);
+  });
+
+  it('UC-7 A1 — the marker does not match the refusals it must be told apart from', () => {
+    // A saturated bucket (`L-27`'s class) and a vendor failure (`L-12`, `L-20`) share the ceiling's
+    // outward shape: an `isError` answer on blockscout. RISK-6 is that one is read as the other, so
+    // the discriminator has to be provably exclusive rather than merely present.
+    const limiter = toClientText('throttle: rejected for provider blockscout', '01LIM');
+    const vendor = toClientText(
+      'capability unavailable: chain.transactions on base — tried: blockscout (HTTP 500)',
+      '01VEN',
+    );
+    expect(limiter).not.toContain(marker);
+    expect(vendor).not.toContain(marker);
   });
 });

@@ -32,7 +32,7 @@ import { crossChecks, grade } from './checks.mjs';
 import { TRANSPORT_CASES } from './cases/index.mjs';
 import { CAPABILITY_EXCLUSIONS, CAPABILITY_TOOLS, unwiredCapabilities } from './capabilities.mjs';
 import { renderLink, startLinkProbe } from './link-probe.mjs';
-import { storageOf } from './profiles.mjs';
+import { stateTargetLabel, storageOf } from './profiles.mjs';
 
 const evalDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(evalDir, '..');
@@ -82,7 +82,21 @@ function startServer() {
       // inherited `env` below, loaded by `repoRoot` above.
       cwd: packageRoot,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, DATA_DIR: dataDir, LOG_LEVEL: 'error' },
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        LOG_LEVEL: 'error',
+        // DECLARED, not inherited (task 015-30). This phase speaks JSON-RPC over the pipes opened
+        // above, and `local` is the only profile that raises a stdio transport (`src/profile.ts`).
+        // The two other spawners here already name their profile; this one inherited the
+        // OPERATOR's, and after the WI-62 move the repo-root `.env` carries
+        // `ONCHAIN_PROFILE=network` — so the capability matrix would have spawned a process that
+        // binds an HTTP port (the live server's own, from the same file) and answers nothing on
+        // stdout. Every row of the matrix would then be a timeout, on a machine where the server
+        // works. It also makes true what `cases/shared/ledger-reader.mjs` already asserts about
+        // this phase: its store is SQLite under `DATA_DIR`, always.
+        ONCHAIN_PROFILE: 'local',
+      },
     },
   );
 
@@ -457,7 +471,10 @@ const HTTP_STORAGE = storageOf(HTTP_PROFILE);
  * (`src/server.ts`), so a retry case would be measuring two independent requests rather than a
  * repeat.
  */
-const HTTP_META_NAMESPACE = 'onchain-eval';
+// Reverse-DNS form, which `EnvSchema` requires and `onchain-eval` is not: the namespace exists
+// for UNIQUENESS, so a bare label would be a name we do not own. `.invalid` is reserved
+// (RFC 2606), like the phase's admin address above.
+const HTTP_META_NAMESPACE = 'eval.onchain-intel.invalid';
 
 /**
  * A SYNTHETIC daily ceiling for blockscout, in single calls.
@@ -496,17 +513,6 @@ const PHASE_ENV = Object.freeze({
   BLOCKSCOUT_DAILY_CALL_CAP: String(HTTP_DAILY_CALL_CAP),
   ...(HTTP_STATE_PG_URL === null ? {} : { ONCHAIN_STATE_PG_URL: HTTP_STATE_PG_URL }),
 });
-
-/** The DSN's address WITHOUT its credentials — safe to print, unlike the DSN (D10). */
-function stateTargetLabel() {
-  if (HTTP_STATE_PG_URL === null) return null;
-  try {
-    const u = new URL(HTTP_STATE_PG_URL);
-    return `${u.hostname}:${u.port || '5432'}${u.pathname}`;
-  } catch {
-    return '(unparseable DSN)';
-  }
-}
 
 /** A free localhost port, taken by binding one and releasing it. */
 async function freePort() {
@@ -916,7 +922,7 @@ function report(results, stderrLines, references = {}, link = null) {
           // in the record from a run against a throwaway SQLite file, and the billing claims of
           // AC-28b mean different things in the two cases.
           httpStorage: HTTP_STORAGE,
-          stateTarget: stateTargetLabel(),
+          stateTarget: stateTargetLabel(HTTP_STORAGE, HTTP_STATE_PG_URL),
           link,
           counts,
           results,

@@ -19,7 +19,7 @@ const TOOL = 'onchain_chain_tvl';
 const CHAIN = 'optimism';
 // The suffix is fixed (`src/tools/request-trace-row.ts`); only the namespace is configurable, and
 // the phase declares it. Kept in step with `HTTP_META_NAMESPACE` in `eval/run.mjs`.
-const META_KEY = 'onchain-eval/client-request-id';
+const META_KEY = 'eval.onchain-intel.invalid/client-request-id';
 
 export default {
   kind: 'transport',

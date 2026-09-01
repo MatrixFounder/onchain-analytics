@@ -27,7 +27,14 @@
 import { httpStore, readUsage } from './shared/ledger-reader.mjs';
 
 const TOOL = 'onchain_chain_transactions';
-const CEILING_MARKER = 'daily call ceiling reached';
+// The sentence a CLIENT sees, not the one the store throws. `toClientText`
+// (`src/transport/failure-classes.ts:357`) replaces the internal `daily call ceiling reached: …`
+// outright, because the reason behind it names the provider and its counters — so a case that
+// asserts on the internal wording asserts on a string that never crosses the boundary. Measured on
+// the 2026-09-01 rehearsal, where this case reported "refused but not by the ceiling" about a
+// refusal that WAS the ceiling. `test/eval-transport-cases.test.ts` renders a ceiling reason
+// through the real function and checks this literal against it, so the guess cannot come back.
+const CEILING_MARKER = 'the daily call ceiling for this provider is reached';
 // One chain per call, all distinct. Enough for a threshold of up to five plus the call that must be
 // refused; the runner's synthetic cap is smaller than this list by construction.
 const CHAINS = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'gnosis'];
@@ -77,8 +84,14 @@ export default {
       return problems;
     }
 
+    // BY THE TEXT, not by the shape — the same discriminator UC-7 A1 fixes for the call after the
+    // ceiling, applied to the calls before it. A vendor outage inside this window (`L-20` was live
+    // on `base` during the 2026-09-01 rehearsal) is NOT the gate firing early: the call was
+    // admitted, the vendor failed it, and `usage.calls_made` below still counts it. Judging these
+    // by `isError` made a filed vendor defect read as a misfiring gate — RISK-6 in the other
+    // direction, and the reason this case exists.
     const served = answers.slice(0, cap);
-    const refusedEarly = served.filter((a) => a.isError);
+    const refusedEarly = served.filter((a) => String(a.text).includes(CEILING_MARKER));
     if (refusedEarly.length > 0) {
       problems.push(
         `the ceiling fired before it was reached: ${refusedEarly.map((a) => a.chain).join(', ')} ` +
