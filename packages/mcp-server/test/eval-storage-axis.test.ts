@@ -140,6 +140,28 @@ describe('the eval follows the storage axis of the profile it raised', () => {
     expect(declarations).toHaveLength(3);
   });
 
+  it('the Postgres axis is authorised by a NAMED administrator, never by a guessed one', () => {
+    // `user:add` may omit an actor only for the first user of an EMPTY store (`src/admin/cli.ts`),
+    // and the engine's own store is seeded by migration 003 — so the acceptance run cannot
+    // bootstrap itself and must not invent an authoriser either.
+    expect(runner).toContain('const HTTP_ADMIN_ACTOR = process.env.ONCHAIN_EVAL_ADMIN_ACTOR');
+    expect(runner).toMatch(/HTTP_STORAGE === 'postgres' && HTTP_ADMIN_ACTOR === null/);
+    // The refusal names the KEY, not the value: the value is a real person's address, and the
+    // gate copies a failed phase's message verbatim into `eval/ledger.jsonl`, which is committed.
+    expect(runner).toContain('needs ONCHAIN_EVAL_ADMIN_ACTOR');
+    expect(runner).not.toMatch(/console\.(log|error)\([^)]*HTTP_ADMIN_ACTOR/);
+  });
+
+  it('the phase issues FIRST and creates only on failure, so a second run adds no identity', () => {
+    // The admin CLI has no `user:list`, so "does this identity already exist?" can only be asked by
+    // doing. An unconditional `user:add` fails on the second acceptance run against one engine; one
+    // that never runs fails on the first. The order IS the mechanism, so it is what is asserted.
+    const fn = /function issueToken\(dataDir\) \{[\s\S]*?\n\}/.exec(runner)?.[0] ?? '';
+    expect(fn).not.toBe('');
+    expect(fn.indexOf("'token:issue'")).toBeLessThan(fn.indexOf("'user:add'"));
+    expect(fn).toMatch(/catch \{[\s\S]*'user:add'/);
+  });
+
   it('the capability phase hands its DATA_DIR to the HTTP phase', () => {
     // AC-28's comparison needs the rows the LOCAL phase wrote. The directory outlives the HTTP
     // phase by the existing order alone — `server.stop()` removes it in the `finally` that runs

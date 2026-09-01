@@ -459,6 +459,17 @@ const HTTP_PROFILE = process.env.ONCHAIN_EVAL_HTTP_PROFILE ?? 'network-sqlite';
 /** The pepper this phase runs with. Local to the run: it never leaves the temporary DATA_DIR. */
 const HTTP_PEPPER = 'onchain-eval-transport-pepper';
 const HTTP_ADMIN_EMAIL = 'eval-transport@onchain.invalid';
+/**
+ * An administrator that ALREADY EXISTS in the store, named by the operator.
+ *
+ * Needed only on the Postgres axis, and needed there because the escape `issueToken` relies on is
+ * deliberately narrow: `user:add` may omit `--actor` for the first user of an EMPTY store
+ * (`src/admin/cli.ts`), and the engine's own store is not empty — migration 003 seeds its first
+ * administrator. So the acceptance run cannot bootstrap; it has to be authorised by someone.
+ *
+ * Never printed: the value is a real person's address, and the phase's refusal below names the KEY.
+ */
+const HTTP_ADMIN_ACTOR = process.env.ONCHAIN_EVAL_ADMIN_ACTOR ?? null;
 const LISTEN_TIMEOUT_MS = 30_000;
 
 /** The storage axis the raised profile actually uses — see `eval/profiles.mjs`. */
@@ -554,21 +565,61 @@ function admin(dataDir, argv) {
  * Issues the phase's token, BEFORE the process starts.
  *
  * The network profile's pre-start checks refuse a start with zero active rows in `api_tokens`
- * (task 014-38), so a process raised first would not come up. The first `user:add` runs without
- * `--actor` because the store is empty — the bootstrap the SQLite axis has instead of a seed
- * migration (task 014-33).
+ * (task 014-38), so a process raised first would not come up.
+ *
+ * **The phase gets its OWN identity, on both axes.** On the SQLite axis that is free: the store is
+ * a fresh temporary file every run and `user:add` bootstraps it. On the Postgres axis the store is
+ * the engine's own, and the choice is deliberate rather than incidental — reusing the operator's
+ * administrator would attribute every `client_usage` and `request_trace` row this run writes to a
+ * real principal, leaving verification traffic indistinguishable from productive traffic IN THE
+ * STORE, where the billing claims live. R-12.3 asks for the opposite, and the ledger line's `task`
+ * field cannot supply it: nothing in the database reads that file.
+ *
+ * **Why it is created by trying rather than by asking.** The admin CLI has no `user:list`, so there
+ * is no way to ask whether this identity already exists — and after the first acceptance run
+ * against an engine it does. Issuing first and creating only on failure keeps the store at exactly
+ * one extra identity however many times the gate runs; a `user:add` that ran unconditionally would
+ * fail on the second run, and one that never ran would fail on the first.
+ *
+ * **The pepper is the phase's own** (`HTTP_PEPPER`), not the deployment's, so the digest this run
+ * leaves behind cannot be matched by any token the production server would accept. The row is
+ * revoked in `runHttpPhase`'s `finally` regardless.
  */
 function issueToken(dataDir) {
-  admin(dataDir, ['user:add', '--email', HTTP_ADMIN_EMAIL, '--role', 'admin']);
-  const lines = admin(dataDir, [
-    'token:issue',
-    '--user',
-    HTTP_ADMIN_EMAIL,
-    '--actor',
-    HTTP_ADMIN_EMAIL,
-    '--name',
-    'eval-transport',
-  ]);
+  if (HTTP_STORAGE === 'postgres' && HTTP_ADMIN_ACTOR === null) {
+    throw new Error(
+      'the Postgres axis needs ONCHAIN_EVAL_ADMIN_ACTOR — the address of an administrator that ' +
+        'already exists in the engine store. `user:add` may omit an actor only for the first user ' +
+        'of an EMPTY store, and the engine store is seeded (migration 003), so this run has to be ' +
+        'authorised by someone rather than bootstrap itself',
+    );
+  }
+  const issue = () =>
+    admin(dataDir, [
+      'token:issue',
+      '--user',
+      HTTP_ADMIN_EMAIL,
+      '--actor',
+      HTTP_ADMIN_ACTOR ?? HTTP_ADMIN_EMAIL,
+      '--name',
+      'eval-transport',
+    ]);
+  let lines;
+  try {
+    lines = issue();
+  } catch {
+    // The identity is not there yet. `--actor` is omitted on the SQLite axis so the empty-store
+    // bootstrap applies, and supplied on Postgres where it is required.
+    admin(dataDir, [
+      'user:add',
+      '--email',
+      HTTP_ADMIN_EMAIL,
+      '--role',
+      'admin',
+      ...(HTTP_ADMIN_ACTOR === null ? [] : ['--actor', HTTP_ADMIN_ACTOR]),
+    ]);
+    lines = issue();
+  }
   const value = lines.find((l) => l.startsWith('oi_'));
   const idLine = lines.find((l) => l.startsWith('id='));
   const tokenId = idLine?.match(/^id=(\S+)/)?.[1];
