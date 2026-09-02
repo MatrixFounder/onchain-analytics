@@ -790,7 +790,7 @@ credential, and `onchain.diagnostics` is one of the thirteen tables that move.
 | `onchain-retention`   | —                                           | writes `retention_runs`, deletes from `diagnostics` and `request_trace` |
 
 `onchain-verify` is the one that reads BOTH databases in a single run, which is why its query had to
-become two nodes (§10.9.4's own note and task 015-33): no credential can see both sides, so no single
+become two nodes (§10.9.4's own note and task 015-33). No credential can see both sides, so no single
 statement can. The three workflows are not edited as workflows — one credential record is retargeted
 and all three follow it; only `onchain-verify` needed a structural change, because it alone reads
 across the split.
@@ -867,8 +867,9 @@ third role for a future default ACL to widen silently, the exact class of risk R
 §10.9.7.** The client billing ledger, `client_usage` (`data-model.md` §4.6.1), lives ONLY on the NEW
 container this section moves rows into. It is never written on the OLD container (`supabase-db`,
 `deployment.md`:706) — migration `004_t015_billing.sql` is not applied there, by that file's own
-header — because the old container's twelve T-014 tables are dropped WHOLESALE in one irreversible
-step at §10.9.7, and a `client_usage` row written before that step would vanish with them. The old
+header. The reason is that the old container's twelve T-014 tables are dropped WHOLESALE in one
+irreversible step at §10.9.7, and a `client_usage` row written before that step would vanish with
+them. The old
 container therefore never carries a thirteenth engine table, only the twelve of migration 002.
 
 **Order — `DB-SCHEMA-CONCEPT` §6 (R-8.14, first sentence).** The network profile is stopped
@@ -891,14 +892,14 @@ architecture follows one of them.
 `min`/`max` of each time column. A writer running during the comparison makes those numbers
 incomparable: a difference produced by a legitimate write after the snapshot is indistinguishable
 from a row the copy failed to move. Running the gate against a live writer would make the very
-signal it exists to raise unreadable, so R-8.14's second sentence is followed in intent (a gate
-before any deletion) and departed from in letter (its position relative to the start).
+signal it exists to raise unreadable. So R-8.14's second sentence is followed in intent — a gate
+before any deletion — and departed from in letter, in its position relative to the start.
 
 **Why this is written down rather than just done.** Two readings of one requirement, of which
 exactly one is executed, is a decision — and a decision that leaves no record is indistinguishable
 from an oversight to the next reader. The same form is already applied to R-8.10 in the `WI-62`
-record. §10.9.7 carries a pointer back here, because the decommissioning step is the one place
-where the ordering becomes irreversible and its reader has to know which reading the gate followed.
+record. §10.9.7 carries a pointer back here. The decommissioning step is the one place where the
+ordering becomes irreversible, and its reader has to know which reading the gate followed.
 
 **Which twelve tables carry rows, and why the count differs from the migration's thirteen.**
 `client_usage` is created empty in §10.9.2 and STAYS empty until the new container starts serving —
@@ -1030,8 +1031,8 @@ section therefore drops the TWELVE engine tables of migration 002, not a thirtee
 never carried.
 
 **Which reading of R-8.14 the verify gate followed — see §10.9.4.** This is the step after which
-nothing is recoverable from this container, so its reader must know that the gate of §10.9.4 ran
-while the profile was still STOPPED (`UC-6` step 5), not after it started (R-8.14's own second
+nothing is recoverable from this container. Its reader must therefore know that the gate of §10.9.4
+ran while the profile was still STOPPED (`UC-6` step 5), not after it started (R-8.14's own second
 sentence). The deviation and its reason are recorded there.
 
 After §10.9.6's artifact exists, the twelve engine tables are dropped from the OLD container.

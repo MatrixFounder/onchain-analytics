@@ -4294,26 +4294,26 @@ placed the call inside `withTrace`). `withTrace`'s own first line
 result;`) returns early whenever `ctx.requestTrace` is absent — the `local` profile's own shape
 (`packages/mcp-server/src/index.ts:248`, `...(identity === null ? {} : { requestTrace: … })`, which
 is exactly `transport !== 'http'`, §3.4.1). `ctx.billing`
-carries no such `?` (§3.5.2's own note on why it is mandatory): a reservation opened on EVERY profile
+carries no such `?` (§3.5.2's own note on why it is mandatory). A reservation opened on EVERY profile
 must close on every profile too, so its completion cannot sit downstream of a check only one of them
-satisfies. Placed inside `withTrace`, `local` would never close a single `client_usage` row — R-2.4
-and R-3 would hold on `network`/`network-sqlite` and silently not hold on the axis the ledger is
+satisfies. Placed inside `withTrace`, `local` would never close a single `client_usage` row. R-2.4
+and R-3 would then hold on `network`/`network-sqlite` and silently not hold on the axis the ledger is
 declared to write on at all.
 
-Both branches of `outcome` reach the completion step identically — the refused-reserve arm (`!
-reserved.ok`) has no reservation to close and skips it; every other arm does — one call after
+Both branches of `outcome` reach the completion step identically. The refused-reserve arm
+(`!reserved.ok`) has no reservation to close and skips it; every other arm makes one call after
 `reserved.ok` is known true, before `withTrace` is even defined
 (`packages/mcp-server/src/tools/registry.ts:709-741`):
 `outcome.ok ? billing.settle(rowId) : billing.refund(rowId, refusalClass)`. A ledger failure here —
-`settle`/`refund` throwing — never fails the request already computed, the same precedent
-`withTrace`'s own catch states below for a lost trace row: named on stderr with the row id, never
-silently absorbed and never turned into a refusal the client did not otherwise earn.
+`settle`/`refund` throwing — never fails the request already computed. That is the same precedent
+`withTrace`'s own catch states below for a lost trace row. The failure is named on stderr with the
+row id, never silently absorbed, and never turned into a refusal the client did not otherwise earn.
 
 **A late outcome — the row closes once, the SECOND completer's own `written: false` is not
 silence.** `settle`/`refund` now report whether THIS call's own conditional `UPDATE` actually
-transitioned the row (`BillingCompletionResult.written`, §3.5.1). When it did not — the row was
-already terminal, closed either by a concurrent completer or by `data-model.md` §4.6.5's own
-background reconciliation scan — the wrapper names the row id on stderr rather than treating the
+transitioned the row (`BillingCompletionResult.written`, §3.5.1). When it did not, the row was
+already terminal — closed either by a concurrent completer or by `data-model.md` §4.6.5's own
+background reconciliation scan. The wrapper then names the row id on stderr rather than treating the
 no-op as though nothing happened (closes architecture review round 1 MAJOR-9). The row's own
 terminal state is left exactly as the first completer set it: a late `settle()` arriving after
 reconciliation already refunded a row as `'expired'` does not resurrect a charge for it.
