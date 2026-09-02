@@ -18,7 +18,11 @@
 # `supabase_read_only_user`). A stock `postgres:16-alpine` carries none of them, so the exception is
 # removed by the choice of image rather than by grants that a later migration could widen again.
 #
-# DEPLOY (from the repo root):
+# DEPLOY (from the repo root) — three files, the two scripts before the compose file so the
+# sidecar has something to mount when it starts:
+#   scp deploy/onchain-engine-db/backup.sh deploy/onchain-engine-db/restore-check.sh \
+#       vm:/home/parallels/onchain-engine/
+#   ssh vm 'chmod 755 /home/parallels/onchain-engine/*.sh'
 #   scp deploy/onchain-engine-db/compose.yaml vm:/home/parallels/onchain-engine/compose.yaml
 #   ssh vm 'cd /home/parallels/onchain-engine && docker compose config -q && docker compose up -d'
 #
@@ -91,6 +95,66 @@ services:
     logging:
       # An unbounded json-file log on a dev VM is a slow disk leak nobody attributes to this
       # container until the host is full.
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ── the regular backup (WI-62 follow-up) ────────────────────────────────────────────────────────
+  #
+  # WHY A SIDECAR AND NOT A HOST TIMER. Three reasons, in order of weight. The configuration stays
+  # in this repository and shows up in a diff, which is the rule the top of this file exists to
+  # state. No scheduler is added to the host, where it would be invisible to everyone who did not
+  # install it. And `pg_dump` comes from the SAME image as the server, so the client version cannot
+  # drift below the server's — a `pg_dump` 15 refuses a 16 cluster outright, and that mine goes off
+  # at the next major upgrade rather than today.
+  #
+  # WHY IT IS NOT ENOUGH ON ITS OWN. The copy lands on the VM that holds the database. That covers a
+  # dropped table and not a dead host. Taking it off the VM is a manual runbook step, because doing
+  # it on a schedule would mean a background job on the operator's machine, which this project does
+  # not allow. Better a named manual step than an automation nobody agreed to.
+  backup:
+    image: postgres:16-alpine # the SAME image as `db` — see above: pg_dump must not lag the server
+    container_name: onchain-engine-backup
+    restart: unless-stopped
+
+    depends_on:
+      db:
+        # Not merely "started": `pg_dump` against a cluster still in recovery fails, and the first
+        # thing this container would write is a failure line about a database that is simply not up
+        # yet.
+        condition: service_healthy
+
+    # The same credentials the server uses. Same warning as above: `docker compose config` WITHOUT
+    # `-q` renders this file's values in clear text.
+    env_file:
+      - /home/parallels/.onchain-engine-pg.env
+
+    environment:
+      PGHOST: db # the service name on this project's network, port 5432 inside it
+      ONCHAIN_BACKUP_DIR: /backups
+      # Fourteen dailies of a 1.4 MB schema is a few megabytes. The limit exists to bound the disk,
+      # not to ration space.
+      ONCHAIN_BACKUP_KEEP: '14'
+      ONCHAIN_BACKUP_INTERVAL_S: '86400'
+
+    # The bind-mounted directory belongs to `parallels` (uid 1000) on the VM, and the image's own
+    # `postgres` user is uid 70 — it could not write there. `pg_dump` is a client and needs no
+    # particular identity.
+    user: '1000:1000'
+
+    volumes:
+      # A BIND MOUNT to the VM's filesystem, deliberately NOT the `pgdata` volume: a copy stored
+      # inside the thing it protects is not a copy.
+      - /home/parallels/onchain-engine/backups:/backups
+      - /home/parallels/onchain-engine/backup.sh:/usr/local/bin/backup.sh:ro
+      - /home/parallels/onchain-engine/restore-check.sh:/usr/local/bin/restore-check.sh:ro
+
+    # The image's own entrypoint initialises a server. This container is a client, so it is replaced
+    # outright rather than argued with.
+    entrypoint: ['/bin/sh', '/usr/local/bin/backup.sh', '--loop']
+
+    logging:
       driver: json-file
       options:
         max-size: '10m'

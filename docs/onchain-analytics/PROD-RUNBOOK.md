@@ -1238,6 +1238,109 @@ DELIVERIES, and a VM that sleeps two days will breach it for reasons that have n
 the alert channel. Worth knowing before reading a `📵` on this instance as an incident.
 
 
+### Regular backups of the engine container  *(WI-62 follow-up, deployment.md §10.9.1)*
+
+**Why this section exists.** The rollback artifact of task 015-26 is ONE dump, taken before the
+move and retained 30 days. Task 015-27 then dropped the thirteen tables in the old container, so
+that artifact holds the state *before* the migration and every row written since lives in exactly
+one place. The plan says as much: it declares a named volume and a restart policy, and it does not
+declare a regular copy.
+
+**What the volume does and does not protect.** `onchain-engine-pgdata` is `external: true`, so
+`docker compose down -v` cannot destroy it and recreating the container is safe. It does not survive
+an operator error inside the database, a corrupted cluster, or a dead host. Those are what the dump
+is for.
+
+#### The sidecar
+
+`deploy/onchain-engine-db/compose.yaml` carries a second service, `backup`, on the same image as the
+server. It runs `backup.sh --loop`: a `pg_dump --schema=onchain --format=custom` every
+`ONCHAIN_BACKUP_INTERVAL_S` (default 24 h) into `/home/parallels/onchain-engine/backups`, keeping
+`ONCHAIN_BACKUP_KEEP` (default 14).
+
+Three properties are worth naming, because each one is a defect this project already paid for:
+
+| Property | What it prevents |
+| :------- | :--------------- |
+| `--schema=onchain`, never a table list | the 015-26 outcome: rows restored, `access_audit` UPDATABLE, `pg_restore` exit 0 |
+| written to `.part`, renamed only after it verifies | a truncated file carrying the final name, which rotation would count as a good copy |
+| the dump's TOC counted against the LIVE schema | a hardcoded expectation that goes stale and then agrees with whatever it finds |
+
+The dump is `chmod 600`: it carries `api_tokens.token_hash` and
+`access_profiles.credits_balance_raw`. Digests are not tokens, but with the pepper known they are
+material to grind against.
+
+```bash
+# deploy — scripts first, so the sidecar has something to mount
+scp deploy/onchain-engine-db/backup.sh deploy/onchain-engine-db/restore-check.sh \
+    vm:/home/parallels/onchain-engine/
+ssh vm 'chmod 755 /home/parallels/onchain-engine/*.sh'
+scp deploy/onchain-engine-db/compose.yaml vm:/home/parallels/onchain-engine/compose.yaml
+ssh vm 'cd /home/parallels/onchain-engine && docker compose config -q && docker compose up -d'
+```
+
+⚠ `docker compose config` **with `-q`**. Without the flag it renders every `env_file` value in clear
+text — this cost a password rotation on 2026-08-31.
+
+The existing directory is mode 0775 and its one file 0664, both world-readable on the VM. Tighten
+once, at deploy time:
+
+```bash
+ssh vm 'chmod 700 /home/parallels/onchain-engine/backups && chmod 600 /home/parallels/onchain-engine/backups/*.dump'
+```
+
+#### The drill — a backup nobody restored is a belief about a file
+
+`restore-check.sh` restores the newest archive into a scratch database **in the same cluster** and
+compares what came back against the live schema: tables, triggers, rules, functions, distinct
+grantees. It also requires `api_tokens`, `users` and `access_profiles` to be non-empty, because a
+structurally perfect restore of an empty archive would otherwise pass.
+
+```bash
+ssh vm 'docker exec -u 1000:1000 onchain-engine-backup /usr/local/bin/restore-check.sh'
+```
+
+Row counts are reported and **not** asserted against the live database: `request_trace` and
+`client_usage` are written by every served call, so equality would fail for the healthy case and
+teach everyone to ignore the check. What does not move with traffic is the shape.
+
+**What this drill does not prove.** The roles the grants name live at cluster level and are not in
+the dump — `pg_dump` carries `GRANT` statements, not the roles they mention. A restore onto a FRESH
+host must create `onchain_engine_read` and the writer role first, or `pg_restore` fails on the
+grants. Restoring into this cluster cannot surface that.
+
+Run it after the first backup, and after any change to the schema or to `backup.sh`.
+
+#### Taking a copy off the VM — manual, and honestly so
+
+The sidecar writes to the machine that holds the database. That covers a dropped table and not a
+dead host. Automating the off-host step would mean a scheduled job on the operator's own machine,
+which this project does not allow, so it is a named manual step rather than an automation nobody
+agreed to:
+
+```bash
+ssh vm 'ls -t /home/parallels/onchain-engine/backups/onchain-engine-*.dump | head -1' \
+  | xargs -I{} sh -c 'ssh vm "cat {}" > ~/onchain-backups/$(basename {})'
+chmod 600 ~/onchain-backups/*.dump
+```
+
+Not into the repository tree: the file is not something git should ever be asked to ignore.
+
+#### The log
+
+One line per run, appended to `backups/backup.log`, including a run that changed nothing — the
+project's "ничего молча" rule applied to this job. It lives beside the dumps and not in the
+database, because a backup journal stored inside the thing being backed up is unreadable exactly
+when it is needed.
+
+```
+2026-09-02T03:00:04Z OK onchain-engine-20260902T030001Z.dump bytes=214883 tables=13 data=13 triggers=1 rules=1 functions=1
+2026-09-02T03:00:04Z rotate kept=14 limit=14 removed=1
+```
+
+A dump that disagrees with the live schema is renamed `*.MISMATCH` and **kept** — it is evidence,
+and the next rotation must not be the thing that destroys it.
+
 ## Engine network profile — the first admin token  *(T-014; designed, not built)*
 
 The MCP server in the **network** profile refuses to start with zero active tokens, and tokens are
