@@ -95,6 +95,39 @@ L-22's own entry went `over the bound of 2` with 8 of 9 failing during the outag
 mechanism reporting that the filed fact had grown into a different one — and it is why that entry was
 retired rather than widened.
 
+**Update 2026-09-02 — the vendor is nearly well, and the acknowledgement was the thing that had
+stopped describing reality.** Twelve gate runs on a measured-stable link, spread over 2026-09-01
+(six, 13:13–14:07 UTC), 2026-09-02 evening (three, 17:59–18:19) and 2026-09-02 night (two, 20:31 and
+20:52), plus five direct probes of the reproduction command:
+
+| capability | failing across all twelve runs |
+| :-- | :-- |
+| `pairs.active` | 1 — `bsc`, in ONE run (20:31), a 10 152 ms timeout; the very next run served the same row in 868 ms |
+| `pool.info` | 0 |
+| `token.pools` | 0 |
+
+**Two entries retired, one narrowed 4 → 1.** `L-23/pool.info` and `L-23/token.pools` are removed:
+an acknowledgement covering a vendor that fails nothing is exactly the blindfold `reviewBy` exists
+to lift, and with them gone a recurrence blocks the gate instead of being absorbed. The bound on
+`pairs.active` becomes the maximum over the two consecutive stable runs the owner's rule of
+2026-08-24 names — which is 1, not the 4 measured on the day of the outage.
+
+**Why the record stays open.** One chain still fails intermittently, and it fails by TIMEOUT rather
+than by refusal — the same "answering with less than it holds" family the outage was made of, at a
+much smaller amplitude. A vendor that degrades one row in twelve runs is not a vendor that is fixed.
+
+**The method was the record's own, and it earned its keep.** The retirement was tested by removing
+all three entries and RUNNING the gate: nine previous runs had reported zero failures with the
+entries in place, and the very first run without them found `bsc/pairs.active`. Had the entries been
+retired on those nine runs alone — as "twelve green rows" invited — the narrowing would have been
+written on a vendor condition that does not hold. This is what "do not read a later green run as a
+fix" means operationally.
+
+**A separate finding from the same two runs, not part of this record.** `L-26/token.price` went to
+2 of 10 against its bound of 1, and `solana/chain.tvl.history` failed unfiled in the first of them.
+Both are other vendors and belong to their own entries; they are named here only because they were
+measured in the same window and a reader comparing run logs would otherwise wonder.
+
 **Blast radius.** Three capabilities on up to 49 chains. `onchain_active_pairs`, `onchain_pool_info`
 and `onchain_token_pools` answer `capability unavailable` for the duration. No other provider is
 affected: `defillama`, `coingecko`, `blockscout` and the RPC adapters are green in the same run.
