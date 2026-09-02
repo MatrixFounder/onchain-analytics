@@ -1314,9 +1314,17 @@ Run it after the first backup, and after any change to the schema or to `backup.
 #### Taking a copy off the VM — manual, and honestly so
 
 The sidecar writes to the machine that holds the database. That covers a dropped table and not a
-dead host. Automating the off-host step would mean a scheduled job on the operator's own machine,
-which this project does not allow, so it is a named manual step rather than an automation nobody
-agreed to:
+dead host.
+
+**The owner decided on 2026-09-02: this step stays manual and is not to be scheduled on the Mac.**
+Recorded as a decision rather than left as an inference from the background-jobs rule, so that a
+later reader does not "fix" the gap by adding a timer. Nothing periodic exists on that machine —
+checked the same day: no `launchd` agent, no `crontab` entry. The only scheduled thing this project
+runs for the engine is the `backup` sidecar, on the VM.
+
+The consequence is worth stating plainly rather than leaving it implied: between two manual copies,
+the newest rows exist only on the VM. The daily sidecar bounds what an error INSIDE the database
+costs; it does not bound what a dead host costs. Take a copy after anything that matters.
 
 ```bash
 NEWEST=$(ssh vm 'ls -1t /home/parallels/onchain-engine/backups/onchain-engine-*.dump | head -1')
