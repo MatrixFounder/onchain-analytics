@@ -1319,12 +1319,33 @@ which this project does not allow, so it is a named manual step rather than an a
 agreed to:
 
 ```bash
-ssh vm 'ls -t /home/parallels/onchain-engine/backups/onchain-engine-*.dump | head -1' \
-  | xargs -I{} sh -c 'ssh vm "cat {}" > ~/onchain-backups/$(basename {})'
-chmod 600 ~/onchain-backups/*.dump
+NEWEST=$(ssh vm 'ls -1t /home/parallels/onchain-engine/backups/onchain-engine-*.dump | head -1')
+ssh vm "sha256sum '$NEWEST'"                       # what the VM says the bytes are
+ssh vm "cat '$NEWEST'" > ~/onchain-backups/"$(basename "$NEWEST")"
+chmod 600 ~/onchain-backups/"$(basename "$NEWEST")"
+shasum -a 256 ~/onchain-backups/"$(basename "$NEWEST")"   # must match, or the transfer truncated
 ```
 
-Not into the repository tree: the file is not something git should ever be asked to ignore.
+**The two sums are the point, not decoration.** A copy taken over a pipe can end short — a dropped
+connection produces a file, and a file is what rotation and an operator both count as a backup. The
+first version of this step in the runbook had no such check, which is why it is written out here.
+
+`~/onchain-backups/` and not `~/Documents` or `~/Desktop`: with iCloud's "Desktop & Documents
+Folders" enabled, anything in those two is uploaded, and this archive carries
+`api_tokens.token_hash` and `access_profiles.credits_balance_raw`. The option is off on this machine
+(measured 2026-09-02) and a directory in `$HOME` is out of its reach even if it is turned on later.
+The same folder already holds the 015-26 rollback artifact, so engine backups have one home on the
+Mac rather than two. Not into the repository tree either: the file is not something git should ever
+be asked to ignore.
+
+**What the Mac copy is NOT verified against.** `pg_restore` is not installed there, so the local
+file is checked by checksum only. The chain that makes that sufficient: the archive verified its own
+table of contents on the VM when it was written, `restore-check.sh` restored it there, and these
+bytes are identical to that file. Nobody has read the archive ON the Mac, and if the day comes when
+this copy is the one that matters, it will be restored somewhere that has the tools.
+
+Time Machine covers `~/onchain-backups` (`tmutil isexcluded` → `[Included]`, network destination),
+so the chain is VM → Mac → Time Machine: three separate failures, not one.
 
 #### The log
 
