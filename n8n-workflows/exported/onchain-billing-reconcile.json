@@ -5,7 +5,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## onchain-billing-reconcile — stuck `reserved` row reconciliation (task 015-18, deployment.md §10.8, data-model.md §4.6.5, R-14)\n\n**Every 15 minutes**, applied, not measured. A `client_usage` row a process died between reserving\nand completing stays `'reserved'` forever unless this closes it. A row can be visibly stuck for at\nmost ThresholdMs + cadence = 120 000 + 900 000 = 1 020 000 ms before this job closes it — the bound\n`deployment.md` §10.8 states.\n\n**One SQL operator does the transition AND the refund.** n8n gives no transaction between two\nnodes, so a \"close, then credit\" pair would leave a window where a row is closed but not yet\ncredited (task 015-10, MAJOR-A round 2 of the architecture review). `Refund expired` is that one\noperator: it also skips the credit when `access_profile_id IS NULL` (the local principal) or when\n`credits_balance_raw IS NULL` (`credits_mode = 'unlimited'`).\n\n**Drain, don't take one batch and stop.** `More to close?` loops back to `Refund expired` while a\nbatch comes back FULL (`BatchSize = 500`) and the cap (`MaxBatches = 20`) is not yet reached. Hitting\nthe cap while still full means real backlog remains — `detail_json.batchExhausted = true` and\n`Check backlog` throws so the alert reaches Telegram through `onchain-error-alert`. The run still\nwrites `outcome = 'ok'`: it closed everything it found, and `outcome`'s dictionary is closed to two\nvalues (data-model.md §4.5.9) — `batchExhausted` is the separate, named observable.\n\n**`ThresholdMs` below 120 000 ms is refused, not honoured.** A lower value would refund the reserve\nof a request that is still executing — money for work not yet done. A refused run still writes its\nrow, with `outcome = 'failed'` and the rejected setting named in `detail_json`; `Check backlog`\nthrows for this case too.\n\n**Period in the `retention_runs` row is derived, never typed in.** `period_from = 0`,\n`period_to = startedAt − ThresholdMs` — the SAME horizon the operator's own `WHERE` clause reads, so\nthe row can never name a period the run did not actually cover (MINOR-8 round 1).\n\n**Credential: `Onchain engine state`, NOT `Supabase DB`** — the same state-role credential\n`onchain-retention` uses (`deployment.md` §10.5). The snapshotter's role holds no grant on\n`client_usage`; a Postgres refusal to read it with this credential is a check, not a convention.\nAfter the WI-62 container move (task 015-21/015-23), this credential is retargeted to the new\ncontainer — task 015-22's job, not this one's.\n\n**Why a SEPARATE workflow from `onchain-retention`, not a fourth job in it.** One Schedule trigger\ncarries one cadence; `onchain-retention` runs once a day, and a job needing a materially tighter\ncadence needs its own trigger.\n\n**Installation requires the owner's explicit approval, exactly as `onchain-retention` does**\n(`deployment.md` §10.6.1, §10.8). This task describes and exports the workflow; it does not create\nor activate it on the shared instance — the billing ledger this job reconciles lives only on the\nWI-62 container, which does not exist until tasks 015-21/015-23 land.",
+        "content": "## onchain-billing-reconcile — stuck `reserved` row reconciliation (task 015-18, deployment.md §10.8, data-model.md §4.6.5, R-14)\n\n**Every 15 minutes**, applied, not measured. A `client_usage` row a process died between reserving\nand completing stays `'reserved'` forever unless this closes it. A row can be visibly stuck for at\nmost ThresholdMs + cadence = 120 000 + 900 000 = 1 020 000 ms before this job closes it — the bound\n`deployment.md` §10.8 states.\n\n**One SQL operator does the transition AND the refund.** n8n gives no transaction between two\nnodes, so a \"close, then credit\" pair would leave a window where a row is closed but not yet\ncredited (task 015-10, MAJOR-A round 2 of the architecture review). `Refund expired` is that one\noperator: it also skips the credit when `access_profile_id IS NULL` (the local principal) or when\n`credits_balance_raw IS NULL` (`credits_mode = 'unlimited'`).\n\n**Drain, don't take one batch and stop.** `All closed?` loops back to `Refund expired` on its FALSE output while a\nbatch comes back FULL (`BatchSize = 500`) and the cap (`MaxBatches = 20`) is not yet reached. Hitting\nthe cap while still full means real backlog remains — `detail_json.batchExhausted = true` and\n`Check backlog` throws so the alert reaches Telegram through `onchain-error-alert`. The run still\nwrites `outcome = 'ok'`: it closed everything it found, and `outcome`'s dictionary is closed to two\nvalues (data-model.md §4.5.9) — `batchExhausted` is the separate, named observable.\n\n**`ThresholdMs` below 120 000 ms is refused, not honoured.** A lower value would refund the reserve\nof a request that is still executing — money for work not yet done. A refused run still writes its\nrow, with `outcome = 'failed'` and the rejected setting named in `detail_json`; `Check backlog`\nthrows for this case too.\n\n**Period in the `retention_runs` row is derived, never typed in.** `period_from = 0`,\n`period_to = startedAt − ThresholdMs` — the SAME horizon the operator's own `WHERE` clause reads, so\nthe row can never name a period the run did not actually cover (MINOR-8 round 1).\n\n**Credential: `Onchain engine state`, NOT `Supabase DB`** — the same state-role credential\n`onchain-retention` uses (`deployment.md` §10.5). The snapshotter's role holds no grant on\n`client_usage`; a Postgres refusal to read it with this credential is a check, not a convention.\nAfter the WI-62 container move (task 015-21/015-23), this credential is retargeted to the new\ncontainer — task 015-22's job, not this one's.\n\n**Why a SEPARATE workflow from `onchain-retention`, not a fourth job in it.** One Schedule trigger\ncarries one cadence; `onchain-retention` runs once a day, and a job needing a materially tighter\ncadence needs its own trigger.\n\n**Installation requires the owner's explicit approval, exactly as `onchain-retention` does**\n(`deployment.md` §10.6.1, §10.8). This task describes and exports the workflow; it does not create\nor activate it on the shared instance — the billing ledger this job reconciles lives only on the\nWI-62 container, which does not exist until tasks 015-21/015-23 land.",
         "height": 900,
         "width": 2320,
         "color": 4
@@ -142,7 +142,7 @@
               "id": "loop-cond-1",
               "operator": {
                 "type": "boolean",
-                "operation": "true",
+                "operation": "false",
                 "singleValue": true
               },
               "leftValue": "={{ $json.continueLoop }}",
@@ -151,15 +151,15 @@
           ]
         }
       },
-      "id": "More to close?",
-      "name": "More to close?",
+      "id": "All closed?",
+      "name": "All closed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1040,
+        1120,
         272
       ],
-      "notes": "Bare `$json` here is DELIBERATE, against CLAUDE.n8n.md's own \"never bare $json.field\" rule. That rule exists so an inserted upstream node cannot silently repoint a reference — but the insert-safe form it prescribes, `$('Tally').item.json.continueLoop`, is the one form that breaks INSIDE this back-edge loop: a referenced node inside a loop resolves to its LAST run, not to the run that produced the item now being evaluated (the same cross-iteration gotcha `Plan run`'s own comment cites for `$('Tally').all()`). `$json` is the current item, which is exactly what this condition must test. A node inserted between `Tally` and here must therefore carry `continueLoop` through, or move this condition with it.",
+      "notes": "TRUE (output 0) is the EXIT and FALSE (output 1) is the loop back to `Refund expired`. That order is deliberate: n8n draws output 0 above output 1, so putting the forward path on top and the back-edge underneath keeps the two from crossing on the canvas. The condition is inverted to match the name — `continueLoop is false` means every expired row is closed.\n\nBare `$json` here is DELIBERATE, against CLAUDE.n8n.md's own \"never bare $json.field\" rule. That rule exists so an inserted upstream node cannot silently repoint a reference — but the insert-safe form it prescribes, `$('Tally').item.json.continueLoop`, is the one form that breaks INSIDE this back-edge loop: a referenced node inside a loop resolves to its LAST run, not to the run that produced the item now being evaluated (the same cross-iteration gotcha `Plan run`'s own comment cites for `$('Tally').all()`). `$json` is the current item, which is exactly what this condition must test. A node inserted between `Tally` and here must therefore carry `continueLoop` through, or move this condition with it.",
       "notesInFlow": false
     },
     {
@@ -172,7 +172,7 @@
       "typeVersion": 2,
       "position": [
         1264,
-        480
+        272
       ],
       "alwaysOutputData": true
     },
@@ -190,7 +190,7 @@
       "typeVersion": 2.6,
       "position": [
         1472,
-        480
+        272
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -210,7 +210,7 @@
       "typeVersion": 2,
       "position": [
         1680,
-        480
+        272
       ]
     }
   ],
@@ -263,25 +263,7 @@
       "main": [
         [
           {
-            "node": "More to close?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "More to close?": {
-      "main": [
-        [
-          {
-            "node": "Refund expired",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Row client_usage.reconcile_expired",
+            "node": "All closed?",
             "type": "main",
             "index": 0
           }
@@ -304,6 +286,24 @@
         [
           {
             "node": "Check backlog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "All closed?": {
+      "main": [
+        [
+          {
+            "node": "Row client_usage.reconcile_expired",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Refund expired",
             "type": "main",
             "index": 0
           }
