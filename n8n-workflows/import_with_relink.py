@@ -29,7 +29,13 @@ import urllib.request
 # Volatile/instance metadata + fields a strict public-API create/update rejects.
 META_KEYS = ["id", "createdAt", "updatedAt", "versionId", "versionCounter", "activeVersionId",
              "triggerCount", "shared", "tags", "staticData", "meta", "pinData", "activeVersion",
-             "isArchived", "sourceWorkflowId", "nodeGroups", "description"]
+             "isArchived", "sourceWorkflowId", "nodeGroups", "description",
+             # `active` is READ-ONLY on the public API: POST/PUT with it present is refused outright
+             # with `request/body/active is read-only`, and every file `export.sh` writes carries it.
+             # So this list was short by one word and the import path could not create or update ANY
+             # workflow — measured 2026-09-02, creating `onchain-billing-reconcile`. Activation is a
+             # separate call (`activate()` below), which is why dropping the field loses nothing.
+             "active"]
 ALLOWED_SETTINGS = {"executionOrder", "timezone", "errorWorkflow", "saveDataErrorExecution",
                     "saveDataSuccessExecution", "saveManualExecutions", "saveExecutionProgress",
                     "executionTimeout"}  # NB: drops binaryMode — the public API rejects it

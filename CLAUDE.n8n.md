@@ -210,6 +210,30 @@ for s in $(ls .n8n-skills/skills); do ln -sfn ../../.n8n-skills/skills/$s .claud
   (pass the whole settings object; new workflows are created without it). Don't ask the operator to
   click through the UI for this.
 
+**Import path — two defects that made it unusable, both measured 2026-09-02**
+- **`active` is READ-ONLY on the public API, and every exported file carries it.** A POST or PUT
+  whose body contains `active` is refused outright: `400 {"message":"request/body/active is
+  read-only"}`. `export.sh` writes `active` into all five files, and `import_with_relink.py`'s
+  `META_KEYS` stripped everything except that one word — so the documented recovery path could not
+  create or update ANY workflow. Fixed by adding `active` to `META_KEYS`; activation was always a
+  separate call (`activate()`), so nothing is lost by dropping the field.
+- **`ubuntu-linux-2404.local` resolves to BOTH families from the Mac, and Python takes the IPv6
+  answer.** `getaddrinfo` returns two IPv4 and four IPv6 records; the IPv6 ones are the unroutable
+  addresses this file already warns about for container-to-container traffic. `curl` has Happy
+  Eyeballs and silently falls back to IPv4, `urllib` does not — it connects to IPv6 and dies with
+  `http.client.RemoteDisconnected: Remote end closed connection without response`, which reads like
+  the API rejecting the request rather than a name resolving to the wrong family. Point any Python
+  client at the VM's IPv4 literal — the address the `vm` ssh alias resolves to, `getent hosts` it or
+  read `~/.ssh/config` — rather than at the `.local` name. Testing the same URL with `curl` proves
+  nothing: it falls back and succeeds where the client will not.
+- **`import.sh` ACTIVATES everything it writes**, unconditionally — `activate()` is called on every
+  created or updated workflow regardless of the file's own `active` flag. It also takes a whole
+  DIRECTORY, so it re-imports every `onchain-*` workflow at once. Neither is what you want when
+  adding ONE workflow to an instance that is already running the others: it would overwrite them
+  from possibly-stale exports and activate the new one before its wiring was ever inspected. For a
+  single workflow, prepare the body with `prepare()` and POST/PUT it yourself, then validate, then
+  activate.
+
 **Export / re-import (hard-won)**
 - **`export.sh` can move the repo BACKWARDS when the file is ahead of the instance.** The script
   re-reads the live instance and overwrites `exported/<name>.json` with whatever is there. If a
