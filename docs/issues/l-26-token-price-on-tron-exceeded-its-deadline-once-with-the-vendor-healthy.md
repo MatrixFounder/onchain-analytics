@@ -58,6 +58,44 @@ What that does not do is make the occurrence reproducible on demand. L-25 establ
 hard way: an experiment about a transient must run DURING the transient, and a probe taken after the
 window closed answers a question nobody asked.
 
+**Update 2026-09-02 — the next occurrence came, and it did NOT answer its own question.** Two
+consecutive gate runs on a measured-stable link: 20:31 UTC clean (all ten `token.price` rows green,
+534–2214 ms), 20:52 UTC two rows red — `ethereum` at 10 010 ms and `avalanche` at 10 510 ms. The
+bound is raised 1 → 2 as the maximum over those two runs, stated as a new measurement in the entry's
+own `why`.
+
+**The fact changed shape, and that matters more than the count.**
+
+| | filed 2026-08-24 | measured 2026-09-02 |
+| :-- | :-- | :-- |
+| refusal | `capability deadline exceeded` | `capability unavailable` |
+| elapsed | 15 000 ms (the capability's own deadline) | ~10 010 / ~10 510 ms — not any deadline this repository declares |
+| chains | `tron`, one row | `ethereum` and `avalanche`, neither of them tron |
+
+Same vendor, same capability, same transient character, and the vendor measured healthy minutes
+later: `ethereum/WETH` answered 200 in 0.42–0.71 s three times running.
+
+**Fix-path item 1 closed a NARROWER gap than this record reads as promising.** "The NEXT occurrence
+will name its phase in the refusal itself" is true of `DeadlineExceededError` and only of it. This
+occurrence arrived as `capability unavailable`, and that class reaches the caller with its cause
+removed by design — the traversal tail names adapters, so `toClientText` cuts it. The investigation
+started exactly as cold as the one this record was filed to prevent.
+
+**And the cause is not recoverable after the fact, for a reason worth naming.** The operator-side
+detail exists in exactly one place: `DiagnosticsStore.append`'s `detailJson`. The stderr line beside
+it carries `id`, `event` and `severity` and nothing else, deliberately (R-5.3). The capability matrix
+runs on the `local` profile, where `createDiagnostics` is constructed with `store: null` — so for the
+one phase where these failures happen, the detail is written nowhere. `eval/run.mjs` compounds it: it
+captures the server's stderr into an array and passes it to `report()`, which reads it only to check
+for `NON-JSON ON STDOUT`. A diagnostic nobody reads is not a diagnostic (L-2), applied to our own
+harness.
+
+**What would settle it** — one of, not all: give `capability unavailable` a phase-like discriminator
+from a closed set, the way item 1 did for deadlines; or run the capability matrix with a diagnostics
+store so `detailJson` survives the run; or have the eval print the captured stderr for a failing row
+instead of discarding it. The third is the cheapest and the weakest — today's stderr line would
+still not name the cause.
+
 **Fix path.**
 
 1. ~~**Split the deadline diagnostic by phase** — limiter wait versus wire time — so the next
