@@ -8,7 +8,7 @@ severity: SEV-3
 slug: l-30-four-failures-three-vendors-all-at-ten-seconds-points-at-our-side
 ---
 
-# L-30 — four failures across three vendors, all at ~10 s, and no 10-second bound in our request path
+# L-30 — four failures across three vendors, all at ~10 s, and no bound found that explains it
 
 > Filed because the SHAPE is the finding. Each of the four rows was attributable to a vendor record
 > on its own, and three of them were so attributed the same evening. Together they are not a vendor
