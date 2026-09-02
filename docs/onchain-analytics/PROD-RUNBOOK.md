@@ -1475,6 +1475,19 @@ against a declared bound of **24 h**; WI-64 pulse divergence opened `2026-08-31T
 (credential retarget, task 015-22) and closed `2026-08-31T14:29:28Z`, proven by the delivered report,
 = **34 min**.**
 
+**2026-09-02 · `onchain-engine-db` · регулярная копия включена · sidecar `onchain-engine-backup`,
+`--schema=onchain --format=custom`, интервал 24 h, хранится 14 · первая копия
+`onchain-engine-20260902T185231Z.dump` 69 255 B, содержание сошлось с живой схемой
+(`tables=13 data=13 triggers=1 rules=1 functions=1`) · прогон восстановления OK
+(`tables=13 triggers=1 rules=1 functions=1 grantees=2`) · вынос с VM — ручной шаг, НЕ автоматизирован.**
+
+**Две строки `FAIL` в `backups/backup.log` за 2026-09-02T18:53 — намеренные пробы, не инцидент.**
+Проверке скармливался табличный дамп, чтобы показать, что она отказывает. Обе ветки доказаны:
+в чистую базу `pg_restore` не проходит вовсе (схемы нет), а в базу с уже созданной схемой — как в
+015-26 — он выходит с кодом **0**, кладёт 3 таблицы и **ноль** триггеров и правил, и это ловит
+сверка формы. Проба, которая не отказала бы, не была бы пробой; строки оставлены, потому что лог
+дописывается и не переписывается, а неназванный отказ приучает лог не читать.
+
 Reading the fields:
 
 | Field | Why it is written this way |
