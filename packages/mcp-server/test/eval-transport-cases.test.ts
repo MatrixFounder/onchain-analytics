@@ -5,6 +5,8 @@ import { CAPABILITY_CASES, CASES, TRANSPORT_CASES, validateCase } from '../eval/
 import { checks } from '../eval/checks.mjs';
 // @ts-expect-error — same: the rate case exports its derivation so TC-UNIT-16 can check it offline
 import { PLAN } from '../eval/cases/http-shared-limiter-rate.mjs';
+// @ts-expect-error — same: the ceiling case's `check` is a pure function, asserted directly
+import blockscoutDailyGate, { callsOnDay } from '../eval/cases/blockscout-daily-gate.mjs';
 import { adapterRegistrations } from '@onchain-intel/core';
 import { toolSpecs } from '../src/tools/tool-specs.js';
 import { toClientText } from '../src/transport/failure-classes.js';
@@ -305,5 +307,97 @@ describe('TC-UNIT-17 — the ceiling case recognises the refusal a CLIENT actual
     );
     expect(limiter).not.toContain(marker);
     expect(vendor).not.toContain(marker);
+  });
+});
+
+describe('TC-UNIT-18 — the ceiling case reads the DAY it bounds, not every row the table holds', () => {
+  // `onchain.usage` keeps one row per (provider, day). On the SQLite axis the store is a throwaway
+  // file, so there is only ever one row and a cross-day sum is indistinguishable from a scoped one.
+  // On the Postgres axis the rows accumulate, and the acceptance run of 2026-09-02 measured what
+  // that costs: the case read `calls_made = 9` — the whole of 2026-09-01 — against a ceiling of 3
+  // and refused to run, while the day's own counter stood at 0.
+  //
+  // BOTH reads had the defect, and only one of them is reachable through `check` — the pre-run
+  // headroom is computed inside `exercise`, which needs a live session. So the rule itself is
+  // exported and asserted directly; the first draft of this block claimed to cover both and covered
+  // one, which is the same defect in the test that the case had in the code.
+  const DAY = 86_400_000;
+  const today = 1_788_307_200_000; // 2026-09-02T00:00:00Z, the bucket `dayBucketMs` produces
+  const CEILING = 'the daily call ceiling for this provider is reached';
+
+  const observation = (usage: unknown[]) => ({
+    cap: 3,
+    already: 0,
+    remaining: 3,
+    admitted: 3,
+    ceilingMet: true,
+    today,
+    nansenBefore: 0,
+    answers: [
+      { chain: 'ethereum', isError: false, cached: false, isCeiling: false, text: 'ok' },
+      { chain: 'base', isError: false, cached: false, isCeiling: false, text: 'ok' },
+      { chain: 'arbitrum', isError: false, cached: false, isCeiling: false, text: 'ok' },
+      {
+        chain: 'polygon',
+        isError: true,
+        cached: false,
+        isCeiling: true,
+        text: `refused: ${CEILING}`,
+      },
+    ],
+    usage,
+  });
+
+  const gateCase = blockscoutDailyGate as { check: (r: unknown) => string[] };
+
+  it('the shared rule counts one day, whichever read calls it', () => {
+    const rows = [
+      { provider: 'blockscout', day: today - DAY, calls_made: 9 },
+      { provider: 'blockscout', day: today, calls_made: 3 },
+      { provider: 'nansen', day: today, calls_made: 7 },
+    ];
+    expect(callsOnDay(rows, 'blockscout', today)).toBe(3);
+    expect(callsOnDay(rows, 'blockscout', today - DAY)).toBe(9);
+    // A day with no row is zero, not the sum of the neighbours.
+    expect(callsOnDay(rows, 'blockscout', today + DAY)).toBe(0);
+    // The provider is part of the key: the ceiling is per provider, per day.
+    expect(callsOnDay(rows, 'nansen', today)).toBe(7);
+  });
+
+  it("yesterday's counter does not count against today's ceiling", () => {
+    const problems = gateCase.check(
+      observation([
+        { provider: 'blockscout', day: today - DAY, calls_made: 9 },
+        { provider: 'blockscout', day: today, calls_made: 3 },
+      ]),
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it("the day's own counter is still asserted against the ceiling", () => {
+    // The scoping must not become a way of ignoring the number: a day row one above the ceiling
+    // means the refused call was admitted and counted anyway, and that must still fail.
+    const problems = gateCase.check(
+      observation([
+        { provider: 'blockscout', day: today - DAY, calls_made: 9 },
+        { provider: 'blockscout', day: today, calls_made: 4 },
+      ]),
+    );
+    expect(problems.join(' ')).toContain('must equal the ceiling');
+  });
+
+  it('a nansen row that predates the case is not read as an escalation', () => {
+    // R-12.2 forbids THIS exhaustion pushing the call to the paid provider. Presence is history;
+    // only growth is evidence, so an observation that starts and ends with one row is clean...
+    const withNansen = {
+      ...observation([
+        { provider: 'blockscout', day: today, calls_made: 3 },
+        { provider: 'nansen', day: today, calls_made: 1 },
+      ]),
+      nansenBefore: 1,
+    };
+    expect(gateCase.check(withNansen)).toEqual([]);
+    // …and the same rows with nothing there beforehand are an escalation.
+    expect(gateCase.check({ ...withNansen, nansenBefore: 0 }).join(' ')).toContain('PAID');
   });
 });

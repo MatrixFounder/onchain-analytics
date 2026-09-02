@@ -118,10 +118,23 @@ function filedIssues() {
 /** Short sha of the tree being gated, so a ledger line can be tied to what was actually running. */
 function gitSha() {
   try {
-    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+    const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
       cwd: packageRoot,
       encoding: 'utf8',
     }).trim();
+    // A COMMIT IS NOT A TREE, and this field's whole purpose is to tie a run to what was actually
+    // running. A gate run during development normally happens on a dirty tree — the fix is written,
+    // the run proves it, the commit comes after — so a bare sha names code the run did NOT execute.
+    // Measured on the T-015 acceptance of 2026-09-02: a passing line recorded `b28d73a` while the
+    // eval case it exercised existed only in the working tree.
+    //
+    // `--porcelain` over the whole repository, not just this package: the eval loads
+    // `@onchain-intel/core` from its build, so an uncommitted change two directories away is still
+    // a change this run may have executed.
+    const dirty =
+      execFileSync('git', ['status', '--porcelain'], { cwd: packageRoot, encoding: 'utf8' }).trim()
+        .length > 0;
+    return dirty ? `${sha}-dirty` : sha;
   } catch {
     return null;
   }

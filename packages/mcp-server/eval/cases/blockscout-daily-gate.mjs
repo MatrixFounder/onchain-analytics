@@ -24,6 +24,7 @@
 // blockscout exhaustion happens live — so it is the only point where an escalation to the paid
 // provider could occur unnoticed.
 
+import { dayBucketMs } from '@onchain-intel/core';
 import { httpStore, readUsage } from './shared/ledger-reader.mjs';
 
 const TOOL = 'onchain_chain_transactions';
@@ -39,6 +40,22 @@ const CEILING_MARKER = 'the daily call ceiling for this provider is reached';
 // the ceiling plus the one call that must be refused — so the list bounds how much headroom a single
 // run can exercise, not the ceiling itself.
 const CHAINS = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'gnosis'];
+
+/**
+ * The calls a provider has already made ON ONE DAY, out of an `onchain.usage` read.
+ *
+ * `onchain.usage` keeps one row per `(provider, day)`, and on the Postgres axis yesterday's row is
+ * still there tomorrow — so summing `calls_made` across rows measures a WEEK against a ceiling that
+ * bounds a DAY. Measured on the acceptance run of 2026-09-02: this case read 9, the whole of
+ * 2026-09-01, and refused to run while the day's own counter stood at 0.
+ *
+ * Exported, and used by BOTH the pre-run headroom read and the post-run assertion, because the two
+ * had the identical defect and a rule living in two places is a rule that drifts in one of them.
+ */
+export const callsOnDay = (rows, provider, day) =>
+  (rows ?? [])
+    .filter((x) => String(x.provider) === provider && Number(x.day) === Number(day))
+    .reduce((sum, x) => sum + Number(x.calls_made ?? 0), 0);
 
 const textOf = (answer) => {
   const parts = answer?.result?.content ?? [];
@@ -75,10 +92,18 @@ export default {
     //
     // Reading it turns a hidden precondition into the claim the gate actually makes: the ceiling
     // bounds the CUMULATIVE count for the day, not the count since this process started.
+    // SCOPED TO THE DAY THE CEILING BOUNDS, and that scoping is the whole correctness of the read.
+    // `onchain.usage` carries ONE ROW PER (provider, day), and on the Postgres axis yesterday's row
+    // is still there tomorrow. Summing the column across rows therefore adds up a WEEK of calls
+    // against a DAILY ceiling: measured 2026-09-02, this case refused to run because it read
+    // `calls_made = 9` — the whole of 2026-09-01 — while today's counter stood at 0.
+    //
+    // `dayBucketMs` comes from core rather than being re-derived here: its own docstring forbids a
+    // second hand-rolled copy of the formula, and a bucket that disagreed with the writer's by even
+    // an hour would read the wrong row near midnight.
+    const today = dayBucketMs(Date.now());
     const before = await readUsage(store.storage, store.location);
-    const already = before
-      .filter((x) => String(x.provider) === 'blockscout')
-      .reduce((sum, x) => sum + Number(x.calls_made ?? 0), 0);
+    const already = callsOnDay(before, 'blockscout', today);
     const remaining = cap - already;
 
     const session = await ctx.openSession();
@@ -116,7 +141,11 @@ export default {
         if (!cached) admitted += 1;
       }
       const usage = await readUsage(store.storage, store.location);
-      return { cap, already, remaining, admitted, ceilingMet, answers, usage };
+      // `today` travels out so `check` scopes the post-run read to the SAME bucket this one used,
+      // and `nansenBefore` so the escalation claim is a COMPARISON. A nansen row that was already
+      // there says nothing about whether this case escalated; only growth does (R-12.2).
+      const nansenBefore = before.filter((x) => String(x.provider) === 'nansen').length;
+      return { cap, already, remaining, admitted, ceilingMet, answers, usage, today, nansenBefore };
     } finally {
       await session.close();
     }
@@ -193,23 +222,31 @@ export default {
     }
 
     const rows = r?.usage ?? [];
-    const blockscout = rows.filter((x) => String(x.provider) === 'blockscout');
-    const counted = blockscout.reduce((sum, x) => sum + Number(x.calls_made ?? 0), 0);
-    // The CUMULATIVE count, not this case's own calls: the ceiling bounds the day, so after the
-    // refusal the counter must sit exactly ON the ceiling whatever it started the case at. One
-    // higher would mean the refused call was admitted and counted anyway.
+    const today = Number(r?.today ?? 0);
+    // THE DAY'S ROW, not every row the table holds. `onchain.usage` keeps one row per
+    // `(provider, day)` and on the Postgres axis they accumulate — summing the column across rows
+    // measures the week against a ceiling that bounds the day. This read and the pre-run one above
+    // share `today` so they cannot disagree across a midnight rollover mid-run.
+    const counted = callsOnDay(rows, 'blockscout', today);
+    // The CUMULATIVE count for the day, not this case's own calls: the ceiling bounds the day, so
+    // after the refusal the counter must sit exactly ON the ceiling whatever it started the case
+    // at. One higher would mean the refused call was admitted and counted anyway.
     if (counted !== cap) {
       problems.push(
-        `usage.calls_made for blockscout must equal the ceiling (${String(cap)}); found ` +
-          String(counted),
+        `usage.calls_made for blockscout on this day must equal the ceiling (${String(cap)}); ` +
+          `found ${String(counted)}`,
       );
     }
 
-    const nansen = rows.filter((x) => String(x.provider) === 'nansen');
-    if (nansen.length > 0) {
+    // GROWTH, not presence. A nansen row predating this case is somebody else's history; what
+    // R-12.2 forbids is this exhaustion pushing the call to the paid provider, and only a new row
+    // is evidence of that.
+    const nansenAfter = rows.filter((x) => String(x.provider) === 'nansen').length;
+    const nansenBefore = Number(r?.nansenBefore ?? 0);
+    if (nansenAfter > nansenBefore) {
       problems.push(
-        `an exhausted free provider escalated to the PAID one: ${String(nansen.length)} nansen ` +
-          'usage row(s) exist after this case ran (R-12.2)',
+        `an exhausted free provider escalated to the PAID one: nansen usage rows went from ` +
+          `${String(nansenBefore)} to ${String(nansenAfter)} while this case ran (R-12.2)`,
       );
     }
     return problems;
