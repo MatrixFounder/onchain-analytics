@@ -26,7 +26,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { crossChecks, grade } from './checks.mjs';
 import { TRANSPORT_CASES } from './cases/index.mjs';
@@ -81,6 +81,16 @@ const THROTTLE_MS = Number(process.env.ONCHAIN_EVAL_THROTTLE_MS ?? 350);
 // hit it keeps the whole run fast instead of slowing every provider to the strictest one's limit.
 const COINGECKO_THROTTLE_MS = Number(process.env.ONCHAIN_EVAL_CG_THROTTLE_MS ?? 6000);
 
+/**
+ * Name-resolution timing, loaded into every server this run spawns (L-30 fix path item 1).
+ *
+ * The four failures of 2026-09-02 clustered at ~10 s across three vendors and could not be told
+ * apart from vendor slowness after the window closed. This makes the discriminator available while
+ * the window is open; `eval/dns-timing.mjs` explains why it is a preload rather than a change in
+ * `safeFetch`.
+ */
+const DNS_TIMING_IMPORT = pathToFileURL(path.join(evalDir, 'dns-timing.mjs')).href;
+
 const probes = JSON.parse(readFileSync(path.join(evalDir, 'probes.json'), 'utf8'));
 
 // ── minimal JSON-RPC-over-stdio client (no SDK dependency, matching scripts/ house style) ────────
@@ -88,7 +98,7 @@ function startServer() {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'onchain-intel-eval-'));
   const child = spawn(
     process.execPath,
-    ['--import', 'tsx', path.join(packageRoot, 'src/index.ts')],
+    ['--import', 'tsx', '--import', DNS_TIMING_IMPORT, path.join(packageRoot, 'src/index.ts')],
     {
       // Stays `packageRoot` (`--import tsx` resolves from here); the secrets arrive through the
       // inherited `env` below, loaded by `repoRoot` above.
@@ -656,20 +666,24 @@ function issueToken(dataDir) {
 
 /** Starts the server on the chosen profile and resolves once it announces its listener. */
 async function startHttpServer(dataDir, port) {
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
-    cwd: packageRoot,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      DATA_DIR: dataDir,
-      ONCHAIN_PROFILE: HTTP_PROFILE,
-      ONCHAIN_TOKEN_HASH_SALT: HTTP_PEPPER,
-      ONCHAIN_HTTP_BIND: '127.0.0.1',
-      ONCHAIN_HTTP_PORT: String(port),
-      // The same table both `admin()` calls get — see `PHASE_ENV`.
-      ...PHASE_ENV,
+  const child = spawn(
+    process.execPath,
+    ['--import', 'tsx', '--import', DNS_TIMING_IMPORT, 'src/index.ts'],
+    {
+      cwd: packageRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        ONCHAIN_PROFILE: HTTP_PROFILE,
+        ONCHAIN_TOKEN_HASH_SALT: HTTP_PEPPER,
+        ONCHAIN_HTTP_BIND: '127.0.0.1',
+        ONCHAIN_HTTP_PORT: String(port),
+        // The same table both `admin()` calls get — see `PHASE_ENV`.
+        ...PHASE_ENV,
+      },
     },
-  });
+  );
   const stderr = [];
   child.stderr.setEncoding('utf8');
   child.stdout.setEncoding('utf8');
@@ -987,6 +1001,28 @@ function report(results, stderrLines, references = {}, link = null) {
     console.log(`   · ${capability}: ${reason}`);
   }
   const stderrText = stderrLines.join('');
+
+  // NAME RESOLUTION, READ RATHER THAN COLLECTED (L-30 item 1, and L-26's note about this channel).
+  // The harness captured the server's stderr and read it for exactly one substring, discarding
+  // everything else — "a diagnostic nobody reads is not a diagnostic" applied to our own tooling.
+  // These lines are the discriminator for the ~10 s failures of 2026-09-02: a slow row beside a slow
+  // lookup is one defect, a slow row beside a 60 ms lookup is another, and after the window neither
+  // can be told from the other.
+  const slowDns = [...stderrText.matchAll(/^DNS-TIMING host=(\S+) ms=(\d+) resolved=(\S+)$/gm)]
+    .map((m) => ({ host: m[1], ms: Number(m[2]), resolved: m[3] === 'yes' }))
+    .sort((a, b) => b.ms - a.ms);
+  if (slowDns.length > 0) {
+    console.log(`\n  Name resolution slower than the report floor (${slowDns.length}):`);
+    for (const d of slowDns.slice(0, 10)) {
+      console.log(`   · ${d.host} — ${String(d.ms)} ms${d.resolved ? '' : ', DID NOT RESOLVE'}`);
+    }
+    if (slowDns.length > 10) console.log(`   … and ${String(slowDns.length - 10)} more`);
+    console.log(
+      '   Compare against any row that failed near 10 000 ms: that comparison is what L-30 exists\n' +
+        '   to make possible, and it can only be made while the run is still in front of you.',
+    );
+  }
+
   if (stderrText.includes('NON-JSON ON STDOUT')) {
     console.log('\n  ⚠️  something wrote non-JSON to stdout — that corrupts the MCP stream');
   }
@@ -1009,6 +1045,10 @@ function report(results, stderrLines, references = {}, link = null) {
           // AC-28b mean different things in the two cases.
           httpStorage: HTTP_STORAGE,
           stateTarget: stateTargetLabel(HTTP_STORAGE, HTTP_STATE_PG_URL),
+          // L-30: kept in the artifact, not only on the console, because the console scrolls away
+          // and the artifact is what a later reader has. Empty on a healthy run, which is itself
+          // the answer to "was it the resolver this time?"
+          slowDns,
           link,
           counts,
           results,

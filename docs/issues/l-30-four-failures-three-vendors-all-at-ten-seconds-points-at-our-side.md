@@ -98,8 +98,25 @@ explain it. What changes is that both records now point here.
 **What would settle it.** A capture DURING the window, which means instrumenting before the next
 occurrence rather than probing after it:
 
-1. Record DNS resolution time per call in the eval's own row data. Cheap, and it discriminates
-   directly: a 10 s row whose lookup took 10 s is this defect, one whose lookup took 60 ms is not.
+1. ~~Record DNS resolution time per call in the eval's own row data.~~ **DONE 2026-09-03.**
+   `eval/dns-timing.mjs` is an `--import` preload wrapping `dns.lookup`, loaded into BOTH servers a
+   run spawns; anything slower than `ONCHAIN_EVAL_DNS_REPORT_MS` (default 250 ms, against a healthy
+   60–90 ms here) writes one `DNS-TIMING host=… ms=… resolved=…` line. `report()` reads those lines,
+   prints the ten slowest, and carries them into the JSON artifact as `slowDns` — the console
+   scrolls away and the artifact is what a later reader has.
+
+   **A preload, not a change in `safeFetch`:** the shipped request path should not grow a branch to
+   answer a question about the harness's environment, and `--import` confines this to a gate run.
+   `dns.lookup` is the hook because `fetch` reaches the network through `net.connect`, which
+   resolves that way unless a caller supplies its own resolver — nothing here does. No address is
+   printed, only the host and the elapsed time.
+
+   Proven both ways before it was trusted: at a floor of 0 ms it reports a healthy lookup
+   (`api.llama.fi`, 9 ms, `resolved=yes`) and a failing one (`…invalid`, 11 ms, `resolved=no`); at
+   the working floor it stays silent on a healthy run. Two assertions guard it, each proven by
+   mutation — one that the preload reaches BOTH phases (instrumenting one and not the other makes a
+   silent run meaningless), one that the lines have a reader in the console AND the artifact, which
+   is the very defect L-26 recorded about this channel.
 2. Failing that, run the gate with a resolver that has a single nameserver and see whether the
    ~10 s signature becomes ~5 s. A bound that moves with the configuration is a bound.
 3. `capability unavailable` still reaches the caller with its cause removed (L-26's update of the

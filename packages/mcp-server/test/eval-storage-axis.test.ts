@@ -179,6 +179,28 @@ describe('the eval follows the storage axis of the profile it raised', () => {
     expect(fn).toMatch(/catch \([\w]+\) \{[\s\S]*'user:add'/);
   });
 
+  it('L-30 — name-resolution timing is loaded into EVERY server the run spawns', () => {
+    // The four failures of 2026-09-02 clustered at ~10 s across three vendors, and the competing
+    // explanation could not be tested once the window closed (L-25). The discriminator has to be
+    // collected DURING the run, which means the preload must reach both phases: the capability
+    // matrix is where those four rows failed, and the HTTP phase is where the billing cases run.
+    // One phase instrumented and the other not would produce a run whose silence means nothing.
+    const loads = runner.match(/'--import', DNS_TIMING_IMPORT/g) ?? [];
+    expect(loads, 'both spawned servers must preload the DNS hook').toHaveLength(2);
+    expect(runner).toContain('const DNS_TIMING_IMPORT = pathToFileURL(');
+  });
+
+  it('L-30 — the DNS lines have a READER, in the console and in the artifact', () => {
+    // This is the defect L-26 recorded about this exact channel: `report()` captured the server's
+    // stderr and read it for one substring, discarding the rest. Collecting a measurement nobody
+    // consumes would repeat it one level up — the harness would emit the discriminator and throw it
+    // away in the same run.
+    expect(runner).toContain('DNS-TIMING host=');
+    expect(runner).toContain('Name resolution slower than the report floor');
+    // …and it must OUTLIVE the console, which scrolls away.
+    expect(runner).toContain('slowDns,');
+  });
+
   it('the capability phase hands its DATA_DIR to the HTTP phase', () => {
     // AC-28's comparison needs the rows the LOCAL phase wrote. The directory outlives the HTTP
     // phase by the existing order alone — `server.stop()` removes it in the `finally` that runs
