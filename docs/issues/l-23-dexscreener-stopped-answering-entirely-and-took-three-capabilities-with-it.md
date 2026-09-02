@@ -152,6 +152,9 @@ for u in "https://api.dexscreener.com/latest/dex/search?q=WETH" "https://api.lla
 done
 ```
 
+
+**Cross-reference added 2026-09-02 — the attribution above may be wrong.** The same two gate runs produced four `capability unavailable` failures across THREE vendors, every one of them at ~10 000–10 510 ms, two of them 3 ms apart. That is the shape of a bound on our side, not of three vendors degrading at once, and no 10-second bound exists in the request path. Filed as [L-30](l-30-four-failures-three-vendors-all-at-ten-seconds-points-at-our-side.md). The bound in `acknowledged.json` is not reverted — it counts rows that failed, which is true whatever caused them — but the cause named in this record is now one reading of two.
+
 **Related.** [L-22](l-22-pairs-active-loses-two-chains-under-gate-load-while-the-vendor-still-serves-them.md)
 — the deadline defect on this vendor's search route, fixed hours before this outage and the reason
 these rows are attributed correctly.
