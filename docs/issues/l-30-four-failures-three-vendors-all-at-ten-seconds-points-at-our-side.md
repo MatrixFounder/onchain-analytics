@@ -26,18 +26,45 @@ slug: l-30-four-failures-three-vendors-all-at-ten-seconds-points-at-our-side
 Every other row of those three vendors passed in the same runs, in 79–2818 ms. Two of the four
 differ by **3 ms** and belong to different vendors.
 
-**Why this is not four coincidences.** Network variance does not cluster four samples from three
-independent endpoints inside a 500 ms band, and it does not put two of them 3 ms apart. A fixed
-bound does. The refusal class agrees: `capability unavailable` means the provider call FAILED, not
-that a deadline of ours cut it — a deadline refusal would have said so and named its phase (L-26 fix
+**What the clustering does and does not support.** Four samples in a 500 ms band across three
+independent endpoints is suggestive of a fixed bound and is not proof of one. The strongest-sounding
+detail — two figures 3 ms apart — is the weakest: those two come from DIFFERENT runs 21 minutes
+apart, so their closeness carries much less than it reads. Stated plainly because the first draft of
+this record leaned on it as if it were decisive.
+
+What the refusal class does support: `capability unavailable` means the provider call FAILED, not
+that a deadline of ours cut it. A deadline refusal would have said so and named its phase (L-26 fix
 path item 1).
 
-**No 10-second bound exists in the request path, and that was searched rather than assumed.**
+**The obvious competing explanation was tested, not argued away: "that is simply how a free tier
+answers."** Free vendors throttle by slowing as well as by refusing, so a ~10 s answer could be
+ordinary vendor behaviour. That is a claim about HABITUAL behaviour, and habitual behaviour is
+measurable at any time. Measured 2026-09-03 under deliberate load:
+
+| vendor | concurrent requests | result |
+| :-- | --: | :-- |
+| DeFiLlama (`/v2/historicalChainTvl/Solana`) | 25 | all 200, 1.131–1.487 s |
+| DexScreener (`/latest/dex/search`) | 20 | all 200, 0.964–1.056 s |
+| CoinGecko (`/coins/ethereum/contract/…`) | 8 | all 200, 1.289–1.328 s |
+
+None approaches 10 s under load. And when CoinGecko's keyless quota IS exhausted — five sequential
+requests were enough on 2026-09-02 — it answers **429 in 0.35–0.39 s**: a free tier that has had
+enough refuses fast here, it does not hold the connection. The explanation is therefore not supported
+for these three endpoints, which is a different and weaker statement than "it is impossible".
+
+**What that measurement cannot do.** It was taken after the window, so it says these vendors do not
+HABITUALLY answer at ~10 s; it cannot say they were not slow at 20:31–20:52 on 2026-09-02. Same
+limitation as the DNS probe below, for the same reason (L-25).
+
+**No 10-second bound was FOUND in the request path — which is not the same as none existing.**
+The search below is a grep plus a read of the retry paths, not a proof.
 `safeFetch`'s `DEFAULT_TIMEOUT_MS` is `15_000`. The capability deadline for `token.price` is
 `15_000`. The eval's retry (`RETRY_BACKOFF_MS = [4000, 12000]`) does not apply: `RETRIABLE` does not
 match this refusal text, so each figure above is one call, not a sum. The only `10_000` constants in
 the repository are `pg` connection timeouts, the link probe's own `CONNECT_TIMEOUT_MS`, and the
-reference-source timeout — none of them on this path.
+reference-source timeout — none of them on this path. `safeFetch` carries no retry, and neither
+`defillama` nor `coingecko` retries at the adapter level, so a backoff ladder summing to ~10 s is
+ruled out as well.
 
 **The candidate, named as a candidate, with arithmetic behind it.** This machine's resolver timeout
 is **5 s** (`scutil --dns`), and one of its scoped configurations lists **two** nameservers
