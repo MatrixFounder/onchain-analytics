@@ -153,7 +153,7 @@ REPLAY_AND_RECONCILE_CEILING_MS)`, класс `ReplayWindowExpiredError`, вет
   вызова обработчика; `ToolContext.billing` без `?`; отказ рождает синтетический `outcome`
   - Требования: R-2, R-3 · Приоритет: критический · Зависимости: 015-04, 015-05, 015-06, 015-07
   - Читает поле класса отказа, объявленное задачей 015-04 (вторая половина MAJOR-D); правит псевдокод
-    `system-architecture.md:4116` на то же имя
+    `system-architecture.md:4226` на то же имя
   - Зависимость от 015-05 — источник `priceRaw` на границе тула
   - [tasks/task-015-09-interception-point-reserve.md](tasks/task-015-09-interception-point-reserve.md)
 
@@ -586,7 +586,7 @@ REPLAY_AND_RECONCILE_CEILING_MS)`, класс `ReplayWindowExpiredError`, вет
 сборке адаптеров в `packages/mcp-server/src/runtime.ts:202`, хранилище бюджета берётся из параметра
 той же функции, а 015-16 подаёт туда же переопределение. N-9: причина, по которой число не пишется,
 названа. N-10: `alert_last_ts` и `now_ms` читаются из узла `Pulse query`, верхнеуровневая `now_ms`
-уходит из `Verify query`, TC-OPS-05a. N-11: `docs/architectures/deployment.md:758` и
+уходит из `Verify query`, TC-OPS-05a. N-11: `docs/architectures/deployment.md:762` и
 `packages/core/test/pg-store-parity.test.ts:622` — все пять мест. N-12: отклонение записано абзацем и
 строкой рантбука, спецификация не правится.
 

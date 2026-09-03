@@ -21,7 +21,7 @@
 / `:300`, `blockscout/index.ts:222-226` / `:425`, `nansen/budget-gate.ts:232`,
 `providers.config.ts:324-330` / `:342`, `resolve-capability.ts:320-328`, `capability-manifest.ts`,
 `003_seed_engine_admin.sql:24-26` / `:157-159`, `data-model.md:1240-1245`, `ADR-003:251` / `:310` /
-`:457`. **Тринадцать резолвятся дословно; один несёт цитату, которой по этому адресу нет**
+`:480`. **Тринадцать резолвятся дословно; один несёт цитату, которой по этому адресу нет**
 (MINOR-1). Унаследованные 77 ошибок резолвера — вне области.
 
 **Чек-лист §3 (Document Size / No Per-Task Drift):** Index Mode соблюдён, обновление в месте,
@@ -218,9 +218,9 @@ env-ключей `deployment.md` §10.3, нет в §10.3.1, нет в `.env.exa
 
 ## MINOR
 
-1. **Цитата пришпилена не к тому адресу.** `deployment.md:859` цитирует «two identical events one
+1. **Цитата пришпилена не к тому адресу.** `deployment.md:863` цитирует «two identical events one
    millisecond apart are two facts» по адресу `003_seed_engine_admin.sql:157-159`; фраза живёт в
-   `data-model.md:1651`.
+   `data-model.md:1674`.
 2. **`resolve-capability.ts:320-328` описан не тем действием** — по адресу `catch`, который
    записывает `refusalClass`, а не заворачивает ошибку.
 3. **Не сказано, чем минтуется `client_request_id` на резерве** — свежий ULID вместо `traceId`

@@ -31,7 +31,7 @@
 
 - Гейт вызовов R-9 построен (задачи 015-13, 015-14, 015-15).
 - Продуктивный порог blockscout (значение `625`) несёт пометку происхождения рядом с собой в коде
-  (`docs/architectures/data-model.md:2053`, `D6 estimate, R-10.1`); в спецификации та же пометка
+  (`docs/architectures/data-model.md:2077`, `D6 estimate, R-10.1`); в спецификации та же пометка
   сформулирована как «оценка `ADR-003` D6, не замер» (R-10.1, AC-22).
 - Ключ `BLOCKSCOUT_DAILY_CALL_CAP` объявлен в `EnvSchema` (задача 015-16). Методика ссылается на
   него как на уже объявленный; порядок исполнения задаёт этап, не эта задача.
@@ -51,14 +51,14 @@
 | 4   | `BLOCKSCOUT_DAILY_CALL_CAP` снимается                           | раздел 6 замерен                                                     |
 
 Замер шага 2 берётся SQL-запросом к таблице `usage` (`usage.calls_made`,
-`docs/architectures/data-model.md:1994`, `usage ADD COLUMN calls_made`), не самоотчётом оснастки
+`docs/architectures/data-model.md:2018`, `usage ADD COLUMN calls_made`), не самоотчётом оснастки
 (AC-26).
 
 Дискретное имя класса `ProviderCallCeilingExceededError` до оператора не доходит. На
 одноадаптерных маршрутах `refusal_class` сворачивается в `CapabilityUnavailableError` независимо от
-причины отказа (`docs/architectures/system-architecture.md:4363-4364`, «`refusal_class` does not
+причины отказа (`docs/architectures/system-architecture.md:4473-4474`, «`refusal_class` does not
 carry it on a single-adapter route»). Запись `tried[]` несёт только пару `{adapterId, reason}`, без
-отдельного поля класса (`docs/architectures/system-architecture.md:1251`,
+отдельного поля класса (`docs/architectures/system-architecture.md:1298`,
 `tried.push({ adapterId, reason: … })`).
 
 Постусловие шага 3 проверяется не именем класса, а текстом — вторым признаком раздела 4. **Канал
@@ -92,7 +92,7 @@ operator IS reading stderr» (`packages/mcp-server/src/index.ts:177-179`).
 
 **Отсюда каналы шага 3.** На stdio-фазе их два: текст в **`stderr` процесса сервера** и **ответ
 тула**, несущий предложение класса `call-ceiling`. На http-фазе к ним добавляется строка
-`tool.refused` в `diagnostics` (R-31.1, `docs/architectures/data-model.md:1534`), читаемая
+`tool.refused` в `diagnostics` (R-31.1, `docs/architectures/data-model.md:1557`), читаемая
 SQL-запросом тем же приёмом, что шаг 2. Запись прогона (раздел 7) обязана называть, каким каналом
 наблюдение снято.
 
@@ -117,12 +117,12 @@ SQL-запросом тем же приёмом, что шаг 2. Запись �
 
 **Первый признак — момент отказа относительно сетевого запроса.** Отказ гейта происходит **до**
 сетевого запроса: `ensureCallBudget` вызывается рядом с `throttle()`, перед обращением к вендору
-(`docs/architectures/system-architecture.md:4400-4402`, `beside the existing`). Все три открытых
+(`docs/architectures/system-architecture.md:4510-4512`, `beside the existing`). Все три открытых
 дефекта наблюдаются **после** отправки запроса — ответ (таймаут, HTTP 500 или дедлайн лимитера) уже
 предполагает, что запрос ушёл.
 
 **Второй признак — текст отказа.** Сообщение гейта начинается с `daily call ceiling reached:`
-(`docs/architectures/system-architecture.md:4411`, `daily call ceiling reached:`).
+(`docs/architectures/system-architecture.md:4521`, `daily call ceiling reached:`).
 
 **Подстрока зависит от канала, и наблюдение обязано называть канал.** Приведённая выше — внутренняя
 причина; она попадает в `stderr` и в `diagnostics.detail_json`. До КЛИЕНТА доходит другое
@@ -133,9 +133,9 @@ SQL-запросом тем же приёмом, что шаг 2. Запись �
 
 **Третий признак — изменение суточного счётчика этим вызовом, а не его абсолютное
 значение.** Счётчик увеличивается **на допуске**, до сетевой попытки: `ensureCallBudget` вызывает
-`budgetStore.checkAndReserve(...)` (`docs/architectures/system-architecture.md:4320-4324`,
+`budgetStore.checkAndReserve(...)` (`docs/architectures/system-architecture.md:4430-4434`,
 `budgetStore.checkAndReserve`). Колонка объявлена монотонной и невозвращаемой
-(`docs/architectures/data-model.md:1994`, «Monotonic, never refunded»). То же в коде существующего
+(`docs/architectures/data-model.md:2017`, «Monotonic, never refunded»). То же в коде существующего
 аналога — `packages/core/src/cache/vendor-spend.ts:103-106`, «a call is not refundable the way a
 credit is». То же в самой транзакции резервации — `packages/core/src/cache/budget-store.ts:205`,
 `calls_made = MAX(0, calls_made + @calls)`. Значит вызов, упавший у вендора, счётчик уже увеличил и
@@ -170,7 +170,7 @@ credit is». То же в самой транзакции резервации �
 ## 5. Отличимость проверочных вызовов на общем лимитере (R-12.3)
 
 Общий лимитер — `provider_buckets`, ключ `(provider, scope_key, …)`
-(`docs/architectures/data-model.md:1202`, `CREATE TABLE IF NOT EXISTS provider_buckets`).
+(`docs/architectures/data-model.md:1226`, `CREATE TABLE IF NOT EXISTS provider_buckets`).
 Проверочные вызовы этой методики и продуктивный трафик делят одну и ту же корзину blockscout.
 Изоляции нет по построению; требование R-12.3 — **отличимость в evidence**, а не изоляция корзины.
 
@@ -181,7 +181,7 @@ credit is». То же в самой транзакции резервации �
 | окно прогона `[from, to]`, epoch-ms | часы оператора               | до шага 1 и после шага 4 |
 | принципал прогона                   | `request_trace.principal_id` | до шага 1                |
 
-Строка `request_trace` (`docs/architectures/data-model.md:1337`, `principal_id`) проверочного
+Строка `request_trace` (`docs/architectures/data-model.md:1361`, `principal_id`) проверочного
 вызова удовлетворяет обоим признакам одновременно. Продуктивная строка либо лежит вне окна, либо
 несёт другого принципала.
 
@@ -190,7 +190,7 @@ credit is». То же в самой транзакции резервации �
 
 **Why принципал назван вторым признаком, а не единственным.** В stdio-фазе живого гейта
 `principal_id` равен `'local'`
-(`docs/architectures/system-architecture.md:3201`, `stdio transport`; R-13.1, AC-28), и этого
+(`docs/architectures/system-architecture.md:3311`, `stdio transport`; R-13.1, AC-28), и этого
 значения не хватает, чтобы отличить один прогон от
 другой локальной сессии на том же принципале. Окно достаточно там, где принципал не различает.
 
@@ -204,7 +204,7 @@ credit is». То же в самой транзакции резервации �
 
 - ключ `BLOCKSCOUT_DAILY_CALL_CAP` отсутствует в окружении процесса;
 - потолок в силе для `blockscout` равен объявленному `dailyCallCeiling`, значение `625`
-  (`docs/architectures/data-model.md:2053`, `D6 estimate, R-10.1`).
+  (`docs/architectures/data-model.md:2077`, `D6 estimate, R-10.1`).
 
 **Why возврат — шаг с замером, а не строка «вернуть как было».** Оставленный тестовый порог
 отклонит первый же продуктивный вызов и уведёт `entity.labels` фолбэком на платный nansen. Этот

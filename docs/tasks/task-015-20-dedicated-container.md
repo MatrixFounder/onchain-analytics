@@ -17,7 +17,7 @@
 
 **Why плоский образ Postgres, а не второй стек Supabase.** Исключение `SEC-2` существует потому,
 что Supabase поставляет три роли с платформенным `SELECT`. Плоский образ не несёт ни одной из них
-(`docs/architectures/deployment.md:786` — подстрока `Why a plain Postgres image`).
+(`docs/architectures/deployment.md:790` — подстрока `Why a plain Postgres image`).
 
 <!-- contract:changes -->
 
@@ -124,7 +124,7 @@ VM в момент прогона. Число, записанное здесь �
 таймаутом устойчиво, и числа строк в таблицах старого контейнера не измерены. Задача 015-24 снимает
 эти числа в момент переезда и не полагается на сегодняшние.
 
-Проектная координата операции — `docs/architectures/deployment.md:779` —
+Проектная координата операции — `docs/architectures/deployment.md:783` —
 `#### 10.9.1. Provisioning the container (R-8.1, AC-16)`.
 
 Оба DSN сегодня указывают на порт 5432 той же машины: `.env.example:132` — подстрока

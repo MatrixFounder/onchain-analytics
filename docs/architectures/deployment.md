@@ -129,12 +129,12 @@ checkout(SHA-pin) → corepack enable (pnpm) → setup-node@22 (pnpm store cache
 ```
 
 Fixtures and mocks (D11) keep the entire test volume **network-independent**: 12 adapters, the
-chain registry and coverage matrix, the cache, the SSRF gate, rate limiting, the budget gate, and
-the tools exercised through **two** E2E suites. No secret is needed in CI (R-21:
-`DUNE_API_KEY` / `COINGECKO_API_KEY` / `ONCHAIN_PG_URL` / `NANSEN_API_KEY` are read only by the
-development script `record-fixture.mjs`, which runs **outside** CI). No network call may happen
-during `pnpm test` — the same R-15/R-21 invariant M0 established, now enforced over many times more
-code.
+chain registry and coverage matrix, and the cache. The same volume covers the SSRF gate, rate
+limiting, the budget gate, and the tools exercised through **two** E2E suites. No secret is needed
+in CI (R-21: `DUNE_API_KEY` / `COINGECKO_API_KEY` / `ONCHAIN_PG_URL` / `NANSEN_API_KEY` are read
+only by the development script `record-fixture.mjs`, which runs **outside** CI). No network call may
+happen during `pnpm test` — the same R-15/R-21 invariant M0 established, now enforced over many
+times more code.
 
 #### 10.2.1. What T-014 adds to the pipeline
 
@@ -172,7 +172,10 @@ valid configuration (UC-1), and an empty value (`KEY=`) behaves exactly like an 
 schema declares **twelve** keys today (`packages/mcp-server/src/env.ts:46-96`, measured
 2026-08-13); T-014 adds ten.
 
-**Re-measured 2026-08-24, at T-014 acceptance: `EnvSchema` declares 23 keys.** The line above is kept as the record of the tree it described — task 014-40 added the ten T-014 keys, and R-23.6 asks for the current number BESIDE the historical one rather than for the past to be rewritten. The word "today" in the sentence above now means 2026-08-13.
+**Re-measured 2026-08-24, at T-014 acceptance: `EnvSchema` declares 23 keys.** The line above is
+kept as the record of the tree it described — task 014-40 added the ten T-014 keys. R-23.6 asks for
+the current number BESIDE the historical one rather than for the past to be rewritten. The word
+"today" in the sentence above now means 2026-08-13.
 
 **Re-measured 2026-08-28, at T-015 stage 4: `EnvSchema` declares 24 keys.** Task 015-16 added `BLOCKSCOUT_DAILY_CALL_CAP`, the one key of that stage. Counted by importing `EnvSchema.shape`, not by reading the table — the table is what the count checks, so counting it against itself would prove nothing. The 2026-08-24 line above stands as the record of its own tree, by the same R-23.6 rule.
 
@@ -417,15 +420,16 @@ Supabase ships three roles that read every table by construction: `supabase_admi
 `reserved_memberships`). Revoking is not available for the third and not desirable for the second,
 and row-level security binds neither, because both `pg_read_all_data` members carry `rolbypassrls`.
 
-So on such a host the check above is run against the roles the INSTALLATION controls, and the three
+So on such a host the check above is run against the roles the INSTALLATION controls. The three
 platform roles are recorded as an accepted exception with a re-check pinned to the move off the
 managed cluster. **On the dev VM that acceptance was taken by the owner on 2026-08-23**, scoped to a
-host where the database administrator and the engine owner are the same person; the separated host is
-to get a dedicated Postgres container instead
+host where the database administrator and the engine owner are the same person. The separated host
+is to get a dedicated Postgres container instead
 ([WI-62](../backlog/wi-62-engine-tables-move-to-a-dedicated-postgres-container-on-the-separated-host.md)),
-which restores this postcondition as written rather than excepting it again. **The load-bearing postcondition does not move**: `authenticator` — the role
-PostgREST authenticates as, and the only role reachable from outside the machine — must read none of
-the twelve engine tables. Measured true on the dev VM the same day.
+which restores this postcondition as written rather than excepting it again. **The load-bearing
+postcondition does not move**: `authenticator` — the role PostgREST authenticates as, and the only
+role reachable from outside the machine — must read none of the twelve engine tables. Measured true
+on the dev VM the same day.
 
 **Why the exception is written here rather than left to each operator.** An unreachable
 postcondition is a check that gets skipped, and a skipped check is indistinguishable from a passed
@@ -938,7 +942,7 @@ round 3 MAJOR-2). The table carries no natural `UNIQUE` dedup key by design
 
 **Citation fix (closes architecture review round 1 MINOR-1).** An earlier draft pinned the quote
 "Two identical events one millisecond apart are two facts" to the SQL address above. It actually
-lives at `data-model.md:1651`, and is corrected here rather than left standing.
+lives at `data-model.md:1674`, and is corrected here rather than left standing.
 
 An `ON CONFLICT DO NOTHING` has no column to key on, so re-running the copy above duplicates every
 row.

@@ -127,10 +127,10 @@
   (`docs/architectures/interfaces.md:12`, `**Two further tools are designed and not registered.**`)
 - **Суффикс `DESIGNED, not registered` снимается во всех четырёх местах внутри §5.1.7 и §5.1.8.**
   Числовой греп их не находит: цифр двадцатых на этих строках нет. Координаты:
-  - `docs/architectures/interfaces.md:615` — `#### 5.1.7 The pool tool (T-014, R-21.1) — DESIGNED, not registered`
-  - `docs/architectures/interfaces.md:643` — `DexScreener-backed, keyless, 0 credits. DESIGNED, not registered.`
-  - `docs/architectures/interfaces.md:837` — `#### 5.1.8 The token-pools tool (T-014, R-34) — DESIGNED, not registered`
-  - `docs/architectures/interfaces.md:858` — `// DESIGNED, not registered.`
+  - `docs/architectures/interfaces.md:621` — `#### 5.1.7 The pool tool (T-014, R-21.1) — DESIGNED, not registered`
+  - `docs/architectures/interfaces.md:649` — `DexScreener-backed, keyless, 0 credits. DESIGNED, not registered.`
+  - `docs/architectures/interfaces.md:843` — `#### 5.1.8 The token-pools tool (T-014, R-34) — DESIGNED, not registered`
+  - `docs/architectures/interfaces.md:864` — `// DESIGNED, not registered.`
 - `docs/tasks/task-014-32d-token-pools-tool.md:39` цитирует заголовок §5.1.8 **вместе с суффиксом**
   как якорь своего контракта; цитата приводится к новому заголовку тем же коммитом, иначе
   позиционная ссылка живой задачи перестаёт разрешаться
@@ -171,7 +171,7 @@
 принимающую оба окончания, а `docs/onchain-analytics/ROADMAP.md:272`
 (`**Двадцать тулов**, в порядке публикации:`) получает грамматически верное «**Двадцать два тула**».
 Отвергнуто «написать цифрой `22`»: `\w` цифру покрывает и правка была бы меньше, но дом стиля этих
-документов — числительное словом (`docs/ARCHITECTURE.md:52`,
+документов — числительное словом (`docs/ARCHITECTURE.md:120`,
 `capability manifest carries twenty-six rows.`), и цифра рассогласовала бы русский документ с
 английскими.
 
@@ -196,8 +196,8 @@
 - §5 называет два спроектированных и незарегистрированных тула; после задачи их ноль, а число
   зарегистрированных становится 22
 - `docs/ARCHITECTURE.md:51`, `The server publishes twenty tools; the` — **третий счёт в этом файле, и
-  его не читает ни один гейт.** Шаблонов по `ARCHITECTURE.md` в тесте счёта ровно два (`:169` и
-  `:170`), они ловят `:50` и `:198`. Без явного назначения `:51` тихо становится ложным при критерии
+  его не читает ни один гейт.** Шаблонов по `ARCHITECTURE.md` в тесте счёта ровно два (`:241` и
+  `:242`), они ловят `:50` и `:271`. Без явного назначения `:119` тихо становится ложным при критерии
   «все числа тулов в настоящем времени обновлены»
 
 **Файл `docs/architectures/functional-architecture.md` — счёт и перечисление вне всех гейтов:**
@@ -226,7 +226,7 @@
 (`packages/mcp-server/eval/capabilities.mjs:124`,
 `if (wired.has(capability) || CAPABILITY_EXCLUSIONS.has(capability)) continue;`) ⇒ переписанная
 причина стала бы мёртвым текстом, который ни один прогон не печатает. Удаление совпадает с уже
-записанным контрактом: `docs/architectures/interfaces.md:829`,
+записанным контрактом: `docs/architectures/interfaces.md:835`,
 `The registering commit deletes the`.
 
 **Файл `packages/mcp-server/eval/checks.mjs` — не трогается этой задачей.**
@@ -305,7 +305,7 @@ grep -RIn --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist \
 `docs/architectures/functional-architecture.md:117`,
 `- **Twenty registered tools**, all zod in/out and registry-routed, declared once in` — заглавная
 `T`, цифры на строке нет, и до фильтра по существительному дело не доходит. Соседняя строчная форма
-(`docs/architectures/interfaces.md:1261`) при этом ловится: разница в один символ.
+(`docs/architectures/interfaces.md:1267`) при этом ловится: разница в один символ.
 
 **Объём триажа измерен, а не оценён.** Замер 2026-08-20 на дереве до правок: **443 строки**.
 Большинство — числа двадцатых в посторонних смыслах (таймауты, размеры страниц, номера задач);
@@ -410,7 +410,7 @@ author should know it exists». Эта задача — тот самый сле
   22: §3.2 обязана нести строку TTL на **каждую** маршрутизируемую способность
 - `docs/architectures/system-architecture.md:1418`, `holds **27 routes** over 26` — 28 над 27;
   читает `packages/mcp-server/test/docs-counts.test.ts:329`
-- `docs/architectures/system-architecture.md:2387` — первая строка данных таблицы дедлайнов
+- `docs/architectures/system-architecture.md:2463` — первая строка данных таблицы дедлайнов
   перечисляет способности поимённо, и `token.pools` в ней нет. Это **вторая** проверка полноты в том
   же тестовом файле, отдельная от таблицы TTL §3.2:
   `packages/mcp-server/test/readme-tool-table.test.ts:602`,

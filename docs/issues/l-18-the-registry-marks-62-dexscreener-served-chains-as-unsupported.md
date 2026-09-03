@@ -61,8 +61,8 @@ the vendor was left behind.
 
 **Two clauses of one document define `null` differently.**
 
-- `docs/architectures/data-model.md:141` — `` `null` = the vendor does not have the chain ``
-- `docs/architectures/data-model.md:180` — `the absence of a probe means **`unverified`, not `unsupported`**`
+- `docs/architectures/data-model.md:143` — `` `null` = the vendor does not have the chain ``
+- `docs/architectures/data-model.md:197` — `the absence of a probe means **`unverified`, not `unsupported`**`
 
 The runtime follows the first clause. R-58d's distinction has an entity, `CoverageProbe`. The same
 document scopes it to `exactly one consumer: nansen`.

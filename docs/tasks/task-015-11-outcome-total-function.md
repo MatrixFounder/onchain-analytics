@@ -17,7 +17,7 @@
 
 **Why правило не ветвится на значение класса.** Ветвь по значению даёт классу, добавленному
 завтра, проход мимо правила. Отсутствие ветви — то, что делает AC-35 следствием конструкции, а не
-отдельного случая (`docs/architectures/system-architecture.md:4254` — подстрока `The rule does not
+отдельного случая (`docs/architectures/system-architecture.md:4364` — подстрока `The rule does not
 branch on`).
 
 <!-- contract:changes -->
@@ -39,7 +39,7 @@ branch on`).
 **Why умолчание причины обязательно.** Отказ может прийти без класса: сегодня строка следа
 допускает пустое значение — `packages/mcp-server/src/tools/registry.ts:646` —
 `refusalClass: outcome.ok ? null : (outcome.refusalClass ?? null),`. Леджер такого не допускает:
-`docs/architectures/data-model.md:1742` — `CHECK ((state = 'refunded') = (refund_reason IS NOT
+`docs/architectures/data-model.md:1765` — `CHECK ((state = 'refunded') = (refund_reason IS NOT
 NULL)),`. Возврат с пустой причиной отверг бы сам движок.
 
 **Why правило живёт в обёртке, а не в хранилище.** Хранилище исполняет условный `UPDATE` и о
@@ -55,7 +55,7 @@ NULL)),`. Возврат с пустой причиной отверг бы са
 | `outcome.ok === false`, любой класс                 | `refund`              | R-3.3, R-3.4 |
 
 Правило читает одно поле. Значение `refusalClass` попадает в причину возврата и в решение не
-входит (`docs/architectures/system-architecture.md:4251` — подстрока `The mapping is R-3, restated
+входит (`docs/architectures/system-architecture.md:4361` — подстрока `The mapping is R-3, restated
 as one rule with one exception`).
 
 ### Перечень классов R-3.3 — данные теста, не ветви кода
@@ -73,7 +73,7 @@ as one rule with one exception`).
 
 **Why шестая строка отличается от пяти остальных.** Исчерпание баланса обнаруживается внутри
 `reserve()`, до появления строки, которую можно было бы вернуть
-(`docs/architectures/system-architecture.md:4287` — подстрока `writes no row, even though
+(`docs/architectures/system-architecture.md:4397` — подстрока `writes no row, even though
 R-3.3`). Перечень R-3.3 читается как перечень ПРИЧИН отказа, не убегающих от правила `refunded`,
 а не как утверждение, что каждая причина пишет строку и отменяет её.
 

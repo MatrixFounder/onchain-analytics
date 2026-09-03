@@ -29,9 +29,9 @@
   both by MCP tool input schemas and by adapters when building a cache key. It guarantees "the same
   address in any case ⇒ the same cache key".
 - **Functions:** `ChainSchema` (canonical caip2) plus `ChainInputSchema` (tool input, resolves
-  aliases) — **two schemas rather than one `ethereum | solana | dash` enum**, so an alias cannot
-  seep into the body of a canonical object and from there into the cache key (§4.2.2);
-  `normalizeAddress(chain, raw)` / `isValidAddress(chain, raw)` branch on **`chainInfo.family`**,
+  aliases) — **two schemas rather than one `ethereum | solana | dash` enum**. An alias therefore
+  cannot seep into the body of a canonical object, and from there into the cache key (§4.2.2). Both
+  `normalizeAddress(chain, raw)` and `isValidAddress(chain, raw)` branch on **`chainInfo.family`**,
   not on a chain name — a single `evm` branch serves every EVM chain.
 - **Related use cases:** TASK-006 UC-7 (validation by family), UC-6 (cache-key compatibility).
 - **Dependencies:** depends on `Chain Registry`; used by `Provider Adapters` and by MCP tool input
@@ -43,17 +43,17 @@
   (`id/capabilities()/costOf()/fetch()/normalize()`, D4 — including the `id` field).
 - **Functions:** routing by capability **and chain** (`(capability, chain)` → an ordered list of
   adapters), free→paid priority, hot-swap fallback within a single capability (R-11, demonstrated by
-  DAPI ⇄ platform-explorer), anti-corruption layer (provider DTOs never leak outward — only through
-  `normalize()` into a canonical type).
+  DAPI ⇄ platform-explorer), anti-corruption layer. Provider DTOs never leak outward — only through
+  `normalize()` into a canonical type.
   - Input: `(capability: string, chain: Chain, args: object)`.
   - Output: `{ result: CanonicalResult, source: string, cache: 'hit'|'miss' }`, or a structured
     unavailability error (R-24).
   - Related use cases: TASK-003 UC-2 (main path), UC-3 (cache), UC-4 (hot swap).
 - **Ten registered adapters** (details in §3.2): `coingecko`, `dexscreener`, `defillama`, `dune`,
   `rpc-evm`, `rpc-solana`, `dash-platform`, `platform-explorer`, `pg-history`, `nansen`. Three carry
-  a deliberately narrowed status: `dash-platform` is interface + fixture contract only, with no live
-  transport (the gRPC channel is a backlog item, §11); `dune` is an interface/config stub with no
-  live query; `pg-history` is optional and connects only when `ONCHAIN_PG_URL` is set. `nansen` is
+  a deliberately narrowed status. `dash-platform` is interface + fixture contract only, with no live
+  transport (the gRPC channel is a backlog item, §11). `dune` is an interface/config stub with no
+  live query. `pg-history` is optional and connects only when `ONCHAIN_PG_URL` is set. `nansen` is
   the tenth and the only paid, budget-gated adapter (M2, TASK-005).
 - **Dependencies:** depends on Chain/Address Normalization, Cache, the SSRF gate and the rate
   limiter; MCP tools depend on it.
@@ -69,18 +69,18 @@
 
 - **Purpose:** `lru-cache` (hot, in-process) → `better-sqlite3` (persistent, in `DATA_DIR`). Key =
   `(provider, capability, argsHash)`; TTL by data type (§3.2 table). The budget guard (the `usage`
-  ledger and its daily credit ceiling) was out of scope for M1, and the cache DB schema was designed
-  so that `usage` could FK onto the same `providers` registry without a migration (R-14); M2 added
-  it exactly there.
+  ledger and its daily credit ceiling) was out of scope for M1. The cache DB schema was designed so
+  that `usage` could FK onto the same `providers` registry without a migration (R-14). M2 added it
+  exactly there.
 - Hit/miss counters are visible in two places (§5.2/§9.3): (1) a structured line on **stderr**;
-  (2) a `_meta.cache` field in every tool response — not part of the zod-validated
+  (2) a `_meta.cache` field in every tool response. That field is not part of the zod-validated
   `structuredContent`, so the output schema does not grow.
 
 **Component: SSRF gate + rate limiter — NOW (M1)**
 
 - **Purpose:** the single point of outbound network access. `safeFetch()` checks the hostname of the
-  request, and of every redirect, against the allowlist of the **specific calling adapter** — not a
-  global merged list, so a bug in or compromise of one adapter grants no access to another
+  request, and of every redirect, against the allowlist of the **specific calling adapter**, not a
+  global merged list. A bug in or compromise of one adapter therefore grants no access to another
   adapter's hosts. The shared `assertAllowedHost()` primitive is transport-agnostic by design (for
   future non-HTTP transports such as gRPC), but only `safeFetch()` uses it today —
   `dash-platform`'s gRPC channel is never created (interface + fixture contract only, §3.2).
@@ -91,13 +91,13 @@
 
 - **Purpose:** implemented **as an ordinary `ProviderAdapter`** (`id: 'pg-history'`) rather than an
   ownerless client on the side, so it registers in the `providers` registry alongside the other
-  nine — a cache row with `provider='pg-history'` would otherwise violate the FK
+  nine. Without that registration, a cache row with `provider='pg-history'` would violate the FK
   `cache_entries.provider → providers(id)`. It opens a lazy SELECT-only connection (only when
   `ONCHAIN_PG_URL` is set **and** a history capability is called) to the `onchain` schema — the same
   schema n8n writes — serving `privacy.shielded_pool.history` and `platform.metrics.history`. There
   is no write path anywhere in the engine (R-12, R-27).
-- It is not the only history source: `platform-explorer` serves **its own** history over its REST
-  endpoints and comes first in the route (R-10, keyless, always available); `pg-history` is second
+- It is not the only history source. `platform-explorer` serves **its own** history over its REST
+  endpoints and comes first in the route (R-10, keyless, always available). `pg-history` is second
   by priority and available only when a DSN is present (route details in §3.2).
 
 **Component: Scheduler / Snapshotter-Signals — n8n + Postgres, permanently**
@@ -129,16 +129,17 @@
   - TASK-007/008/009, free tiers: `onchain_dex_volume` (DEX volume history, DeFiLlama),
     `onchain_token_holders` (holder list, Blockscout) and `onchain_chain_supply` (native-asset
     supply, blockchain.info — BTC only today).
-  - WI-49/WI-50, free tiers over the same DeFiLlama documents: `onchain_list_protocols` (the
-    protocol POPULATION on a chain, ranked by TVL or by 1d/7d/30d growth — the tool that removes the
-    need to know a slug before asking), `onchain_chain_tvl_history` and
-    `onchain_protocol_tvl_history` (daily TVL runs with the same `window`/`gapDays`/`truncated`
-    contract `onchain_dex_volume` publishes, produced by the same shaper).
+  - WI-49/WI-50, free tiers over the same DeFiLlama documents: `onchain_list_protocols`,
+    `onchain_chain_tvl_history` and `onchain_protocol_tvl_history`. `onchain_list_protocols` returns
+    the protocol POPULATION on a chain, ranked by TVL or by 1d/7d/30d growth — the tool that removes
+    the need to know a slug before asking. The other two are daily TVL runs with the same
+    `window`/`gapDays`/`truncated` contract `onchain_dex_volume` publishes, produced by the same
+    shaper.
   - WI-51, network activity: `onchain_gas_price` (routed `rpc-evm` → `blockscout`, so a node answers
-    where one is curated and the indexer covers the rest — two adapters on purpose, because L-6 was a
-    single-adapter capability that died with its vendor's auth change) and
-    `onchain_chain_transactions` (Blockscout stats). Active addresses are NOT served: no wired
-    provider publishes an activity-scoped address count.
+    where one is curated and the indexer covers the rest) and `onchain_chain_transactions`
+    (Blockscout stats). `onchain_gas_price` uses two adapters on purpose, because L-6 was a
+    single-adapter capability that died with its vendor's auth change. Active addresses are NOT
+    served: no wired provider publishes an activity-scoped address count.
   - **T-014** task 014-32b, DexScreener-backed and keyless: `onchain_pool_info` (ONE pool by pair
     address — the token CONTRACT ADDRESSES `onchain_active_pairs` never returns, closing L-15) and
     `onchain_token_pools` (the pools a token trades in, per chain or as a cross-chain SAMPLE).

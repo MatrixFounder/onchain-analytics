@@ -13,7 +13,7 @@
 токеном аутентифицируется без переиздания.
 
 **Why эта проверка — прямой признак корректности переноса.** Аутентификация читает
-`api_tokens.token_hash` (`docs/architectures/deployment.md:997` — подстрока
+`api_tokens.token_hash` (`docs/architectures/deployment.md:1001` — подстрока
 `on the new writer, without reissue`). Успех означает, что перенесены не строки вообще,
 а РАБОЧАЯ учётная запись.
 

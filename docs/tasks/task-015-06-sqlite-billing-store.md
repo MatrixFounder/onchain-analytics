@@ -38,7 +38,7 @@
 
 **Why writer живёт в `mcp-server`, а не в `core`.** `client_usage` несёт `principal_id` и
 `access_profile_id`, поэтому её store проектируется и пишется в этом пакете
-(`docs/architectures/data-model.md:1712` — подстрока `Package boundary, stated once here`).
+(`docs/architectures/data-model.md:1735` — подстрока `Package boundary, stated once here`).
 `packages/core` нового экспорта под эту задачу не получает.
 
 ### Один текст оператора на две оси
@@ -58,7 +58,7 @@ string): string {`.
 ### Резерв — атомарная транзакция в режиме `IMMEDIATE`
 
 `reserve()` исполняется внутри `db.transaction(fn).immediate()`
-(`docs/architectures/system-architecture.md:3999` — подстрока `db.transaction(fn).immediate()`).
+(`docs/architectures/system-architecture.md:4109` — подстрока `db.transaction(fn).immediate()`).
 
 Прецедент режима — вендорский гейт: `packages/core/src/cache/budget-store.ts:420` —
 `return attempt.immediate();`, с обоснованием на `packages/core/src/cache/budget-store.ts:289` —
@@ -94,7 +94,7 @@ RETURNING id, state;
 
 Пустой `RETURNING` означает, что существующая строка уже отвечает на этот `client_request_id` в
 любом из трёх состояний. Вызывающий читает её обратно и второй не пишет
-(`docs/architectures/data-model.md:1766` — подстрока `INSERT … ON CONFLICT (principal_id,
+(`docs/architectures/data-model.md:1789` — подстрока `INSERT … ON CONFLICT (principal_id,
 client_request_id) DO NOTHING`).
 
 **Why гонка разрешается ограничением хранилища, а не кодом обработчика.** R-5.5 называет носителем
@@ -116,7 +116,7 @@ RETURNING id;
 `settle` подставляет `'settled'` и пустую причину; `refund` подставляет `'refunded'` и имя класса.
 
 **Ноль совпадений — не ошибка.** Строка уже вышла из `reserved`, и первый завершивший победил
-(`docs/architectures/system-architecture.md:4278` — подстрока `Idempotent completion — first
+(`docs/architectures/system-architecture.md:4388` — подстрока `Idempotent completion — first
 completer wins`). Метод возвращает управление без броска.
 
 **Why охрана `WHERE state = 'reserved'` обязательна на обоих методах.** Без неё второй вызов

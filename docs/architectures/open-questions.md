@@ -45,12 +45,12 @@ Two known limits. Neither blocks anything; both are cheap to close next time the
 
 §4.2.1 deliberately makes registry freshness the **operator's** duty rather than the runtime's, for
 the sake of the offline gate and control over the security surface. The flip side is stated
-plainly: the registry goes stale exactly as fast as people forget about it, and the first symptom
+plainly. The registry goes stale exactly as fast as people forget about it, and the first symptom
 is "no such chain" — a message that looks like missing support rather than stale data.
 
 Options: (a) nothing, a manual run when needed; (b) a CI job that opens a PR with the registry
-diff — keeps human review of `rpcHosts` and removes the remembering; (c) surface registry age
-(`registrySyncedAt`, already returned by `onchain_list_chains`, §5.1.3) as a stderr warning at
+diff — keeps human review of `rpcHosts` and removes the remembering. Option (c): surface registry
+age (`registrySyncedAt`, already returned by `onchain_list_chains`, §5.1.3) as a stderr warning at
 startup once it crosses a threshold. (b) + (c) looks right, but this is a **process** decision, not
 an architectural one — it changes nothing in the design.
 
@@ -87,7 +87,7 @@ disagreeing** — there are **five**, and they resolve like this:
   precisely the source D6 turns merging on for FIRST (`privacy.shielded_pool.history`,
   `platform.metrics.history`), so a mislabel would land in the first merge we ship.
 - ~~**`trust` DEFAULT for `pg-history`.**~~ **CLOSED 2026-08-03 by owner decision (OD-5):
-  `community`** — deliberately the LOWEST rank, as a conservative PLACEHOLDER, so nothing is
+  `community`** — deliberately the LOWEST rank, as a conservative PLACEHOLDER. Nothing is
   over-trusted before the real per-row mechanism (rank taken from the row's own `source`) arrives in
   T-016. **Recorded as a placeholder with a scheduled replacement, not as a judgement about our
   own ledger** — the code comment must say so, or a future reader will "correct" it.
@@ -96,10 +96,12 @@ disagreeing** — there are **five**, and they resolve like this:
   written against "returns a value" _or_ "throws". Decision: a deadline **always throws**
   `CapabilityDeadlineExceededError`, naming both which sources answered and which were never asked;
   it never returns the surviving partial. Rationale is the H-1 doctrine
-  (`packages/core/src/adapters/registry.ts:659-671`, `* Once the moment passes, the walk refuses every source it has`): a deadline is a fact about OUR availability, and publishing it
-  as a fact about the DATA reports "no entity labels" for a sanctioned address whenever the paid
-  source merely failed to fit the budget. This is a deliberate deviation from the literal text of
-  ADR-002 D4 п.5, and R-156 obliges T-012 to amend the ADR rather than silently contradict it.
+  (`packages/core/src/adapters/registry.ts:659-671`,
+  `* Once the moment passes, the walk refuses every source it has`). A deadline is a fact about OUR
+  availability. Publishing it as a fact about the DATA reports "no entity labels" for a sanctioned
+  address whenever the paid source failed to fit the budget and nothing else went wrong. This is a
+  deliberate deviation from the literal text of ADR-002 D4 п.5, and R-156 obliges T-012 to amend
+  the ADR rather than silently contradict it.
 
 **Two mechanical obligations of the same commit** (recorded here so they are not lost between
 phases — both are cases where the code's own comments will otherwise outlive their truth):
@@ -128,13 +130,13 @@ them rather than discover them at the test.
   the `throttle` half is observable today.
 
   **RESOLVED 2026-08-03 by owner decision (OD-6): build the seam — add a `safeFetchImpl` deps key
-  alongside `fetchImpl`, mirroring the seam the rest of the adapter already uses**, so the contract
-  test asserts the invariant DIRECTLY on the transport. Rationale: D4 п.2 is a correctness
+  alongside `fetchImpl`, mirroring the seam the rest of the adapter already uses.** The contract
+  test then asserts the invariant DIRECTLY on the transport. Rationale: D4 п.2 is a correctness
   condition, not an optimisation, and H3 exists to make it mechanically enforceable for EVERY future
   paid adapter, not just today's `nansen`. **The reduced option — "state plainly that the guarantee
-  is enforced on the limiter path only" — is WITHDRAWN**, because a limiter-only test would look
-  like it checks the invariant while checking half of it, which is the failure mode AC-8 was amended
-  to forbid. If the seam turns out costlier than expected, that is an escalation, not a silent scope
+  is enforced on the limiter path only" — is WITHDRAWN.** A limiter-only test would look like it
+  checks the invariant while checking half of it, which is the failure mode AC-8 was amended to
+  forbid. If the seam turns out costlier than expected, that is an escalation, not a silent scope
   cut. Planned as deliverable work (type change + call-site update + the contract test) in
   `docs/PLAN.md` task 012-9.
 
@@ -154,15 +156,15 @@ them rather than discover them at the test.
 **`OQ-T012-5` — answered at Planning, 2026-08-03 (recorded here so this file's two lists agree).**
 The question was whether T-012 ships a working failing type-test for "merge cannot be declared on a
 `point` capability". **It does not, and the reason is a rule this project already applies
-everywhere: a test that cannot fail proves nothing.** The merge field does not exist yet, so there
-is literally nothing for such a test to catch. What T-012 ships instead: (a) the discriminated
-union, (b) the design intent in the manifest type's docstring, and (c) an executable **declaration
-guard** — a test that reads `capability-manifest.ts` and requires `CapabilityManifest` to stay a
+everywhere: a test must have an input on which it fails.** The merge field does not exist yet, so no
+input can make such a test fail. What T-012 ships instead: (a) the discriminated union, (b) the
+design intent in the manifest type's docstring, and (c) an executable **declaration guard**. That
+guard is a test that reads `capability-manifest.ts` and requires `CapabilityManifest` to stay a
 two-arm union, so it cannot be flattened back to an interface before T-013 arrives. The negative
 type-test is T-013's obligation, recorded in that docstring.
 
 **Scope of what the union buys today, stated precisely** (an earlier draft of this paragraph
-overstated it): both arms currently differ in **nothing but the `shape` literal**, so a merge field
+overstated it). Both arms currently differ in **nothing but the `shape` literal**, so a merge field
 added to the shared base would still be legal on `point`. The union does not make the constraint
 **hold** — it makes it **expressible**: T-013 adds the field to one arm and the constraint becomes a
 compile error at that moment, with no retyping. Adding `mergeKey?: never` to the `point` arm now was
@@ -183,29 +185,29 @@ and the date, in the style of `OQ-T012-2`/`3` above.
 eligibility? Decision: YES — `merge?: boolean`, a second, independent gate.** D5's literal text
 ("Маршрут собирает несколько источников, только если это явно объявлено **в его дескрипторе**")
 names the ROUTE's own descriptor, and `его` (its) has no other grammatical antecedent. Rejected the
-alternative (eligibility alone activates, R-183/AC-45's branch B) for two reasons — an earlier third
-("`capabilityManifests` is keyed per capability, so manifest-only activation cannot express 'merge on
-this route, not that one'") is WITHDRAWN: this same decision leaves multi-route capabilities out of
-scope, with no construction-time check enforcing per-route selectivity, refuting the reason it was
-meant to support. The two that stand: it is an UNBUDGETED third deviation from D5's text —
-R-181/AC-40 fix the changelog at exactly two deviations, found elsewhere in T-013's own design, and a
-third would go unrecorded; and UC-20 is phrased as an act the ROUTE performs ("активирует слияние на
-маршруте"), which branch B cannot even construct. R-183/AC-45 therefore takes branch A: a real
-constructor test, not a structural argument.
+alternative (eligibility alone activates, R-183/AC-45's branch B) for two reasons. An earlier third
+reason ("`capabilityManifests` is keyed per capability, so manifest-only activation cannot express
+'merge on this route, not that one'") is WITHDRAWN. This same decision leaves multi-route
+capabilities out of scope, with no construction-time check enforcing per-route selectivity, refuting
+the reason it was meant to support. The two that stand are these. First, it is an UNBUDGETED third
+deviation from D5's text — R-181/AC-40 fix the changelog at exactly two deviations, found elsewhere
+in T-013's own design, and a third would go unrecorded. Second, UC-20 is phrased as an act the ROUTE
+performs ("активирует слияние на маршруте"), which branch B cannot even construct. R-183/AC-45
+therefore takes branch A: a real constructor test, not a structural argument.
 
 **`OQ-T013-3` — what realizes the compiled conflict rank? Decision: reuse the route's existing
 `adapterIds` order** (equivalently, the de-duplicated `plan` array `resolve()` already builds for
 policy pairing) — no new rank table. `TC-GATE-02` (no reader of `.trust` outside `adapters/types.ts`)
 and R-180 (no read of `onchain.metrics.source_priority`) both rule out the two candidates OD-T013-2
-had already excluded; between the two that remained, a bespoke table would duplicate a fact
+had already excluded. Between the two that remained, a bespoke table would duplicate a fact
 `adapterIds` already states — the exact anti-pattern this project killed once already at `OQ-C`
 (`CapabilityRoute.chains` duplicating `chainSupport()`). The reuse narrows, rather than ignores, D9
-rule 3's "order and trust rank are independent axes, do not conflate them": the coupling here is
-one-directional (conflict rank READS `adapterIds`; nothing about conflict resolution ever writes
-back to spend order, so R-166 is unaffected code) and explicitly provisional — T-016 is where the
-REAL per-row trust-based rank (D9's `set`-segmentation, extended to `series`, R-179e) replaces it, so
-a from-scratch table today would be thrown away within one further task. The merge docstring states
-this narrowly, not as a general license to derive correctness rank from spend order.
+rule 3's "order and trust rank are independent axes, do not conflate them". The coupling here is
+one-directional: conflict rank READS `adapterIds`, and nothing about conflict resolution ever writes
+back to spend order, so R-166 is unaffected code. It is also explicitly provisional. T-016 is where
+the REAL per-row trust-based rank (D9's `set`-segmentation, extended to `series`, R-179e) replaces
+it, so a from-scratch table today would be thrown away within one further task. The merge docstring
+states this narrowly, not as a general license to derive correctness rank from spend order.
 
 **`OQ-T013-4` — where is `policy` evaluated on the merged path — per participant or per merged
 whole? Decision: per participant**, using the SAME `satisfies(policy, value, adapterId)` predicate
@@ -213,13 +215,13 @@ the non-merge path already applies to cache hits (`packages/core/src/adapters/re
 called from a new site rather than replaced. This is what R-182(d) requires as a regression
 (`entity.labels`'s `someElementHasAny` semantics untouched) and what keeps H-1's existing cache-hit
 application as the SAME code path a merge walk reuses. A participant whose answer fails `policy` is
-"answered" for R-164's three-state model (the states are about `fetch()`/`normalize()` outcome, not
-about policy) but contributes no points to the merged result — recorded in `tried`, not in
-`hadFailure`, not in `missingSources`. Both real T-013 routes carry no `policy` (`{kind:'any'}`), so
-this choice is unobservable in shipped scope (R-182b/c) — the equivalence test R-182(c) requires
-exists precisely because the choice still had to be made and stated, not left as two
-behaviourally-coincident readings that could silently diverge the day a merge route gets a real
-policy.
+"answered" for R-164's three-state model. The states are about `fetch()`/`normalize()` outcome, not
+about policy. Such a participant contributes no points to the merged result — recorded in `tried`,
+not in `hadFailure`, not in `missingSources`. Both real T-013 routes carry no `policy`
+(`{kind:'any'}`), so this choice is unobservable in shipped scope (R-182b/c). The equivalence test
+R-182(c) requires exists precisely because the choice still had to be made and stated. That choice
+was not left as two behaviourally-coincident readings that could silently diverge the day a merge
+route gets a real policy.
 
 ### T-013 task 013-6 (2026-08-09, Development) — the hour is the identity of a CROSS-PARTICIPANT slot, never of a point
 
@@ -284,18 +286,18 @@ fire between the two real participants, so the capability could not deliver its 
 
 So one participant reports the hour the vendor labelled the observation, and the other reports the
 moment the snapshotter got round to reading it. Equality to the MILLISECOND is a coincidence, not a
-property. Under the approved key, dedup would never have fired on live data: `identities_total`
+property. Under the approved key, dedup would never have fired on live data. `identities_total`
 would arrive in the merged series TWICE per hour — which is precisely the outcome `UC-11` names as
-the failure to exclude («дубликат точки от обоих источников»), and the whole reason the merge walk
-pays N round-trips instead of stopping at the first answer.
+the failure to exclude («дубликат точки от обоих источников»). That duplication is also the whole
+reason the merge walk pays N round-trips instead of stopping at the first answer.
 
 **Why no test saw it, and why the mutation protocol structurally could not.** Every merge fixture
 handed both participants the _same literal_ `ts`, so the collision was manufactured by the fixture
 rather than produced by the mechanism. `AC-23` asked for dedup proven «на реально пересекающейся
 паре `identities_total`» — the metric was real, the `ts` agreement was not. Mutating the key only
 ever confirms that the implemented key equals the specified key; it cannot question the
-specification. This is the sharper form of PLAN §0.9's own warning, and §0.9 did not go far enough:
-it warned about non-overlapping fixtures, not about fixtures that overlap only because the test
+specification. This is the sharper form of PLAN §0.9's own warning, and §0.9 did not go far enough.
+It warned about non-overlapping fixtures, not about fixtures that overlap only because the test
 author wrote the same number twice.
 
 **Decision (owner, 2026-08-07).** The key becomes `(metric, asset, Math.floor(ts / 3_600_000))`.
@@ -306,70 +308,82 @@ invention of this task: the project's own persistence layer already dedups on th
 against a stricter key than the database it reads from.
 
 **Recorded as an override rather than folded into an "align the docs" diff, deliberately** — the
-same discipline the `assertMergeParticipantsAreFree` override above states: an alignment and an
-override must not look the same in a diff, or an approved requirement is rewritten with no record
-and the next gate accepts the rewrite as agreement. R-161 keeps its original text visible in the
-amendment; the new clause is R-161(e).
+same discipline the `assertMergeParticipantsAreFree` override above states. An alignment and an
+override must not look the same in a diff. Otherwise an approved requirement is rewritten with no
+record, and the next gate accepts the rewrite as agreement. R-161 keeps its original text visible in
+the amendment; the new clause is R-161(e).
 
-**Scope.** Confined to the merge dedup key. `Snapshot.ts` itself is unchanged everywhere; the
-persistence layer is untouched (the engine never writes to it); the single-winner walk has no dedup
-key at all; and the conflict-resolution rule (rank, never a value comparison — R-162/R-167) is
+**Scope.** Confined to the merge dedup key. `Snapshot.ts` itself is unchanged everywhere. The
+persistence layer is untouched (the engine never writes to it). The single-winner walk has no dedup
+key at all. The conflict-resolution rule (rank, never a value comparison — R-162/R-167) is
 unaffected, since bucketing changes WHICH points collide, never HOW a collision is settled.
 
 ### T-013 task 013-3 (2026-08-06, Development) — `perSourceCache` covers every ANSWERED participant, not only contributors
 
-**A deviation from four sentences of the delivered architecture text, recorded as a decision — not
-a document alignment.** `docs/architectures/system-architecture.md:982-983`, `happens on branch (a) when every participant answered with zero` ("`perSourceCache` carries one entry per
-member of `sources`, same set, so it is never populated for a non-contributor either"), `:992`
-("the granular per-contributor truth"), `docs/architectures/interfaces.md:474-481`, `is this tool's OWN shape, not the shared` (the 14th tool's own `_meta.cache`
-bullet, "which adapter, which status" per contributor) and `docs/architectures/system-architecture.md:949-951`, `satisfying answer; the merge loop never returns mid-walk — for` ("or
-into neither (answered but policy-excluded, tracked only in `tried`)", coupling `perSourceCache` to
-the same `satisfied` condition as `sources`/the dedup `Map` — found by roast round 1, B-4, not in
-the first draft of this entry) all state the same narrower rule: `perSourceCache` mirrors `sources`
-1:1, i.e. contributors only. **Search scope, stated because a count without one is indistinguishable
-from a complete one (roast round 1's own lesson, B-4):** every `perSource`/`perSourceCache`
+**A deviation from four sentences of the delivered architecture text, recorded as a decision — not a
+document alignment.** The first two are `docs/architectures/system-architecture.md:1013-1014`,
+`happens on branch (a) when every participant answered with zero` ("`perSourceCache` carries one
+entry per member of `sources`, same set, so it is never populated for a non-contributor either"),
+and `:1023` ("the granular per-contributor truth"). The third is
+`docs/architectures/interfaces.md:474-481`, `is this tool's OWN shape, not the shared` (the 14th
+tool's own `_meta.cache` bullet, "which adapter, which status" per contributor). The fourth is
+`docs/architectures/system-architecture.md:980-982`,
+`satisfying answer; the merge loop never returns mid-walk — for` ("or into neither (answered but
+policy-excluded, tracked only in `tried`)"). It couples `perSourceCache` to the same `satisfied`
+condition as `sources`/the dedup `Map`, and was found by roast round 1, B-4 — not in the first draft
+of this entry. All four state the same narrower rule: `perSourceCache` mirrors `sources` 1:1, i.e.
+contributors only. **Search scope, stated because a count without one is indistinguishable from a
+complete one (roast round 1's own lesson, B-4).** The scope is every `perSource`/`perSourceCache`
 occurrence in `system-architecture.md`, `interfaces.md`, `data-model.md` and `version-history.md`
-(`rg -n "perSource" docs/architectures/*.md`), each read in context for a membership claim.
-`docs/architectures/data-model.md:242-264`, `'s return shape gains three OPTIONAL fields, all populated ONLY` does **not** carry this rule — it names `perSourceCache`'s shape
-(`{adapterId, cache, ageMs?}[]`) but never its membership. `docs/architectures/version-history.md:36-38`, `gains three optional fields** (` states only
-that the three fields are "populated ONLY on a merge walk", without saying WHO specifically
-populates `perSourceCache` — neutral. `docs/architectures/system-architecture.md:648`, `perSourceCache?: { adapterId: string; cache: 'hit' | 'miss';` (the code-block listing) defers
-to "Merge mechanism below" rather than asserting a rule itself — neutral.
+(`rg -n "perSource" docs/architectures/*.md`), each read in context for a membership claim. In
+`docs/architectures/data-model.md:262-284`,
+`'s return shape gains three OPTIONAL fields, all populated ONLY` does **not** carry this rule — it
+names `perSourceCache`'s shape (`{adapterId, cache, ageMs?}[]`) but never its membership. In
+`docs/architectures/version-history.md:36-38`, `gains three optional fields** (` states only that
+the three fields are "populated ONLY on a merge walk", without saying WHO specifically populates
+`perSourceCache` — neutral. In `docs/architectures/system-architecture.md:668`,
+`perSourceCache?: { adapterId: string; cache: 'hit' | 'miss';` (the code-block listing) defers to
+"Merge mechanism below" rather than asserting a rule itself — neutral.
 
 **The full tally, added in roast round 2 so "read and found neutral" is distinguishable from "not
-reached":** at the commit this entry was written against, the scope held **13** occurrences —
+reached".** At the commit this entry was written against, the scope held **13** occurrences —
 `data-model.md` 1, `version-history.md` 1, `system-architecture.md` 7, `interfaces.md` 4. Four are
-the narrow sentences marked in place; three are the neutral ones named above; the remaining **six**
-were read and carry no membership claim either — `system-architecture.md` ×3 (the `'hit'`-aggregate
-rule, which constrains the VALUE not the membership; the `ResolveSuccess` extension sentence; the
-14th-tool reader sentence) and `interfaces.md` ×3 (the `ResolveSuccess`-fields bullet, the
-`_meta.cache` shape literal, and the "built directly from" clause). 4 + 3 + 6 = 13, none unread.
-Note the count moves as this very entry grows: measured again in round 2 against the working tree it
-is 31, the difference being this record's own 13 mentions and the five in-place marks. Same scope,
-different tree — which is why the tree, not just the scope, is named here. None of the four is edited
-beyond its own in-place mark; `data-model.md` is left unedited entirely.
+the narrow sentences marked in place. Three are the neutral ones named above. The remaining **six**
+were read and carry no membership claim either. In `system-architecture.md`, ×3: the
+`'hit'`-aggregate rule, which constrains the VALUE not the membership; the `ResolveSuccess`
+extension sentence; the 14th-tool reader sentence. In `interfaces.md`, ×3: the
+`ResolveSuccess`-fields bullet, the `_meta.cache` shape literal, and the "built directly from"
+clause. The arithmetic: 4 + 3 + 6 = 13, none unread. Note the count moves as this very entry grows:
+measured again in round 2 against the working tree it is 31, the difference being this record's own
+13 mentions and the five in-place marks. Same scope, different tree — which is why the tree, not
+just the scope, is named here. None of the four is edited beyond its own in-place mark;
+`data-model.md` is left unedited entirely.
 
-**Why the wider reading.** R-174(c) (translated from the Russian original, `docs/tasks/task-013-series-merge-and-history-tool.md:565-567`, `случая СИНТЕЗИРУЕТ свою причину, а не читает`):
-"`resolution.cache` — a merged answer does not collapse to one `'hit'`/`'miss'`: if one participant
-is from cache and another is from network, both facts are reflected — the concrete shape is
-Architecture's call, the requirement fixes ONLY that the fact is not lost." A cache status is a
-fact about the ANSWER, not about the CONTRIBUTION — and `sources`
-already, correctly, excludes a participant that answered with zero points (R-174(a)). Under the
-narrower, contributors-only reading, that same zero-point participant also vanishes from
-`perSourceCache`, and if a second participant contributed from the network, `_meta.cache` then
-reports exactly ONE participant with ONE `'miss'` — silently erasing that the first participant was
-ever asked, or that it answered from cache. That is exactly the fact R-174(c) requires never
-disappears.
+**Why the wider reading.** R-174(c) (translated from the Russian original,
+`docs/tasks/task-013-series-merge-and-history-tool.md:565-567`,
+`случая СИНТЕЗИРУЕТ свою причину, а не читает`) reads as follows. "`resolution.cache` — a merged
+answer does not collapse to one `'hit'`/`'miss'`: if one participant is from cache and another is
+from network, both facts are reflected". The quotation continues: "— the concrete shape is
+Architecture's call, the requirement fixes ONLY that the fact is not lost." A cache status is a fact
+about the ANSWER, not about the CONTRIBUTION — and `sources` already, correctly, excludes a
+participant that answered with zero points (R-174(a)). Under the narrower, contributors-only
+reading, that same zero-point participant also vanishes from `perSourceCache`. If a second
+participant contributed from the network, `_meta.cache` then reports exactly ONE participant with
+ONE `'miss'` — silently erasing that the first participant was ever asked, or that it answered from
+cache. That is exactly the fact R-174(c) requires never disappears.
 
-**The composition, named precisely.** UC-19 (`docs/tasks/task-013-series-merge-and-history-tool.md:737-744`, `Обе точки присутствуют раздельно, каждая со своей истинной`) supplies the core fact this
-argument turns on — `platform-explorer` answering an **empty array**, which is a legitimate
-"answered" outcome, not a failure — but literal UC-19 has `pg-history` entirely UNAVAILABLE (no
+**The composition, named precisely.** UC-19
+(`docs/tasks/task-013-series-merge-and-history-tool.md:737-744`,
+`Обе точки присутствуют раздельно, каждая со своей истинной`) supplies the core fact this argument
+turns on — `platform-explorer` answering an **empty array**, which is a legitimate "answered"
+outcome, not a failure. But literal UC-19 has `pg-history` entirely UNAVAILABLE (no
 `ONCHAIN_PG_URL`) and THROWS `CapabilityUnavailableError` (R-164(c)), so it never reaches a
 `_meta.cache`-bearing success at all. The composition that actually exercises `perSourceCache`'s
-membership rule is UC-19's own participants under a wider precondition: `ONCHAIN_PG_URL`
-**configured**, `platform-explorer` still answers `[]` (served from ITS OWN cache — a `'hit'`),
-and `pg-history` additionally answers with real points (a `'miss'`, fresh from the network) — the
-same "one empty, one non-empty" shape `docs/architectures/system-architecture.md:977`, `names every participant whose points are actually present in` ("composition TASK §1.5 names as
+membership rule is UC-19's own participants under a wider precondition. `ONCHAIN_PG_URL` is
+**configured**, `platform-explorer` still answers `[]` (served from ITS OWN cache — a `'hit'`), and
+`pg-history` additionally answers with real points (a `'miss'`, fresh from the network). That is the
+same "one empty, one non-empty" shape `docs/architectures/system-architecture.md:1008`,
+`names every participant whose points are actually present in` ("composition TASK §1.5 names as
 ordinary") already uses for `sources`'s own CONTRIBUTORS rule, with a cache-status axis added. On
 that composition: `sources: ['pg-history']` (correct, unaffected by this decision) while the
 narrower `perSourceCache` reading would report only `[{adapterId: 'pg-history', cache: 'miss'}]` —
@@ -378,10 +392,10 @@ reading ships
 `[{adapterId: 'platform-explorer', cache: 'hit', ...}, {adapterId: 'pg-history', cache: 'miss'}]`.
 
 **Marked in place, not only recorded here.** All four named sentences carry a one-line, in-place
-mark next to the literal original text: the two at `:982-983`/`:992` share ONE paragraph
-immediately after the "`CapabilityResolution` shape" block they sit in; `:949-951` (found later,
+mark next to the literal original text. The two at `:982-983`/`:992` share ONE paragraph
+immediately after the "`CapabilityResolution` shape" block they sit in. `:949-951` (found later,
 roast round 1, B-4) gets its OWN separate paragraph immediately after the earlier procedural block
-IT sits in — a different location in the same file, not the same mark; `interfaces.md` gets a new
+IT sits in — a different location in the same file, not the same mark. `interfaces.md` gets a new
 bullet immediately after `:474-481` — the same technique PLAN §9.3 applies to the two D5 fragments
 (footnote beside literal text, nothing deleted or rewritten).
 
@@ -389,16 +403,17 @@ bullet immediately after `:474-481` — the same technique PLAN §9.3 applies to
 under `### T-012 (2026-08-04, Development)` — **below** this entry, not above, and note the date
 qualifier is load-bearing: there are two `### T-012` headings in this file. Line number deliberately
 not pinned here after
-this same entry's OWN citation to it went stale twice in one editing session, roast round 1, C-1;
-quote it to find it), and why it covers less than it looks like.** That earlier entry refuted an
+this same entry's OWN citation to it went stale twice in one editing session, roast round 1, C-1.
+Quote it to find it), and why it covers less than it looks like.** That earlier entry refuted an
 ARGUMENT for a design decision while stating explicitly that the DECISION and the DELIVERED shape
-both stood, and no architecture amendment was required. This case is not that: once the merge walk
-(013-4) populates `perSourceCache`, `docs/architectures/system-architecture.md:982-983`, `happens on branch (a) when every participant answered with zero` becomes literally false about
-the shipped tree, not merely under-argued — which is why the text is marked in place rather than
-left to this registry entry alone.
+both stood, and no architecture amendment was required. This case is not that. Once the merge walk
+(013-4) populates `perSourceCache`, `docs/architectures/system-architecture.md:1013-1014`,
+`happens on branch (a) when every participant answered with zero` becomes literally false about
+the shipped tree — a false statement, not a weak argument. That is why the text is marked in place
+rather than left to this registry entry alone.
 
 **Scope.** Confined to `perSourceCache`'s membership rule. `sources` — CONTRIBUTORS, not
-"answered" (`docs/architectures/system-architecture.md:973-979`, `sibling citations found nearby (see the task's own review`, opens "`CapabilityResolution` shape... corrected
+"answered" (`docs/architectures/system-architecture.md:1004-1010`, `sibling citations found nearby (see the task's own review`, opens "`CapabilityResolution` shape... corrected
 after review: `sources` is CONTRIBUTORS") — is unaffected; so are `source`'s two-tier fallback
 rule, `cache`'s two-literal type (R-175b forbids widening it), and the 11 existing tools'
 `_meta.cache` (R-175).
@@ -433,19 +448,34 @@ the H-1 doctrine, `packages/core/src/adapters/registry.ts:1661-1676`, `// answer
 TASK-008.
 
 **Reading B — the pre-check's own rationale governs, and the return is a violation.** Task 012-8 put
-the deadline pre-check **above** the cache read on the stated grounds that a deadline means "after
-this moment we do not answer", not "after this moment we do not go to the network", because a caller
+the deadline pre-check **above** the cache read. The stated grounds: a deadline means "after this
+moment we do not answer", not "after this moment we do not go to the network", because a caller
 cannot predict the second. Answering at 139 ms against a 20 ms deadline contradicts exactly that.
 Source: the pre-check placement decision, recorded in `system-architecture.md` and in
 `registry.ts`'s own comment.
 
 **What each resolution costs.**
 
-| Resolution                            | Cost                                                                                                                                                                                                                                                                        |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Keep today's behaviour (A wins)       | ADR-002's D4 changelog entry stays narrowed to "expiry throws when it prevented or aborted a source"; the deadline is documented as a bound on **asking**, not on **answering**; a future network client (ADR-003 / T-014) inherits a ceiling it cannot rely on for latency |
-| Make expiry throw here too (B wins)   | The H-1 return becomes conditional on the clock, so "everyone was asked and nobody has data" stops being reportable once a walk runs long; the TASK-008 regression that H-1 closed needs re-checking against the new ordering                                               |
-| Return the answer AND signal lateness | A third outcome shape; no consumer exists for it in T-012, and ADR-003 D5 has not been written against it                                                                                                                                                                   |
+| Resolution                            | Cost                                                                                                      |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Keep today's behaviour (A wins)       | 3 costs — listed below                                                                                    |
+| Make expiry throw here too (B wins)   | 2 costs — listed below                                                                                    |
+| Return the answer AND signal lateness | A third outcome shape; no consumer exists for it in T-012, and ADR-003 D5 has not been written against it |
+
+**Cost detail, by resolution.**
+
+**Keep today's behaviour (A wins).**
+
+- ADR-002's D4 changelog entry stays narrowed to "expiry throws when it prevented or aborted a
+  source".
+- The deadline is documented as a bound on **asking**, not on **answering**.
+- A future network client (ADR-003 / T-014) inherits a ceiling it cannot rely on for latency.
+
+**Make expiry throw here too (B wins).**
+
+- The H-1 return becomes conditional on the clock, so "everyone was asked and nobody has data" stops
+  being reportable once a walk runs long.
+- The TASK-008 regression that H-1 closed needs re-checking against the new ordering.
 
 **Do not resolve it by swapping the two branches.** Subordinating H-1 to the clock is Reading B
 applied silently, and H-1 cost a full adversarial iteration to establish.
@@ -474,9 +504,10 @@ project has already ruled against twice — a healed metric that hides the vendo
 diagnostic nothing reads.
 
 **The branch is now covered**, as this record required ("the test is written together with the
-decision, not before it"): `TC-OQ6-a…d` in `test/registry.deadline.test.ts` pin the return, the mark,
-the absence of the mark inside budget, and the untouched `hadFailure` path. Both directions were
-mutation-checked — removing the stamp fails TC-OQ6-b, implementing Reading B fails TC-OQ6-a and -b.
+decision, not before it"). `TC-OQ6-a…d` in `test/registry.deadline.test.ts` pin the return, the
+mark, the absence of the mark inside budget, and the untouched `hadFailure` path. Both directions
+were mutation-checked — removing the stamp fails TC-OQ6-b, implementing Reading B fails TC-OQ6-a and
+-b.
 
 **What this does NOT license.** Reading B's cost is still real and is now the accepted one: a caller
 cannot use `deadlineMs` as a latency contract. When ADR-003 makes the engine network-facing, its
@@ -496,11 +527,15 @@ working tree on 2026-08-04, not carried from the plan.
 actual `normalize()` return rather than its capability name; the per-row evidence lives beside each
 row in `packages/core/src/capability-manifest.ts` as an `AUDIT:` comment. Result:
 
-| `shape`  | Capabilities                                                                                                                                                                                                                    |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `point`  | `token.price`, `token.metadata`, `protocol.tvl`, `chain.tvl`, `chain.supply`, `privacy.shielded_pool`, `platform.identities`, `platform.contracts`, `platform.documents`, `platform.credits`, `smart-money.flows`, `token.risk` |
-| `set`    | `pairs.active`, `pool.info`, `wallet.balances.native`, `token.holders`, `entity.labels`                                                                                                                                         |
-| `series` | `dex.volume.history`, `privacy.shielded_pool.history`, `platform.metrics.history`                                                                                                                                               |
+| `shape`  | Capabilities                                                                            |
+| -------- | --------------------------------------------------------------------------------------- |
+| `point`  | 12 capabilities — named below the table                                                 |
+| `set`    | `pairs.active`, `pool.info`, `wallet.balances.native`, `token.holders`, `entity.labels` |
+| `series` | `dex.volume.history`, `privacy.shielded_pool.history`, `platform.metrics.history`       |
+
+**`point` — the 12 capabilities.** `token.price`, `token.metadata`, `protocol.tvl`, `chain.tvl`,
+`chain.supply`, `privacy.shielded_pool`, `platform.identities`, `platform.contracts`,
+`platform.documents`, `platform.credits`, `smart-money.flows`, `token.risk`.
 
 **Where the plan's hypotheses met the fact.** All ten hypotheses the plan stated were CONFIRMED, and
 two of them only because the audit read code instead of names — which is the part worth keeping:
@@ -513,18 +548,19 @@ two of them only because the audit read code instead of names — which is the p
   said `point`; its content is a `ts`-sorted, day-bucketed, de-duplicated run. This is why the
   classification rule recorded in the manifest is about ordering by `ts`, not about arrays.
 - The two the plan deliberately left "to be confirmed" — `smart-money.flows` and `token.risk` —
-  both resolved to `point`: one record about one token, whose embedded arrays (`topHolders[]`, the
-  two indicator arrays) are enrichment of the subject rather than peer subjects.
+  both resolved to `point`. Each is one record about one token, whose embedded arrays
+  (`topHolders[]`, the two indicator arrays) are enrichment of the subject rather than peer
+  subjects.
 
 **OQ-T012-2 / OQ-T012-3 — verified, not reopened.** Both were closed at Planning by owner decision
 OD-5 (2026-08-03). Checked against the tree: `platform-explorer` → `trust: 'authoritative'`
 (`packages/core/src/providers.config.ts:314`, `trust: 'authoritative',`) and `pg-history` → `trust: 'community'` (`:332`), each carrying the
-decision's own reasoning in place, and the `pg-history` comment opens with "**PLACEHOLDER with an
+decision's own reasoning in place. The `pg-history` comment opens with "**PLACEHOLDER with an
 assigned replacement — do NOT 'correct' this to `authoritative`**", which is the wording OD-5
 required. The document and the code agree.
 
 **OQ-T012-5 — the decision, and what shipped.** There is **no** executable failing type-test for
-"merge cannot be declared on a `point` capability" in T-012, and its absence is the decision, not an
+"merge cannot be declared on a `point` capability" in T-012. Its absence is the decision, not an
 omission: the merge field does not exist, so such a test has no input on which it can fail. What
 shipped instead is the discriminated union, the intent in the manifest type's docstring, and an
 executable **declaration guard** (`test/capability-manifest.test.ts`) that reads
@@ -538,7 +574,7 @@ type-test is **T-013's obligation**, recorded in that docstring.
    `NansenEndpointDeps` (`packages/core/src/adapters/nansen/endpoints.ts:98`, `safeFetchImpl?: typeof safeFetch;`) and `NansenBudgetGateDeps` (`packages/core/src/adapters/nansen/budget-gate.ts:257`, `safeFetchImpl?: typeof safeFetch;`), each
    defaulting to the real `safeFetch`. The reduced variant ("declare the guarantee bounded by the
    limiter path only") was **withdrawn at Planning and does not appear in the delivered work as a
-   chosen option** — it is recorded here only as a rejected alternative. The H3 contract test
+   chosen option.** It is recorded here only as a rejected alternative. The H3 contract test
    (`test/nansen-deadline-boundary.test.ts`, TC-CONTRACT-01/02) now asserts on BOTH seams: the
    transport, where the money is spent, and the limiter.
 2. **`budgetMeta()` — the provider id is threaded, so the check became real.** The function takes a
@@ -556,38 +592,41 @@ type-test is **T-013's obligation**, recorded in that docstring.
 `platform.*` capabilities.** `system-architecture.md`'s "`deadlineMs`/`paidLegMs` by capability"
 table put these five in the "≤2 free adapters in sequence" tier at ~30 000 ms. The delivered
 manifest assigns **15 000 ms**. Derivation: the second adapter of those routes is `dash-platform`,
-whose `isAvailable()` is unconditionally false, so it makes **zero** network attempts and adds zero
-to the envelope — the route is single-live-adapter in fact, which is the ~15 000 tier. **Condition
+whose `isAvailable()` is unconditionally false. It therefore makes **zero** network attempts and
+adds zero to the envelope — the route is single-live-adapter in fact, which is the ~15 000 tier.
+**Condition
 for reverting: a live gRPC transport for `dash-platform`** (the backlog item at the top of this
 file). On the day it lands, these five rows return to the two-adapter tier and each needs a fresh
 derivation record beside it (R-149). Recorded as an override rather than folded into an "align the
-docs" diff, deliberately: an alignment and an override must not look the same in a diff, or the
-approved number is rewritten with no record and the next gate accepts the rewrite as agreement.
+docs" diff, deliberately. An alignment and an override must not look the same in a diff. Otherwise
+the approved number is rewritten with no record, and the next gate accepts the rewrite as agreement.
 
 **A counterexample to `data-model.md` §M-6's ARGUMENT — and the exact boundary of what it refutes.**
-M-6 argues that only the manifest map needs to be injectable because "there is no scenario where a
-test needs a DIFFERENT policy dictionary — only a route referencing a `kind` that does not exist in
-the real one". The scenario exists: the M-1 fail-open guard (now `test/policy-fail-open.test.ts`)
-needs a predicate that **throws**, and no such `kind` is in the real dictionary — nor should one
-ever be, since a policy class whose whole behaviour is to throw is not a policy anybody would
-route. **What is refuted is the ARGUMENT, not the DECISION.** M-6's decision — the class dictionary
-stays a module, not a sixth constructor parameter — **stands**: `vi.mock('../src/adapters/policy.js')`
-in that one file covers the need, the production surface is untouched, and **no architecture
-amendment is required**. This distinction is the whole reason the entry exists: read as a refuted
-decision, it invites a sixth constructor parameter nobody decided to add.
+M-6 argues that only the manifest map needs to be injectable. The ground it gives: "there is no
+scenario where a test needs a DIFFERENT policy dictionary — only a route referencing a `kind` that
+does not exist in the real one". The scenario exists: the M-1 fail-open guard (now
+`test/policy-fail-open.test.ts`) needs a predicate that **throws**, and no such `kind` is in the
+real dictionary. Nor should one ever be: a policy class whose whole behaviour is to throw is not a
+policy anybody would route. **What is refuted is the ARGUMENT, not the DECISION.** M-6's decision —
+the class dictionary stays a module, not a sixth constructor parameter — **stands**.
+`vi.mock('../src/adapters/policy.js')` in that one file covers the need, the production surface is
+untouched, and **no architecture amendment is required**. This distinction is the whole reason the
+entry exists: read as a refuted decision, it invites a sixth constructor parameter nobody decided to
+add.
 
 **Found while proving AC-8, and recorded because it changes how a published envelope should be
-read: the 140 s cancellable envelope for `entity.labels` is a sum of two INDEPENDENT worst cases and
+read. The 140 s cancellable envelope for `entity.labels` is a sum of two INDEPENDENT worst cases and
 is not jointly realisable under the 60 s ceiling.** PLAN §0.2 derives it as 50 000 (the free
 `blockscout` attempt: `MAX_WAIT_MS` + 4 × 5 000) plus 90 000 (the `/account` resync: `MAX_WAIT_MS` +
 4 × 15 000). For both limiter halves to be served, 60 000 ms of limiter waiting must fit inside a
-60 000 ms ceiling with all eight transport hops still to come — and the limiter does not partially
-wait: with 10 000 ms left and a 30 000 ms backlog it refuses UP FRONT with `DeadlineWouldExceedError`
-(`net/rate-limit.ts`, the `MIN_POST_WAIT_REMAINDER_MS` branch), which by design is not a deadline
-hit, so such a walk ends as `CapabilityUnavailableError`. The AC-8 case therefore scripts 110 000 ms of cancellable want
-(`test/entity-labels-deadline-arithmetic.test.ts`) and observes the ceiling cutting 45 000 ms of it.
-Nothing in the code is wrong; the published envelope is an upper bound over independent legs, and
-reading it as "a single run that spends 140 s cancellably" is what does not hold.
+60 000 ms ceiling with all eight transport hops still to come. The limiter does not partially wait:
+with 10 000 ms left and a 30 000 ms backlog it refuses UP FRONT with `DeadlineWouldExceedError`
+(`net/rate-limit.ts`, the `MIN_POST_WAIT_REMAINDER_MS` branch). By design that refusal is not a
+deadline hit, so such a walk ends as `CapabilityUnavailableError`. The AC-8 case therefore scripts
+110 000 ms of cancellable want (`test/entity-labels-deadline-arithmetic.test.ts`) and observes the
+ceiling cutting 45 000 ms of it. Nothing in the code is wrong; the published envelope is an upper
+bound over independent call stages, and reading it as "a single run that spends 140 s cancellably"
+is what does not hold.
 
 ### WI-37 (2026-08-05) — `deadlineMs` is now usable as a T-014 admission-control input
 
@@ -597,44 +636,44 @@ and T-014/ADR-003 is where the consequence lands.
 **The state until 2026-08-05.** The manifest declared a `deadlineMs` for all 20 capabilities, and
 two of the twelve adapters read the third `fetch(cap, args, deadlineAtMs)` argument. On the other
 16 capabilities the ceiling bounded the NUMBER OF SOURCES the registry would still ask, not the
-DURATION of the attempt already in flight: an issued request ran its own hop timeout out in full, and
-a limiter wait stayed capped only by `MAX_WAIT_MS = 30_000` — twice the ceiling of the eight
+DURATION of the attempt already in flight. An issued request ran its own hop timeout out in full,
+and a limiter wait stayed capped only by `MAX_WAIT_MS = 30_000` — twice the ceiling of the eight
 capabilities on the ~15 s tier. Sanctioned by R-140e as staging, but it made the number unsafe as a
-PROMISE: a network-facing server that accepted a call on the strength of its declared ceiling would
+PROMISE. A network-facing server that accepted a call on the strength of its declared ceiling would
 have been declaring a bound it did not provide.
 
 **Now.** 10 of 12 adapters read the deadline and forward it unchanged to the limiter and to their
-transport; the two that do not are M1 stubs that spend no time at all (`isAvailable()` unconditionally
-false, `fetch()` throws), so the ceiling is enforced on **20 of 20** capabilities. The figures are
-re-derived on every test run — `capability-manifest.test.ts`'s TC-F5-GATE from the adapter sources,
-`deadline-uptake.test.ts` from behaviour, once per adapter.
+transport. The two that do not are M1 stubs that spend no time at all (`isAvailable()`
+unconditionally false, `fetch()` throws). The ceiling is therefore enforced on **20 of 20**
+capabilities. The figures are re-derived on every test run — `capability-manifest.test.ts`'s
+TC-F5-GATE from the adapter sources, `deadline-uptake.test.ts` from behaviour, once per adapter.
 
 **What this licenses, and what it does not.** T-014 may use `deadlineMs` as an admission-control
-input **on a free-only route**: the engine now spends no more than the ceiling on the cancellable
+input **on a free-only route**. The engine now spends no more than the ceiling on the cancellable
 part of a call, and on those routes the cancellable part is the whole call.
 
 **On the three paid capabilities it is only half the number, and the other half has no reader.**
-`entity.labels`, `smart-money.flows` and `token.risk` reach `nansen`, where nothing after
-`checkAndReserve()` receives a deadline (H3) — deliberately, since cancelling there means paying and
+The capabilities `entity.labels`, `smart-money.flows` and `token.risk` reach `nansen`. Nothing after
+`checkAndReserve()` receives a deadline there (H3), deliberately: cancelling there means paying and
 not receiving. The bound an admission controller must reserve is `deadlineMs + (paidLegMs ?? 0)`:
-60_000 + 270_000 ≈ **330_000** for `entity.labels`, against the 60_000 a naive reading gives. Today
-`paidLegMs` has no runtime consumer at all — nothing under `packages/*/src` reads it, and its only
-readers are tests (the WI-28 documentation gate, TC-UNIT-06 in `capability-manifest.test.ts`, and
-`entity-labels-deadline-arithmetic.test.ts`) — and it does not appear in `interfaces.md`, so a client
-cannot learn the second number exists. **T-014 owns
-both**: reading the pair, and putting it on the wire. Recorded here rather than in the manifest
-because it is a gap in what the ENGINE PUBLISHES, not in what it enforces.
+60_000 + 270_000 ≈ **330_000** for `entity.labels`, against the 60_000 that reading `deadlineMs`
+alone gives. Today `paidLegMs` has no runtime consumer at all: nothing under `packages/*/src` reads
+it. Its only readers are tests — the WI-28 documentation gate, TC-UNIT-06 in
+`capability-manifest.test.ts`, and `entity-labels-deadline-arithmetic.test.ts`. It does not appear
+in `interfaces.md`, so a client cannot learn the second number exists. **T-014 owns both**: reading
+the pair, and putting it on the wire. Recorded here rather than in the manifest because it is a gap
+in what the ENGINE PUBLISHES, not in what it enforces.
 
-It also does
-**not** turn the ceiling into a latency contract — OQ-T012-6 above resolved that a walk in which every
-source answered returns its answer past the ceiling and marks the overrun, so the bound is on
-SPENDING, not on the moment of delivery. A network client still needs its own timeout. The two
-statements are compatible and are easy to conflate, which is why both are on this page.
+It also does **not** turn the ceiling into a latency contract. OQ-T012-6 above resolved that a walk
+in which every source answered returns its answer past the ceiling and marks the overrun. The bound
+is therefore on SPENDING, not on the moment of delivery. A network client still needs its own
+timeout. The two statements are compatible and are easy to conflate, which is why both are on this
+page.
 
 **Condition for revisiting.** A thirteenth adapter, or a stub that grows a transport: either enters
-the gate's population automatically, and the manifest rows it routes go red until it reads the
-deadline. The `**DECLARED, not enforced today**` marker stays defined in `capability-manifest.ts` for
-that day, unused today on purpose.
+the gate's population automatically, and the manifest rows it routes fail the gate until it reads
+the deadline. The `**DECLARED, not enforced today**` marker stays defined in
+`capability-manifest.ts` for that day, unused today on purpose.
 
 ### T-012 (2026-08-03) — OQ-C, and a self-contradiction found in ADR-002's own D9 staging
 
@@ -642,10 +681,10 @@ that day, unused today on purpose.
 by the router (`packages/core/src/adapters/registry.ts:234-238`, `, which for a negative entry is the wrong`, narrowing `matching` routes) but set by ZERO of the
 21 entries in `providers.config.ts` — re-measured 2026-08-03, the identical result TASK-006 and
 ADR-002 itself already recorded. T-012 removes the field from `CapabilityRoute` together with the
-`registry.ts` filter that read it, per the escape hatch ADR-002 D2 itself specifies: **if
+`registry.ts` filter that read it, per the escape hatch ADR-002 D2 itself specifies. **If
 Development's construction-time audit of all 21 routes finds one that genuinely needs to narrow
 chains BELOW what `chainSupport()` already expresses, the field returns with that route named as
-the consumer** — its absence is not assumed, it is checked (a compile-time type-removal test,
+the consumer.** Its absence is not assumed, it is checked (a compile-time type-removal test,
 TASK.md R-139d), and it does not return "just in case".
 
 **ADR-002's own "Влияние на этапы" table contradicts its own OQ-B closure about where D9 lands.**
@@ -658,20 +697,22 @@ Two passages of the SAME document disagree on `trust`'s (D9) implementation stag
 
 **Resolution (owner, 2026-08-03): the later, more specific formulation governs.** `trust` is a
 declare-only field in T-012 with zero consumer logic (system-architecture.md, "Source trust —
-declare-only"); full inclusion stays T-016. This document does not silently pick a reading: ADR-002
-§Changelog needed its own entry naming BOTH formulations and the reason the second wins, and the
-"Влияние на этапы" table needed a footnote pointing D9 at T-012+T-016 rather than T-016 alone —
-both Development-time obligations of T-012 (TASK.md epic E-6, R-156), not something this
+declare-only"); full inclusion stays T-016. This document does not silently pick a reading. ADR-002
+§Changelog needed its own entry naming BOTH formulations and the reason the second wins. The
+"Влияние на этапы" table needed a footnote pointing D9 at T-012+T-016 rather than T-016 alone. Both
+are Development-time obligations of T-012 (TASK.md epic E-6, R-156), not something this
 architecture document edits on ADR-002's behalf. It was recorded here so the discrepancy had a home
 even before that ADR edit landed.
 
 **DISCHARGED 2026-08-04 (task 012-10).** ADR-002 now carries the §Changelog entry dated 2026-08-03
 ("место крепления `trust`"), naming both formulations and the two checkable reasons the later one
-wins, and the `D9` row of "Влияние на этапы" carries footnote `[^t012-d9]` — the only edit made to
-that table, its "T-016" cell left as written. The entry also records a second, smaller divergence
-found while discharging this one: OQ-B's closure says "поле в манифесте", while what T-012 actually
-built is a field on `AdapterRegistration` (`packages/core/src/adapters/types.ts:145`, `* adapter) are **T-016**. The field is declared now because a`), because `trust` is a property of
-the SOURCE and the capability manifest describes the CAPABILITY — a distinction D9 itself makes.
+wins. The `D9` row of "Влияние на этапы" carries footnote `[^t012-d9]` — the only edit made to that
+table, its "T-016" cell left as written. The entry also records a second, smaller divergence found
+while discharging this one. OQ-B's closure says "поле в манифесте", while what T-012 actually built
+is a field on `AdapterRegistration`
+(`packages/core/src/adapters/types.ts:145`, `* adapter) are **T-016**. The field is declared now because a`).
+The reason is that `trust` is a property of the SOURCE and the capability manifest describes the
+CAPABILITY — a distinction D9 itself makes.
 
 ### T-010 (2026-07-31) — OQ-M3-1 and OQ-4
 
@@ -683,20 +724,22 @@ rejected alternatives are the cheapest part of the record to lose.
 See [ADR-003](../onchain-analytics/ADR-003-network-transport-and-billing.md) D1.
 
 The snapshotter stays on n8n + Postgres permanently (owner decision 2026-07-25, ADR-001 D8/D9
-addenda). That settled ownership and opened a consequence: if the schedule lives in n8n and the
-canonical capabilities live in the engine, something has to carry calls between them — and there was
-no transport, the MCP server being **stdio-only** (D3), which is not callable over a network. M3
-cannot bypass the engine the way the snapshotter does for DAPI: rules must be computed on
-**canonical** data, with the budget gate and the cache, or n8n becomes a second provider client with
-its own normalization and no credit accounting, throwing away all of M2.
+addenda). That settled ownership and opened a consequence. If the schedule lives in n8n and the
+canonical capabilities live in the engine, something has to carry calls between them. There was no
+transport, the MCP server being **stdio-only** (D3), which is not callable over a network. M3
+cannot bypass the engine the way the snapshotter does for DAPI. Rules must be computed on
+**canonical** data, with the budget gate and the cache. Otherwise n8n becomes a second provider
+client with its own normalization and no credit accounting, throwing away all of M2.
 
-The three options were: (1) **bring the Streamable HTTP transport forward** from M6 — a public
-surface plus auth/CORS/port questions; (2) **one-shot CLI mode** — no network surface, but a process
-start per call and n8n must live on the same machine; (3) **n8n writes a job into Postgres and the
+The three options were these. (1) **bring the Streamable HTTP transport forward** from M6 — a public
+surface plus auth/CORS/port questions. (2) **one-shot CLI mode** — no network surface, but a process
+start per call and n8n must live on the same machine. (3) **n8n writes a job into Postgres and the
 engine polls it** — inverts the dependency but brings back an always-on engine process, contradicting
-the 2026-07-25 decision itself. The entry's own verdict, quoted so the reversal below has something
-to reverse: _"Option 2 is the least invasive for M3 and spends none of the decisions reserved for M6;
-option 1 is the correct one if the engine is meant to be a network service at all."_
+the 2026-07-25 decision itself. The entry's own verdict is quoted next, so the reversal below has
+something to reverse.
+
+_"Option 2 is the least invasive for M3 and spends none of the decisions reserved for M6; option 1
+is the correct one if the engine is meant to be a network service at all."_
 
 **Chosen: option 1**, on a ground that did not exist when the options were written. That verdict
 judged option 2 "least invasive for M3" while assuming the only consumer was our own n8n. The owner's
@@ -710,37 +753,60 @@ so the seam costs nothing to keep.
 policy classes in core.** See [ADR-002](../onchain-analytics/ADR-002-configurable-routing.md), which
 closes it in full (D1…D9).
 
-OQ-4 was inherited from TASK-008 and never had a home in this file — it lived in the §7 of whichever
+OQ-4 was inherited from TASK-008 and never had a home in this file. It lived in the §7 of whichever
 `docs/TASK.md` was current, which is why it now reads as three different questions across the repo.
 The routing-policy one is this one. (The **M2** OQ-4 — `entity.labels` escalation default on Pro —
 and the **TASK-006** OQ-4 — historical `chain.tvl` series — are separate, both below, and neither is
 affected.)
 
-The question was: `CapabilityRoute.isSatisfying` is a literal predicate in `providers.config.ts`, its
-own docstring calls it provisional, and the owner's 2026-07-28 decision said the real router must
-call a **combination** of adapters and aggregate, with policy configured partly in the DB "as
-classes". Resolution: the predicate becomes a serialisable descriptor `{ kind, ...params }` resolved
-against a registry of classes in code (**ADR-002 D2**) — adding a class is a code change plus a test,
-choosing one is a config line, and a descriptor naming an unregistered class fails at registry
-construction rather than on first traffic. Aggregation becomes a property of the capability's
-`shape` (**D3**/**D5**), is off by default, and is enabled first on `series`, not on `entity.labels`
-(**D6**), because a series has a legitimate identity key (`metric`/`asset`/`ts`) and labels do not.
+The question was as follows. `CapabilityRoute.isSatisfying` is a literal predicate in
+`providers.config.ts`, and its own docstring calls it provisional. The owner's 2026-07-28 decision
+said the real router must call a **combination** of adapters and aggregate, with policy configured
+partly in the DB "as classes". Resolution: the predicate becomes a serialisable descriptor
+`{ kind, ...params }` resolved against a registry of classes in code (**ADR-002 D2**). Adding a
+class is a code change plus a test, and choosing one is a config line. A descriptor naming an
+unregistered class fails at registry construction rather than on first traffic. Aggregation becomes
+a property of the capability's `shape` (**D3**/**D5**), is off by default, and is enabled first on
+`series`, not on `entity.labels` (**D6**). The reason is that a series has a legitimate identity key
+(`metric`/`asset`/`ts`) and labels do not.
 
 ### M1 (TASK-003)
 
-| ID                              | Question                                     | Resolution and reason                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DexScreener endpoint            | which call serves `pairs.active`/`pool.info` | `GET /latest/dex/search?q=<NATIVE_QUERY>` (`ETH`/`SOL`), confirmed by a live probe 2026-07-22 plus fixtures. The response is an object `{schemaVersion, pairs}`, not a top-level array — a shape trap, pinned by a regression test.                                                                                                                                                                                                                                                                                                                                                           |
-| `ONCHAIN_PG_URL` validation     | is `z.string().url()` enough                 | Yes. Verified empirically on a realistic Supabase string (percent-encoded special character in the password plus a query string); the planned fallback was not needed.                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `pnpm -r build`/`test` topology | does `core` build before `mcp-server`        | Yes — confirmed by the output order of a live `pnpm -r build`, not assumed from pnpm's documented default (§6.4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Dune R-8 scope                  | how much of R-8 ships                        | `dune` ships as an interface/config stub — no `fetch`/`normalize`, no fixture, no contract test — narrower than R-8's literal acceptance wording. `token.risk` has been served by Nansen since M2 and `token.holders` by the free `blockscout` since TASK-008, so the exact query id / SQL has no consumer left to be authored for at all. The stub's three remaining defects (a docstring promising a reason the coverage gate pre-empts, `costOf: () => 0` on a credit-metered vendor, and the ROADMAP still listing Dune among M1 adapters) are tracked as track-A item **A-4**, not here. |
+| ID                              | Question                                     | Resolution and reason                                                                                             |
+| ------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| DexScreener endpoint            | which call serves `pairs.active`/`pool.info` | `GET /latest/dex/search?q=<NATIVE_QUERY>` (`ETH`/`SOL`) — details below.                                          |
+| `ONCHAIN_PG_URL` validation     | is `z.string().url()` enough                 | Yes — details below.                                                                                              |
+| `pnpm -r build`/`test` topology | does `core` build before `mcp-server`        | Yes — confirmed by the output order of a live `pnpm -r build`, not assumed from pnpm's documented default (§6.4). |
+| Dune R-8 scope                  | how much of R-8 ships                        | `dune` ships as an interface/config stub — details below.                                                         |
+
+#### Details by ID
+
+**DexScreener endpoint** — `GET /latest/dex/search?q=<NATIVE_QUERY>` (`ETH`/`SOL`), confirmed by a
+live probe 2026-07-22 plus fixtures.
+
+- The response is an object `{schemaVersion, pairs}`, not a top-level array.
+- A regression test pins that shape.
+
+**`ONCHAIN_PG_URL` validation** — Yes.
+
+- Verified empirically on a realistic Supabase string (percent-encoded special character in the
+  password plus a query string); the planned fallback was not needed.
+
+**Dune R-8 scope** — `dune` ships as an interface/config stub — no `fetch`/`normalize`, no fixture,
+no contract test — narrower than R-8's literal acceptance wording.
+
+- `token.risk` has been served by Nansen since M2 and `token.holders` by the free `blockscout` since
+  TASK-008. The exact query id / SQL therefore has no consumer left to be authored for at all.
+- The stub has three remaining defects: a docstring promising a reason the coverage gate pre-empts,
+  `costOf: () => 0` on a credit-metered vendor, and the ROADMAP still listing Dune among M1
+  adapters. They are tracked as track-A item **A-4**, not here.
 
 ### M2 (TASK-005 `m2-alpha-paid`) — OQ-1…OQ-5
 
 **OQ-1 — the bucket ceiling formula: two separate conditions, not one `min()`.** The vendor limit is
-**anchor-relative**: `snapshot.usageAtObserve` (the spend already accounted for in
+**anchor-relative**. `snapshot.usageAtObserve` is the spend already accounted for in
 `creditsRemainingAtObserve` at the moment of the resync, read in the same logical step as
-`/account`) is subtracted from the bucket-total `usage.credits_used(bucket)`, and only that
+`/account`. It is subtracted from the bucket-total `usage.credits_used(bucket)`, and only that
 difference (`spentSinceAnchor`) is compared against `creditsRemainingAtObserve`. The self-imposed
 `NANSEN_DAILY_CREDIT_CAP` stays **bucket-relative** — compared against the full bucket usage
 directly, with no anchor, because it is a daily ceiling on our own pacing, not a vendor remainder.
@@ -767,23 +833,23 @@ package's only publicly exported nansen factory is `createNansenAdapter()`.
 One ungated path does exist, behind an **explicit** opt-in — `__ungatedForTestsOnly: true` with
 `budgetStore` omitted, an escape hatch for isolated HTTP contract tests. One flag is enough:
 `fetchImpl` falls back to the real global `fetch`. Production never sets it (`mcp-server` always
-passes a `budgetStore`), but the guarantee is phrased as "one explicit flag", not "no ungated
-variant exists" — a money guard must never be described as stronger than its code makes it. Details:
+passes a `budgetStore`). The guarantee is still phrased as "one explicit flag", not "no ungated
+variant exists": a money guard must never be described as stronger than its code makes it. Details:
 system-architecture.md §3.2.
 
 **OQ-3 — chain scope: `ethereum` + `solana`, the same subset as M1.** Live evidence showed that the
 three relevant Nansen per-endpoint enumerators (`SmartMoneyChain` — 17, `TGMHoldersChain`/`TGMChain`
-— 24 each) are **not identical to one another**, and that the "~32 chains" seen during probing is a
-different, out-of-scope surface (the official Nansen MCP server). Widening is the backlog candidate
-above.
+— 24 each) are **not identical to one another**. The same evidence showed that the "~32 chains" seen
+during probing is a different, out-of-scope surface (the official Nansen MCP server). Widening is
+the backlog candidate above.
 
 **OQ-4 — the `onchain_entity_label` escalation default on Pro: not raised automatically.**
 `exhaustive` stays an explicit opt-in regardless of plan. Both prices
 (`/profiler/address/labels` = 100 cr, `/profiler/address/premium-labels` = 500 cr) are statically
-known, but raising the default on Pro would make the tool's behaviour depend on non-deterministic
-external state (the current account plan) without the calling agent's intent — the same principle
-already applied to rate limits and TTLs: configuration, not a hidden heuristic. Raising the default
-later is a one-flag edit, not an architectural decision.
+known. Raising the default on Pro would still make the tool's behaviour depend on non-deterministic
+external state (the current account plan) without the calling agent's intent. That is the same
+principle already applied to rate limits and TTLs: configuration, not a hidden heuristic. Raising
+the default later is a one-flag edit, not an architectural decision.
 
 **OQ-5 — a self-imposed env ceiling: yes, `NANSEN_DAILY_CREDIT_CAP`.** It narrows, never widens, the
 live-derived ceiling, so the owner's decision in TASK.md §1 item 1 stands. The `EnvSchema` pattern
@@ -792,22 +858,22 @@ live-derived ceiling, so the owner's decision in TASK.md §1 item 1 stands. The 
 fixed for that bucket); a positive integer → an explicit operator ceiling; `off` → self-limiting
 disabled. Protection therefore works out of the box, and `0` remains invalid on purpose. The
 derivation is computed from the `usageAtObserve + credits_remaining` anchor rather than from the
-live remainder — otherwise a mid-day server restart recomputes the ceiling from a POST-spend balance
+live remainder. Otherwise a mid-day server restart recomputes the ceiling from a POST-spend balance
 and locks the paid layer out for the rest of the UTC day.
 
 ### TASK-006 (`universal-chain-registry`) — OQ-1…OQ-5
 
 Two forks that define the tool contract were closed by the owner **before** this architecture
-(TASK §1.3), and it does not revisit them: (1) `chain` is an open string plus `onchain_list_chains`,
-not a `z.enum`; (2) uncovered pairs get the coverage matrix plus soft degradation.
+(TASK §1.3), and it does not revisit them. (1) `chain` is an open string plus `onchain_list_chains`,
+not a `z.enum`. (2) Uncovered pairs get the coverage matrix plus soft degradation.
 
 **OQ-1 — which non-EVM address families get validators: still only `evm` and `svm`, and paid
 capabilities now REFUSE on a family without a validator** (`hasAddressValidator`,
 `chain/address.ts`). The original decision — accept without canonicalization, price paid in cache
-splitting — was correct right up to the moment it had itself named as the trigger. TASK-006 brought paid
-Nansen to 7 chains of the `other` family, where three things hold at once: (a) `isValidAddress`
-accepts any string up to 128 characters, so a garbage `tokenAddress` reserves credits; (b) two case
-variants of one address are two paid cache entries; (c) the DF-1 case rule for those chains is
+splitting — was correct right up to the moment it had itself named as the trigger. TASK-006 brought
+paid Nansen to 7 chains of the `other` family, where three things hold at once. (a) `isValidAddress`
+accepts any string up to 128 characters, so a garbage `tokenAddress` reserves credits. (b) Two case
+variants of one address are two paid cache entries. (c) The DF-1 case rule for those chains is
 unknown. The price is named in the code and in the report: `entity.labels` 25→18, `token.risk`
 24→18, `smart-money.flows` 17→16 chains. A chain comes back when someone writes its family's
 validator, not when the rule is relaxed.
@@ -830,7 +896,7 @@ chain layer, and building them before universalization means building them twice
 
 Placed at the end of this file rather than beside the other 2026-08 entries above, deliberately. An
 insertion there would shift every line number this repository's own review corpus already cites into
-this file (`open-questions.md:247`, `:364` — confirmed live, `docs/reviews/task-015-review-round3.md`
+this file (`open-questions.md:249`, `:377` — confirmed live, `docs/reviews/task-015-review-round3.md`
 line 47). T-015 postdates every entry above it, and nothing below depends on ordering.
 
 **All seven open questions `docs/TASK.md` raised, plus one eighth decision, were closed by the owner

@@ -40,7 +40,7 @@ The optional read-only PG client adds no auth perimeter: authorization happens o
 - `NANSEN_API_KEY` (M2, TASK-005, R-45) is the sixth optional key and follows the same contract. The
   `apiKey: <NANSEN_API_KEY>` header is already covered by the existing
   `SENSITIVE_HEADER_RE = /authorization|api-?key/i` in `packages/core/src/net/safe-fetch.ts:251`, `const SENSITIVE_HEADER_RE = /authorization|api-?key/i;` — **no regex change is
-  needed**: the `Headers` API strips case from the header name before the comparison (`"apiKey"` →
+  needed**. The `Headers` API strips case from the header name before the comparison (`"apiKey"` →
   `"apikey"`), and `api-?key` matches `"apikey"` literally because the hyphen is optional. A
   cross-host redirect therefore drops this header exactly as it drops `Authorization` and
   `x-cg-*-api-key`. A regression test pins that behaviour for `nansen` specifically (R-45
@@ -87,10 +87,10 @@ The optional read-only PG client adds no auth perimeter: authorization happens o
 
 Growing the chain set from 2 to 458 carries the **only** non-trivial security risk in the whole
 task: `wallet.balances.native` needs an RPC endpoint **per chain**, and `chainid.network` publishes
-`rpc[]` for **2660** chains. The naive implementation — "take the hosts from the vendor catalog" —
-would mean that **the list of hosts we trust with outbound requests is decided by a third party over
-the network**. That destroys the SSRF gate outright (§7.3, R-25): a gate whose allowlist is set by
-an untrusted source is not a gate.
+`rpc[]` for **2660** chains. The default implementation — "take the hosts from the vendor
+catalog" — would mean that **the list of hosts we trust with outbound requests is decided by a
+third party over the network**. That destroys the SSRF gate outright (§7.3, R-25): a gate whose
+allowlist is set by an untrusted source is not a gate.
 
 **The decision — five hard rules:**
 
@@ -108,17 +108,17 @@ an untrusted source is not a gate.
    on a timeout — would disguise a missing configuration as a network failure.
 4. **The shape of an entry is validated at LOAD time, not just its presence.** A bare `.min(1)`
    string check on the column lets through `https://rpc.legit.org@evil.example` (userinfo — the real
-   host is `evil.example`), `https://127.0.0.1:8545`, and a scheme-less `evil.example`. The last one
-   is the nastiest: as an endpoint it is unreachable (`new URL` inside `safeFetch` rejects it), so no
-   test ever touches it — yet it **does** land in the allowlist, silently widening the set of hosts a
-   redirect is allowed to reach. `ChainInfoSchema` therefore requires `https:`, no userinfo and no IP
-   literal, and a malformed entry is a **load error** of the same class as a duplicate `caip2`. On
-   top of that, `hostOf()` in both adapters throws instead of returning the input string: for a
-   security control, the default behaviour on unparsed input is "drop", not "trust".
-   **A path segment of 20+ characters is refused by the same rule** (T-012 adversarial cycle 3): the
+   host is `evil.example`), `https://127.0.0.1:8545`, and a scheme-less `evil.example`. The last
+   one is the nastiest. As an endpoint it is unreachable (`new URL` inside `safeFetch` rejects it),
+   so no test ever touches it. Yet it **does** land in the allowlist, silently widening the set of
+   hosts a redirect is allowed to reach. `ChainInfoSchema` therefore requires `https:`, no userinfo
+   and no IP literal, and a malformed entry is a **load error** of the same class as a duplicate
+   `caip2`. On top of that, `hostOf()` in both adapters throws instead of returning the input
+   string: for a security control, the default behaviour on unparsed input is "drop", not "trust".
+   **A path segment of 20+ characters is refused by the same rule** (T-012 adversarial cycle 3). The
    Alchemy/Infura convention puts the API key IN the path (`https://…/v2/<32 chars>`), and
-   `net/safe-fetch.ts` publishes `origin + pathname` in its timeout and deadline errors — messages
-   that reach stderr and reach the model through `tried[].reason`. The redactor strips the query
+   `net/safe-fetch.ts` publishes `origin + pathname` in its timeout and deadline errors. Those
+   messages reach stderr and reach the model through `tried[].reason`. The redactor strips the query
    (because that is how `blockscout` authenticates) and keeps the path, justified by "the path is
    ours, never a secret". That sentence was an assumption about every URL the redactor might ever be
    handed; refusing the entry here is what makes it a fact. Redacting at the printer instead would
@@ -127,8 +127,8 @@ an untrusted source is not a gate.
 5. **Both RPC adapters, not just EVM.** Both `rpc-evm` and `rpc-solana` are confined to the same
    perimeter — endpoints and allowlist come only from the requested chain's `rpcHosts`. A
    module-level `ENDPOINT` constant (Solana mainnet) combined with advertised coverage for ANY `svm`
-   chain that has a curated host is latent with one SVM chain and guaranteed to break on the second,
-   and the entire point of TASK-006 is that adding a chain is a data edit. The `servesChain()`
+   chain that has a curated host is latent with one SVM chain and guaranteed to break on the second.
+   The entire point of TASK-006 is that adding a chain is a data edit. The `servesChain()`
    predicate is the same one for `chainSupport` and for transport in both adapters, so advertising
    and execution cannot drift apart.
 
@@ -144,7 +144,7 @@ Every other chain gets `rpcHosts: null` and stays fully functional for the keyle
 from M1 unchanged) plus `arbitrum`, `avalanche`, `base`, `bsc`, `cronos`, `flare`, `gnosis`, `ink`,
 `katana`, `mantle`, `monad`, `op-mainnet`, `plasma`, `polygon`, `robinhood-chain`, `rootstock`,
 `x-layer`. The criterion is top-by-TVL among the EVM chains for which `chainid.network` proposes an
-https endpoint that needs no API key; every endpoint was checked with an `eth_chainId` call, and
+https endpoint that needs no API key. Every endpoint was checked with an `eth_chainId` call, and
 **only** those that returned the **expected** chain id entered the registry.
 
 > **Rejected by hand — and this is the illustration of why the rule exists.** `hyperliquid-l1`
@@ -152,7 +152,7 @@ https endpoint that needs no API key; every endpoint was checked with an `eth_ch
 > domain. Both chains historically claim chainId 999, so `eth_chainId` returns exactly the expected
 > value and **the automated check passes**. Hyperliquid balance queries would go to Wanchain. A
 > machine check cannot tell "answered with the right chain id" from "is the chain we meant"; a human
-> can. That is precisely why automatic population of this column is forbidden rather than merely
+> can. That is precisely why automatic population of this column is forbidden rather than
 > discouraged.
 
 **Coverage asymmetry is not a defect — it is a consequence of honesty.** `chain.tvl` is available on
@@ -161,7 +161,7 @@ hundreds of chains, `wallet.balances.native` on dozens. The coverage matrix make
 "we support everything".
 
 **What the chain registry does NOT change in the security perimeter:** `safeFetch()` remains the
-single outbound-HTTP point; the allowlist remains per-adapter; redirect checking on every hop,
+single outbound-HTTP point, and the allowlist remains per-adapter. Redirect checking on every hop,
 `SENSITIVE_HEADER_RE`, and the exclusion of env values from the cache key are unchanged. The
 registry adds **data** to the existing mechanism; it does not replace the mechanism.
 
@@ -190,9 +190,9 @@ everything downstream of it, which is why that adapter's number is a byte count 
 product. Nansen runs on the 10 MB `safeFetch` default, so for it the field and row caps are what
 bind.
 
-This is a **bound, not a defence**. Text inside it is still attacker-chosen, and the mitigations that
-matter are elsewhere: the tool descriptions tell the model these strings are vendor data, and no
-label value reaches a shell, a query or a URL. What the numbers buy is the ability to notice a
+This is a **bound, not a defence**. Text inside it is still attacker-chosen, and the mitigations
+that matter are elsewhere. The tool descriptions tell the model these strings are vendor data, and
+no label value reaches a shell, a query or a URL. What the numbers buy is the ability to notice a
 change — a future cap edit that multiplies the surface fails the gate above instead of passing
 review as "a bigger limit".
 
@@ -205,17 +205,18 @@ review as "a bigger limit".
   server** (TASK-009, R-88). `eval/run.mjs` fetches an independent vendor directly, not through
   `safeFetch`, so the SSRF gate does not cover it. That is acceptable for exactly one reason: the
   eval is a developer script that is deliberately **not part of `pnpm test`** and not shipped in
-  `dist/`, so nothing an agent or a client can reach ever executes it. The URLs are not computed —
-  they live in `probes.json`, a reviewed data file in git, and are constrained to `https`. The
-  server's own perimeter is untouched: no adapter, no route and no tool gains a host from this axis,
-  and `mempool.space` appears in **no** allowlist precisely because the engine never calls it.
+  `dist/`. Therefore nothing an agent or a client can reach ever executes it. The URLs are not
+  computed — they live in `probes.json`, a reviewed data file in git, and are constrained to
+  `https`. The server's own perimeter is untouched: no adapter, no route and no tool gains a host
+  from this axis, and `mempool.space` appears in **no** allowlist precisely because the engine never
+  calls it.
 - **SSRF gate (R-25):** `safeFetch()` is the single outbound-HTTP point; the allowlist is
   **per-adapter**, not a global union, so a bug in or compromise of one adapter grants no access to
   another adapter's hosts. Redirects are checked on every hop (max 3) and the `Location` header is
   never trusted blindly (§3.2/§5.3). `assertAllowedHost()` is the same primitive, transport-agnostic
-  by design (intended for future non-HTTP transports such as gRPC), but no live adapter exercises it
-  today — `dash-platform`'s gRPC channel is not created — so it stays ready for the backlog task of
-  a live DAPI transport (§11), when channel-level checking is needed again.
+  by design (intended for future non-HTTP transports such as gRPC). No live adapter exercises it
+  today, however: `dash-platform`'s gRPC channel is not created. It therefore stays ready for the
+  backlog task of a live DAPI transport (§11), when channel-level checking is needed again.
 - **Response-size cap (R-65, TASK-007):** `safeFetch()` bounds **every** response body against
   `maxResponseBytes` (default 10 MB) by counting bytes off the stream, cancelling the upstream reader
   and throwing `SafeFetchResponseTooLargeError` the moment the cap is crossed. The advertised
@@ -223,15 +224,16 @@ review as "a bigger limit".
   counter. This closes item (1) of the R-47 carry-over.
 
   Both halves of that sentence were learned the hard way. Until TASK-007 the cap read the header and
-  returned early when it was absent, which is the common case rather than the exotic one:
+  returned early when it was absent, which is the common case rather than the exotic one.
   `api.llama.fi` serves every response over HTTP/2 with **no `Content-Length` at all** (measured
-  2026-07-27), so the cap was inert on a host the engine was about to send more traffic to. The first
-  fix then trusted the header when it _was_ present — and the security and performance critics found
-  independently (adversarial cycle 3) that this let the header, the one input a size cap exists to
-  distrust, switch the enforcement off: `Content-Length: abc` or `-1` fails the `> maxBytes` test and
-  reported "bounded"; a `Content-Encoding: gzip` response advertises **compressed** bytes while the
-  cap is enforced on **decoded** ones, making an ~8×-compressible JSON body a decompression bomb that
-  passes a 2 MB cap at 250 KB advertised. Always wrapping costs ~10 µs and no byte copies.
+  2026-07-27). The cap was therefore inert on a host the engine was about to send more traffic to.
+  The first fix then trusted the header when it _was_ present. The security and performance critics
+  found independently (adversarial cycle 3) that this let the header — the one input a size cap
+  exists to distrust — switch the enforcement off. `Content-Length: abc` or `-1` fails the
+  `> maxBytes` test and reported "bounded". A `Content-Encoding: gzip` response advertises
+  **compressed** bytes while the cap is enforced on **decoded** ones, making an ~8×-compressible
+  JSON body a decompression bomb that passes a 2 MB cap at 250 KB advertised. Always wrapping
+  costs ~10 µs and no byte copies.
 
 - **Rate limit (R-26):** a per-provider token bucket protects both the provider (good citizen) and
   us (we do not burn paid credit faster than necessary). The budget guard sits on top of the rate
@@ -245,9 +247,9 @@ review as "a bigger limit".
   the runtime guard was documented in `system-architecture.md` but not in this list of controls.)
   1. **The SQL is static and every caller-supplied value is a bound parameter.** `pg-history` issues
      one literal statement with `$1/$2/$3` (`adapters/pg-history/index.ts`); nothing an agent
-     supplies is ever concatenated into SQL. This is the PRIMARY control — it is what makes injection
-     impossible rather than merely non-obvious, and a new adapter that concatenated an agent-supplied
-     value would defeat everything below while still passing it.
+     supplies is ever concatenated into SQL. This is the PRIMARY control — it is what makes
+     injection impossible rather than present but not apparent, and a new adapter that concatenated
+     an agent-supplied value would defeat everything below while still passing it.
   2. **A runtime guard** in `pg/read-client.ts` (`SELECT_ONLY_RE`, R-27) rejects a statement that
      does not begin with `SELECT`. Defense in depth, and deliberately described for what it is: it
      constrains the FIRST TOKEN, so it is a guard against a wrong-shaped call, not a parser.
@@ -325,10 +327,11 @@ review as "a bigger limit".
 
 - **Supply chain / licenses:** the M1 dependencies — `@noble/hashes` (MIT), `bs58` (MIT), `pg`
   (MIT), `better-sqlite3` (MIT), `lru-cache` (ISC), `ulid` (MIT) — are all permissive and compatible
-  with the engine's Apache-2.0 (D12). `@grpc/grpc-js` + `@grpc/proto-loader` (Apache-2.0) and a
-  vendored `platform-v0.proto` (an IDL file, not code; the `dashpay/platform` license must be
-  checked before vendoring, expected permissive) are **not** dependencies today — they arrive with
-  the deferred backlog task of a live DAPI transport (§11), not before.
+  with the engine's Apache-2.0 (D12). The following are **not** dependencies today:
+  `@grpc/grpc-js` + `@grpc/proto-loader` (Apache-2.0) and a vendored `platform-v0.proto` (an IDL
+  file, not code; the `dashpay/platform` license must be checked before vendoring, expected
+  permissive). They arrive with the deferred backlog task of a live DAPI transport (§11), not
+  before.
 - `pnpm install --frozen-lockfile` in CI.
 
 ### 7.4. Provenance of live-recorded artifacts (RF-2)
@@ -336,8 +339,8 @@ review as "a bigger limit".
 The golden test and the nine Nansen fixtures are live-recorded evidence that was paid for in
 credits. A silent edit to them is indistinguishable from "the vendor changed its response", so their
 provenance is pinned by a manifest, a verifier and a pre-commit hook. A hash that a human is
-expected to remember to recompute with `shasum` and paste into a document header is not a gate:
-nothing can check that the human remembered, and the pasted hash describes a working tree rather
+expected to remember to recompute with `shasum` and paste into a document header is not a gate.
+Nothing can check that the human remembered, and the pasted hash describes a working tree rather
 than the commit.
 
 `docs/provenance.json` pins `path → sha256`; `scripts/verify-provenance.mjs` recomputes and compares
@@ -355,7 +358,7 @@ puts the edit and the new hash in the same diff.
 
 **The boundary of the guarantee.** Git hooks are local: `--no-verify`, or a clone without
 `git config core.hooksPath .githooks`, bypasses the commit half. What survives that is the test — a
-bypassed commit goes red on anyone's next run — and the manifest itself, whose absence from a diff
+bypassed commit fails on anyone's next run — and the manifest itself, whose absence from a diff
 touching a pinned file is visible to a reviewer. The mechanism makes a bypass **loud**, not
 impossible; by local means it cannot be made impossible. Files are listed explicitly rather than by
 glob: adding a new live artifact to the pinned set is also a visible decision.
@@ -438,7 +441,7 @@ non-secret value would be a weaker credential wearing the same table.
 **The stored value.** `api_tokens.token_hash` holds `sha256(pepper || presented)` as lowercase hex,
 where `pepper` is the token hashing salt R-29.1 keeps in `.env` permanently.
 
-**The column declaration carries the same expression** (`docs/architectures/data-model.md:1019`,
+**The column declaration carries the same expression** (`docs/architectures/data-model.md:1042`,
 `sha256(pepper || presented), lowercase hex`). No deviation is recorded here.
 
 **Why the agreement is recorded.** Review round 1 found this column commented as an unsalted

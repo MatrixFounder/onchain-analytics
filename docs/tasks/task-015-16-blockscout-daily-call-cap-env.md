@@ -17,7 +17,7 @@
 
 **Why значение приходит инъекцией.** `packages/core` не читает `process.env` напрямую (R-13.3a).
 Ключ парсится в `mcp-server` и передаётся параметром
-(`docs/architectures/system-architecture.md:4455` — подстрока `The key is EnvSchema's, narrowing
+(`docs/architectures/system-architecture.md:4565` — подстрока `The key is EnvSchema's, narrowing
 class`).
 
 <!-- contract:changes -->
@@ -87,7 +87,7 @@ Readonly<Record<keyof Env, SettingClass>> = Object.freeze({`)
 
 **Why сентинела отключения нет.** R-9.6 делает объявленный потолок обязательным для этого
 провайдера, поэтому отключение гейта не является допустимой конфигурацией
-(`docs/architectures/system-architecture.md:4451` — подстрока `No `off` sentinel is offered here`).
+(`docs/architectures/system-architecture.md:4561` — подстрока `No `off` sentinel is offered here`).
 
 **Why значение только сужает.** Класс настройки — `narrowing`, а он означает, что любое допустимое
 значение ограничивает поведение движка. То же правило уже применено к трём тормозам nansen:
@@ -120,7 +120,7 @@ narrowing`. Действующий потолок поэтому равен ме
   сужающего ключа
 
 **Why гейт классификации проходит без правки документа.** Строка ключа в таблице §10.3 уже стоит:
-`docs/architectures/deployment.md:205` — подстрока `BLOCKSCOUT_DAILY_CALL_CAP`. Сегодня она
+`docs/architectures/deployment.md:208` — подстрока `BLOCKSCOUT_DAILY_CALL_CAP`. Сегодня она
 шире схемы, и это допускается проверкой `documented.size >= schemaKeys.length`
 (`packages/mcp-server/test/settings-classification-gate.test.ts:70`). После этой задачи документ и
 схема сходятся.
@@ -167,7 +167,7 @@ narrowing`. Действующий потолок поэтому равен ме
 
 - `pnpm --filter @onchain-intel/mcp-server test` — четыре гейта из таблицы выше остаются зелёными
 - Перемерить число объявленных ключей там, где корпус его называет:
-  `docs/architectures/deployment.md:175` — подстрока `Re-measured 2026-08-24, at T-014 acceptance`
+  `docs/architectures/deployment.md:176` — подстрока `Re-measured 2026-08-24, at T-014 acceptance`
 - `pnpm lint`, `pnpm typecheck`, `pnpm test`
 
 <!-- contract:acceptance -->

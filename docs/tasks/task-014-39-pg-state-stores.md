@@ -82,7 +82,7 @@
 
 `data-model.md` §4.2.4 объявляет три замены, обязательные для каждого statement этой задачи:
 `MAX(x, y)` заменяется на `GREATEST(x, y)`, `INTEGER` — на `BIGINT`, каждое имя объекта
-квалифицируется схемой (R-30.1). Ключи, столбцы и арифметика идентичны (`data-model.md:536-538`,
+квалифицируется схемой (R-30.1). Ключи, столбцы и арифметика идентичны (`data-model.md:559-561`,
 `MAX(x, y)` `becomes` `GREATEST(x, y)`).
 
 **Why замена `MAX` названа отдельно.** В Postgres `MAX` — агрегатная функция, и формы с двумя
@@ -124,7 +124,7 @@ RETURNING credits_used;
 **Why уборка внутри транзакции, а не отдельным заданием.** §4.2.4 требует того же размещения, что и
 на оси SQLite (`packages/core/src/cache/budget-store.ts:428`, `this.pruneWindowStmt.run({`).
 Дословно: `The opportunistic prune of old window rows stays inside that transaction` … `so it
-inherits the same lock instead of racing it` (`data-model.md:589-590`). Отдельное задание
+inherits the same lock instead of racing it` (`data-model.md:612-613`). Отдельное задание
 конкурировало бы за ту же блокировку строки.
 
 **Why текст приведён дословно.** Это канонический текст `system-architecture.md` §3.4.8, на который
@@ -181,12 +181,12 @@ inherits the same lock instead of racing it` (`data-model.md:589-590`). Отде
    больше израсходованного не делает счётчик отрицательным.
 
 **Why реконсиляция — второй statement без потолочной границы.** §4.2.4:
-`Reconciliation is a second statement and carries no ceiling bound` (`data-model.md:582`). Возврат,
+`Reconciliation is a second statement and carries no ceiling bound` (`data-model.md:605`). Возврат,
 отказанный клаузой `WHERE`, оставил бы записанными кредиты, которых никто не потратил
-(`data-model.md:615`, `strand credits nobody spent`).
+(`data-model.md:639`, `strand credits nobody spent`).
 
 **Why `calls_made` монотонен и на этой оси.** §4.2.4: `calls_made` `stays monotonic` …
-`reconciliation adjusts credits and never the call count` (`data-model.md:591-592`). Вызов к вендору
+`reconciliation adjusts credits and never the call count` (`data-model.md:614-615`). Вызов к вендору
 уже состоялся, и возврат счётчика открыл бы проход мимо лимита последовательностью дешёвых и
 возвращённых вызовов.
 

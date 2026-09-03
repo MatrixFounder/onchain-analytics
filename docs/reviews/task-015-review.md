@@ -78,10 +78,10 @@ R-9.1 требует читать `usage_window.calls_made` «по ключу `(
 R-8.5: «(`may_select` истинно ровно для двух пар роль/таблица)»; AC-17 повторяет; §8 объявляет, что
 это «повторяет формулировку постусловия §10.4.2». Прочитано в источнике:
 
-- `docs/architectures/deployment.md:396-398` — «Postcondition: `may_select` is true for `assets`,
+- `docs/architectures/deployment.md:399-401` — «Postcondition: `may_select` is true for `assets`,
   `metrics` and `snapshots`, and false for every other table in the schema». Три таблицы, роль
   чтения. Слов «две пары» в §10.4.2 нет.
-- `docs/architectures/deployment.md:489-497` (§10.5.1) — роль состояния держит `SELECT` на
+- `docs/architectures/deployment.md:493-501` (§10.5.1) — роль состояния держит `SELECT` на
   **двенадцати** таблицах, роль чтения — на **трёх**. Пар «роль/таблица» с истинным `may_select` —
   пятнадцать.
 - Фраза «two role/table pairs» живёт в `docs/backlog/wi-62-*.md` в разделе «Acceptance» — и там она
@@ -145,14 +145,14 @@ TASK-014 → `docs/tasks/` эти координаты стали указыва
 
 | Носитель                                       | Координата                                                        | Что теперь по адресу                       |
 | :--------------------------------------------- | :---------------------------------------------------------------- | :----------------------------------------- |
-| `docs/architectures/security.md:8`, `data-model.md:875` | `docs/TASK.md:21-24` с цитатой «Профиль развёртывания»    | абзац «Измеренное состояние на входе»      |
-| `security.md:29`, `data-model.md:909`          | `docs/TASK.md:451` с цитатой «значение не требуется и не проверяется» | текст OQ-3 TASK-015                    |
-| `security.md:410`                              | `docs/TASK.md:84`                                                 | под-требование R-3.4                       |
-| `security.md:547`                              | `docs/TASK.md:442`                                                | §5 «Открытые вопросы»                      |
-| `security.md:882`, `:1111`                     | `docs/TASK.md:487`                                                | таблица рисков                             |
-| `security.md:1128`                             | `docs/TASK.md:510`                                                | таблица §8                                 |
-| `data-model.md:791`, `:828`, `:829`            | `:573`, `:538`, `:572`                                            | **за EOF**                                 |
-| `open-questions.md:352`, `:364`                | `:565-567`, `:737-744`                                            | **за EOF**                                 |
+| `docs/architectures/security.md:8`, `data-model.md:898` | `docs/TASK.md:21-24` с цитатой «Профиль развёртывания»    | абзац «Измеренное состояние на входе»      |
+| `security.md:29`, `data-model.md:932`          | `docs/TASK.md:451` с цитатой «значение не требуется и не проверяется» | текст OQ-3 TASK-015                    |
+| `security.md:413`                              | `docs/TASK.md:84`                                                 | под-требование R-3.4                       |
+| `security.md:550`                              | `docs/TASK.md:442`                                                | §5 «Открытые вопросы»                      |
+| `security.md:885`, `:1114`                     | `docs/TASK.md:487`                                                | таблица рисков                             |
+| `security.md:1131`                             | `docs/TASK.md:510`                                                | таблица §8                                 |
+| `data-model.md:814`, `:851`, `:852`            | `:573`, `:538`, `:595`                                            | **за EOF**                                 |
+| `open-questions.md:362`, `:377`                | `:601-603`, `:737-744`                                            | **за EOF**                                 |
 | `ADR-002:662`, `ADR-003:416`                   | «`OQ-2` в TASK.md **§5.1**»                                       | у TASK-015 нет §5.1                        |
 
 Это записанный класс проекта (WI-43, WI-45, WI-46), и он воспроизведён этим прогоном. Следующая

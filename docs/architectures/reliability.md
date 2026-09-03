@@ -21,42 +21,44 @@
   or retry later". Collapsing them would send an agent into an endless retry where retrying is
   pointless, and make it give up where adding an API key was all that was needed. The message
   carries both lists — the chains this capability _is_ served on, and the capabilities that _are_
-  served on this chain — computed from the same two sources as the coverage predicate itself
-  (`routes × chainSupport`), so they cannot drift from real behaviour. Both lists are truncated: an
-  error whose stated purpose is to save the caller a wasted call must not itself dump 458 slugs
-  into the model's context.
+  served on this chain. Both are computed from the same two sources as the coverage predicate
+  itself (`routes × chainSupport`), so they cannot drift from real behaviour. Both lists are
+  truncated: an error whose stated purpose is to save the caller a wasted call must not itself
+  dump 458 slugs into the model's context.
 - **SHIPPED (T-012, tasks 012-7/012-8).** **A call deadline expiring is a THIRD, equally distinct
   outcome (ADR-002 D4, R-145) — not merged with either error above.**
   `CapabilityDeadlineExceededError` fires when the manifest's (narrowed-only, never widened, R-144)
   `deadlineMs` runs out before any adapter on the route satisfied the request. **One qualification
-  the original wording did not have** (OD-4 review, 2026-08-05): a walk in which every source was
-  entered and every one ANSWERED returns that answer past the ceiling and marks the overrun in
-  `_meta.timing.overrunMs` — the ceiling bounds SPENDING, not the moment of delivery
+  the original wording did not have** (OD-4 review, 2026-08-05). A walk in which every source was
+  entered and every one ANSWERED returns that answer past the ceiling. That walk marks the overrun
+  in `_meta.timing.overrunMs`. The ceiling bounds SPENDING, not the moment of delivery
   (`open-questions.md` OQ-T012-6). It reuses the SAME `tried` list `CapabilityUnavailableError` already
-  carries — a deadline-caused skip is recorded there exactly like any other reason an adapter was
-  never asked — so a partial walk still names which sources were never reached, rather than
+  carries: a deadline-caused skip is recorded there exactly like any other reason an adapter was
+  never asked. A partial walk therefore still names which sources were never reached, rather than
   collapsing into an opaque timeout.
 
-  🔴 **A deadline never returns a partial result as if it were an answer** (owner decision
-  2026-08-03). ADR-002 D4 п.5 reads «ответил хотя бы один → частичный результат», but a deadline is
-  a fact about OUR availability, and the H-1 doctrine two bullets above forbids publishing that as a
-  fact about the DATA. Expiry therefore sets `hadFailure` and throws, naming both groups — which
-  sources answered and which were never asked. Returning the surviving answer instead would report
-  "this address has no entity labels" for a mixer or sanctioned address whenever the paid source
-  merely failed to fit the budget: a false negative delivered with full authority, which is the
-  exact defect H-1 exists to prevent. ADR-002 is amended to record the deviation (R-156), not
+  **A deadline never returns a partial result as if it were an answer** (owner decision
+  2026-08-03). ADR-002 D4 п.5 reads «ответил хотя бы один → частичный результат». A deadline,
+  however, is a fact about OUR availability, and the H-1 doctrine two bullets above forbids
+  publishing that as a fact about the DATA. Expiry therefore sets `hadFailure` and throws, naming
+  both groups — which sources answered and which were never asked. Returning the surviving answer
+  instead would report "this address has no entity labels" for a mixer or sanctioned address
+  whenever the paid source failed to fit the budget. Budget exhaustion alone triggers that report;
+  no provider error is required. That is a false negative delivered with full authority, which is
+  the exact defect H-1 exists to prevent. ADR-002 is amended to record the deviation (R-156), not
   silently contradicted.
 
   The one thing that error can NEVER mean: a paid request already
   paid for was cut off before it finished. Credits are reserved **inside** `fetch()`, at
   `gate.ensureBudget()` → `checkAndReserve()` (`packages/core/src/adapters/nansen/index.ts:657`, `// exactly the money-leak OQ-2's "structurally non-bypassable"`) — which happens
   **once, before** the 2–3 sub-calls that one reservation covers, not at each HTTP dispatch. The
-  deadline stops being honoured at that **commit point**, so neither a sub-call nor a throttle wait
-  _between_ sub-calls ever receives it: cancelling between sub-call 1 and sub-call 2 would pay for
-  work we then throw away, which is the same loss D4 п.2 forbids. The limiter (`throttle()`) and
-  the transport (`safeFetch()`) both gain the SAME optional `deadlineAtMs`, computed once per
-  `resolve()` call and threaded down unchanged, rather than re-deriving a fresh per-step timeout —
-  the latter is what produced the historical ~410s envelope.
+  deadline stops being honoured at that **commit point**. Consequently, neither a sub-call nor a
+  throttle wait _between_ sub-calls ever receives it. Cancelling between sub-call 1 and sub-call 2
+  would pay for work we then throw away, which is the same loss D4 п.2 forbids. The limiter
+  (`throttle()`) and the transport (`safeFetch()`) both gain the SAME optional `deadlineAtMs`,
+  computed once per `resolve()` call and threaded down unchanged, rather than re-deriving a fresh
+  per-step timeout. Re-deriving a fresh per-step timeout is what produced the historical ~410s
+  envelope.
 
   **What this bounds, stated as arithmetic rather than as a promise.** Because credits commit inside
   `fetch()`, the deadline governs only the phase before that commitment. For `entity.labels` that
@@ -68,13 +70,13 @@
   Worst case is therefore **cap + tail ≈ 330s**, not ~60s. Today's ~410s is not a bound at all,
   since nothing anywhere is cancelled. Each paid capability records `paidLegMs` beside `deadlineMs`
   with its derivation (R-149), because a bound with no arithmetic beside it is how the 410s number
-  was born — and a bound with _wrong_ arithmetic beside it is worse, since R-149 makes this text the
+  was born. A bound with _wrong_ arithmetic beside it is worse, since R-149 makes this text the
   source a code comment gets copied from.
 
 - **A corrupt or missing chain registry fails loudly at startup (TASK-006, R-60d):**
   `loadChainRegistry()` raises `ChainRegistryLoadError` when the registry data is missing,
   malformed, or violates an invariant (duplicate `caip2`/`slug`, colliding alias, bad CAIP-2
-  shape) — it never degrades to an empty registry. An empty registry would answer "unknown chain"
+  shape). It never degrades to an empty registry. An empty registry would answer "unknown chain"
   to every request while the process still looked healthy: a total outage wearing the costume of
   normal operation.
 - **SHIPPED (T-012, tasks 012-4/012-6). An unregistered policy `kind` or a capability with no
@@ -83,15 +85,15 @@
   startup, so a bad `providers.config.ts` edit is a startup failure naming the offending capability
   and `kind`, never a surprise on the first matching `tools/call`.
 
-  🔴 **The manifest table is INJECTED, not imported** — a defaulted constructor parameter, exactly as
+  **The manifest table is INJECTED, not imported** — a defaulted constructor parameter, exactly as
   the chain registry already is (`packages/core/src/adapters/registry.ts:109-111`, `this.name = 'MissingCapabilityManifestError';`). This is not symmetry for its own
-  sake: `CapabilityRegistry` is a factory, not a singleton, and the parameter defaults to the real
-  table, so any test that constructs a registry over a capability with no manifest row would go red.
-  The blast radius was **measured, not assumed** — it is **two `new CapabilityRegistry(...)` calls,
-  both in one file**: `packages/core/test/coverage.test.ts:86`, `now validates at CONSTRUCTION that` (inside the `registryWith` helper)
+  sake. `CapabilityRegistry` is a factory, not a singleton, and the parameter defaults to the real
+  table. Any test that constructs a registry over a capability with no manifest row would therefore
+  fail. The blast radius was **measured, not assumed** — it is **two `new CapabilityRegistry(...)`
+  calls, both in one file**: `packages/core/test/coverage.test.ts:86`, `now validates at CONSTRUCTION that` (inside the `registryWith` helper)
   and `:171` (a direct call). Both are built over the same `ROUTES` literal containing the synthetic
-  `legacy.thing` (`:79-84`), and each needs its own one-line edit to pass a synthetic manifest map
-  as the 5th argument — the helper does not cover `:171`.
+  `legacy.thing` (`:79-84`). Each needs its own one-line edit to pass a synthetic manifest map as
+  the 5th argument — the helper does not cover `:171`.
 
   Two capabilities that look like the same problem are **not**: `ghost` (`coverage.test.ts:255`) is
   an argument to `createCoverage({routes})` and `x` (`:127`, `:139`) is a string handed to a
@@ -110,62 +112,65 @@
   (`privacy.shielded_pool.history`, `platform.metrics.history` — system-architecture.md "Merge
   mechanism"); the 18 other capabilities are unaffected.
 
-  A participant is **"answered"** (cache hit or a fresh `fetch()`/`normalize()` success — R-164's
-  reading is intentionally silent on whether its content satisfied `policy`, since that question is
-  decided per-participant, separately — OQ-T013-4), **"not asked"** (skipped before `fetch()` for a
-  reason that is not the deadline: no adapter registered, `chainSupport()` false, `isAvailable()`
-  false, or a live negative-cache entry), or **"asked, did not answer"** (`fetch()`/`normalize()`
-  threw — EXCEPT the net-layer `DeadlineExceededError`, which belongs to the deadline precondition
-  below, not to this state). The walk collects every participant's outcome across the WHOLE route
-  before deciding, rather than returning on the first satisfying answer (the non-merge behaviour,
-  unchanged):
+  A participant is **"answered"** on a cache hit or a fresh `fetch()`/`normalize()` success.
+  R-164's reading is intentionally silent on whether its content satisfied `policy`, since that
+  question is decided per-participant, separately (OQ-T013-4). A participant is **"not asked"**
+  when skipped before `fetch()` for a reason that is not the deadline: no adapter registered,
+  `chainSupport()` false, `isAvailable()` false, or a live negative-cache entry. A participant is
+  **"asked, did not answer"** when `fetch()`/`normalize()` threw — EXCEPT the net-layer
+  `DeadlineExceededError`, which belongs to the deadline precondition below, not to this state.
+  The walk collects every participant's outcome across the WHOLE route before deciding, rather
+  than returning on the first satisfying answer (the non-merge behaviour, unchanged):
 
   - **(a) every participant answered** → the merged, deduped result returns successfully, even if
     empty — a fact about the DATA (H-1's `!hadFailure` branch, extended, not replaced).
   - **(b) at least one participant answered with ≥1 point, and at least one is not-asked or
-    asked-did-not-answer** → the merged result from those who DID answer returns successfully,
-    carrying `missingSources: {adapterId, reason}[]` naming who did not contribute and why.
+    asked-did-not-answer** → the merged result from those who DID answer returns successfully. It
+    carries `missingSources: {adapterId, reason}[]`, naming who did not contribute and why.
   - **(c) no answering participant contributed a point, and at least one is not-asked or
     asked-did-not-answer** → `CapabilityUnavailableError` with the full `tried` list — never a
     silent empty success. This is the branch that makes the merge mechanism's whole reason for
-    existing enforceable: today, on both real T-013 routes, the route carries no `policy`
-    (`{kind:'any'}`), which is satisfied by `platform-explorer`'s first answer — so this pair of
-    sources is NEVER jointly evaluated, and an unreachable `pg-history` behind an empty
+    existing enforceable. Today, on both real T-013 routes, the route carries no `policy`
+    (`{kind:'any'}`), which is satisfied by `platform-explorer`'s first answer. This pair of
+    sources is therefore NEVER jointly evaluated, and an unreachable `pg-history` behind an empty
     `platform-explorer` answer today publishes as an ordinary empty success. Branch (c) is what
     stops that: "the source holding our own ledger was never asked" and "there is no history" are
     different statements, and only branch (c) tells them apart.
   - **(d) literally nobody answered** — a named special case of (c), for UC-13.
 
-  **The deadline is a PRECONDITION on this whole contract, not a fifth branch (R-164e) — OD-4
-  (2026-08-03) applies to a merge walk exactly as it applies to a non-merge one, through the SAME
-  THREE sites that already throw `CapabilityDeadlineExceededError`, not merely two.** A participant
-  can be defeated by the deadline two ways DURING the walk — skipped by the per-adapter pre-check
-  (`packages/core/src/adapters/registry.ts:1074`, `deadlineHit = true;` — the MERGE walk's own door 1,
-  which task 013-5 added; the single-winner twin is `:1437`) OR its in-flight
-  `fetch()` cut off by the ceiling (the caught
-  `DeadlineExceededError`, `packages/core/src/adapters/registry.ts:1176`, `if (error instanceof DeadlineExceededError) deadlineHit = true;` — door 2, also added by 013-5;
-  it did not exist on the merge path when this paragraph was written) — and `deadlineHit` is set either way, so NONE of branches (a)-(d)
-  apply: the whole call ends in `CapabilityDeadlineExceededError`, regardless of how many
-  participants had already answered. The THIRD site is not a per-participant door at all: a caller
-  whose OWN `requestedDeadlineAtMs` has already passed at entry (`packages/core/src/adapters/registry.ts:644`, `CapabilityDeadlineExceededError`, docstring
-  "immediate `CapabilityDeadlineExceededError` with an empty `tried`") throws the
-  same class immediately, with `tried: []`, before the walk — and before any merge/non-merge branch
-  — even begins; a merge-enabled route reaches this exactly like any other. A
-  saturated rate-limiter bucket (`DeadlineWouldExceedError`) is different and deliberately does NOT
-  set `deadlineHit`: that participant is "asked, did not answer" and is distributed into branch (b)
-  or (c) by the ordinary rule above, exactly like any other non-deadline failure — a limiter's
-  per-provider backlog is not a fact about the route's global clock (`packages/core/src/adapters/registry.ts:1704-1718`, `— but it CAN still reach this branch`). The
-  terminal wall-clock disjunct (`deadlineHit || Date.now() >= effectiveDeadlineAtMs`,
-  `packages/core/src/adapters/registry.ts:1719`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`) is preserved unmodified for the merge path: it is not redundant with the
-  per-participant pre-check — it covers every adapter's transport, not only the two that unwrap a
-  typed deadline class today (adversarial cycle 2's F-7; the disjunct's coverage argument is TWELVE
-  adapters, WI-36's unwrapping fixed two) — and a merge implementation has no license to remove it.
+  **The deadline is a PRECONDITION on this whole contract, not a fifth branch (R-164e). OD-4
+  (2026-08-03) applies to a merge walk exactly as it applies to a non-merge one. It applies through
+  the SAME THREE sites that already throw `CapabilityDeadlineExceededError`, not only two.** A
+  participant can be defeated by the deadline two ways DURING the walk. The first is a skip by the
+  per-adapter pre-check (`packages/core/src/adapters/registry.ts:1074`, `deadlineHit = true;`) —
+  the MERGE walk's own door 1, which task 013-5 added; the single-winner twin is `:1437`. The
+  second is its in-flight `fetch()` cut off by the ceiling (the caught
+  `DeadlineExceededError`, `packages/core/src/adapters/registry.ts:1176`, `if (error instanceof DeadlineExceededError) deadlineHit = true;`) — door 2, also added by 013-5.
+  It did not exist on the merge path when this paragraph was written. Either door sets
+  `deadlineHit`, so NONE of branches (a)-(d) apply. The whole call ends in
+  `CapabilityDeadlineExceededError`, regardless of how many participants had already answered.
+  The THIRD site is not a per-participant door at all. A caller whose OWN
+  `requestedDeadlineAtMs` has already passed at entry throws the same class immediately, with
+  `tried: []`, before the walk — and before any merge/non-merge branch — even begins. That site is
+  `packages/core/src/adapters/registry.ts:644`, `CapabilityDeadlineExceededError`, docstring
+  "immediate `CapabilityDeadlineExceededError` with an empty `tried`". A merge-enabled route
+  reaches this exactly like any other. A saturated rate-limiter bucket (`DeadlineWouldExceedError`)
+  is different and deliberately does NOT set `deadlineHit`. That participant is "asked, did not
+  answer" and is distributed into branch (b) or (c) by the ordinary rule above, exactly like any
+  other non-deadline failure. A limiter's per-provider backlog is not a fact about the route's
+  global clock (`packages/core/src/adapters/registry.ts:1704-1718`, `— but it CAN still reach this branch`).
+  The terminal wall-clock disjunct (`deadlineHit || Date.now() >= effectiveDeadlineAtMs`,
+  `packages/core/src/adapters/registry.ts:1719`, `if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {`) is preserved unmodified for the merge path.
+  It is not redundant with the per-participant pre-check. It covers every adapter's transport, not
+  only the two that unwrap a typed deadline class today (adversarial cycle 2's F-7; the disjunct's
+  coverage argument is TWELVE adapters, WI-36's unwrapping fixed two). A merge implementation has
+  no license to remove it.
 
   This is why the two "real" merge routes make OD-4's two doors OBSERVABLE for the first time on
-  this pair: today, with no `policy`, H-1 never evaluates `pg-history` at all once
-  `platform-explorer` answers, so a deadline defeating `pg-history` was never distinguishable from
-  `pg-history` simply not being asked. UC-22 is the test of this precondition — both doors, same
-  outcome, never branch (b) with a partial answer.
+  this pair. Today, with no `policy`, H-1 never evaluates `pg-history` at all once
+  `platform-explorer` answers. A deadline defeating `pg-history` was therefore never
+  distinguishable from `pg-history` simply not being asked. UC-22 is the test of this precondition
+  — both doors, same outcome, never branch (b) with a partial answer.
 
 - An input validation failure (zod, including the `superRefine` address check) stays an MCP
   tool-error, not a process crash (inherited from M0).

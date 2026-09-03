@@ -59,7 +59,7 @@
 **Why ключ окружения, а не правка `providers.config.ts`.** AC-42 требует пустого диффа этого файла
 по значению `refillPerSec` и его пометке (`packages/core/src/providers.config.ts:342` —
 `rateLimit: { capacity: 5, refillPerSec: 2 },`). Ключ объявлен классом `narrowing`:
-`docs/architectures/deployment.md:205` — подстрока `BLOCKSCOUT_DAILY_CALL_CAP`.
+`docs/architectures/deployment.md:208` — подстрока `BLOCKSCOUT_DAILY_CALL_CAP`.
 
 **Why порог обязан вернуться.** Оставленный синтетический порог отказывал бы продуктивному трафику
 на порядок раньше, чем требует оценка. Возврат — шаг 4 сценария UC-7, а не уборка после него.

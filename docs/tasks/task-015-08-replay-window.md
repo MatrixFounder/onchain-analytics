@@ -40,10 +40,10 @@
 **Файл `docs/architectures/system-architecture.md`, §3.5.2a** (документная половина этой задачи):
 
 - Псевдокод ветви конфликта возвращает поле под именем `refusalClass`
-  (`docs/architectures/system-architecture.md:4162` — подстрока
+  (`docs/architectures/system-architecture.md:4272` — подстрока
   `errorClass: 'ReplayWindowExpiredError'`)
 - Абзац об уже подразумеваемом поле неуспешной ветви называет его тем же именем
-  (`docs/architectures/system-architecture.md:4172` — подстрока `already needs an `; `:4174` —
+  (`docs/architectures/system-architecture.md:4282` — подстрока `already needs an `; `:4284` —
   подстрока `reserved.errorClass`)
 - После правки подстроки `errorClass` в §3.5.2a не остаётся ни одной
 

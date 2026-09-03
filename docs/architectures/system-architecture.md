@@ -12,7 +12,7 @@ Exactly **one** additional package boundary is drawn (`packages/core`), not the 
 
 - **Why not a single package (everything inside `mcp-server`).** Canonical types, the chain
   registry, the adapters, the two-level cache, the SSRF gate, the rate limiter and the PG client
-  form a domain that is testable without the MCP transport — every D11 contract test hits
+  form a domain that is testable without the MCP transport. Every D11 contract test hits
   `normalize()`/`fetch()` directly, with no server in the loop. Fusing that domain with the MCP
   wiring would have made the paid layer (M2) and signals (M3) harder: both need
   Registry/Cache/types, neither needs MCP tool registration.
@@ -37,10 +37,10 @@ for the M2/M3 slicing.
 **L-5 (architecture review round 2, 2026-08-03) — noted, not fixed here.** This document is now
 ~2200 lines and §3.2's `core` component alone carries five distinct T-012 designs (policy
 descriptor, capability manifest, provider tier, source trust, call deadline) on top of everything
-M0–TASK-009 already put there. Not a T-012 defect, and NOT addressed by this task — flagged for a
-future split (e.g. `adapters.md` / `cache.md` / `net.md` chunks, the same way `data-model.md` and
-`reliability.md` already split off from a single file) when file size next becomes the limiting
-factor for reading it, not before.
+M0–TASK-009 already put there. Not a T-012 defect, and NOT addressed by this task. It is flagged
+for a future split (e.g. `adapters.md` / `cache.md` / `net.md` chunks, the same way `data-model.md`
+and `reliability.md` already split off from a single file). The split happens when file size next
+becomes the limiting factor for reading it, not before.
 
 ### 3.2. System components
 
@@ -49,14 +49,16 @@ factor for reading it, not before.
 - **Type:** TypeScript library package (no `bin`), consumed by `mcp-server` through a
   `workspace:*` dependency.
 - **Purpose:** canonical types, the chain registry, chain/address normalization, the Adapter +
-  Capability Registry, twelve provider adapters (nine landed in M1 — two of them, `dash-platform`
-  and `dune`, interface/fixture-only — plus the paid `nansen` from M2, then the free `blockscout`
-  from TASK-008 and `blockchain-info` from TASK-009), the two-level cache, the SSRF
-  gate, the rate limiter, the credit budget gate, and a read-only PG client (`pg-history` adapter).
-- **Technologies:** TypeScript strict, zod, `better-sqlite3`, `lru-cache`, `ulid`, `@noble/hashes`
-  (keccak256 for EIP-55 — its only reason for existing here: ADR-001 D5 requires an EVM checksum,
-  not just lowercase; §3.2.1), `bs58` (Solana base58 decode/validate — not hand-rolled, because
-  address validation is a security boundary), `pg` (the read-only client behind `pg-history`).
+  Capability Registry, twelve provider adapters. Also the two-level cache, the SSRF gate, the rate
+  limiter, the credit budget gate, and a read-only PG client (`pg-history` adapter). Of the twelve
+  adapters, nine landed in M1 — two of them, `dash-platform` and `dune`, interface/fixture-only —
+  plus the paid `nansen` from M2, then the free `blockscout` from TASK-008 and `blockchain-info`
+  from TASK-009.
+- **Technologies:** TypeScript strict, zod, `better-sqlite3`, `lru-cache`, `ulid`, `@noble/hashes`,
+  `bs58`, `pg`. `@noble/hashes` provides keccak256 for EIP-55, its only reason for existing here:
+  ADR-001 D5 requires an EVM checksum, not just lowercase (§3.2.1). `bs58` does Solana base58
+  decode/validate and is not hand-rolled, because address validation is a security boundary. `pg` is
+  the read-only client behind `pg-history`.
   `@grpc/grpc-js` and `@grpc/proto-loader` are **not** dependencies: `dash-platform` is an
   interface + fixture contract with no live transport (below).
 
@@ -222,9 +224,9 @@ export function loadChainRegistry(deps?: { data?: unknown }): ChainRegistry; // 
   and zero credits, which matters more than convenience: misses happen most often on the paid route,
   where an agent is guessing a chain name.
 - **Indexes** (in memory, built once at load): `Map<caip2>`, `Map<slug>`, `Map<alias>`. Resolution
-  is O(1) on an exact match; the O(n) "did you mean" path runs only while building an error. 458
-  rows are tens of kilobytes — there is no scaling question here, and none is coming (even the 2660
-  EVM chains of `chainid.network` would be single-digit megabytes).
+  is O(1) on an exact match. The O(n) "did you mean" path runs only while building an error. The
+  458 rows are tens of kilobytes, so there is no scaling question here, and none is coming (even the
+  2660 EVM chains of `chainid.network` would be single-digit megabytes).
 - **Injection (`deps.data`)** is the same DI pattern as `CacheStore`/`BudgetStore`: tests load a
   small synthetic registry instead of the production one, touching no filesystem. The registry is a
   **factory, not a module singleton** (§8 already requires that of
@@ -285,7 +287,7 @@ resolve(capability, args)
   → 6. adapter.fetch()                     (network, money is spent)
 ```
 
-The coverage gate must sit **above** step 5: growing the chain set from 2 to 458 multiplies the ways
+The coverage gate must sit **above** step 5. Growing the chain set from 2 to 458 multiplies the ways
 to miss coverage, and if a miss cost a credit reservation, the expansion itself would become a
 spending vector (NFR, TASK §7). This also removed a whole class of knowingly useless calls from the
 paid path — part of the surface **SEC-1** described before the velocity guard existed. SEC-1 is
@@ -352,10 +354,10 @@ of this section that an architecture review (same date) found to misdescribe bot
 > **Superseded banner, kept rather than deleted.** Until 2026-08-05 this paragraph read "**PLANNED
 > (T-012, not in code as of 2026-08-03)** … `types.ts` still has the pre-T-012 shapes … as of this
 > writing". It was not updated when T-012 landed, so a PLANNED banner sat over sub-sections already
-> marked LANDED (`ttlFor()`) and SHIPPED (adapter uptake) **inside its own declared scope** — the
-> documentation-drift class WI-24/WI-28 exist to catch, in the one place no gate reads. Nine further
-> `PLANNED (T-012)` status markers inside this subsection's declared scope were corrected in the same
-> pass (lines 393/439/492/641/665/805 of the pre-edit file), together with a seventh on the
+> marked LANDED (`ttlFor()`) and SHIPPED (adapter uptake) **inside its own declared scope**. That is
+> the documentation-drift class WI-24/WI-28 exist to catch, in the one place no gate reads. Nine
+> further `PLANNED (T-012)` status markers inside this subsection's declared scope were corrected in
+> the same pass (lines 393/439/492/641/665/805 of the pre-edit file), together with a seventh on the
 > `deadlineMs`/`paidLegMs` table, which lives in `Module: src/cache/*` rather than here. One further
 > `PLANNED` remains below by design — the word inside the H1 narrative, which is prose about the
 > state before the fix and is now introduced as such. A status marker is a claim about running code,
@@ -363,7 +365,7 @@ of this section that an architecture review (same date) found to misdescribe bot
 >
 > **Scope of the commit named above.** `6af4b19` is T-012 itself. The WI-34/WI-35/WI-36/WI-37
 > follow-up described further down (the applied `pg-history` limiter, the query bounds, 10-of-12
-> adapters reading the deadline) landed later on 2026-08-05 and is NOT in that commit — a reader who
+> adapters reading the deadline) landed later on 2026-08-05 and is NOT in that commit. A reader who
 > checks `6af4b19` alone finds 2 of 12 adapters and 4 of 20 capabilities.
 
 ```ts
@@ -410,8 +412,8 @@ export interface AdapterRegistration {
 ```
 
 **Provider tier — one classification, four readers (D8, R-150/R-151/R-152). LANDED (T-012, tasks
-012-2/012-3).** The "Old classification / Where" column below is the **historical** pre-T-012 map:
-those line references describe the tree before commit `6af4b19` and no longer resolve
+012-2/012-3).** The "Old classification / Where" column below is the **historical** pre-T-012 map.
+Those line references describe the tree before commit `6af4b19` and no longer resolve
 (the `PAID_PROVIDER_IDS` identifier is gone from `src/`; historical notes remain in
 `cache/sqlite-store.ts`, `cache/budget-store.ts` and `adapters/types.ts`).
 The "Becomes" column is what the tree does today — `types.ts:93,137`, `cache/budget-store.ts` writing
@@ -429,36 +431,36 @@ which could detect the others disagreeing:
 Assignment (`providers.config.ts`'s 12 registrations, measured): **`paid`** — `dune`, `nansen`.
 **`free`** — the other ten (`coingecko`, `dexscreener`, `defillama`, `blockscout`, `rpc-evm`,
 `rpc-solana`, `dash-platform`, `platform-explorer`, `pg-history`, `blockchain-info`). `tier` is a
-property of the VENDOR RELATIONSHIP — static — and is deliberately never derived from `costOf()`,
-which varies with arguments and the live account plan (`nansen`'s real price table vs.
+property of the VENDOR RELATIONSHIP — static — and is deliberately never derived from `costOf()`.
+`costOf()` varies with arguments and the live account plan (`nansen`'s real price table vs.
 `blockchain-info`'s `0`/`Infinity` toggle, ADR-002 D8). **It never reaches a tool response**: the
 client pays our price (ADR-003 D4), and our own spend at a vendor is our unit economics, not the
 client's contract. `_meta.budget`'s `{provider, creditsUsedToday}` shape (interfaces.md §5.1.2) is
 UNCHANGED by this — `tier` is not added to it.
 
 **L5 — obligation for Development. DISCHARGED (T-012, task 012-2).** `providers.config.ts`'s own
-docstring used to read "**10 entries** … every one now backed by a real adapter" — stale since
-TASK-008/TASK-009 raised the count to twelve, and untouched by the architecture pass that recorded
-this (docs-only; that line is source code). It was corrected in the same commit that added
-`tier`/`trust` to all twelve registrations, exactly as this note asked. Kept rather than deleted:
-the obligation is the reason the correction happened, and a discharged obligation with no record
-reads as one that was never raised.
+docstring used to read "**10 entries** … every one now backed by a real adapter". That wording was
+stale since TASK-008/TASK-009 raised the count to twelve, and untouched by the architecture pass
+that recorded this (docs-only; that line is source code). It was corrected in the same commit that
+added `tier`/`trust` to all twelve registrations, exactly as this note asked. Kept rather than
+deleted: the obligation is the reason the correction happened, and a discharged obligation with no
+record reads as one that was never raised.
 
-🔴 **M6 — `BudgetMeta.provider` widens to `string` with a runtime check, not a `tier`-derived
+**M6 — `BudgetMeta.provider` widens to `string` with a runtime check, not a `tier`-derived
 literal union; picked and justified, not left ambiguous.** `adapterRegistrations` is exported as a
-plain mutable `AdapterRegistration[]` (`providers.config.ts`), and TypeScript widens an array
+plain mutable `AdapterRegistration[]` (`providers.config.ts`). TypeScript widens an array
 literal's element type to the ANNOTATED interface — `id` is `string`, not a literal union of the
-twelve ids — so no mapped type reading `.tier` off that array can narrow `BudgetMeta.provider`
+twelve ids. No mapped type reading `.tier` off that array can therefore narrow `BudgetMeta.provider`
 without ALSO re-typing the array itself (`as const satisfies readonly AdapterRegistration[]`, or
-similar). That re-typing has a blast radius this task does not take on:
+similar). That re-typing has a blast radius this task does not take on.
 `SqliteBudgetStoreOptions.providers?: AdapterRegistration[]` and its sibling on `SqliteCacheStore`
-both expect a plain mutable array, and every consumer that iterates or mutates it generically would
+both expect a plain mutable array. Every consumer that iterates or mutates it generically would
 need its own accommodation. So: `BudgetMeta.provider: string` (documented as "the paid-tier adapter
 id that actually answered"), with a runtime assertion at the one place it is constructed
 (`budgetMeta()`, `mcp-server/src/tools/budget-meta.ts`) that the value is a member of
-`adapterRegistrations.filter((r) => r.tier === 'paid').map((r) => r.id)`. This is not a lesser fix:
+`adapterRegistrations.filter((r) => r.tier === 'paid').map((r) => r.id)`. This is not a lesser fix.
 ADR-002 D8's own text names the CURRENT literal type itself as the defect ("classification leaked
-into the type system") — a derived-but-still-precise literal union would relocate that leak, not
+into the type system"), and a derived-but-still-precise literal union would relocate that leak, not
 remove it. The wire shape is unaffected: `{provider: string, creditsUsedToday}` serializes
 identically to today's `{provider: 'nansen', ...}` for the one value either type can hold right now.
 
@@ -469,31 +471,49 @@ CONSUMPTION, which is T-016. Assignment, from
 ADR-002 D9's own table plus a reasoned analogy (objective vendor/consensus data vs.
 third-party-edited content):
 
-| `trust`                         | Adapters                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `authoritative`                 | `nansen`, `coingecko`, `defillama` (named in ADR-002 D9) + `dexscreener`, `dune`, `rpc-evm`, `rpc-solana`, `blockchain-info`, `dash-platform` (reasoned analogy — objective/consensus data nobody edits) + **`platform-explorer`** (owner decision **OD-5**, 2026-08-03 — D9's scale asks about the REDACTABILITY of content, not the operator's official status; machine-aggregated chain counters nobody edits. Closes OQ-T012-2, and the stake is real: this is the source D6 turns merging on for FIRST) |
-| `community`                     | `blockscout` (ADR-002 D9, verbatim: "everything it returns is edited by outsiders") + **`pg-history`** (owner decision **OD-5**, 2026-08-03 — deliberately the LOWEST rank as a conservative PLACEHOLDER until the real per-ROW rank from `source` arrives in T-016. Closes OQ-T012-3. 🔴 The code comment must say "placeholder with a scheduled replacement", not leave it readable as a judgement about our own ledger)                                                                                   |
-| assigned to no ADAPTER in T-012 | `derived` — applies to individual `pg-history` ROWS (`source='derived'`), never to a whole registration                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `trust`                         | Adapters                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `authoritative`                 | `nansen`, `coingecko`, `defillama` (named in ADR-002 D9) + others listed below                          |
+| `community`                     | `blockscout` (ADR-002 D9) + `pg-history` (OD-5) — see below                                             |
+| assigned to no ADAPTER in T-012 | `derived` — applies to individual `pg-history` ROWS (`source='derived'`), never to a whole registration |
 
-🔴 **Zero consumer logic (R-155).** No `set`-merge segmentation by rank, no community-marking in
+**`authoritative` — the full adapter list.** `nansen`, `coingecko`, `defillama` (named in ADR-002
+D9) + `dexscreener`, `dune`, `rpc-evm`, `rpc-solana`, `blockchain-info`, `dash-platform` (reasoned
+analogy — objective/consensus data nobody edits) + **`platform-explorer`** (owner decision **OD-5**,
+2026-08-03). D9's scale asks about the REDACTABILITY of content, not the operator's official status;
+machine-aggregated chain counters nobody edits. That closes OQ-T012-2, and the stake is real: this
+is the source D6 turns merging on for FIRST.
+
+**`community` — the full adapter list.** `blockscout` (ADR-002 D9, verbatim: "everything it returns
+is edited by outsiders") + **`pg-history`** (owner decision **OD-5**, 2026-08-03). `pg-history` is
+deliberately the LOWEST rank as a conservative PLACEHOLDER until the real per-ROW rank from `source`
+arrives in T-016. That closes OQ-T012-3. The code comment must say "placeholder with a scheduled
+replacement", not leave it readable as a judgement about our own ledger.
+
+**Zero consumer logic (R-155).** No `set`-merge segmentation by rank, no community-marking in
 model context, no `source → trust` autofill script exist yet — all three are ADR-002 D9's "full
 inclusion", scheduled for T-016 alongside the `entity.labels` merge itself (D6). The ONLY reader in
 the whole codebase is a construction-time check that every registration set `trust` (R-154) — see
 "where this check actually runs" under Capability Registry below, since `AdapterRegistration` never
 reaches `CapabilityRegistry` itself.
 
-🔴 **L1 — the complete YAGNI ledger for T-012, not a sample of it (M-1 correction, architecture
+**L1 — the complete YAGNI ledger for T-012, not a sample of it (M-1 correction, architecture
 review round 2, 2026-08-03: FIVE fields, not four).** Five fields this task introduces have NO
-RUNTIME consumer inside T-012, each justified ONLY by a dated, accepted future decision that will
-consume it — not by "just in case": `trust` (T-016, ADR-002 D9, owner 2026-08-01), `shareable`
-(T-014, ADR-003 D5), `shape` (T-013, D5 — no merge rule exists yet to key on it),
-`requestedDeadlineAtMs` (`resolve()`'s fourth parameter, below — T-012 has exactly one caller, the
-engine itself, and passes nothing; T-014's networked client is the first real caller), and
-`paidLegMs` (OD-3, owner 2026-08-03 — nothing at runtime reads it; its ONLY reader is the extended
-WI-28 doc gate, "`ttlFor()` becomes a READER" above, which checks the manifest's `paidLegMs` against
-the documented per-capability derivation table — the identical test-time-only status `shape` already
-holds in this same list, not a weaker one). This is the full list; a sixth unconsumed field found
-later is a defect, not an omission from this sentence.
+RUNTIME consumer inside T-012. Each is justified ONLY by a dated, accepted future decision that will
+consume it, not by "just in case":
+
+- `trust` (T-016, ADR-002 D9, owner 2026-08-01);
+- `shareable` (T-014, ADR-003 D5);
+- `shape` (T-013, D5 — no merge rule exists yet to key on it);
+- `requestedDeadlineAtMs` (`resolve()`'s fourth parameter, below). T-012 has exactly one caller, the
+  engine itself, and passes nothing; T-014's networked client is the first real caller.
+- `paidLegMs` (OD-3, owner 2026-08-03). Nothing at runtime reads it. Its ONLY reader is the extended
+  WI-28 doc gate, "`ttlFor()` becomes a READER" above, which checks the manifest's `paidLegMs`
+  against the documented per-capability derivation table. That is the identical test-time-only
+  status `shape` already holds in this same list, not a weaker one.
+
+This is the full list; a sixth unconsumed field found later is a defect, not an omission from this
+sentence.
 
 **Adapters hold no private vendor chain maps (R-54).** Each of these was a private copy of chain
 knowledge, with its own `SupportedChain` type duplicating the `chains:` literals of
@@ -513,7 +533,7 @@ knowledge, with its own `SupportedChain` type duplicating the `chains:` literals
 invert: the adapter reads the registry, the registry knows nothing about adapters.
 
 **Nor was it weakened by D2/D3/D4/D8/D9 (T-012, shipped).** `fetch()` still returns
-`unknown`, and only `normalize()`'s output ever escapes an adapter — a policy descriptor, a
+`unknown`, and only `normalize()`'s output ever escapes an adapter. A policy descriptor, a
 manifest, a deadline, a `tier`, a `trust` are all metadata ABOUT routing and accounting, never a
 shape the vendor's DTO is allowed to influence. ADR-002 explicitly rejects the nearest miss
 (configurable field-mapping instead of `normalize()`, §Что отклонено п.7) on exactly this ground.
@@ -663,18 +683,18 @@ export class CapabilityRegistry {
 
 **`CapabilityRoute.chains` is GONE (OQ-C, ADR-002 D2).** The field was declared, read by the router
 (`packages/core/src/adapters/registry.ts:234-238`, `, which for a negative entry is the wrong`, narrowing `matching` routes), and set by ZERO of the 21 entries in
-`providers.config.ts` — re-measured 2026-08-03, the same result already recorded at TASK-006 and in
-ADR-002 itself. T-012 deletes the field together with the filter that read it, per the escape hatch
-ADR-002 D2 specifies: if a construction-time audit of all 28 routes ever finds one that genuinely
-needs to narrow chains BELOW what `chainSupport()` already expresses, the field returns with that
-route named as the consumer (open-questions.md records the closure).
+`providers.config.ts`. That was re-measured 2026-08-03, the same result already recorded at TASK-006
+and in ADR-002 itself. T-012 deletes the field together with the filter that read it, per the escape
+hatch ADR-002 D2 specifies. If a construction-time audit of all 28 routes ever finds one that
+genuinely needs to narrow chains BELOW what `chainSupport()` already expresses, the field returns
+with that route named as the consumer. open-questions.md records the closure.
 
 **H-D (HIGH, architecture review round 2, 2026-08-03) — the deletion's test blast radius, stated
 explicitly, not left implicit. DISCHARGED (T-012, task 012-1).** The edits below were made and the
 suite is green; the line references are to the tree **as it was on 2026-08-03** and no longer
-resolve. It is kept in full because it is the worked example of the rule it exists to teach —
-"compiling past a type deletion is not the same as proving the mechanism it replaces is equivalent"
-— and because that rule is what a future field-removal needs, not the line numbers.
+resolve. It is kept in full because it is the worked example of the rule it exists to teach. That
+rule: "compiling past a type deletion is not the same as proving the mechanism it replaces is
+equivalent". It is what a future field-removal needs, not the line numbers.
 
 The type-level field is one thing; `CapabilityDescriptor.chains`
 (a DIFFERENT field, on the adapter's OWN capability descriptor — §"Module: src/adapters/*" above) is
@@ -684,17 +704,17 @@ untouched and must not be confused with it. What DOES need editing: route-level 
 `packages/mcp-server/test/tools/{active-pairs.test.ts:11, entity-label.test.ts:17,
 protocol-tvl.test.ts:12, get-token.test.ts:18, token-risk.test.ts:15, wallet-balances.test.ts:19,
 smart-money-flows.test.ts:22}`. Compiling past the type deletion is not the same as proving the
-mechanism it replaces is equivalent: `packages/core/test/registry.test.ts:87-111`, `expect(resolution.result).not.toBe(raw);`, titled "selects
+mechanism it replaces is equivalent. The test at `packages/core/test/registry.test.ts:87-111`, `expect(resolution.result).not.toBe(raw);`, titled "selects
 the route whose chains list matches the requested chain…", builds its fakes (`makeAdapter`,
 `:16-36`) with **no `chainSupport`** declared at all. Removing the `chains` filter with those fakes
 left as-is means BOTH routes contribute adapters unfiltered, `rpc-evm` answers first for every
 chain, and `expect(solResult.source).toBe('rpc-solana')` at `:108` **fails at runtime** — not a
 compile error, a red test. It is the only test guarding route-selection-by-chain semantics, so it
-must be **rewritten** (its fakes given a `chainSupport` matching the route split they exercise), not
-merely left to recompile — otherwise the deletion would be "proven" by a test that silently stopped
-testing the thing its own title names. AC-19's "≥1195 green plus new tests" is met only AFTER these
-9-file/13-literal edits, and this rewrite is attributable to T-012, not a pre-existing failure this
-task happens to trip over.
+must be **rewritten**. Its fakes must be given a `chainSupport` matching the route split they
+exercise, and it must not be left to recompile unchanged. Otherwise the deletion would be "proven"
+by a test that silently stopped testing the thing its own title names. AC-19's "≥1195 green plus
+new tests" is met only AFTER these 9-file/13-literal edits, and this rewrite is attributable to
+T-012, not a pre-existing failure this task happens to trip over.
 
 **Policy descriptor + class registry (D2, R-133/R-134/R-135) — home: `src/adapters/policy.ts`.
 LANDED (T-012, task 012-6).**
@@ -705,27 +725,33 @@ export type PolicyDescriptor =
   | { kind: 'someElementHasAny'; fields: string[] };
 ```
 
-The class registry is a DICTIONARY OF NAMES, deliberately not a policy engine — `adapters/types.ts`'
+The class registry is a DICTIONARY OF NAMES, deliberately not a policy engine. `adapters/types.ts`'
 own docstring already forbids growing one (weights, partial merges, multi-source collection stay
-the router's job), and ADR-002 §Что отклонено п.7 rejects the nearest miss (configurable
+the router's job). ADR-002 §Что отклонено п.7 rejects the nearest miss (configurable
 field-mapping) on the identical ground. Exactly two entries are needed today:
 
-| `kind`              | Predicate                                                       | Replaces                                                                                                                                                                                                                                                                                                    |
-| ------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `any`               | always `true` (today's implicit default)                        | 27 of 28 routes, which carry no policy today                                                                                                                                                                                                                                                                |
-| `someElementHasAny` | array, and ≥ 1 element has a non-empty value at one of `fields` | `entity.labels`'s literal predicate (`packages/core/src/providers.config.ts:132-142`, `that nansen exists; the policy belongs here, as data, beside`), bit-for-bit — 🔴 NEVER named or aliased `nonEmpty` anywhere (H-1: a non-empty array of contentless Blockscout rows must still count as unsatisfying) |
+| `kind`              | Predicate                                                       | Replaces                                                     |
+| ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------ |
+| `any`               | always `true` (today's implicit default)                        | 27 of 28 routes, which carry no policy today                 |
+| `someElementHasAny` | array, and ≥ 1 element has a non-empty value at one of `fields` | `entity.labels`'s literal predicate, bit-for-bit — see below |
+
+**`someElementHasAny` — what it replaces.** `entity.labels`'s literal predicate
+(`packages/core/src/providers.config.ts:132-142`,
+`that nansen exists; the policy belongs here, as data, beside`), bit-for-bit. It is NEVER named or
+aliased `nonEmpty` anywhere (H-1: a non-empty array of contentless Blockscout rows must still count
+as unsatisfying).
 
 **Resolved at `CapabilityRegistry` CONSTRUCTION, never lazily inside `resolve()` (R-135).** See the
 exact validation order specified on the constructor above (manifest presence, then policy `kind`).
-The resolved predicate is cached per route; `resolve()`'s existing `satisfies()` wrapper (fail-open
+The resolved predicate is cached per route. `resolve()`'s existing `satisfies()` wrapper (fail-open
 on a throwing policy, `packages/core/src/adapters/registry.ts:345-361`, `attempted?: string[];`, UNCHANGED) calls the cached predicate instead of a
 route's own literal function — zero behaviour change on the 21 real routes (R-135d).
 
 **Capability manifest (D3, R-136/R-137/R-138) — home: `src/capability-manifest.ts`. LANDED
 (T-012, tasks 012-4/012-5).** A tier-1 config module sibling in spirit to `mcp-server`'s `tool-specs.ts` (T-011,
-D7): one declarative, committed literal, replacing a table (`cache/ttl.ts`'s `TTL_SECONDS`) whose
-own comments already record hitting its `DEFAULT_TTL_SECONDS` fallback by accident three times,
-with a shape the compiler enforces instead of a row someone can forget to add.
+D7): one declarative, committed literal, replacing a table (`cache/ttl.ts`'s `TTL_SECONDS`). That
+table's own comments already record hitting its `DEFAULT_TTL_SECONDS` fallback by accident three
+times. The replacement has a shape the compiler enforces instead of a row someone can forget to add.
 
 ```ts
 type CapabilityManifestBase = {
@@ -790,7 +816,7 @@ otherwise reach for first.
 **The cache stays per-adapter, even though merge is off (D5, unchanged by T-012).** A `set`/`series`
 manifest entry does not create an aggregate cache slot: every adapter on a route is still cached
 under its own `(provider, capability, args_hash)` key (§4.2), exactly as today. This matters
-precisely BECAUSE T-013 is not far off — stating it now, while merging is still entirely disabled,
+precisely BECAUSE T-013 is not far off. Stating it now, while merging is still entirely disabled,
 is cheaper than re-deriving it once a `shape: 'set'` capability tempts someone to cache the walk's
 result as one unit. D5's own reasoning stands unchanged: an aggregate would have no single owner to
 invalidate by provider, no TTL matching any one source, and would go stale silently if the route's
@@ -803,33 +829,33 @@ two capabilities (`privacy.shielded_pool.history`, `platform.metrics.history`), 
 
 _Activation — TWO gates, not one (OQ-T013-2)._ R-159 already fixed **eligibility**: a fact on the
 manifest's `set | series` arm, compile-blocked on `point`. Left open was whether a route ALSO needs
-its own activation flag, per D5's literal text — "Маршрут собирает несколько источников, только
-если это явно объявлено **в его дескрипторе**" — where "его" (its) grammatically names the
+its own activation flag, per D5's literal text: "Маршрут собирает несколько источников, только
+если это явно объявлено **в его дескрипторе**". There "его" (its) grammatically names the
 **route's** own descriptor, not the capability's. **Decision: yes, `CapabilityRoute.merge?: boolean`
 is a second, independent gate**, checked at construction (`R-183`, alongside the existing manifest/
-policy checks, same fixed-order discipline): a route with `merge: true` whose capability has no
+policy checks, same fixed-order discipline). A route with `merge: true` whose capability has no
 `mergeable` manifest entry throws, naming both (by analogy to `UnregisteredPolicyClassError`).
 
 Why not "eligibility alone activates" (R-183/AC-45's branch B, which the TASK explicitly permits as
-a structural argument instead of a test) — **two reasons, corrected after review** (an earlier third
-reason claimed manifest-only activation could not express "merge on this route, not that one", then
-this same section ruled that DISAGREEING routes are a construction-time defect — which makes
-per-route selectivity unrepresentable under the two-gate design too, refuting the reason it was meant
-to support; withdrawn, not repaired, because the two remaining reasons carry the decision on their
-own): (1) it is a literal deviation from D5's text that R-181 does not budget for — R-181/AC-40 fix
-the changelog at **exactly two** deviations (conflict rank, outcome distinction), and a third would
-go unrecorded; (2) UC-20 itself is phrased "активирует слияние **на маршруте**" — an activation act
-the route performs, which branch B cannot even construct. The two-gate design also reads as the
-literal enforcement of D9 rule 3 one level up: `merge` and `mergeable` are independent axes (route vs.
-capability) exactly as `trust` and adapter order are independent axes within a route — conflating
-either pair is the same mistake in two places.
+a structural argument instead of a test) — **two reasons, corrected after review**. An earlier third
+reason claimed manifest-only activation could not express "merge on this route, not that one". This
+same section then ruled that DISAGREEING routes are a construction-time defect, which makes
+per-route selectivity unrepresentable under the two-gate design too, refuting the reason it was
+meant to support. It is withdrawn, not repaired, because the two remaining reasons carry the
+decision on their own. (1) It is a literal deviation from D5's text that R-181 does not budget for.
+R-181/AC-40 fix the changelog at **exactly two** deviations (conflict rank, outcome distinction),
+and a third would go unrecorded. (2) UC-20 itself is phrased "активирует слияние **на маршруте**" —
+an activation act the route performs, which branch B cannot even construct. The two-gate design also
+reads as the literal enforcement of D9 rule 3 one level up. `merge` and `mergeable` are independent
+axes (route vs. capability), exactly as `trust` and adapter order are independent axes within a
+route. Conflating either pair is the same mistake in two places.
 
 _Multi-route capabilities are OUT OF SCOPE, stated rather than papered over._ Activation is decided
 per CAPABILITY, at the point `resolve()` builds `plan`: if ANY matching route sets `merge: true`, the
 walk merges. Neither real T-013 capability has more than one route, so this is unexercised. **No
-construction-time cross-route consistency check is added** — a route disagreeing with a sibling route
+construction-time cross-route consistency check is added.** A route disagreeing with a sibling route
 of the same capability on `merge` is not validated, is not an R-number, is not an AC, and has no slot
-in the numbered order below; a future task giving a capability a second, merge-eligible route needs
+in the numbered order below. A future task giving a capability a second, merge-eligible route needs
 to design that check, not inherit one from here.
 
 _Conflict rank (OQ-T013-3)._ OD-T013-2 (task file §1.4) already ruled out `.trust`
@@ -846,167 +872,172 @@ claim is vacuously true, not a case requiring a guard — `merge-activation.test
 
 The tension the TASK names directly: D9 rule 3 forbids conflating trust rank with the free-first
 spend order — "Ранг доверия и порядок адаптеров в маршруте — независимые оси. Сливать их нельзя."
-Reusing `adapterIds` for conflict rank does not conflate THOSE two axes — OD-T013-2 already
-established the conflict rank is not trust — but it does couple a NEW axis (correctness-on-conflict)
-to the spend axis, and D9 rule 3's underlying concern (silently deriving one ranking from another,
-so a change to one silently reorders the other) applies to that coupling too, in spirit if not by
-its letter. Three reasons make the coupling acceptable HERE, narrowly, rather than as a general
-license: (1) the direction of dependence is safe — `adapterIds` order continues to decide only spend
-(R-166 is unchanged code, not a new invariant), and conflict rank merely READS that order without
-ever writing back to it, so a future re-prioritisation for cost reasons cannot silently corrupt
-spend, only conflict resolution, which is the smaller blast radius; (2) `platform-explorer` before
-`pg-history` is already the wording the TASK's own §0 uses ("приоритет 1"/"приоритет 2") for these
-two adapters, so the reuse states a fact the project already treats as true in prose, not a new one;
+Reusing `adapterIds` for conflict rank does not conflate THOSE two axes: OD-T013-2 already
+established the conflict rank is not trust. It does couple a NEW axis (correctness-on-conflict) to
+the spend axis. D9 rule 3's underlying concern is silently deriving one ranking from another, so
+that a change to one silently reorders the other. That concern applies to that coupling too, in
+spirit if not by its letter. Three reasons make the coupling acceptable HERE, narrowly, rather than
+as a general license.
+(1) The direction of dependence is safe. `adapterIds` order continues to decide only spend (R-166 is
+unchanged code, not a new invariant), and conflict rank READS that order without ever writing back
+to it. A future re-prioritisation for cost reasons therefore cannot silently corrupt spend, only
+conflict resolution, which is the smaller blast radius. (2) `platform-explorer` before `pg-history`
+is already the wording the TASK's own §0 uses ("приоритет 1"/"приоритет 2") for these two adapters.
+The reuse therefore states a fact the project already treats as true in prose, not a new one.
 (3) T-016 is where the REAL per-row trust-based conflict axis (D9's `set`-segmentation, extended to
-`series`) arrives (R-179e) — a bespoke rank table today would be replaced within one further task,
-so the placeholder is sized to its lifetime. The merge docstring must say plainly that this is a
+`series`) arrives (R-179e). A bespoke rank table today would be replaced within one further task, so
+the placeholder is sized to its lifetime. The merge docstring must say plainly that this is a
 narrow, documented, provisional reuse — never a claim that spend order and correctness rank are one
 axis in general.
 
-🔴 **The hazard this reuse creates, sized correctly, and ENFORCED rather than left to a docstring.**
+**The hazard this reuse creates, sized correctly, and ENFORCED rather than left to a docstring.**
 R-166's spend order is free-before-paid, so a paid participant sits LAST — which is also LOWEST
 conflict rank under this reuse. A paid, presumably more authoritative participant would then lose
-EVERY dedup collision to a free one, silently: no test changes colour, nothing in the merge code
+EVERY dedup collision to a free one, silently. No test changes colour, nothing in the merge code
 objects, and the hazard is triggered by whoever next edits `providers.config.ts`, not by whoever
 reads the merge docstring. That inverts this project's own priorities, so it is not left as
-narrative: **a new construction-time assertion,
+narrative. **A new construction-time assertion,
 `assertMergeParticipantsAreFree(routes, registrations)`, requires every adapter REACHABLE AS A
-PARTICIPANT OF A MERGING CAPABILITY to resolve, in the injected `AdapterRegistration[]`, to `tier:
-'free'` — throwing, naming the capability and the first non-free participant, until T-016 replaces
-the reused-order placeholder with a real per-row trust rank.** 🔴 **Scoped to the CAPABILITY's
-flattened participant set, not to the literal `merge: true` route's own `adapterIds` (MN-1).** `plan`
-is the de-duplicated UNION of every matching route's `adapterIds` for a capability (`:638-650`), so
-a paid adapter reachable only through a SIBLING, non-merge route of the same capability would enter
-the merged walk unchecked if the assertion read `route.adapterIds` literally. Unreachable today —
-neither merge capability has a sibling route — but scoping the check to "every id in the capability's
-flattened plan, for any capability with at least one `merge: true` route" closes it by construction
-rather than by the accident of today's route table. Reads `tier`, never `.trust` (`TC-GATE-02` is
-untouched). Lives BESIDE `CapabilityRegistry`, not inside its constructor — `AdapterRegistration[]`
-never reaches `CapabilityRegistry` today (data-model.md, "M-6 correction"), and this hazard is a
-cross-check between `routes` and the registration array, the same shape `assertValidAdapterRegistrations()`
-already is. Called once by `mcp-server/src/index.ts`, immediately after `assertValidAdapterRegistrations()`
-and before `CapabilityRegistry` is constructed — the same startup seam `trust`'s own declare-only
-check already uses (R-154), so a future paid participant on a merge route fails at PROCESS START,
-the same discipline as every other construction-time gate in this file, matching the precedent this
-repo just set (WI-34…WI-37 turned a DECLARED rate limit and a DECLARED deadline into ENFORCED ones).
+PARTICIPANT OF A MERGING CAPABILITY to resolve, in the injected `AdapterRegistration[]`, to
+`tier: 'free'`. It throws, naming the capability and the first non-free participant, until T-016
+replaces the reused-order placeholder with a real per-row trust rank.** **Scoped to the CAPABILITY's
+flattened participant set, not to the literal `merge: true` route's own `adapterIds` (MN-1).**
+`plan` is the de-duplicated UNION of every matching route's `adapterIds` for a capability
+(`:638-650`). A paid adapter reachable only through a SIBLING, non-merge route of the same
+capability would enter the merged walk unchecked if the assertion read `route.adapterIds`
+literally. Unreachable today — neither merge capability has a sibling route. But the check is
+scoped to "every id in the capability's flattened plan, for any capability with at least one
+`merge: true` route". That closes it by construction rather than by the accident of today's route
+table. Reads `tier`, never `.trust` (`TC-GATE-02` is untouched). Lives BESIDE
+`CapabilityRegistry`, not inside its constructor — `AdapterRegistration[]` never reaches
+`CapabilityRegistry` today (data-model.md, "M-6 correction"), and this hazard is a cross-check
+between `routes` and the registration array, the same shape
+`assertValidAdapterRegistrations()` already is. Called once by `mcp-server/src/index.ts`,
+immediately after `assertValidAdapterRegistrations()` and before `CapabilityRegistry` is
+constructed — the same startup seam `trust`'s own declare-only check already uses (R-154). A
+future paid participant on a merge route therefore fails at PROCESS START, the same discipline as
+every other construction-time gate in this file. That matches the precedent this repo just set
+(WI-34…WI-37 turned a DECLARED rate limit and a DECLARED deadline into ENFORCED ones).
 
-_Dedup and conflict resolution mechanics (R-161/R-162/R-167)._ Walking CONTRIBUTING participants in
-rank order (= `adapterIds` order) and inserting each point into a `Map` keyed by
-`` `${metric}\0${asset}\0${ts}` `` **only if the key is absent** implements "highest rank wins" with
-no value comparison at all — the first (highest-ranked) writer for a key is kept, the later one is
-discarded whole, satisfying R-167(b) ("choose one point WHOLESALE, never average/reconcile") by
-construction. `value_raw` is never read through this path at all, let alone through `Number(...)`
-— R-167(a)/(d)'s ban is satisfied because nothing compares two conflicting values to pick a winner;
-rank alone decides. `wallet.balances.native`-style multi-route flattening already gives `resolve()`
-one ordered, de-duplicated adapter list per capability (the `plan` array) — dedup walks that same
-list, so a capability's rank order can never disagree between the merge builder and the walk that
-produced it.
+_Dedup and conflict resolution mechanics (R-161/R-162/R-167)._ Dedup implements "highest rank wins"
+with no value comparison at all. CONTRIBUTING participants are walked in rank order (= `adapterIds`
+order), and each point is inserted into a `Map` keyed by
+`` `${metric}\0${asset}\0${ts}` `` **only if the key is absent**. The first (highest-ranked) writer
+for a key is kept, and the later one is discarded whole. That satisfies R-167(b) ("choose one point
+WHOLESALE, never average/reconcile") by construction. `value_raw` is never read through this path at
+all, let alone through `Number(...)`. R-167(a)/(d)'s ban is satisfied because nothing compares two
+conflicting values to pick a winner; rank alone decides. The `wallet.balances.native`-style
+multi-route flattening already gives `resolve()` one ordered, de-duplicated adapter list per
+capability (the `plan` array). Dedup walks that same list, so a capability's rank order can never
+disagree between the merge builder and the walk that produced it.
 
 _Policy evaluation point (OQ-T013-4)._ **Decision: per-participant**, not per-merged-whole. Each
 participant's normalized answer (cache hit or fresh) is checked with the SAME `satisfies(policy,
-value, adapterId)` the non-merge path already applies at `:876`/`:945` (unchanged code, called from
-a new site for the merge branch) — satisfying means its points are eligible to enter the merged
-`Map` (i.e. the participant becomes a CONTRIBUTOR, see `CapabilityResolution` shape below); not
-satisfying means the participant is recorded in `tried` exactly as today ("answered, but not with
-what was asked for"), contributes nothing, but is NOT `hadFailure` and is NOT in `missingSources`
-(R-164 counts it as "answered" — the policy question is orthogonal to R-164's three-state model).
-This is the reading R-182(d) requires as a regression (per-participant, unchanged for non-merge
-routes, `entity.labels`'s `someElementHasAny` untouched) and the one that keeps H-1's existing
-cache-hit application (`:876`) as the SAME code path a merge walk also uses, rather than a second,
-whole-array-shaped evaluation with its own semantics. Per R-182(b)/(c): both real T-013 routes carry
-no `policy` (`{kind:'any'}`, always satisfying), so the choice is unobservable in shipped scope — the
-equivalence test R-182(c) requires is exactly why the choice still had to be made and stated, not
-left as two behaviourally-coincident readings.
+value, adapterId)` the non-merge path already applies at `:876`/`:945`. That is unchanged code,
+called from a new site for the merge branch. Satisfying means its points are eligible to enter the
+merged `Map` (i.e. the participant becomes a CONTRIBUTOR, see `CapabilityResolution` shape below).
+Not satisfying means the participant is recorded in `tried` exactly as today ("answered, but not
+with what was asked for"), contributes nothing, but is NOT `hadFailure` and is NOT in
+`missingSources`. R-164 counts it as "answered" — the policy question is orthogonal to R-164's
+three-state model. This is the reading R-182(d) requires as a regression (per-participant, unchanged
+for non-merge routes, `entity.labels`'s `someElementHasAny` untouched). It is also the one that
+keeps H-1's existing cache-hit application (`:876`) as the SAME code path a merge walk also uses,
+rather than a second, whole-array-shaped evaluation with its own semantics. Per R-182(b)/(c): both
+real T-013 routes carry no `policy` (`{kind:'any'}`, always satisfying), so the choice is
+unobservable in shipped scope. The equivalence test R-182(c) requires is exactly why the choice
+still had to be made and stated, not left as two behaviourally-coincident readings.
 
-🔴 **The one place this diverges from the non-merge contract on purpose, stated rather than left
+**The one place this diverges from the non-merge contract on purpose, stated rather than left
 implicit (M-6).** On a policy-bearing merge route where every participant answers and NONE
-satisfies (hypothetical for T-013's shipped scope — both real routes carry no `policy`), the
-non-merge path falls back to the first truthful-but-unsatisfying answer (`unsatisfying`,
+satisfies, the non-merge path falls back to the first truthful-but-unsatisfying answer
+(`unsatisfying`,
 `packages/core/src/adapters/registry.ts:835`, `let unsatisfying: CapabilityResolution | undefined;`, returned at `:1040`,
-`if (unsatisfying && !hadFailure) return withDiagnostics(unsatisfying);`). **The merge path does NOT
-reuse that fallback.** Falling
-back to one participant's raw, un-merged answer would silently un-merge the very response the
-caller asked for — an arbitrary pick among equally-unsatisfying sources, dressed as a merged result.
-Branch (a) applies instead: every participant answered, `sources` is empty (nobody contributed), and
-the call returns an empty merged success — a genuine, if perhaps surprising, divergence from the
-single-source contract, recorded here so it is a decision and not a gap found in Development.
+`if (unsatisfying && !hadFailure) return withDiagnostics(unsatisfying);`). That case is
+hypothetical for T-013's shipped scope — both real routes carry no `policy`. **The merge path does
+NOT reuse that fallback.** Falling back to one participant's raw, un-merged answer would silently
+un-merge the very response the caller asked for — an arbitrary pick among equally-unsatisfying
+sources, dressed as a merged result. Branch (a) applies instead: every participant answered,
+`sources` is empty (nobody contributed), and the call returns an empty merged success. That is a
+genuine, if perhaps surprising, divergence from the single-source contract, recorded here so it is a
+decision and not a gap found in Development.
 
 _Where the merge walk executes, relative to `resolve()`'s existing structure._ Unchanged, in this
 order: GATE 2 (coverage, `:756-769`) → the one absolute `effectiveDeadlineAtMs` computed once
 (`:584-618`) → `plan` built by the existing route-pairing loop (`:638-650`). What changes is what
-happens FROM `plan` onward, gated on whether any matching route sets `merge: true`: the merge walk
+happens FROM `plan` onward, gated on whether any matching route sets `merge: true`. The merge walk
 reuses, per participant and UNCHANGED, the deadline pre-check (`:803-811`), the not-registered check
-(`:813-824`), the chain-scoped skip (`:830-832` — silent in `tried[]` by existing design, but
-R-174(b) requires `missingSources` to SYNTHESIZE its own reason for this case rather than mirror an
-absent `tried[]` entry, so "silent" describes `tried[]` only, never the merge diagnostic),
-`isAvailable()` (`:834-839`), the cache-hit read INCLUDING the negative-entry check but EXCLUDING
-the early `return` (`:843-875`, `:877-880` — `:876`'s `return withDiagnostics(hit)` is exactly what
-the merge loop replaces with an accumulate-and-continue step, never performs), and the
-fetch/normalize/cache.set triad, same exclusion (`:882-944`, `:946-969` — `:945` is the fresh-result
-mirror of the same early return). **Nothing about per-adapter caching is new code** (this is also
-how R-165's 🔴 invariant holds: nothing in the merge path ever calls `cache.set()` on anything but
-one adapter's own normalized result; the merged array is assembled in memory, in `resolve()`, and is
-never itself a cache write). The one structural difference: the non-merge loop returns on the FIRST
-satisfying answer; the merge loop never returns mid-walk — for each participant it either accumulates
-into the dedup `Map`/`sources`/`perSourceCache` (satisfied) or into `missingSources` (not-asked/
-asked-did-not-answer) or into neither (answered but policy-excluded, tracked only in `tried`) — then
-applies the R-164/AC-48 outcome contract ONCE, after the walk (reliability.md §9.1 carries the full
-four-branch contract and the deadline precondition, including the THIRD deadline door — the caller's
-own already-expired `requestedDeadlineAtMs`, `:615-617` — not restated here to avoid the two copies
-drifting).
+(`:813-824`) and the chain-scoped skip (`:830-832`). It also reuses `isAvailable()` (`:834-839`) and
+the cache-hit read INCLUDING the negative-entry check but EXCLUDING the early `return` (`:843-875`,
+`:877-880`). The fetch/normalize/cache.set triad is reused with the same exclusion (`:882-944`,
+`:946-969`). The chain-scoped skip is silent in `tried[]` by existing design. R-174(b) requires
+`missingSources` to SYNTHESIZE its own reason for this case rather than mirror an absent `tried[]`
+entry, so "silent" describes `tried[]` only, never the merge diagnostic. On the cache-hit read,
+`:876`'s `return withDiagnostics(hit)` is exactly what the merge loop replaces with an
+accumulate-and-continue step, never performs. On the triad, `:945` is the fresh-result mirror of the
+same early return. **Nothing about per-adapter caching is new code.** This is also how R-165's
+invariant holds: nothing in the merge path ever calls `cache.set()` on anything but one adapter's
+own normalized result. The merged array is assembled in memory, in `resolve()`, and is never itself
+a cache write. The one structural difference: the non-merge loop returns on the FIRST satisfying
+answer, and the merge loop never returns mid-walk. For each participant it either accumulates into
+the dedup `Map`/`sources`/`perSourceCache` (satisfied) or into `missingSources` (not-asked/
+asked-did-not-answer) or into neither (answered but policy-excluded, tracked only in `tried`). It
+then applies the R-164/AC-48 outcome contract ONCE, after the walk. The full four-branch contract
+and the deadline precondition live in reliability.md §9.1, including the THIRD deadline door — the
+caller's own already-expired `requestedDeadlineAtMs`, `:615-617` — not restated here to avoid the
+two copies drifting.
 
 _Narrowed by T-013 013-3 (2026-08-06) — a FOURTH sentence, found by roast round 1 (B-4), carrying
-the same narrower reading as the three already marked below._ "or into neither (answered but
-policy-excluded, tracked only in `tried`)" couples `perSourceCache` to the SAME `satisfied`
-condition as `sources`/the dedup `Map` — a policy-excluded participant DID answer, so under
-R-174(c) (the cache fact is about the answer, not the contribution, and not about whether the
-route's policy accepted it) it still gets a `perSourceCache` entry; only its absence from
-`sources`/`missingSources` is correct. `docs/tasks/task-013-4-merge-walk.md`'s own TC-INT-11 and
-"Политика за участника" section are corrected to state this explicitly, so 013-4's implementer is
-not left to infer it from this paragraph. Full argument: `docs/architectures/open-questions.md`
+the same narrower reading as the three already marked below._ The sentence is quoted next. "or into
+neither (answered but policy-excluded, tracked only in `tried`)" couples `perSourceCache` to the
+SAME `satisfied` condition as `sources`/the dedup `Map`. Under R-174(c) the cache fact is about the
+answer, not the contribution, and not about whether the route's policy accepted it. A
+policy-excluded participant DID answer, so it still gets a `perSourceCache` entry; only its absence
+from `sources`/`missingSources` is correct. `docs/tasks/task-013-4-merge-walk.md`'s own TC-INT-11
+and "Политика за участника" section are corrected to state this explicitly, so 013-4's implementer
+is not left to infer it from this paragraph. Full argument: `docs/architectures/open-questions.md`
 "T-013 task 013-3".
 
 _Line references in this and the preceding two paragraphs corrected review round 3, LOW-4 —
 `+87` lines landed above `resolve()` in this task's own diff (the new `MergeEligibilityNotDeclaredError`
-class plus the constructor's step 3), shifting every citation at or after old line 375 by that
-constant. All twenty numeric anchors from `877` through `952` were re-measured against the current
-file and corrected together; none of them pointed at unrelated, already-stale content, unlike six
-sibling citations found nearby (see the task's own review record for the full count)._
+class plus the constructor's step 3). That diff shifts every citation at or after old line 375 by
+that constant. All twenty numeric anchors from `877` through `952` were re-measured against the
+current file and corrected together. None of them pointed at unrelated, already-stale content,
+unlike six sibling citations found nearby (see the task's own review record for the full count)._
 
 _`CapabilityResolution` shape (R-174/R-175) — corrected after review: `sources` is CONTRIBUTORS,
 not "answered"._ `sources: string[]` names every participant whose points are actually present in
-`result` — NOT every participant who merely answered. The distinction is the whole point: on the
-composition TASK §1.5 names as ordinary (`platform-explorer` answers `[]`, `pg-history` returns 40
-points), an "answered" reading would publish `source: 'platform-explorer'` — the higher-ranked
-participant — over a payload containing none of its own data, while `sources` including it would
-claim it contributed. `sources` is OPTIONAL (R-174d), omitted when empty (mirrors `attempted`) —
-happens on branch (a) when every participant answered with zero points; `perSourceCache` carries one
-entry per member of `sources`, same set, so it is never populated for a non-contributor either.
-`source` (singular, required, never empty — AC-47) is the highest-ranked entry of `sources` when
-`sources` is non-empty; when it IS empty (nobody contributed, branch (a)'s zero-point case), `source`
-falls back to the highest-ranked ANSWERED participant instead, purely to keep the field non-empty as
-AC-47 requires — this two-tier rule is what makes `source` mean "who provided what is in `result`"
-whenever `result` has content, and "who is most authoritative among those asked" only in the one
-corner case where nobody provided anything at all. `cache` stays the existing two-literal
-`'hit' | 'miss'` (R-175b forbids widening an existing field's type) and is `'hit'` on a merge walk
+`result` — NOT every participant who answered. The two readings differ on the composition TASK §1.5
+names as ordinary: `platform-explorer` answers `[]`, and `pg-history` returns 40 points. An
+"answered" reading would publish `source: 'platform-explorer'` — the higher-ranked participant —
+over a payload containing none of its own data. `sources` including it would claim it contributed.
+`sources` is OPTIONAL (R-174d), omitted when empty (mirrors `attempted`) — that happens on branch
+(a) when every participant answered with zero points. `perSourceCache` carries one entry per member
+of `sources`, same set, so it is never populated for a non-contributor either. `source` (singular,
+required, never empty — AC-47) is the highest-ranked entry of `sources` when `sources` is
+non-empty. When it IS empty (nobody contributed, branch (a)'s zero-point case), `source` falls back
+to the highest-ranked ANSWERED participant instead, purely to keep the field non-empty as AC-47
+requires. This two-tier rule is what makes `source` mean "who provided what is in `result`" whenever
+`result` has content. It means "who is most authoritative among those asked" only in the one corner
+case where nobody provided anything at all. `cache` stays the existing two-literal
+`'hit' | 'miss'` (R-175b forbids widening an existing field's type). It is `'hit'` on a merge walk
 only when EVERY entry of `perSourceCache` is `'hit'` — a coarse, conservative aggregate for the 11
-unrelated tools that read it unmodified; `perSourceCache` carries the granular per-contributor truth
+unrelated tools that read it unmodified. `perSourceCache` carries the granular per-contributor truth
 R-174(c) requires ("a fact is not lost, not that it reaches every reader" — M-5 below names ITS
 reader). `resolveCapability()` (`mcp-server/src/tools/resolve-capability.ts`) is extended the same
-way — `ResolveSuccess` gains `sources?`/`missingSources?`/`perSourceCache?`, forwarded verbatim when
-the registry sets them — strictly additive, so its 11 existing callers recompile and behave unchanged
-(R-175b); the 14th tool (interfaces.md §5.1.6) reuses the SAME wrapper for its error translation and
-reads the new fields — including as its OWN `_meta.cache` (M-5: the reader `perSourceCache`/`sources`
-were missing) — rather than re-implementing `CapabilityUnavailableError`/`CapabilityDeadlineExceededError` handling
-from scratch.
+way. `ResolveSuccess` gains `sources?`/`missingSources?`/`perSourceCache?`, forwarded verbatim when
+the registry sets them — strictly additive, so its 11 existing callers recompile and behave
+unchanged (R-175b). The 14th tool (interfaces.md §5.1.6) reuses the SAME wrapper for its error
+translation and reads the new fields — including as its OWN `_meta.cache` (M-5: the reader
+`perSourceCache`/`sources` were missing). It does not re-implement
+`CapabilityUnavailableError`/`CapabilityDeadlineExceededError` handling from scratch.
 
-_Narrowed by T-013 013-3 (2026-08-06)._ The two sentences above — "`perSourceCache` carries one
-entry per member of `sources`, same set, so it is never populated for a non-contributor either"
-(`:982-983`) and "the granular per-contributor truth" (`:992`) — read `perSourceCache` as
-CONTRIBUTORS-only. The shipped field instead covers every participant that ANSWERED, R-174(c): the
-cache fact is about the answer, not the contribution, and a participant that answered empty from
-cache without contributing must not vanish from `_meta.cache` entirely. Full argument and the
-composition on which the narrower reading loses the fact: `docs/architectures/open-questions.md`
+_Narrowed by T-013 013-3 (2026-08-06)._ Two sentences above read `perSourceCache` as
+CONTRIBUTORS-only. They are "`perSourceCache` carries one entry per member of `sources`, same set,
+so it is never populated for a non-contributor either" (`:982-983`) and "the granular
+per-contributor truth" (`:992`). The shipped field instead covers every participant that ANSWERED,
+R-174(c): the cache fact is about the answer, not the contribution, and a participant that answered
+empty from cache without contributing must not vanish from `_meta.cache` entirely. Full argument and
+the composition on which the narrower reading loses the fact: `docs/architectures/open-questions.md`
 "T-013 task 013-3". (A fourth sentence carrying the same narrower reading, in the earlier
 procedural paragraph above, is marked separately at `:949-951` — roast round 1, B-4.)
 
@@ -1020,13 +1051,13 @@ non-per-capability constant for cached deterministic failures — unaffected) bo
 `DEFAULT_TTL_SECONDS` is UNREACHABLE for every routed capability the same way an unregistered
 policy `kind` will be: `CapabilityRegistry`'s construction-time validation (above) also requires a
 `capabilityManifests` entry for every `route.capability`. **M1 — this is what turns AC-13 ("every
-`deadlineMs` carries a derivation record") into a RED TEST, not a code-review promise:** the WI-28
-gate (`readme-tool-table.test.ts`), which already asserted every routed capability's `ttlFor()` value
-matches a documented row, was extended in the same task to assert every capability's `deadlineMs`
-(and, where applicable, `paidLegMs`) matches the by-capability table below — a manifest row with a
-number and no matching documented derivation fails the SAME gate that already catches an
+`deadlineMs` carries a derivation record") into a RED TEST, not a code-review promise.** The WI-28
+gate (`readme-tool-table.test.ts`) already asserted every routed capability's `ttlFor()` value
+matches a documented row. It was extended in the same task to assert every capability's
+`deadlineMs` (and, where applicable, `paidLegMs`) matches the by-capability table below. A manifest
+row with a number and no matching documented derivation fails the SAME gate that already catches an
 undocumented TTL. What that gate does **not** read is the Derivation column's prose, so it cannot
-tell an alignment from an override; that limit is declared in the gate itself and is why the one
+tell an alignment from an override. That limit is declared in the gate itself and is why the one
 override below is marked in the row.
 
 **Shape classification — 8 of 20 settled by ADR-002 D3 itself, the other 12 audited in task 012-4.
@@ -1038,62 +1069,76 @@ All 20 rows are written.**
 | `set`    | `entity.labels`, `token.holders`, `wallet.balances.native`  |
 | `series` | `privacy.shielded_pool.history`, `platform.metrics.history` |
 
-**The remaining 12 were audited and the table is complete — DONE (T-012, task 012-4).**
+**The remaining 12 were audited and the table is complete — DONE (T-012, task 012-4).** The 12 are
 `token.metadata`, `pairs.active`, `pool.info`, `protocol.tvl`, `dex.volume.history`,
 `privacy.shielded_pool`, `platform.identities`, `platform.contracts`, `platform.documents`,
-`platform.credits`, `smart-money.flows` and `token.risk` each needed one pass over the adapter's
-actual `normalize()` output shape rather than a guess made here. That audit ran, its per-row evidence
-lives beside each row in `packages/core/src/capability-manifest.ts` as an `AUDIT:` comment, and
-OQ-T012-1 is closed in `open-questions.md`. All 20 rows are written; the heading's "12 left to
-Development" is the state at the time this section was authored, kept because the split is what
-explains why half the rows cite ADR-002 and half cite a code reading.
+`platform.credits`, `smart-money.flows` and `token.risk`. Each needed one pass over the adapter's
+actual `normalize()` output shape rather than a guess made here. That audit ran, its per-row
+evidence lives beside each row in `packages/core/src/capability-manifest.ts` as an `AUDIT:` comment,
+and OQ-T012-1 is closed in `open-questions.md`. All 20 rows are written. The heading's "12 left to
+Development" is the state at the time this section was authored. It is kept because the split is
+what explains why half the rows cite ADR-002 and half cite a code reading.
 
 **Deadline budget tiers (E-4, R-148/R-149) — the STARTING tiers, not a final 20-row table.**
 
-🔴 **M-5 correction (architecture review round 2, 2026-08-03) — tiers are named by ROUTE
+**M-5 correction (architecture review round 2, 2026-08-03) — tiers are named by ROUTE
 COMPOSITION, not by `shape`.** An earlier draft of this table named the first two tiers "Free
-`point`" and "Free `set`/`series`", echoing OD-2's `shape` vocabulary — but the assignment below
+`point`" and "Free `set`/`series`", echoing OD-2's `shape` vocabulary. But the assignment below
 ("`deadlineMs`/`paidLegMs` by capability") puts `wallet.balances.native` (`shape: 'set'`, per the
-classification table above) into the SAME ~15_000 row as `token.price` (`shape: 'point'`), because
-the real criterion, already visible in this table's own Derivation column, is single-vs-multi
-FREE-ADAPTER composition, not result shape — `shape` and the deadline tier are independent axes that
-happen to correlate for the 8 capabilities ADR-002 D3 names outright.
+classification table above) into the SAME ~15_000 row as `token.price` (`shape: 'point'`). That
+placement follows the real criterion, already visible in this table's own Derivation column:
+single-vs-multi FREE-ADAPTER composition, not result shape. `shape` and the deadline tier are
+independent axes that happen to correlate for the 8 capabilities ADR-002 D3 names outright.
 Renamed here to remove the false impression that `shape` decides `deadlineMs`:
 
-| Tier (named by what decides it)        | `deadlineMs` | Applies to (examples)                                                | Derivation                                                                                                                                                                                                                                                                                                              |
-| -------------------------------------- | ------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Single free adapter, one attempt       | ~15_000      | `token.price`, `chain.tvl`, `chain.supply`, `wallet.balances.native` | one adapter, one network attempt, no composite sub-calls — regardless of whether the capability's OWN `shape` is `point` or `set`                                                                                                                                                                                       |
-| ≤2 free adapters in sequence           | ~30_000      | `entity.labels`'s free leg alone, `privacy.shielded_pool.history`    | ≤2 free adapters attempted in sequence, one attempt each                                                                                                                                                                                                                                                                |
-| Paid composite — cancellable head only | ~60_000      | `entity.labels`'s full route, `smart-money.flows`, `token.risk`      | free leg (if any) + the paid adapter's own free pre-reservation step (e.g. nansen's `/account` resync) — everything up to, but NOT including, `checkAndReserve()`                                                                                                                                                       |
-| Single free adapter, MEASURED slow     | ~60_000      | `token.holders`                                                      | **Not a composition tier.** One adapter and one attempt, like the first row — but the vendor's own index for this ROUTE was measured far slower than the routes beside it (task 014-42), so the number comes from a measurement rather than from the route's shape. Shares a number with the paid tier and nothing else |
+| Tier (named by what decides it)        | `deadlineMs` | Applies to (examples)                                                    | Derivation                                                                  |
+| -------------------------------------- | ------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Single free adapter, one attempt       | ~15_000      | `token.price`, `chain.tvl`, `chain.supply`, `wallet.balances.native`     | one adapter, one network attempt, no composite sub-calls                    |
+| ≤2 free adapters in sequence           | ~30_000      | `entity.labels`'s free call stage alone, `privacy.shielded_pool.history` | ≤2 free adapters attempted in sequence, one attempt each                    |
+| Paid composite — cancellable head only | ~60_000      | `entity.labels`'s full route, `smart-money.flows`, `token.risk`          | free call stage (if any) + the paid adapter's own free pre-reservation step |
+| Single free adapter, MEASURED slow     | ~60_000      | `token.holders`                                                          | **Not a composition tier** — see the derivation notes below                 |
+
+**Derivation notes for the tiers above.**
+
+- **Single free adapter, one attempt** — regardless of whether the capability's OWN `shape` is
+  `point` or `set`.
+- **Paid composite — cancellable head only** — the pre-reservation step is e.g. nansen's `/account`
+  resync; the tier covers everything up to, but NOT including, `checkAndReserve()`.
+- **Single free adapter, MEASURED slow** — one adapter and one attempt, like the first row. The
+  vendor's own index for this ROUTE was measured far slower than the routes beside it (task
+  014-42), so the number comes from a measurement rather than from the route's shape. Shares a
+  number with the paid tier and nothing else.
 
 OD-2's `shape` labels (`point`/`set`/`series`) remain a useful ILLUSTRATIVE mapping for intuition —
 most `point` capabilities happen to be single-free-adapter routes — but they are never the
 assignment RULE; the route table (`providers.config.ts`) is. These three are the OWNER's starting
-tiers (2026-08-03), not a final per-capability table: assigning each of the 20 capabilities to a tier
-and writing its exact `deadlineMs` (and, for paid composites, `paidLegMs`) is Development's job
-against a MEASURED envelope for that specific capability, per R-149 — not a mechanical
-round-to-nearest-tier.
+tiers (2026-08-03), not a final per-capability table. Assigning each of the 20 capabilities to a
+tier and writing its exact `deadlineMs` (and, for paid composites, `paidLegMs`) is Development's
+job. That job runs against a MEASURED envelope for that specific capability, per R-149 — not a
+mechanical round-to-nearest-tier.
 
-🔴 **Worked example — `entity.labels`, corrected 2026-08-03 (OD-3, supersedes an earlier draft of
+**Worked example — `entity.labels`, corrected 2026-08-03 (OD-3, supersedes an earlier draft of
 this section that an architecture review found conflated the two phases into one "~410s → ~60s"
 claim):**
 
-| Phase                                            | Duration                                                                                                                    | Cancellable?                  | Why                                                                                                    |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Cancellable head                                 | ~60_000 (paid composite — cancellable head tier, above)                                                                     | YES — bounded by `deadlineMs` | blockscout's free attempt + nansen's own free `/account` resync, both strictly BEFORE any reservation  |
-| Paid leg                                         | ~270_000 (`30+4×15` × 3 nansen sub-calls, the historical derivation, UNCHANGED — owner rejected retuning nansen's timeouts) | NO — D4 п.2                   | credits already committed; cancelling here means paid-and-got-nothing                                  |
-| **Worst case, T-012**                            | **~330_000**                                                                                                                | —                             | `deadlineMs + paidLegMs`, deterministic                                                                |
-| Worst case, TODAY (no deadline mechanism at all) | **~410_000, and not actually a bound**                                                                                      | —                             | nothing anywhere is cancelled; a slow/hung free leg can ALSO push the total past the historical figure |
+| Phase                                            | Duration                                                | Cancellable?                  | Why                                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Cancellable head                                 | ~60_000 (paid composite — cancellable head tier, above) | YES — bounded by `deadlineMs` | blockscout's free attempt + nansen's own free `/account` resync, both strictly BEFORE any reservation         |
+| Paid call stage                                  | ~270_000 (derivation below the table)                   | NO — D4 п.2                   | credits already committed; cancelling here means paid-and-got-nothing                                         |
+| **Worst case, T-012**                            | **~330_000**                                            | —                             | `deadlineMs + paidLegMs`, deterministic                                                                       |
+| Worst case, TODAY (no deadline mechanism at all) | **~410_000, and not actually a bound**                  | —                             | nothing anywhere is cancelled; a slow/hung free call stage can ALSO push the total past the historical figure |
+
+**Paid call stage (`paidLegMs`) — how ~270_000 is derived.** `30+4×15` × 3 nansen sub-calls, the historical
+derivation, UNCHANGED — owner rejected retuning nansen's timeouts.
 
 Do NOT retune nansen's own timeouts in this task — the owner considered and rejected that option on
-2026-08-03; ~270_000 of the historical envelope is written down as a DERIVED, ACCEPTED cost of D4
-п.2's correctness rule, not a gap to close here.
+2026-08-03. The ~270_000 of the historical envelope is written down as a DERIVED, ACCEPTED cost of
+D4 п.2's correctness rule, not a gap to close here.
 
 **Call deadline (D4, R-140…R-147) — LANDED (T-012, tasks 012-7/012-8/012-9; adapter uptake
 completed by WI-37, 2026-08-05).** A pre-commitment budget for the cancellable
 phase, threaded as a plain scalar (never wrapped in an object, D4 п.3 rejects a duration, not a
-shape); the paid tail is a separate, honestly-budgeted number, per OD-3 above:
+shape). The paid tail is a separate, honestly-budgeted number, per OD-3 above:
 
 ```
 resolve(capability, chain, args, requestedDeadlineAtMs?)
@@ -1106,7 +1151,7 @@ resolve(capability, chain, args, requestedDeadlineAtMs?)
     → safeFetch(url, opts, allowlist, fetchImpl, { ...opts, deadlineAtMs: effectiveDeadlineAtMs })
 ```
 
-🔴 **C-1 (CRITICAL, architecture review round 2, 2026-08-03) — TWO distinct signals per hop, not one
+**C-1 (CRITICAL, architecture review round 2, 2026-08-03) — TWO distinct signals per hop, not one
 shared clock.** An earlier draft of this section read "one hop races `Math.min(timeoutMs, deadlineAtMs
 
 - Date.now())`" and described the error class purely by "remaining time already `≤ 0`at the START of
@@ -1147,42 +1192,44 @@ const deadlineSignal = deadlineAtMs !== undefined
 
 A hop whose remaining time is already `≤ 0` at the START is still refused before any network attempt
 at all (no signal race needed there) — that belt-and-braces short-circuit is unchanged. What C-1 fixes
-is the hop that STARTS with time left and runs out of it mid-flight: `raceWithTimeout` now inspects
-which signal actually aborted rather than manufacturing one error class unconditionally, which is also
-what makes the registry's own `deadlineHit` flag (H2 below) reliable — it can only be set from a
-genuine `DeadlineExceededError`, and that error can now actually be thrown from the case that matters.
-The allowlist check (`assertAllowedHost`) itself is UNCHANGED — the deadline affects only the timeout
-signals composed into each hop, never the per-hop host check (Boundaries, TASK.md §5: the SSRF gate
-is not touched by this task in substance).
+is the hop that STARTS with time left and runs out of it mid-flight. `raceWithTimeout` now inspects
+which signal actually aborted rather than manufacturing one error class unconditionally. That is
+also what makes the registry's own `deadlineHit` flag (H2 below) reliable. It can only be set from a
+genuine `DeadlineExceededError`, and that error can now actually be thrown from the case that
+matters. The allowlist check (`assertAllowedHost`) itself is UNCHANGED. The deadline affects only
+the timeout signals composed into each hop, never the per-hop host check (Boundaries, TASK.md §5:
+the SSRF gate is not touched by this task in substance).
 
 **H1 — the caller's own abort signal stops being silently clobbered, AND stops being conflated with
-either timeout signal. SHIPPED (T-012, task 012-7).** The 🔴 marker and the present tense below
-described the tree BEFORE the fix and are kept as the derivation, because the argument — why the
-naive one-line fix reintroduces C-1 — is what stops the next author from writing it. What shipped is
-`composeHopAbort` in `net/safe-fetch.ts`, which records WHICH input fired and resolves the rejection
-class from that; the caller's own signal is honoured and returned unwrapped. Read the rest of this
-block as "the state that was, and the reasoning out of it", not as a description of running code.
+either timeout signal. SHIPPED (T-012, task 012-7).** The present tense below described the tree
+BEFORE the fix, and is kept as the derivation. The argument that derivation carries — why the
+one-line fix below reintroduces C-1 — is what stops the next author from writing it. What
+shipped is `composeHopAbort` in `net/safe-fetch.ts`, which records WHICH input fired and resolves
+the rejection class from that; the caller's own signal is honoured and returned unwrapped.
+Read the rest of this block as "the state that was, and the reasoning out of it", not as a
+description of running code.
 
 Before the fix, `safe-fetch.ts` built each hop's options as
 `{...currentOpts, redirect:'manual', signal}` with the PER-HOP timeout signal LAST, so any
 caller-supplied `currentOpts.signal` is unconditionally overwritten and never observed — `safeFetch`
-cannot currently be cancelled by its caller at all. The naive one-line fix — fold the caller's signal
+cannot currently be cancelled by its caller at all. The one-line fix — fold the caller's signal
 and the deadline signal into one shared `AbortSignal.any([...])` and hand THAT single composite to
-both `fetchImpl` and `raceWithTimeout` — reintroduces C-1 one level up: `AbortSignal.any` reports only
-that ONE of its inputs fired, never WHICH, so a caller's own abort would again be reported as a vendor
-timeout (or a deadline expiry) to whatever reads the thrown error's type. PLANNED fix keeps all three
-signals distinguishable all the way to the `catch`: `hopSignal`, `deadlineSignal`, and the caller's own
-`currentOpts.signal` are combined via `AbortSignal.any([...])` for the actual `fetchImpl` call (which
-only accepts one signal), but the handler records, in a closure variable read inside `onAbort`, which
-INPUT signal was the one that fired — `deadlineSignal?.aborted` → `DeadlineExceededError`;
-`callerSignal?.aborted` → rethrow the caller's OWN abort reason, never wrapped in either typed error;
-otherwise → `SafeFetchTimeoutError(url, effectiveHopMs)`. Regression contract, stated so it is
-testable: with NO `deadlineAtMs` and NO caller `signal`, behaviour is BYTE-IDENTICAL to today (a lone
-per-hop `AbortSignal.timeout`); with a caller `signal` and no deadline, the caller's own abort now
-genuinely cancels the fetch AND is reported under its own reason, never as `SafeFetchTimeoutError`
-(today it silently does neither); with both present, whichever fires first wins, and each still
-reports through its own typed error so a caller cannot mistake "we cancelled you" for "the vendor
-timed out" or "we ran out of our own time".
+both `fetchImpl` and `raceWithTimeout` — reintroduces C-1 one level up. `AbortSignal.any` reports
+only that ONE of its inputs fired, never WHICH. A caller's own abort would again be reported as a
+vendor timeout (or a deadline expiry) to whatever reads the thrown error's type. PLANNED fix keeps
+all three signals distinguishable all the way to the `catch`. For the actual `fetchImpl` call, which
+only accepts one signal, `hopSignal`, `deadlineSignal` and the caller's own `currentOpts.signal` are
+combined via `AbortSignal.any([...])`. The handler records, in a closure variable read inside
+`onAbort`, which INPUT signal was the one that fired. That variable selects the class:
+`deadlineSignal?.aborted` → `DeadlineExceededError`; `callerSignal?.aborted` → rethrow the caller's
+OWN abort reason, never wrapped in either typed error; otherwise →
+`SafeFetchTimeoutError(url, effectiveHopMs)`. Regression contract, stated so it is testable. With NO
+`deadlineAtMs` and NO caller `signal`, behaviour is BYTE-IDENTICAL to today (a lone per-hop
+`AbortSignal.timeout`). With a caller `signal` and no deadline, the caller's own abort now genuinely
+cancels the fetch AND is reported under its own reason, never as `SafeFetchTimeoutError` (today it
+silently does neither). With both present, whichever fires first wins. Each still reports through
+its own typed error, so a caller cannot mistake "we cancelled you" for "the vendor timed out" or
+"we ran out of our own time".
 
 **The limiter is deadline-aware too (R-146, L4-corrected, H-A-corrected 2026-08-03).**
 `throttle(providerId, config, weight?, deadlineAtMs?)` computes `remainingMs = deadlineAtMs ?
@@ -1195,44 +1242,44 @@ conflated into one flag:
   `net/rate-limit.ts`) and throws `DeadlineExceededError` WITHOUT waiting at all — sleeping only to
   reject afterward buys nothing.
 - `remainingMs > 0` but the wait would not LEAVE `MIN_POST_WAIT_REMAINDER_MS` (5 000 ms — the
-  shortest per-hop `REQUEST_TIMEOUT_MS` any adapter configures) behind it — a DIFFERENT fact: THIS
-  PROVIDER's bucket specifically cannot free up in useful time (buckets are per-provider,
+  shortest per-hop `REQUEST_TIMEOUT_MS` any adapter configures) behind it. That is a DIFFERENT fact:
+  THIS PROVIDER's bucket specifically cannot free up in useful time (buckets are per-provider,
   `net/rate-limit.ts`); time still remains overall. `throttle()` refunds the reservation the same
   way but throws a DIFFERENT typed error, `DeadlineWouldExceedError` (new, `net/rate-limit.ts`,
   sibling to the existing `RateLimitRejectedError`) — a fact about ONE provider's saturation, never
   about the deadline itself.
   **The test is on the REMAINDER, not on whether the wait fits (adversarial cycle 2, F-2).** The
   first implementation compared `computedWaitMs > remainingMs`, which admitted the exact equality
-  and every wait leaving a sliver: the caller then slept out its whole budget and `safeFetch`
+  and every wait leaving a sliver. The caller then slept out its whole budget, and `safeFetch`
   answered with `DeadlineExceededError` — the TERMINAL class — one layer down, so the registry
   cancelled every adapter behind the saturated one. That is the H-A defect below, reintroduced by
   the branch written to prevent it (measured on `entity.labels`: 31 s of ceiling, a 30 s backlog,
   `nansen` never asked).
 
-🔴 **H-A (HIGH, architecture review round 2, 2026-08-03) — only genuine expiry latches the
+**H-A (HIGH, architecture review round 2, 2026-08-03) — only genuine expiry latches the
 registry's `deadlineHit` flag; a saturated bucket must not skip the rest of the route.** An earlier
 draft of the registry loop below skipped every remaining adapter the moment EITHER error was seen —
 reproducing the H-1 defect one layer down. Concretely on `entity.labels`: a burst saturates
 `blockscout`'s bucket (`capacity 5, refillPerSec 2`), its wait is 30s with 20s of deadline left —
-`DeadlineWouldExceedError`. Treating that as route-ending means `nansen`, the very next adapter, with
-an IDLE bucket and 20 real seconds still on the clock, is never even attempted — a free source's
-unavailability terminating the route before the paid one is asked, which is exactly what H-1 already
-forbids for a plain empty answer. A saturated bucket is a reason THIS adapter cannot help right now,
-never a reason to stop asking. Otherwise (`remainingMs - computedWaitMs >=
+`DeadlineWouldExceedError`. Treating that as route-ending means `nansen`, the very next adapter,
+with an IDLE bucket and 20 real seconds still on the clock, is never even attempted. That is a free
+source's unavailability terminating the route before the paid one is asked, which is exactly what
+H-1 already forbids for a plain empty answer. A saturated bucket is a reason THIS adapter cannot
+help right now, never a reason to stop asking. Otherwise (`remainingMs - computedWaitMs >=
 MIN_POST_WAIT_REMAINDER_MS`) `throttle()` proceeds exactly as it does today; the deadline was not
 this call's binding constraint.
 
-🔴 **H2 — bridging a net-layer deadline throw into the registry's OWN typed outcome, and OD-4's
+**H2 — bridging a net-layer deadline throw into the registry's OWN typed outcome, and OD-4's
 "never a partial-as-fact" rule.** `DeadlineExceededError` (net layer) is never rethrown to the
-caller AS ITSELF. `CapabilityRegistry.resolve()`'s existing per-adapter `try/catch` — the SAME one
-that already special-cases `CapabilityNotCoveredOnChainError` for immediate rethrow
-(`packages/core/src/adapters/registry.ts:1549`, `if (error instanceof DeadlineExceededError) deadlineHit = true;` — the SINGLE-WINNER walk's catch; the merge walk grew its own twin at `:1176` in task 013-5) — instead
-catches it, sets a NEW `deadlineHit = true` flag alongside the
-existing `hadFailure`, and records the same informative `tried[]` entry any other fetch failure
-gets. **`DeadlineWouldExceedError` (H-A above) is caught by this SAME per-adapter branch but does
-NOT set `deadlineHit`** — it is recorded in `tried[]` exactly like any other single-adapter failure
-(e.g. `isAvailable() === false`) and the loop simply moves on to the next `adapterId`; conflating the
-two would reproduce H-1 one layer down, per H-A. **Unlike** `CapabilityNotCoveredOnChainError`, a
+caller AS ITSELF. `CapabilityRegistry.resolve()`'s existing per-adapter `try/catch` catches it
+instead, sets a NEW `deadlineHit = true` flag alongside the existing `hadFailure`, and records the
+same informative `tried[]` entry any other fetch failure gets. That is the SAME `try/catch` that
+already special-cases `CapabilityNotCoveredOnChainError` for immediate rethrow
+(`packages/core/src/adapters/registry.ts:1549`, `if (error instanceof DeadlineExceededError) deadlineHit = true;` — the SINGLE-WINNER walk's catch; the merge walk grew its own twin at `:1176` in task 013-5).
+**`DeadlineWouldExceedError` (H-A above) is caught by this SAME per-adapter branch but does
+NOT set `deadlineHit`.** It is recorded in `tried[]` exactly like any other single-adapter failure
+(e.g. `isAvailable() === false`), and the loop simply moves on to the next `adapterId`. Conflating
+the two would reproduce H-1 one layer down, per H-A. **Unlike** `CapabilityNotCoveredOnChainError`, a
 genuine `DeadlineExceededError` does NOT rethrow immediately: the walk's remaining, not-yet-tried
 adapters still need an entry in `tried[]`, produced CHEAPLY by a pre-iteration check with no further
 network attempt:
@@ -1284,9 +1331,9 @@ if (deadlineHit || Date.now() >= effectiveDeadlineAtMs) {
 throw new CapabilityUnavailableError({ capability, chain, tried });
 ```
 
-`CapabilityDeadlineExceededError` carries the identical `{capability, chain, tried}` shape —
+`CapabilityDeadlineExceededError` carries the identical `{capability, chain, tried}` shape.
 `tried[]` names both the adapters that answered-but-not-satisfyingly BEFORE the deadline hit and the
-ones the pre-iteration check marked "never attempted", which is what makes the thrown TEXT
+ones the pre-iteration check marked "never attempted". That is what makes the thrown TEXT
 informative WITHOUT any partial-domain-data return path (D5 stays off; `resolve()` never starts
 returning data assembled from more than one source). **TASK.md's R-145(b) wording is being amended
 to match this reading** (owner, OD-4) — record this as a dated decision, not an open interpretive
@@ -1295,65 +1342,67 @@ question.
 **Fetch failures are still never negative-cached (unchanged) — a deadline cannot poison a
 provider's cache slot.** `DeadlineExceededError` AND `DeadlineWouldExceedError` (H-A above) are both
 caught by the SAME generic "this adapter could not answer, try the next one" branch every other
-fetch-layer error already uses (`registry.ts`, ~372-391) — only `normalize()` failures are ever
+fetch-layer error already uses (`registry.ts`, ~372-391). Only `normalize()` failures are ever
 written as a negative cache entry (L-1's doctrine, unchanged). A capability that legitimately hits
 its deadline once is free to try fully again on the very next call, with no memory of the timeout.
 
-🔴 **H3 — once a reservation commits, NOTHING further in that `fetch()` call receives the deadline,
+**H3 — once a reservation commits, NOTHING further in that `fetch()` call receives the deadline,
 not just its first sub-call.** Stated unambiguously because a singular "the paid HTTP request"
-invites reading it as one call: for a composite capability with N paid sub-calls made under ONE
-reservation, sub-calls 2..N and every throttle wait between them ALSO receive no deadline — the
-reservation was made for the SUM of their prices (§3.2, "Post-call reconciliation"), and cutting off
+invites reading it as one call. For a composite capability with N paid sub-calls made under ONE
+reservation, sub-calls 2..N and every throttle wait between them ALSO receive no deadline. The
+reservation was made for the SUM of their prices (§3.2, "Post-call reconciliation"). Cutting off
 sub-call 2 after paying for both would be exactly the "paid and got nothing" outcome D4 п.2
-forbids, merely delayed by one step. 🔴 **M-3 correction (architecture review round 2, 2026-08-03) —
-per-tier sub-call counts, restated:** `entity.labels`'s DEFAULT tier issues **2 OR 3** paid
-sub-calls under one reservation, depending on `args` (`packages/core/src/adapters/nansen/reconcile.ts:8`, `smart-money.flows`) — 3 is the case
-`paidLegMs ≈ 270_000` (the OD-3 worked example above) is derived from, and `paidLegMs` is documented
-as the WORST CASE over arguments, never a fixed count: a lighter invocation that resolves to fewer
-sub-calls has a shorter ACTUAL uncancellable tail, but the manifest publishes the worst-case bound
-because that is what a caller must be told to expect. This is the identical argument-dependence
-"Provider tier" above already uses to forbid deriving `tier` from `costOf()` — a measured BOUND is
-allowed to vary with `args`, a CLASSIFICATION is not, and `paidLegMs` is the former.
+forbids, delayed by one step. **M-3 correction (architecture review round 2, 2026-08-03) —
+per-tier sub-call counts, restated.** `entity.labels`'s DEFAULT tier issues **2 OR 3** paid
+sub-calls under one reservation, depending on `args` (`packages/core/src/adapters/nansen/reconcile.ts:8`, `smart-money.flows`).
+The case with 3 sub-calls is the one `paidLegMs ≈ 270_000` (the OD-3 worked example above) is
+derived from. `paidLegMs` is documented as the WORST CASE over arguments, never a fixed count. A
+lighter invocation that resolves to fewer sub-calls has a shorter ACTUAL uncancellable tail. The
+manifest publishes the worst-case bound because that is what a caller must be told to expect. This
+is the identical argument-dependence "Provider tier" above already uses to forbid deriving `tier`
+from `costOf()`. A measured BOUND is allowed to vary with `args`, a CLASSIFICATION is not, and
+`paidLegMs` is the former.
 `smart-money.flows`/`token.risk` issue two each, unchanged. **Checkable, not a convention Development
-could silently violate:** a contract test, parameterised over `adapterRegistrations.filter((r) =>
+could silently violate.** A contract test, parameterised over `adapterRegistrations.filter((r) =>
 r.tier === 'paid')`, asserts that no `throttle()`/`safeFetch()` call issued by that adapter's
-`fetch()` AFTER its own `checkAndReserve()` resolves `{ok:true}` ever carries a `deadlineAtMs` — a
+`fetch()` AFTER its own `checkAndReserve()` resolves `{ok:true}` ever carries a `deadlineAtMs`. A
 fake `checkAndReserve` records a timestamp on success, and every subsequent injected
-`throttle`/`safeFetch` spy asserts its own `deadlineAtMs` argument is `undefined`. 🔴 **M-2
+`throttle`/`safeFetch` spy asserts its own `deadlineAtMs` argument is `undefined`. **M-2
 correction (architecture review round 2, 2026-08-03):** the paid set is `{dune, nansen}` ("Provider
-tier" assignment above, matching TASK.md R-150b), NOT `nansen` alone — but `dune.isAvailable()` is
+tier" assignment above, matching TASK.md R-150b), NOT `nansen` alone. But `dune.isAvailable()` is
 UNCONDITIONALLY `{ok: false}` (§3.2, "The adapters — summary") and its `fetch()`/`normalize()` are
-not implemented, so it never reaches `checkAndReserve()` and would make the naive
-`.filter((r) => r.tier === 'paid')` iterate a registration with no reservation to spy on. The test
-either SKIPS registrations whose `isAvailable()` is unconditionally `{ok: false}` (naming `dune`
-explicitly in a code comment, so a future real second paid adapter is not silently skipped the same
-way) or filters on "reaches `checkAndReserve()`" rather than on `tier` alone. Either way the test is
-written against the registration's properties, not a hardcoded id, so a second LIVE paid adapter is
-covered automatically — `tier` is introduced by this very task, so nothing pre-T-012 could have
-written this test.
+not implemented, so it never reaches `checkAndReserve()`. A test filtering on
+`.filter((r) => r.tier === 'paid')` alone would iterate a registration with no reservation to spy
+on. The test either SKIPS registrations whose `isAvailable()` is unconditionally `{ok: false}`, or
+filters on "reaches `checkAndReserve()`" rather than on `tier` alone. A test that takes the SKIP
+branch names `dune` explicitly in a code comment, so a future real second paid adapter is not
+silently skipped the same way. Either way the test is written against the registration's
+properties, not a hardcoded id, so a second LIVE paid adapter is covered automatically. `tier` is
+introduced by this very task, so nothing pre-T-012 could have written this test.
 
 **Singleflight does not see the deadline (M5).** `nansen`'s singleflight key is
 `deriveArgsHash(cap, args)` (`packages/core/src/adapters/nansen/index.ts:596`, `'s own docstring for why an OMITTED`) — `deadlineAtMs` never enters it, deliberately:
 two calls for the identical `(capability, args)` with DIFFERENT deadlines are still logically one
 request in flight. A follower whose OWN deadline expires while the leader's shared promise is still
-pending abandons ITS wait and raises `CapabilityDeadlineExceededError` to its own caller — it does
+pending abandons ITS wait and raises `CapabilityDeadlineExceededError` to its own caller. It does
 NOT cancel the leader, which keeps running for whoever else may still be awaiting it (including a
 caller whose looser deadline will still be satisfied).
 
 **Adapter uptake WAS incremental, and is now complete for every adapter that can wait (R-140e).**
-The parameter exists on every `ProviderAdapter.fetch()` signature; whether a GIVEN adapter's
-implementation reads it is a per-adapter decision, and R-140e's guarantee — that an adapter ignoring
+The parameter exists on every `ProviderAdapter.fetch()` signature. Whether a GIVEN adapter's
+implementation reads it is a per-adapter decision. R-140e's guarantee — that an adapter ignoring
 it degrades exactly to today's per-hop-timeout-only behaviour — still holds and is still tested
 (`registry.deadline.test.ts` TC-INT-07). It is what made the staged uptake safe, not a permanent
 state.
 
-**SHIPPED state, measured 2026-08-05 (WI-37).** **10 of 12 adapters read the parameter** —
-`blockscout`, `nansen`, `coingecko`, `dexscreener`, `defillama`, `rpc-evm`, `rpc-solana`,
-`platform-explorer`, `blockchain-info`, `pg-history` — each forwarding it to the limiter and to its
-transport, **except where the design forbids it**: `nansen` stops at `checkAndReserve()`, so its paid
-sub-calls receive none (H3, and the paragraph on admission control below), and `defillama`'s two
-shared-document capabilities bound the caller's WAIT rather than the shared download
-(`awaitSharedDocument`) so that one caller's expiry cannot abort a transfer another is awaiting. The other two, `dune` and `dash-platform`, are M1 stubs whose `isAvailable()`
+**SHIPPED state, measured 2026-08-05 (WI-37).** In that measurement,
+**10 of 12 adapters read the parameter**: `blockscout`, `nansen`, `coingecko`, `dexscreener`,
+`defillama`, `rpc-evm`, `rpc-solana`, `platform-explorer`, `blockchain-info`, `pg-history`. Each
+forwards it to the limiter and to its transport, **except where the design forbids it**. `nansen`
+stops at `checkAndReserve()`, so its paid sub-calls receive none (H3, and the paragraph on admission
+control below). `defillama`'s two shared-document capabilities bound the caller's WAIT rather than
+the shared download (`awaitSharedDocument`), so that one caller's expiry cannot abort a transfer
+another is awaiting. The other two, `dune` and `dash-platform`, are M1 stubs whose `isAvailable()`
 is unconditionally false and whose `fetch()` throws, so they spend no time and cannot weaken a
 ceiling (the same fact as E-DASH = 0 in `capability-manifest.ts`). The ceiling is therefore enforced
 on **20 of 20 capabilities**.
@@ -1364,10 +1413,10 @@ enforced ceiling bounds the CANCELLABLE HEAD alone; after `checkAndReserve()` no
 deadline (H3), by design — cancelling there means paying without receiving. The worst case an
 admission controller has to reserve for is therefore `deadlineMs + (paidLegMs ?? 0)`, which for
 `entity.labels` is 60_000 + 270_000 ≈ **330_000**, not 60_000. Two obligations follow, and neither is
-met today: `paidLegMs` has **no runtime reader** — nothing under `packages/*/src` reads it; its only
-consumers are tests (the WI-28 doc gate, TC-UNIT-06 in `capability-manifest.test.ts`, and
-`entity-labels-deadline-arithmetic.test.ts`) — and it
-appears nowhere in `interfaces.md`, so nothing on the wire tells a client the second number exists.
+met today. `paidLegMs` has **no runtime reader** — nothing under `packages/*/src` reads it, and its
+only consumers are tests (the WI-28 doc gate, TC-UNIT-06 in `capability-manifest.test.ts`, and
+`entity-labels-deadline-arithmetic.test.ts`). It appears nowhere in `interfaces.md`, so nothing on
+the wire tells a client the second number exists.
 T-014 is where that field acquires its first runtime consumer.
 
 Both figures are re-derived on every test run **in `packages/core/src/capability-manifest.ts`**,
@@ -1376,50 +1425,51 @@ scan of the adapter sources and against each row's own ENFORCED/DECLARED marker.
 THIS document are transcriptions and no gate reads them** — `docs-counts.test.ts` anchors on the
 route/adapter/tool counts, not on these.
 
-`deadline-uptake.test.ts` carries the behavioural half: its gate drives every adapter that can wait
-except `nansen` and requires the deadline to reach the limiter unchanged, and seven of them
+`deadline-uptake.test.ts` carries the behavioural half. Its gate drives every adapter that can wait
+except `nansen`, and requires the deadline to reach the limiter unchanged. Seven of them
 (`coingecko`, `dexscreener`, `defillama`, `rpc-evm`, `rpc-solana`, `platform-explorer`,
 `blockchain-info`) also get the two cases that prove an in-flight request is actually cancelled.
 `blockscout` (`registry.deadline.test.ts` TC-INT-08a/08b) and `nansen`
 (`nansen-deadline-boundary.test.ts`) are proved in their own files; `pg-history` has no cancellation
-analogue at all, because a Postgres statement cannot be recalled — its bound stops the waiting. The exemption for the two stubs is derived from whether an adapter
-imports a transport module at all — so the day a live gRPC transport lands for `dash-platform`
-(§11), it enters the population and the five rows it routes go red until it reads the deadline.
+analogue at all, because a Postgres statement cannot be recalled — its bound stops the waiting. The
+exemption for the two stubs is derived from whether an adapter imports a transport module at all.
+The day a live gRPC transport lands for `dash-platform` (§11), it enters the population, and the
+five rows it routes fail until it reads the deadline.
 
 **How this read before WI-37, since the intermediate state is the thing that misled a reader.** From
-012-9 to 2026-08-05 only `blockscout` (012-8) and `nansen` (012-9) read the parameter: ten ignored
-it, the ceiling
-was enforced on 4 of 20 capabilities, and on the other sixteen the registry still refused sources it
-had not yet REACHED while no in-flight attempt was cancelled and no limiter wait shortened. The
-number in the table below was declared, not applied — sanctioned by R-140e, but not safe to read as
-an admission-control bound, which is what
+012-9 to 2026-08-05 only `blockscout` (012-8) and `nansen` (012-9) read the parameter. Ten ignored
+it, and the ceiling was enforced on 4 of 20 capabilities. On the other sixteen the registry still
+refused sources it had not yet REACHED, while no in-flight attempt was cancelled and no limiter wait
+shortened. The number in the table below was declared, not applied — sanctioned by R-140e, but not
+safe to read as an admission-control bound, which is what
 `docs/backlog/wi-37-call-deadline-declared-but-unenforced-on-ten-adapters.md` recorded until this
 commit closed it.
 
 **Architectural obligation carried into Development (ADR-002 D4, R-157). DISCHARGED (T-012, task
 012-8).** `blockscout/index.ts`'s `REQUEST_TIMEOUT_MS` docstring ended "this docstring must be
-rewritten in the SAME commit, not after it", and it was: the rewrite landed with the deadline, stops
-saying the deadline "does not exist yet", names the TWO-PHASE mechanism (a cancellable `deadlineAtMs`
-head, and — per OD-3 — an UNCANCELLABLE `paidLegMs` tail for any paid route), and KEEPS the
-historical `30 + 4×5 (blockscout) + 30 + 4×15 (resync) + 3×(30 + 4×15) (nansen) ≈ 410s` derivation
-AS HISTORY — the only place that derivation is recorded, the reason the deadline exists at all, and
-the source of the `~270_000` paid-leg figure the manifest reuses rather than re-measuring.
+rewritten in the SAME commit, not after it", and it was. The rewrite landed with the deadline and
+stops saying the deadline "does not exist yet". It names the TWO-PHASE mechanism (a cancellable
+`deadlineAtMs` head, and — per OD-3 — an UNCANCELLABLE `paidLegMs` tail for any paid route). It
+KEEPS the historical `30 + 4×5 (blockscout) + 30 + 4×15 (resync) + 3×(30 + 4×15) (nansen) ≈ 410s`
+derivation AS HISTORY. That derivation is recorded nowhere else. It is the reason the deadline
+exists at all, and it is the source of the `~270_000` `paidLegMs` figure the manifest reuses
+rather than re-measuring.
 
-The obligation is kept rather than deleted because its REASON outlives it: landing the deadline
-without that rewrite would have reproduced, in a file no doc-count gate reads, the exact
-documentation-drift class `docs-counts.test.ts` (WI-24) and `readme-tool-table.test.ts` (WI-28)
-exist to catch elsewhere — which is the same
-class this subsection's own six stale `PLANNED (T-012)` markers turned out to be, found by review
-on 2026-08-05 rather than by any gate.
+The obligation is kept rather than deleted because the reason for it still applies after it was
+discharged. Landing the deadline without that rewrite would have reproduced, in a file no doc-count
+gate reads, the exact documentation-drift class `docs-counts.test.ts` (WI-24) and
+`readme-tool-table.test.ts` (WI-28) exist to catch elsewhere. This subsection's own six stale
+`PLANNED (T-012)` markers turned out to be the same class, found by review on 2026-08-05 rather
+than by any gate.
 
 `providers.config.ts` holds the declarative routes plus the adapter registry (id →
 hosts/rate-limit/env):
 
 **The route table is NOT reproduced here.** `providers.config.ts` holds **28 routes** over 27
-distinct capabilities, and the authoritative list is that file — a copy in this document is a copy
-that drifts, which is exactly what happened between TASK-006 and TASK-010 (WI-24: this section
+distinct capabilities, and the authoritative list is that file. A copy in this document is a copy
+that drifts. That is exactly what happened between TASK-006 and TASK-010 (WI-24). This section
 carried `chains:` literals for fourteen routes months after they were deleted from the code, and
-was missing four routes that existed). What belongs here is the **shape and the rules**, which do
+was missing four routes that existed. What belongs here is the **shape and the rules**, which do
 not change per route:
 
 ```ts
@@ -1467,19 +1517,19 @@ export const routes: CapabilityRoute[] = [
 ```
 
 Two absences in that file are decisions, not omissions, and both are recorded beside the routes
-they concern: `mempool.space` is deliberately **not** an adapter (it is the eval's independent
-reference — a source we answer from cannot also be the check on that answer, §5.1.5/R-89), and
+they concern. `mempool.space` is deliberately **not** an adapter (it is the eval's independent
+reference — a source we answer from cannot also be the check on that answer, §5.1.5/R-89).
 `dune` is registered but permanently unavailable (`isAvailable()` → `{ok: false}`), so its
 capabilities are advertised by nobody.
 
-🔴 **M-7 + L-4 correction (architecture review round 2, 2026-08-03) — reindented, and marked as a
+**M-7 + L-4 correction (architecture review round 2, 2026-08-03) — reindented, and marked as a
 snapshot, not a spec.** The block below reproduces the registrations **as they stand TODAY**
-(`id`/`hosts`/`rateLimit`/`requiresEnv` only) — it is NOT yet valid against the `AdapterRegistration`
+(`id`/`hosts`/`rateLimit`/`requiresEnv` only). It is NOT yet valid against the `AdapterRegistration`
 interface declared above ("Module: src/adapters/*"), which makes `tier`/`trust` MANDATORY fields; as
 printed, this snippet would not compile. **T-012 adds `tier`/`trust` to every one of the twelve
 entries below**, per the two assignment tables above ("Provider tier" and "Source trust —
-declare-only") — this is the BEFORE picture, kept because it is still the fastest way to see
-hosts/rate-limits/env-keys side by side; the M8 fence repair below fixed the mismatched-fence bug
+declare-only"). This is the BEFORE picture, kept because it is still the fastest way to see
+hosts/rate-limits/env-keys side by side. The M8 fence repair below fixed the mismatched-fence bug
 but left the block flush-left at column 0, which is also corrected here.
 
 ```ts
@@ -1591,14 +1641,14 @@ export const adapterRegistrations: AdapterRegistration[] = [
 
 > **M8 (fixed, T-012):** the fence around `adapterRegistrations` above and the one below the nansen
 > registration snippet (`_Registration (…the tenth entry):_`) were previously a single mismatched
-> pair — a stray 4-backtick line opened here with no matching 3-backtick close, silently swallowing
+> pair. A stray 4-backtick line opened here with no matching 3-backtick close. It silently swallowed
 > everything up to the next 4-backtick line (the nansen snippet's own closing fence) into ONE inert
-> code block: the "Chain scoping" paragraph, the twelve-adapter table, all per-adapter hardening
-> notes, and the blockscout/nansen narrative never rendered as prose. A naive backtick-count parity
-> check reported "balanced" because the total number of fence lines was even — it is not a
-> substitute for checking that each OPEN pairs with a close of the SAME backtick count. Pre-existing
-> (found at HEAD, not introduced by this task), fixed here because T-012 is the task already editing
-> these exact lines.
+> code block. The "Chain scoping" paragraph, the twelve-adapter table, all per-adapter hardening
+> notes, and the blockscout/nansen narrative never rendered as prose. A parity check that only
+> counts fence lines reported "balanced" here, because the total number of fence lines was even.
+> Counting lines is not a substitute for checking that each OPEN pairs with a close of the SAME
+> backtick count. Pre-existing (found at HEAD, not introduced by this task), fixed here because
+> T-012 is the task already editing these exact lines.
 
 **Chain scoping is a derived value, not a literal.** `CapabilityRoute` carries no chain field at all
 (OQ-C, ADR-002 D2 — the field's fate is settled above) — it is never the authority on which chains a
@@ -1614,19 +1664,26 @@ Dune credits) and can be tuned by editing the config, with no change on the call
 `blockchain-info` from TASK-009 — **twelve registered, of which eleven serve something**: `dune`
 remains a config stub whose `isAvailable()` is unconditionally `false`.
 
-| id                  | Capabilities                                                   | Transport                                                                                                            | Key                                                                                                                    | Note                                                                                                                                          |
-| ------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `coingecko`         | `token.price`, `token.metadata`                                | REST (`fetch`), `/coins/{platform}/contract/{address}`                                                               | optional `COINGECKO_API_KEY` (demo; free works without) / `COINGECKO_PRO_API_KEY` (Pro circuit: pro host + pro header) | R-5, **live**                                                                                                                                 |
-| `dexscreener`       | `pairs.active`, `pool.info`, `token.pools`                     | REST (`fetch`)                                                                                                       | none (keyless)                                                                                                         | R-6 Must requires the first two; `pool.info` and `token.pools` gained their tools in task 014-32b (`interfaces.md` §5.1.7/§5.1.8); **live**   |
-| `defillama`         | `protocol.tvl`, `chain.tvl`, `dex.volume.history`              | REST (`fetch`), `/protocols`, `/v2/chains`, `/overview/dexs/{chain}`                                                 | none (keyless)                                                                                                         | R-7, R-53, **R-61 (TASK-007)**, **live**                                                                                                      |
-| `dune`              | **none** (config stub; `token.holders` moved away in TASK-008) | REST Query API — **not implemented** (interface/config stub)                                                         | `DUNE_API_KEY` (free tier), but `isAvailable()` is unconditionally `false`                                             | R-8, decision below. Until TASK-008 it _declared_ `token.holders` while covering zero chains — an advertised capability that answered nowhere |
-| `blockscout`        | `token.holders`, `entity.labels`                               | REST (`fetch`), the **facade** `mcp.blockscout.com/v1/<tool>` for both — the two-host design was reverted, see below | optional `BLOCKSCOUT_PRO_API_KEY`, passed as the **`apikey` query parameter** (not a header)                           | **R-73..R-80 (TASK-008)**, **live**                                                                                                           |
-| `blockchain-info`   | `chain.supply` (bitcoin only)                                  | REST (`fetch`), `/stats` + `/q/totalbc`                                                                              | **none, and none possible** — the vendor offers no key for these surfaces                                              | **R-81..R-87 (TASK-009)**, **live**                                                                                                           |
-| `rpc-evm`           | `wallet.balances.native` (EVM)                                 | JSON-RPC `eth_getBalance` (`fetch`)                                                                                  | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                           |
-| `rpc-solana`        | `wallet.balances.native` (Solana)                              | JSON-RPC `getBalance` (`fetch`)                                                                                      | none (keyless)                                                                                                         | R-16/R-17, **live**                                                                                                                           |
-| `dash-platform`     | `privacy.shielded_pool`, `platform.*`                          | **gRPC** — **not implemented** (interface + fixture contract only)                                                   | none (keyless), but unreachable                                                                                        | R-9 via a mock; see below                                                                                                                     |
-| `platform-explorer` | the same (fallback) + `*.history`                              | REST (`fetch`)                                                                                                       | none (keyless)                                                                                                         | R-10/R-11, **the only live Dash source**                                                                                                      |
-| `pg-history`        | `privacy.shielded_pool.history`, `platform.metrics.history`    | Postgres wire (SELECT-only)                                                                                          | `ONCHAIN_PG_URL` (optional)                                                                                            | R-12, **live, optional**                                                                                                                      |
+| id                  | Capabilities                                                   | Transport                                                                                                            | Key                                                                                                                    | Note                                                  |
+| ------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `coingecko`         | `token.price`, `token.metadata`                                | REST (`fetch`), `/coins/{platform}/contract/{address}`                                                               | optional `COINGECKO_API_KEY` (demo; free works without) / `COINGECKO_PRO_API_KEY` (Pro circuit: pro host + pro header) | R-5, **live**                                         |
+| `dexscreener`       | `pairs.active`, `pool.info`, `token.pools`                     | REST (`fetch`)                                                                                                       | none (keyless)                                                                                                         | R-6 Must requires the first two; note below; **live** |
+| `defillama`         | `protocol.tvl`, `chain.tvl`, `dex.volume.history`              | REST (`fetch`), `/protocols`, `/v2/chains`, `/overview/dexs/{chain}`                                                 | none (keyless)                                                                                                         | R-7, R-53, **R-61 (TASK-007)**, **live**              |
+| `dune`              | **none** (config stub; `token.holders` moved away in TASK-008) | REST Query API — **not implemented** (interface/config stub)                                                         | `DUNE_API_KEY` (free tier), but `isAvailable()` is unconditionally `false`                                             | R-8, decision below; note below                       |
+| `blockscout`        | `token.holders`, `entity.labels`                               | REST (`fetch`), the **facade** `mcp.blockscout.com/v1/<tool>` for both — the two-host design was reverted, see below | optional `BLOCKSCOUT_PRO_API_KEY`, passed as the **`apikey` query parameter** (not a header)                           | **R-73..R-80 (TASK-008)**, **live**                   |
+| `blockchain-info`   | `chain.supply` (bitcoin only)                                  | REST (`fetch`), `/stats` + `/q/totalbc`                                                                              | **none, and none possible** — the vendor offers no key for these surfaces                                              | **R-81..R-87 (TASK-009)**, **live**                   |
+| `rpc-evm`           | `wallet.balances.native` (EVM)                                 | JSON-RPC `eth_getBalance` (`fetch`)                                                                                  | none (keyless)                                                                                                         | R-16/R-17, **live**                                   |
+| `rpc-solana`        | `wallet.balances.native` (Solana)                              | JSON-RPC `getBalance` (`fetch`)                                                                                      | none (keyless)                                                                                                         | R-16/R-17, **live**                                   |
+| `dash-platform`     | `privacy.shielded_pool`, `platform.*`                          | **gRPC** — **not implemented** (interface + fixture contract only)                                                   | none (keyless), but unreachable                                                                                        | R-9 via a mock; see below                             |
+| `platform-explorer` | the same (fallback) + `*.history`                              | REST (`fetch`)                                                                                                       | none (keyless)                                                                                                         | R-10/R-11, **the only live Dash source**              |
+| `pg-history`        | `privacy.shielded_pool.history`, `platform.metrics.history`    | Postgres wire (SELECT-only)                                                                                          | `ONCHAIN_PG_URL` (optional)                                                                                            | R-12, **live, optional**                              |
+
+**Notes carried over from the table.**
+
+- **`dexscreener`** — `pool.info` and `token.pools` gained their tools in task 014-32b
+  (`interfaces.md` §5.1.7/§5.1.8).
+- **`dune`** — until TASK-008 it _declared_ `token.holders` while covering zero chains — an
+  advertised capability that answered nowhere.
 
 **Input/response hardening per adapter — never trust a raw vendor response.**
 
@@ -1634,8 +1691,8 @@ remains a config stub whose `isAvailable()` is unconditionally `false`.
   A bare `"0x"` otherwise produced a raw `BigInt("0x")` `SyntaxError` instead of a legible error.
 - `rpc-solana`: `result.value` (lamports) is validated as a non-negative safe integer
   (`Number.isInteger && >=0 && <=Number.MAX_SAFE_INTEGER`) before `String()`. Documented default:
-  a balance above ~9.007M SOL has already lost precision at `response.json()` — the vendor returns
-  `result.value` as a JSON number, not a hex string as `eth_getBalance` does — so exact parsing of
+  a balance above ~9.007M SOL has already lost precision at `response.json()`. The vendor returns
+  `result.value` as a JSON number, not a hex string as `eth_getBalance` does. So exact parsing of
   large values is out of scope here.
 - `dexscreener.normalize()`: skip-and-log. Each candidate `Pool` is validated independently
   (`PoolSchema.safeParse`); a malformed one is dropped rather than failing the whole batch, with a
@@ -1647,21 +1704,21 @@ remains a config stub whose `isAvailable()` is unconditionally `false`.
   cached broken value.
 - `defillama.normalize('dex.volume.history')` (TASK-007, R-68): **verifies the response's own `chain`
   echo field against the vendor name that was requested**, and refuses the response otherwise. This
-  is not defensive decoration — it is forced by measured vendor behaviour: `/overview/dexs/{chain}`
-  is name-tolerant (`op-mainnet`, `optimism` and `OP Mainnet` all return the same document), an
-  unknown chain answers **HTTP 500**, not 404, and a chain outside the vendor's own `allChains` list
+  is not defensive decoration — it is forced by measured vendor behaviour. `/overview/dexs/{chain}`
+  is name-tolerant (`op-mainnet`, `optimism` and `OP Mainnet` all return the same document). An
+  unknown chain answers **HTTP 500**, not 404. A chain outside the vendor's own `allChains` list
   answers **HTTP 200 with zeros and a narrower key set** (`litecoin`, probed 2026-07-27). Without the
   echo check, "the vendor served a different chain than we asked for" and "this chain has no volume"
   are the same observation. The same normalize step rejects non-finite/negative volumes and
-  non-integer timestamps before the cache write, and passes **no vendor free text through at all**:
-  the document carries 151 protocol cards with `name`/`category`/`methodology`/`logo`, which are
+  non-integer timestamps before the cache write, and passes **no vendor free text through at all**.
+  The document carries 151 protocol cards with `name`/`category`/`methodology`/`logo`, which are
   third-party-editable strings, and none of them reach the tool output.
 
   **That last rule holds on the ERROR path too, which is where it was first broken** (adversarial
   cycle 3). A `normalize()` throw becomes `tried[].reason` inside `CapabilityUnavailableError` and
-  from there the tool's `isError` text — i.e. it lands in the model's context, and because
-  `normalize()` failures are negative-cached it is replayed for the whole negative TTL with no
-  further network traffic. The first version interpolated the vendor's value verbatim into three
+  from there the tool's `isError` text. It lands in the model's context, and because `normalize()`
+  failures are negative-cached it is replayed for the whole negative TTL with no further network
+  traffic. The first version interpolated the vendor's value verbatim into three
   such messages, bounded only by the 2 MB body cap. Vendor values are now **described, never
   echoed** (`string(length=N)`, `array(length=N)`, or the number itself — a number cannot carry
   instructions), which is the discipline `stringifyTruncated` and `UnknownChainError` already
@@ -1680,7 +1737,7 @@ remains a config stub whose `isAvailable()` is unconditionally `false`.
   `get_tokens_by_address`…", with the caller's own address interpolated verbatim — alongside `notes`
   and `data_description`. These three are **dropped, never truncated**: a truncated instruction is
   still an instruction. Label text that we do keep (`tags[].name`, `meta.main_entity`, `slug`) goes
-  through `truncate-vendor-text`; the URL-valued fields (`tooltipUrl`, `tagIcon`,
+  through `truncate-vendor-text`. The URL-valued fields (`tooltipUrl`, `tagIcon`,
   `tooltipAttribution`) are not emitted at all, since a URL in a model's context is a fetch
   suggestion.
 
@@ -1704,15 +1761,16 @@ remains a config stub whose `isAvailable()` is unconditionally `false`.
   fit a double _today_, which is exactly the reasoning that rots: the rule is that the value is an
   exact integer, not that it currently happens to be small enough.
 
-**🔴 Verifying supply against the formula is a TAUTOLOGY — the height is what carries information.**
+**Verifying supply against the formula is a TAUTOLOGY — the height is what carries information.**
 This is the load-bearing insight of TASK-009 and the reason its cross-check is shaped the way it is.
 `consensusEmission(n_blocks_total) === totalbc` held **bit-exactly at both probed heights**, and it
-will keep holding for as long as the vendor computes the field the same way we do. A check that
-cannot fail is not a check. What a second source can genuinely contradict is the **block height** —
-so the eval compares our answer's height against `mempool.space` and lets the deterministic formula
-propagate that into supply (§5.1.5). The delta is expressed in **blocks of subsidy, never percent**:
-one block is 0.000016%, so an off-by-one and a full day of vendor staleness (144 blocks, 0.0023%)
-both round to "zero" on any percentage scale a human would pick.
+will keep holding for as long as the vendor computes the field the same way we do. A check must have
+an input on which it fails, and `consensusEmission(n_blocks_total) === totalbc` has none. What a
+second source can genuinely contradict is the **block height**. So the eval compares our answer's
+height against `mempool.space` and lets the deterministic formula propagate that into supply
+(§5.1.5). The delta is expressed in **blocks of subsidy, never percent**. One block is 0.000016%, so
+an off-by-one and a full day of vendor staleness (144 blocks, 0.0023%) both round to "zero" on any
+percentage scale a human would pick.
 
 **Two hosts measured, one host used (TASK-008).** The vendor exposes the same data through two
 hosts with materially different properties. The measurement below is what made the choice, and it is
@@ -1726,20 +1784,21 @@ kept because the rejected branch is the one a future reader will be tempted to r
 | upstream cost          | one                                                       | fans out to three (~160 credits)                      |
 
 Both capabilities use the **facade**. Holders were briefly routed to the direct host (cheaper, no
-injection wrapper, key verifiable) until adversarial review pointed out the consequence: that host
+injection wrapper, key verifiable) until adversarial review pointed out the consequence. That host
 answers **402 without a key**, `token.holders` routes to `['blockscout']` alone with nothing to
-degrade to, and a stock install ships no key — so the capability was advertised on 39 chains and
+degrade to, and a stock install ships no key. So the capability was advertised on 39 chains and
 served on none, which is the very defect this task removed from `dune`. Labels have no alternative
-in any case: the enrichment is exactly what the three-way fan-out buys. The expensive path and the useful path are the same path; that is the trade, and it is
-why the ~625 calls/day ceiling (not ~5 000) is a design input rather than a footnote.
+in any case: the enrichment is exactly what the three-way fan-out buys. The expensive path and the
+useful path are the same path; that is the trade, and it is why the ~625 calls/day ceiling (not
+~5 000) is a design input rather than a footnote.
 
 **The key travels in the URL, which D10 forbids for logs and cache keys.** `apikey` is a query
-parameter, not a header — this is the case `rpc-solana` anticipated when it chose to report
+parameter, not a header. This is the case `rpc-solana` anticipated when it chose to report
 `hostOf(endpoint)` instead of the full URL, "because a curated endpoint could one day carry a key in
 its path or query". That day arrived. Consequences, each of which is a test rather than an
-intention: the full URL never reaches `Error.message`, stderr, or the cache key; the cache key is
-derived from `(provider, capability, normalizedArgs)` and the key is not an arg; and `safeFetch`'s
-own error path already reports host-only.
+intention. The full URL never reaches `Error.message`, stderr, or the cache key. The cache key is
+derived from `(provider, capability, normalizedArgs)` and the key is not an arg. `safeFetch`'s own
+error path already reports host-only.
 
 **Coverage is keyed on the numeric `chain_id`, never on `ecosystem` or chain name.** The vendor's
 `get_chains_list` carries an `ecosystem` field that reads like a family and is not one:
@@ -1750,13 +1809,13 @@ defect class from TASK-006, and the same over-claim `dex.volume.history` was bui
 generated coverage list also drops the 47 testnets.
 
 **`dash-platform` is narrowed to an interface + fixture contract.** A live gRPC transport is the
-most expensive and least repaid item on the critical path: no tool consumes it (OQ-2 below), the
+most expensive and least repaid item on the critical path. No tool consumes it (OQ-2 below), the
 evonode host is unverified (§11), and `privacy.shielded_pool`/`platform.*` are already fully
 covered by `platform-explorer` (keyless REST). So: `capabilities()` declares all five capabilities
-(`privacy.shielded_pool` + `platform.identities/contracts/documents/credits`, R-9); `normalize()`
+(`privacy.shielded_pool` + `platform.identities/contracts/documents/credits`, R-9). `normalize()`
 is implemented and golden-tested against a **hand-built** fixture whose shape is taken from the
 addendum fields (`getShieldedPoolState`/`getTotalCreditsInPlatform`) — R-9 satisfied through a mock,
-not a live probe; `fetch()` is a stub (`NotImplementedInM1Error`) and is unreachable at runtime
+not a live probe. `fetch()` is a stub (`NotImplementedInM1Error`) and is unreachable at runtime
 because `isAvailable()` cuts the adapter off earlier. `isAvailable()` **unconditionally** returns
 `{ ok: false, reason: 'dash-platform live transport deferred — see backlog, use platform-explorer' }`
 — not "if the evonode is down", always — so the Registry **always** routes
@@ -1781,28 +1840,28 @@ Platform metrics arrives in M3 (privacy rules), and for `token.holders` in M2
 
 **`dune` — the R-8 resolution: an interface/config stub, narrower than the literal acceptance
 text.** `capabilities()` declares `token.holders` (holder count + top-10 concentration — a
-capability none of the other eight M1 adapters covers); `fetch()`/`normalize()` are **not**
-implemented (fixture-less — there is nothing to golden-test before the query is authored);
-`isAvailable()` returns `{ ok: false, reason: 'dune query authoring deferred to M2' }`
+capability none of the other eight M1 adapters covers). The adapter does **not** implement
+`fetch()`/`normalize()` (fixture-less — there is nothing to golden-test before the query is
+authored). `isAvailable()` returns `{ ok: false, reason: 'dune query authoring deferred to M2' }`
 unconditionally, regardless of `DUNE_API_KEY`. Authoring a live Dune SQL query (query id,
 parameterization) moves to M2 together with its first real consumer (`onchain_token_risk`). None of
 the four Must tools depends on `token.holders`, so an empty `.env` stays fully functional (UC-1)
 regardless of this decision.
 
-**ERC-20/SPL balances are out of scope.** `onchain_wallet_balances` fills only
-`assetType: 'native'` (native ETH/SOL through `rpc-evm`/`rpc-solana`). Token balances require
-**either** per-contract `eth_call`/`getTokenAccountsByOwner` over an unbounded set of contracts
-(which needs a source of "which tokens to check" — not a trivial question at $0), **or** an
-indexer/multicall service (usually paid, or not reliable enough keyless), **or** Dune (credits plus
-latency). R-17 acceptance stops at "the contract is fixed, ≥2 chains actually work", which the
+**ERC-20/SPL balances are out of scope.** `onchain_wallet_balances` fills only `assetType: 'native'`
+(native ETH/SOL through `rpc-evm`/`rpc-solana`). Token balances require one of three things. The
+first is per-contract `eth_call`/`getTokenAccountsByOwner` over an unbounded set of contracts, which
+needs a source of "which tokens to check" — not a trivial question at $0. The second is an
+indexer/multicall service (usually paid, or not reliable enough keyless). The third is Dune (credits
+plus latency). R-17 acceptance stops at "the contract is fixed, ≥2 chains actually work", which the
 native balance closes cheaply. `BalanceSchema` already carries `assetType`/`contractAddress`
-precisely so that M1.5/M2 can add ERC-20/SPL **without** a schema change — only by appending rows
-to the `balances` array. Recorded as a backlog work item.
+precisely so that M1.5/M2 can add ERC-20/SPL **without** a schema change — only by appending rows to
+the `balances` array. Recorded as a backlog work item.
 
 **The tenth adapter (M2, TASK-005 `m2-alpha-paid`, R-29/R-30): `nansen`, the first paid adapter.**
 Three capabilities — `smart-money.flows`, `entity.labels`, `token.risk` — over the REST API at
 `api.nansen.ai`, **not** through Nansen's official MCP server (`mcp.nansen.ai/ra/mcp`, 37 tools;
-owner decision, TASK.md §1.2): several of its tools return markdown text, which is unusable for
+owner decision, TASK.md §1.2). Several of its tools return markdown text, which is unusable for
 canonical zod normalization (D5), and proxying would bypass our own cache, budget and SSRF gate.
 The only sources for response shape and price are `nansen-probe-2026-07-23.json` (a live `/account`
 call plus `credit_cost_table`) and `nansen-openapi-2026-07-23.json` (75 paths, request/response
@@ -1855,20 +1914,21 @@ not end the walk. "No fallback adapter — there is no free equivalent (R-30)" t
 of the three, not all three.
 
 **Paid chain scope is derived, not enumerated.** The three routes were introduced with the same
-`ethereum`+`solana` subset as M1 — the vendor's own chain enumerators disagree with each other
-(`SmartMoneyChain` lists 17 chains, `TGMHoldersChain`/`TGMChain` 24 each, and the "~32 chains" of
-the probe's `supported_chains_mcp` belongs to the out-of-scope MCP surface), so no vendor list could
-be trusted as the definition of coverage. Coverage is now computed instead of enumerated: the
-`nansen` adapter's `chainSupport()` composes the registry with the recorded `CoverageProbe`
-(§4.2.3), and with the paid address-family gate applied (§3.2.1) it resolves to **16** chains for
+`ethereum`+`solana` subset as M1. The vendor's own chain enumerators disagree with each other.
+`SmartMoneyChain` lists 17 chains and `TGMHoldersChain`/`TGMChain` 24 each. The "~32 chains" of the
+probe's `supported_chains_mcp` belongs to the out-of-scope MCP surface. No vendor list could
+therefore be trusted as the definition of coverage. Coverage is now computed instead of enumerated:
+the `nansen` adapter's `chainSupport()` composes the registry with the recorded `CoverageProbe`
+(§4.2.3). With the paid address-family gate applied (§3.2.1) it resolves to **16** chains for
 `smart-money.flows` and **18** each for `entity.labels` and `token.risk`. An unprobed chain is
 reported as `unverified`, never as `unsupported` (R-58d).
 
-_**Cost-table generation — the backbone of `costOf()` (R-37).**_ The `(method+path, plan) →
-{free,pro}` table is generated **from the committed** `nansen-openapi-2026-07-23.json`, whose
-`x-credit-cost` per-operation extension is present on all 74 operations of the spec — so determining
-a price spends no credits. The mechanism is a **committed `.ts` module generated by a dev script**,
-not runtime JSON parsing and not build-time codegen in CI:
+_**Cost-table generation — the backbone of `costOf()` (R-37).**_ The
+`(method+path, plan) → {free,pro}` table is generated **from the committed**
+`nansen-openapi-2026-07-23.json`, whose `x-credit-cost` per-operation extension is present on all 74
+operations of the spec. Determining a price therefore spends no credits. The mechanism is a
+**committed `.ts` module generated by a dev script**, not runtime JSON parsing and not build-time
+codegen in CI:
 
 ```ts
 // packages/core/scripts/generate-nansen-cost-table.mjs — a manual dev script (like
@@ -1891,14 +1951,14 @@ export const NANSEN_COST_TABLE: Readonly<Record<string, { free: number; pro: num
 
 A committed `.ts` (rather than a `resolveJsonModule` import of the `.json`, or fetching the spec at
 runtime) matches the style of `providers.config.ts` — declarative literals regenerated by editing a
-file — avoids `resolveJsonModule`/import-attributes friction under NodeNext ESM (`core` builds with
-plain `tsc`, §6.1), and keeps the artifact human-readable and reviewable in a PR diff.
+file. It avoids `resolveJsonModule`/import-attributes friction under NodeNext ESM (`core` builds
+with plain `tsc`, §6.1). It keeps the artifact human-readable and reviewable in a PR diff.
 
-The `nansen` adapter's own `costOf(cap, args)` (the `ProviderAdapter` method has existed since M1,
-where all nine adapters trivially return `{credits: 0}`; `nansen` is the first to implement it for
-real) maps a capability to a fixed list of `(method, path)` pairs and **sums** their prices under
-the live `plan` (account state below). This is not an estimate — it is exactly the number that will
-be charged:
+The `nansen` adapter's own `costOf(cap, args)` maps a capability to a fixed list of `(method, path)`
+pairs and **sums** their prices under the live `plan` (account state below). The `ProviderAdapter`
+method has existed since M1, where all nine adapters trivially return `{credits: 0}`; `nansen` is
+the first to implement it for real. This is not an estimate — it is exactly the number that will be
+charged:
 
 | Capability                                                          | HTTP calls (method + path)                                                 | `costOf()`               |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------ |
@@ -1916,10 +1976,10 @@ touching `BudgetStore` or the network, so `Infinity` never reaches a SQLite para
 be nothing to bind.
 
 _**Account state — the shared basis for `costOf()`'s live plan and for the budget ceiling
-(OQ-1).**_ `ProviderAdapter.costOf()` stays **synchronous** (breaking that signature for one adapter
-would be a cross-package breaking change touching all nine M1 adapters), so the live plan is read
-from a mutable state object that the adapter refreshes asynchronously **before** the synchronous
-`costOf()` call:
+(OQ-1).**_ `ProviderAdapter.costOf()` stays **synchronous**. Breaking that signature for one adapter
+would be a cross-package breaking change touching all nine M1 adapters. The live plan is therefore
+read from a mutable state object that the adapter refreshes asynchronously **before** the
+synchronous `costOf()` call:
 
 ```ts
 // packages/core/src/adapters/nansen/account-state.ts
@@ -1943,11 +2003,11 @@ export function createNansenAccountState(): NansenAccountState {
 ```
 
 **The initial value is the conservative `plan: 'free'`, not "unknown"/0.** The price table shows the
-`free` price `>=` the `pro` price on **every** one of the eight endpoints used (the single `free≠pro`
-pair in the whole 74-path table is `GET /search/token-sectors`, 1 vs 0, which M2 does not call), so
-defaulting to `free` before the first resolve never over-spends the budget on any M2 path. In the
-worst case it under-states the Pro plan's generosity by one credit on an unused endpoint — the safe
-direction to be wrong in.
+`free` price `>=` the `pro` price on **every** one of the eight endpoints used. The single
+`free≠pro` pair in the whole 74-path table is `GET /search/token-sectors`, 1 vs 0, which M2 does not
+call. So defaulting to `free` before the first resolve never over-spends the budget on any M2 path.
+In the worst case it under-states the Pro plan's generosity by one credit on an unused endpoint —
+the safe direction to be wrong in.
 
 **When a resync happens** (`GET /api/v1/account`, 0 credits, same rate-limit bucket as any other
 nansen call):
@@ -1965,8 +2025,8 @@ floor(now/86400000)*86400000`). A new bucket starts with a mandatory zero-credit
    snapshot** (formula below), not a live figure.
 
 _**The bucket ceiling formula (OQ-1) — TWO separate conditions, not one `min()`.**_ Anchor the
-remainder to `usageAtObserve` and measure the vendor term against spend "since the anchor", not
-spend "since the start of the bucket":
+remainder to `usageAtObserve`. Measure the vendor term against spend "since the anchor", not spend
+"since the start of the bucket":
 
 ```
 spentSinceAnchor = usage.credits_used(provider, bucket) - snapshot.usageAtObserve
@@ -1978,10 +2038,10 @@ allowed  ⟺  (spentSinceAnchor + costOf()) <= snapshot.creditsRemainingAtObserv
 **Both conditions hold simultaneously and measure different things** (anchor-relative vs
 bucket-relative), so raw `creditsRemainingAtObserve` must **not** be collapsed into a `min()` with
 `NANSEN_DAILY_CREDIT_CAP`. Collapsing them is only correct when the resync happens at the start of a
-bucket (where `usageAtObserve` is implicitly `0`); trigger (2) fires **mid-bucket**, when
-`creditsRemainingAtObserve` already accounts for everything spent in this bucket and
-`usage.credits_used(bucket)` counts that same spend a second time — a double count, exactly the trap
-the formula exists to avoid.
+bucket, where `usageAtObserve` is implicitly `0`. Trigger (2) fires **mid-bucket**, when
+`creditsRemainingAtObserve` already accounts for everything spent in this bucket. There
+`usage.credits_used(bucket)` counts that same spend a second time — a double count, and that double
+count is the error the formula exists to avoid.
 
 `BudgetStore.checkAndReserve()` (interface below, under "Module `src/cache/*`") deliberately takes a
 **single** scalar `ceiling`: it is provider-agnostic, knows nothing about anchors, and stays
@@ -1999,14 +2059,14 @@ effectiveCeiling = min( snapshot.usageAtObserve + snapshot.creditsRemainingAtObs
 allowed  ⟺  usage.credits_used(provider, bucket) + costOf() <= effectiveCeiling
 ```
 
-**That is the only place where `min()` is legitimate.** A naive `min(creditsRemainingAtObserve, CAP)`
-without the rebase produces a phantom lockout (worked example below). `effectiveCeiling` is the
-value the adapter computes from `NansenAccountSnapshot` and passes as the fourth argument to
-`checkAndReserve(provider, bucket, cost, effectiveCeiling, velocity?)`; `BudgetStore` compares it
-literally against `usage.credits_used(bucket) + cost` — a plain bucket-relative comparison, with all
-anchor arithmetic already folded away outside the store. That is the same R-35 separation documented
-elsewhere here: `BudgetStore` is a provider-agnostic ledger, the live ceiling/anchor is a
-Nansen-specific concern of the caller.
+**That is the only place where `min()` is legitimate.** Collapsing to
+`min(creditsRemainingAtObserve, CAP)` without the rebase produces a phantom lockout (worked example
+below). `effectiveCeiling` is the value the adapter computes from `NansenAccountSnapshot` and passes
+as the fourth argument to `checkAndReserve(provider, bucket, cost, effectiveCeiling, velocity?)`;
+`BudgetStore` compares it literally against `usage.credits_used(bucket) + cost` — a plain
+bucket-relative comparison, with all anchor arithmetic already folded away outside the store. That
+is the same R-35 separation documented elsewhere here: `BudgetStore` is a provider-agnostic ledger,
+the live ceiling/anchor is a Nansen-specific concern of the caller.
 
 **`/account` and the read of `usage.credits_used(provider, bucket)` for `usageAtObserve` are one
 logical resync step** — both values are read back to back with no paid call in between and land in
@@ -2032,16 +2092,16 @@ does not affect the `min()`):
 In the timeout row, `usage` reads 25 as the settled fact: the reservation for the sixth call was
 written separately and is reconciled later, not counted here.
 
-With a naively collapsed formula, resync #2 would give `ceiling = min(75, Infinity) = 75` — no
-rebase onto `usageAtObserve = 25`. The check `25+5 ≤ 75` still passes on _that_ step, but the
-ceiling for every subsequent call is now understated by 25: 75 **new** credits were available on top
-of the 25 already spent, and the naive formula sees only 75 in total, i.e. 50 new. As resyncs
-accumulate (timeouts, process restarts) each one subtracts already-counted spend again, until the
-available remainder converges to zero long before the account is physically exhausted — the exact
-phantom lockout that resync R-38 exists to cure. With the rebased `effectiveCeiling`
-(`usageAtObserve + creditsRemainingAtObserve = 100`, stable across resyncs for as long as the vendor
-remainder only moves through spend we already counted), no resync eats accounted spend twice,
-however often it fires.
+With the formula collapsed to `min(creditsRemainingAtObserve, CAP)`, resync #2 would give
+`ceiling = min(75, Infinity) = 75` — no rebase onto `usageAtObserve = 25`. The check `25+5 ≤ 75`
+still passes on _that_ step. But the ceiling for every subsequent call is now understated by 25.
+There were 75 **new** credits available on top of the 25 already spent, and the collapsed formula
+sees only 75 in total, i.e. 50 new. As resyncs accumulate (timeouts, process restarts) each one
+subtracts already-counted spend again, until the available remainder converges to zero long before
+the account is physically exhausted. That is the exact phantom lockout that resync R-38 exists to
+cure. With the rebased `effectiveCeiling` (`usageAtObserve + creditsRemainingAtObserve = 100`,
+stable across resyncs for as long as the vendor remainder only moves through spend we already
+counted), no resync eats accounted spend twice, however often it fires.
 
 **`NANSEN_DAILY_CREDIT_CAP` is an optional self-imposed cap (OQ-5).** Read through `EnvSchema`
 (empty/absent = no restriction, behaviour unchanged from the live-derived base — owner decision
@@ -2051,13 +2111,13 @@ burning through a day's credits, with nothing added to the mandatory path.
 
 _**Budget gate placement (OQ-2) — inside the adapter, not registry-generic and not a wrapper
 object.**_ Not `CapabilityRegistry.resolve()`: the gate there would be Nansen-specific code inside a
-universal component, or would require generic `BudgetStore`/`costOf()` plumbing in `registry.ts`
-touching all nine M1 paths for the sake of one paid one. Not the MCP tool handler either:
-`CapabilityRegistry` owns the cache lookup, so a handler-level gate would inevitably run **before**
-it, breaking the mandatory order of R-37/UC-5.
+universal component. The alternative to that is generic `BudgetStore`/`costOf()` plumbing in
+`registry.ts`, touching all nine M1 paths for the sake of one paid one. Not the MCP tool handler
+either: `CapabilityRegistry` owns the cache lookup, so a handler-level gate would inevitably run
+**before** it, breaking the mandatory order of R-37/UC-5.
 
 **The gate is an internal layer of the `nansen` adapter's own `fetch()` implementation**
-(`packages/core/src/adapters/nansen/index.ts`) — precisely on the seam where
+(`packages/core/src/adapters/nansen/index.ts`). It sits precisely on the seam where
 `CapabilityRegistry.resolve()` already calls `adapter.fetch(cap, args)` **after** a cache miss and
 **before** `normalize()` (the seam is documented in `registry.ts`'s own docstring; it needs no
 edits). This is not a wrapper object around an adapter — two exported constructors, one of which can
@@ -2067,20 +2127,20 @@ inside its `fetch()`.
 
 **Non-bypassability is structural, not a convention.** The `adapters: Map<string, ProviderAdapter>`
 that `CapabilityRegistry` is constructed with is the only place anything is registered under the key
-`'nansen'` (all three M2 routes point at that same id), and raw, ungated primitives are **absent
-from the package's public API** entirely: `src/index.ts` re-exports nothing but
-`createNansenAdapter`. The internal helpers under `adapters/nansen/*.ts` are reachable only by
-package-internal code — the tests in `packages/core/test/` and the `record-fixture.mjs` dev script,
+`'nansen'` (all three M2 routes point at that same id). Raw, ungated primitives are **absent from
+the package's public API** entirely: `src/index.ts` re-exports nothing but `createNansenAdapter`.
+The internal helpers under `adapters/nansen/*.ts` are reachable only by package-internal code — the
+tests in `packages/core/test/` and the `record-fixture.mjs` dev script,
 which bypasses the gate deliberately and documentedly **while recording fixtures**, never in
 production.
 
 **A key invariant follows from that placement for free:** from
 `CapabilityRegistry.resolve()`'s point of view, a gate refusal is **indistinguishable** from an
-ordinary adapter network failure — both are a `throw` out of `adapter.fetch()`, caught by the
+ordinary adapter network failure. Both are a `throw` out of `adapter.fetch()`, caught by the
 **already existing** try/catch in `resolve()` and recorded in `tried`. Since none of the three M2
 routes has a fallback adapter (`adapterIds: ['nansen']`, a single element), the loop ends
-immediately with `CapabilityUnavailableError` → the tool returns `isError: true` — the **same**
-R-24/R-40 path as "the key is not set", without a single line of change in `registry.ts` or
+immediately with `CapabilityUnavailableError` → the tool returns `isError: true`. That is the
+**same** R-24/R-40 path as "the key is not set", without a single line of change in `registry.ts` or
 `resolve-capability.ts`. The M1 tests and the `_meta.cache` contract are untouched.
 
 #### Two second denominators (burst and zero-credit calls)
@@ -2095,7 +2155,7 @@ two things at once — which is what the two ledger entries below record:
 
 Both live in one `usage_window(provider, window_start, credits_used, calls_made)` row and are checked
 **inside the same transaction** as the daily reservation. That last part is not an implementation
-detail: `cache.sqlite3` is shared per machine by default (several stdio sessions is a supported
+detail. `cache.sqlite3` is shared per machine by default (several stdio sessions is a supported
 topology), and two connections checking their own window outside a shared transaction would each
 pass on a stale read. Either all limits fit and all counters are written, or nothing is touched.
 
@@ -2106,11 +2166,10 @@ knows nothing about `usageAtObserve`.
 **The numbers, and why they are derived differently.** The credit limit is derived
 (`max(100, ceiling/20)` per window): `free` and `Pro` balances differ by orders of magnitude, and
 owner decision #1 requires both to work with no code change. A divisor of 20 leaves at least ~20
-minutes before a day can be exhausted; the floor of 100 is the price of the most expensive single
-call, because a limit below the cost of one call makes a capability impossible rather than bounded.
-The call limit, by contrast, is **fixed** (60/min): a call is a call on any plan — neither the
-vendor's limits nor the pressure on cache row growth scales with a balance, so there is nothing to
-derive from.
+minutes before a day can be exhausted. The floor of 100 is the price of the most expensive single
+call. A limit below the cost of one call makes a capability impossible rather than bounded. The call
+limit, by contrast, is **fixed** (60/min): a call is a call on any plan. Neither the vendor's limits
+nor the pressure on cache row growth scales with a balance, so there is nothing to derive from.
 
 **Refunds are asymmetric.** Credits are refunded (reconciliation writes `actual − reserved`,
 possibly negative) into **the** window the reservation was made in, not the current one — otherwise
@@ -2118,9 +2177,9 @@ a long call would credit a window that spent nothing. The call count is **never*
 vendor was contacted, and a "refund" would let a chain of cheap-and-refunded calls slip past the
 very limit it exists for.
 
-**The three refusals are distinguishable by their text**, because they demand opposite actions:
-raise the ceiling, wait out the window, or — for the call limit — understand that the credit knob
-does not help at all.
+**The three refusals are distinguishable by their text**, because they demand opposite actions.
+Those actions are: raise the ceiling, wait out the window, or — for the call limit — understand that
+the credit knob does not help at all.
 
 **Stated limitation:** the window is fixed (tumbling), not sliding, so a burst straddling the
 boundary of two windows reaches 2× the limit. A sliding window would need a history of calls instead
@@ -2130,26 +2189,26 @@ _**Atomic check + reserve (the R-37 concurrency requirement).**_ `BudgetStore.ch
 is implemented with `better-sqlite3`'s `db.transaction(fn).immediate()` — **`IMMEDIATE`, not the
 default `DEFERRED`** — around a **synchronous** read-compare-write section. This is the same
 concurrency technique already documented for `net/rate-limit.ts`'s `throttle()` ("refill + consume +
-decide is one wholly synchronous step"), here applied to "read usage + compare against the ceiling +
-additively write the reservation", with a real SQLite transaction on top rather than only the JS
-semantics of not awaiting.
+decide is one wholly synchronous step"). Here it is applied to "read usage + compare against the
+ceiling + additively write the reservation". A real SQLite transaction sits on top, rather than only
+the JS semantics of not awaiting.
 
 Within one process, two concurrent logical calls whose combined cost exceeds the remainder
 deterministically produce **exactly one** `{ok:true}` and one `{ok:false}`; the second never reaches
 the network (R-37(c) acceptance). A refusal **writes no reservation at all** — not a rollback, simply
 no write — so `usage` is left untouched (R-37 acceptance a/b). The `{ok:false, reason}` names
 **which** of the limits fired ("vendor: need X, remaining (as of last resync) Y" vs "self-imposed
-cap: need X, NANSEN_DAILY_CREDIT_CAP allows Y"); otherwise the operator cannot tell a genuinely
+cap: need X, NANSEN_DAILY_CREDIT_CAP allows Y"). Without that, the operator cannot tell a genuinely
 exhausted vendor account from their own latch (OQ-5).
 
 **`dayBucketMs` is fixed once on entry to the gate and never recomputed at reconciliation.** The
 local `const bucket = dayBucketMs(Date.now())`, computed **before** `checkAndReserve`, is passed
 through the whole chain of one logical call (reservation → HTTP → reconciliation) as a parameter.
 Without that, a call reserved at 23:59:59.8 whose response arrives at 00:00:00.2 would write a
-negative delta into the **new** day bucket — another day's problem, plus a negative `credits_used`
-that breaks the documented additive/never-overwritten invariant of `usage` (§4.2). A call's
-reservation and its reconciliation always hit the **same** `usage` row, whatever `Date.now()`
-managed to show in between.
+negative delta into the **new** day bucket — another day's problem. The same write is a negative
+`credits_used`, which breaks the documented additive/never-overwritten invariant of `usage` (§4.2).
+A call's reservation and its reconciliation always hit the **same** `usage` row, whatever
+`Date.now()` managed to show in between.
 
 **Cross-process contract.** `DATA_DIR` defaults to a per-machine location (`~/.onchain-intel`), so
 several concurrent stdio sessions of Claude Code mean several writer connections to one
@@ -2164,13 +2223,13 @@ explicit `new Database(path, { timeout: 5000 })` (not the default 0ms): under co
 The budget itself is **never corrupted**: the transaction either commits entirely or aborts
 entirely, and the anchor formula above is cross-process-correct by construction — it does not depend
 on who incremented `usage` between resyncs. The only observable effect of contention is a rare
-`CapabilityUnavailableError` instead of an instant success if the timeout does expire (practically
-unreachable with one stdio process per user; in a multi-process scenario it is an extra retry, not
-data corruption).
+`CapabilityUnavailableError` instead of an instant success if the timeout does expire. That is
+practically unreachable with one stdio process per user; in a multi-process scenario it is an extra
+retry, not data corruption.
 
-**Singleflight (R-39) is deliberately per-process**, not per-machine: two _different_ processes
+**Singleflight (R-39) is deliberately per-process**, not per-machine. Two _different_ processes
 making an identical request at the same time are two genuine requests, each legitimately paying its
-own price; coalescing is neither needed nor applied there.
+own price. Coalescing is neither needed nor applied there.
 
 **The justification above stops holding in the network deployment profile, and the mechanism does
 not change (T-014, R-27 / ADR-003 D4).** "Two processes = two clients" was true while a process
@@ -2209,9 +2268,9 @@ sub-calls have finished.** Read per-response instead, a two-sub-call capability 
 `usage += (5-10) + (5-10) = 0` instead of the 10 credits actually spent — the counter zeroing itself
 on every paid `smart-money.flows`/`token.risk` call.
 
-- `actualTotal = Σ(X-Nansen-Credits-Used)` over **all** sub-responses of this `fetch()` (one number
-  for `smart-money.flows`/`token.risk`; identical to the single sub-response for `entity.labels`,
-  which always makes exactly one paid HTTP call on its escalation paths).
+- `actualTotal = Σ(X-Nansen-Credits-Used)` over **all** sub-responses of this `fetch()`. That is one
+  number for `smart-money.flows`/`token.risk`. It is identical to the single sub-response for
+  `entity.labels`, which always makes exactly one paid HTTP call on its escalation paths. Then
   `delta = actualTotal - reservedTotal`, where `reservedTotal` is the same value passed to
   `checkAndReserve` — the sum of **both** prices from the `costOf()` table, not one at a time. It is
   written with a single `budgetStore.recordDelta('nansen', bucket, delta)` using the same additive
@@ -2227,30 +2286,30 @@ on every paid `smart-money.flows`/`token.risk` call.
   to sum).
 - **`402 Payment Required`** (UC-6; openapi `PaymentRequiredError`, headers `Payment-Required` /
   `WWW-Authenticate: Payment .../Payment-Receipt`) on any sub-call is treated as an authoritative
-  "there is no budget right now": `fetch()` throws in full (see partial failure below), the
-  reservation stands as a conservative estimate of the fact, and `markUnreconciled()` forces the
-  next entry into the gate to resolve `/account` instead of trusting a stale local counter. One
-  mechanism covers both "the network dropped" and "Nansen itself said no" — not two paths.
+  "there is no budget right now". `fetch()` throws in full (see partial failure below), and the
+  reservation stands as a conservative estimate of the fact. `markUnreconciled()` forces the next
+  entry into the gate to resolve `/account` instead of trusting a stale local counter. One mechanism
+  covers both "the network dropped" and "Nansen itself said no" — not two paths.
 - The `bucket` passed to `recordDelta(...)` is the same `dayBucketMs` fixed **before**
   `checkAndReserve` for **this same** logical call — never recomputed from `Date.now()` when the
   response arrives.
 
 **Partial failure of composite capabilities** (`smart-money.flows`/`token.risk`, two HTTP calls
 each): if the second sub-call fails after the first has returned, the adapter's whole `fetch()`
-throws (no partial canonical results — YAGNI, the same fail-fast principle as every other adapter),
-and by the invariant above **reconciliation for that call does not run at all**. Not "a partial sum
-over the one sub-call that answered" — that is precisely the under-count the once-per-`fetch()` rule
-avoids. The reservation (made for the **sum** of both sub-calls) stays unreconciled,
-`markUnreconciled()` fires as in the general case, and the next resync pulls in the actual
-remainder. No separate mechanism for "partial" reconciliation exists; it reuses the path already
-described.
+throws. There are no partial canonical results — YAGNI, the same fail-fast principle as every other
+adapter. By the invariant above, **reconciliation for that call does not run at all**. Not "a
+partial sum over the one sub-call that answered" — that is precisely the under-count the
+once-per-`fetch()` rule avoids. The reservation (made for the **sum** of both sub-calls) stays
+unreconciled, `markUnreconciled()` fires as in the general case, and the next resync pulls in the
+actual remainder. No separate mechanism for "partial" reconciliation exists; it reuses the path
+already described.
 
 **429 Too Many Requests (UC-7): no retry inside the adapter.** The task's YAGNI constraint ("no
 retry/circuit-breaker framework") and UC-7's explicit alternative ("either an explicit error… or one
-bounded retry") resolve in favour of an **explicit, immediate error** carrying `retry-after` in its
-text — the simplest option, zero new retry machinery, and no special case interacting with the
-budget reservation already made before the HTTP call. A single unit test covers this path (R-29
-acceptance).
+bounded retry") resolve in favour of an **explicit, immediate error**. That error carries
+`retry-after` in its text. It is the simplest option: zero new retry machinery, and no special case
+interacting with the budget reservation already made before the HTTP call. A single unit test covers
+this path (R-29 acceptance).
 
 **The paid layer touches existing M1 code additively only** — no item below rewrites existing logic:
 
@@ -2317,51 +2376,68 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
   disagreeing — one hardcoded a `PAID_PROVIDER_IDS` set, the other wrote a hardcoded `'unknown'`.
 - `PRAGMA journal_mode=WAL` — concurrent hot-path/debug reads are not blocked by a write.
 - **`DATA_DIR`:** optional env, defaulting to `path.join(os.homedir(), '.onchain-intel')` — not a
-  `process.cwd()`-relative path, because the MCP server is launched by Claude Code with an arbitrary
-  cwd, whereas a stable home directory is predictable regardless of where the host started. The cache
+  `process.cwd()`-relative path. The MCP server is launched by Claude Code with an arbitrary cwd,
+  whereas a stable home directory is predictable regardless of where the host started. The cache
   file is `${DATA_DIR}/cache.sqlite3`. Moving an installation is moving one directory
   (DB-SCHEMA §1.10).
 - **TTL by data type** (ADR-001 D6 ranges, made concrete for the M1 capabilities):
 
-  🔴 **M1 — re-pointed (T-012, LANDED in task 012-5).** This table was, and remains, the
-  human-authored source the code is checked against — but WHICH module in the code holds the checked
+  **M1 — re-pointed (T-012, LANDED in task 012-5).** This table was, and remains, the
+  human-authored source the code is checked against. But WHICH module in the code holds the checked
   rows has moved: it was `packages/core/src/cache/ttl.ts`'s `TTL_SECONDS`, and it is now
-  `packages/core/src/capability-manifest.ts`'s `capabilityManifests[capability].ttlSeconds` (`ttl.ts`
-  is a thin reader, "Capability manifest" above; `TTL_SECONDS` no longer exists). No TTL changed in
-  the move. WI-28's gate, `mcp-server/test/readme-tool-table.test.ts`, was extended in the SAME task
-  to also assert every routed capability's `deadlineMs` (and, where a paid adapter is on the route,
-  `paidLegMs`) matches the table below — that is what converts AC-13 ("every `deadlineMs` carries a
-  derivation record") from a code-review promise into a RED TEST, the same discipline that already
-  applies to TTL: it
-  was incomplete for six capabilities when the WI-28 gate was written — `chain.tvl`, `pool.info`,
-  the two `*.history` rows and all three paid ones — i.e. the document the implementation names as
-  its authority had been silently behind it since M1 (`pool.info` and
-  `privacy.shielded_pool.history` are M1 routes, not M2).
+  `packages/core/src/capability-manifest.ts`'s `capabilityManifests[capability].ttlSeconds`.
+  (`ttl.ts` is a thin reader, "Capability manifest" above; `TTL_SECONDS` no longer exists.) No TTL
+  changed in the move. WI-28's gate, `mcp-server/test/readme-tool-table.test.ts`, was extended in
+  the SAME task to also assert every routed capability's `deadlineMs` (and, where a paid adapter is
+  on the route, `paidLegMs`) matches the table below. That is what converts AC-13 ("every
+  `deadlineMs` carries a derivation record") from a code-review promise into a RED TEST, the same
+  discipline that already applies to TTL. That discipline was incomplete for six capabilities when
+  the WI-28 gate was written — `chain.tvl`, `pool.info`, the two `*.history` rows and all three paid
+  ones. The document the implementation names as its authority had been silently behind it since M1
+  (`pool.info` and `privacy.shielded_pool.history` are M1 routes, not M2).
 
-  | Capability                                                  | TTL   | Rationale                                                                                                                                           |
-  | ----------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `token.price`                                               | 60s   | D6: price 15–60s                                                                                                                                    |
-  | `token.metadata`                                            | 3600s | name/symbol/decimals barely change                                                                                                                  |
-  | `wallet.balances.native`                                    | 60s   | D6: balances 1–5 min, lower bound — a balance changes with every tx                                                                                 |
-  | `pairs.active`                                              | 30s   | freshness is the point of "new"                                                                                                                     |
-  | `protocol.tvl`                                              | 300s  | D6: TVL 5–30 min, lower bound                                                                                                                       |
-  | `chain.tvl`                                                 | 300s  | an aggregate DeFiLlama recomputes on its own cadence — no faster-moving than a protocol's TVL, so the same bucket (R-53d)                           |
-  | `pool.info`                                                 | 300s  | shares its adapter and its liquidity/volume-style volatility with `protocol.tvl`, not with `pairs.active`                                           |
-  | `token.pools`                                               | 300s  | follows the `pool.info` row: the same vendor at the same freshness, and pool MEMBERSHIP does not move faster than reserves do (T-014, task 014-32b) |
-  | `dex.volume.history`                                        | 3600s | the vendor's own step is **one day** — a shorter TTL cannot buy a newer number, only a second identical download (R-64)                             |
-  | `chain.tvl.history`                                         | 3600s | same vendor, same one-day step as the DEX series above — the rationale is identical (WI-50)                                                         |
-  | `protocol.tvl.history`                                      | 3600s | same one-day step, and here a shorter TTL would buy a second multi-megabyte download                                                                |
-  | `protocol.list`                                             | 300s  | read out of the same `/protocols` document as `protocol.tvl`, so it inherits that bucket rather than inventing one (WI-49)                          |
-  | `gas.price`                                                 | 30s   | the shortest row in the table: gas is the most perishable number served, and the indexer re-stamps it about every minute (WI-51)                    |
-  | `chain.transactions`                                        | 600s  | same document as `gas.price`, twenty times the bucket — measured, the daily aggregate does not advance between block updates (WI-51)                |
-  | `protocol.incidents`                                        | 3600s | editorial, not on-chain: the newest record was 2.5 days old when measured, so a shorter window buys a second download and no fresher answer (WI-52) |
-  | `privacy.shielded_pool`, `platform.*`                       | 3600s | no point polling faster than the existing snapshotter's hourly cadence                                                                              |
-  | `privacy.shielded_pool.history`, `platform.metrics.history` | 3600s | historical views of an already-hourly capability — the row above's rationale applies unchanged                                                      |
-  | `token.holders`                                             | 3600s | low volatility (was credit-metered under `dune`; free under `blockscout` since TASK-008)                                                            |
-  | `chain.supply`                                              | 600s  | the value changes **only** when a block is found — the Bitcoin target interval, so a shorter TTL cannot buy a newer number (R-82c)                  |
-  | `smart-money.flows`                                         | 300s  | PAID (10 cr/miss): `netflow1hUsd` is a 1-hour rolling window, so a short TTL is genuinely earned here                                               |
-  | `token.risk`                                                | 1800s | PAID (6 cr/miss): Nansen Score indicators are daily-ish quantitative scores, not tick data                                                          |
-  | `entity.labels`                                             | 3600s | PAID (0/5/100 cr): ENS/CEX/fund attributions change over DAYS, and the `exhaustive` tier is the whole free-plan balance                             |
+  | Capability                                                  | TTL   | Rationale                                                                                                               |
+  | ----------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
+  | `token.price`                                               | 60s   | D6: price 15–60s                                                                                                        |
+  | `token.metadata`                                            | 3600s | name/symbol/decimals barely change                                                                                      |
+  | `wallet.balances.native`                                    | 60s   | D6: balances 1–5 min, lower bound — a balance changes with every tx                                                     |
+  | `pairs.active`                                              | 30s   | freshness is the point of "new"                                                                                         |
+  | `protocol.tvl`                                              | 300s  | D6: TVL 5–30 min, lower bound                                                                                           |
+  | `chain.tvl`                                                 | 300s  | the same bucket as `protocol.tvl` (R-53d)                                                                               |
+  | `pool.info`                                                 | 300s  | shares its adapter and its liquidity/volume-style volatility with `protocol.tvl`, not with `pairs.active`               |
+  | `token.pools`                                               | 300s  | follows the `pool.info` row (T-014, task 014-32b)                                                                       |
+  | `dex.volume.history`                                        | 3600s | the vendor's own step is **one day** — a shorter TTL cannot buy a newer number, only a second identical download (R-64) |
+  | `chain.tvl.history`                                         | 3600s | same vendor, same one-day step as the DEX series above — the rationale is identical (WI-50)                             |
+  | `protocol.tvl.history`                                      | 3600s | same one-day step, and here a shorter TTL would buy a second multi-megabyte download                                    |
+  | `protocol.list`                                             | 300s  | inherits `protocol.tvl`'s bucket (WI-49)                                                                                |
+  | `gas.price`                                                 | 30s   | the shortest row in the table (WI-51)                                                                                   |
+  | `chain.transactions`                                        | 600s  | same document as `gas.price`, twenty times the bucket (WI-51)                                                           |
+  | `protocol.incidents`                                        | 3600s | editorial, not on-chain (WI-52)                                                                                         |
+  | `privacy.shielded_pool`, `platform.*`                       | 3600s | no point polling faster than the existing snapshotter's hourly cadence                                                  |
+  | `privacy.shielded_pool.history`, `platform.metrics.history` | 3600s | historical views of an already-hourly capability — the row above's rationale applies unchanged                          |
+  | `token.holders`                                             | 3600s | low volatility (was credit-metered under `dune`; free under `blockscout` since TASK-008)                                |
+  | `chain.supply`                                              | 600s  | the value changes **only** when a block is found (R-82c)                                                                |
+  | `smart-money.flows`                                         | 300s  | PAID (10 cr/miss): `netflow1hUsd` is a 1-hour rolling window, so a short TTL is genuinely earned here                   |
+  | `token.risk`                                                | 1800s | PAID (6 cr/miss): Nansen Score indicators are daily-ish quantitative scores, not tick data                              |
+  | `entity.labels`                                             | 3600s | PAID (0/5/100 cr): ENS/CEX/fund attributions change over DAYS, and the `exhaustive` tier is the whole free-plan balance |
+
+  **Rationale detail, keyed by the capability above.** Each entry below carries the text its
+  Rationale cell no longer holds.
+
+  - **`chain.tvl`** — an aggregate DeFiLlama recomputes on its own cadence — no faster-moving than a
+    protocol's TVL, so the same bucket (R-53d).
+  - **`token.pools`** — the same vendor at the same freshness as the `pool.info` row, and pool
+    MEMBERSHIP does not move faster than reserves do (T-014, task 014-32b).
+  - **`protocol.list`** — read out of the same `/protocols` document as `protocol.tvl`, so it
+    inherits that bucket rather than inventing one (WI-49).
+  - **`gas.price`** — gas is the most perishable number served, and the indexer re-stamps it about
+    every minute (WI-51).
+  - **`chain.transactions`** — measured, the daily aggregate does not advance between block updates
+    (WI-51).
+  - **`protocol.incidents`** — the newest record was 2.5 days old when measured, so a shorter window
+    buys a second download and no fresher answer (WI-52).
+  - **`chain.supply`** — blocks are found at the Bitcoin target interval, so a shorter TTL cannot
+    buy a newer number (R-82c).
 
   **`deadlineMs`/`paidLegMs` by capability (D4, E-4/R-148/R-149) — LANDED (T-012, task 012-4; this
   table aligned to the manifest and put under the extended WI-28 gate in 012-5), the tier-based
@@ -2369,69 +2445,99 @@ created_at=excluded.created_at, expires_at=excluded.expires_at`. A plain insert-
   each capability's known route composition (route/adapter data is already in `providers.config.ts`
   today; this does not wait on the `shape` classification, which is a separate axis). The two
   `paidLegMs` cells that read `TBD (R-149)` — "only the TIER is known, the measured envelope is
-  Development's job" — were measured and filled in task **012-5**; no `TBD` is left, and the same
+  Development's job" — were measured and filled in task **012-5**. No `TBD` is left. The same
   "a number without a derivation record is a defect" rule TTL above lives by now applies to every
   cell here.
 
-  🔴 **One row below is an OVERRIDE of this document's own tier assignment, and is marked as one.**
+  **One row below is an OVERRIDE of this document's own tier assignment, and is marked as one.**
   `privacy.shielded_pool` + the four `platform.*` moved ~30_000 → **~15_000** because their second
-  adapter `dash-platform` performs zero network attempts today, so the route is single-LIVE-adapter;
-  the reason and the revert condition are in the row's own Derivation cell, and the code carries the
-  same record (`capability-manifest.ts`'s override banner). **The distinction is not one the gate can
-  make:** `readme-tool-table.test.ts` compares NUMBERS and never reads this prose, so once a cell is
-  rewritten it reports "matching" whether the change was an alignment or an unexplained
-  redefinition — which is why the marking is a task requirement rather than a courtesy (defect form
-  WI-24). The row directly beneath it is visually identical at ~30_000 and is **correct**
-  (`platform-explorer` + `pg-history`, two live adapters in sequence): these rows are addressed by
-  their capability list, never by line number.
+  adapter `dash-platform` performs zero network attempts today, so the route is single-LIVE-adapter.
+  The reason and the revert condition are in that row's own Derivation entry below the table, and
+  the code carries the same record (`capability-manifest.ts`'s override banner). **The distinction
+  is not one the gate can make:** `readme-tool-table.test.ts` compares NUMBERS and never reads this
+  prose. Once a cell is rewritten it reports "matching" whether the change was an alignment or an
+  unexplained redefinition. That is why the marking is a task requirement rather than a courtesy
+  (defect form WI-24). The row directly beneath it is visually identical at ~30_000 and is
+  **correct** (`platform-explorer` + `pg-history`, two live adapters in sequence): these rows are
+  addressed by their capability list, never by line number.
 
-  | Capability                                                                                                                                                                                                                                            | `deadlineMs` | `paidLegMs`                                       | Derivation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-  | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | `token.price`, `token.metadata`, `protocol.tvl`, `chain.tvl`, `pool.info`, `token.pools`, `dex.volume.history`, `chain.tvl.history`, `protocol.list`, `protocol.tvl.history`, `chain.supply`, `gas.price`, `chain.transactions`, `protocol.incidents` | ~15_000      | — (free-only route)                               | single-free-adapter tier: one adapter, one attempt, no composite sub-calls, and every hop bounded by its adapter's own `REQUEST_TIMEOUT_MS`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-  | `pairs.active`                                                                                                                                                                                                                                        | ~30_000      | — (free-only route)                               | **Two sequential round trips through ONE adapter — the tier is about the call's shape, not about how many adapters it takes.** Task 014-32c gave this route a second `dexscreener` search, issued when the first returns fewer on-chain rows than `limit` (19 of 49 chains at the default limit, L-19). It kept the ~15_000 tier, which equals `safeFetch`'s default hop bound, so the budget for the whole call equalled the budget for one of its two hops and the second could not start — arithmetic, not latency (L-22, task 014-33). The hop is now bounded at `SEARCH_TIMEOUT_MS = 12_000` for this route ⇒ envelope **2 × E-HTTP12 = 156_000**, applied 30_000, cuts 126_000 |
-  | `wallet.balances.native`                                                                                                                                                                                                                              | ~15_000      | — (free-only route)                               | single-free-adapter tier: each of its two routes (`rpc-evm` XOR `rpc-solana`) is a single free adapter — also `shape: 'set'`, same M-5 note                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-  | `token.holders`                                                                                                                                                                                                                                       | ~60_000      | — (free-only route)                               | **Single free adapter, MEASURED slow route — a tier of its own, not the paid one it shares a number with.** `blockscout`'s holders aggregate answered in 1.1–45.8 s across its five chains while `/api/v2/stats` on the same chain answered in 0.4–1.0 s (task 014-42, 2026-08-21, `raw/blockscout-holders-latency-2026-08-21.json`). The hop bound is `HOLDERS_TIMEOUT_MS = 60_000` for this route alone ⇒ envelope **E-HTTP60 = 270_000**, applied 60_000, cuts 210_000. Back to the ~15_000 tier when a probe shows the index fast again                                                                                                                                          |
-  | `privacy.shielded_pool`, `platform.identities/contracts/documents/credits`                                                                                                                                                                            | ~15_000      | — (free-only route)                               | **OVERRIDE, not an alignment:** `dash-platform.isAvailable()` is unconditionally false ⇒ zero attempts ⇒ single-LIVE-adapter route (`platform-explorer` alone). Back to ~30_000 when live gRPC lands                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-  | `privacy.shielded_pool.history`, `platform.metrics.history`                                                                                                                                                                                           | ~30_000      | — (free-only route)                               | ≤2-free-adapters tier: `platform-explorer` + `pg-history` in sequence — but **not** two HTTP legs: the second speaks the Postgres wire protocol, so its envelope is **E-PG = 50_000** (30_000 limiter + the 20_000 in-process query bound), not the HTTP template. Measured envelope 140_000, applied 30_000, cuts 110_000 (WI-34/WI-35)                                                                                                                                                                                                                                                                                                                                             |
-  | `smart-money.flows`                                                                                                                                                                                                                                   | ~60_000      | **~180_000** (measured: 2 × E-HTTP15)             | paid-composite tier, cancellable head (nansen-only route, free `/account` resync before reservation); 2 paid sub-calls (netflow+holders) under one reservation, measured at 2 × 90_000                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-  | `token.risk`                                                                                                                                                                                                                                          | ~60_000      | **~180_000** (measured: 2 × E-HTTP15)             | same shape as `smart-money.flows` — 2 paid sub-calls (indicators+token-information) under one reservation, measured at 2 × 90_000                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-  | `entity.labels`                                                                                                                                                                                                                                       | ~60_000      | **~270_000** (derived, OD-3 worked example above) | blockscout free leg + nansen free resync = cancellable head; 3 nansen sub-calls at `30+4×15`s each = the uncancellable leg, reusing `blockscout/index.ts`'s own historical derivation rather than re-measuring                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+  | Capability                                                                                                                                                                                                                                            | `deadlineMs` | `paidLegMs`                                       | Derivation                                                                                                                                  |
+  | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `token.price`, `token.metadata`, `protocol.tvl`, `chain.tvl`, `pool.info`, `token.pools`, `dex.volume.history`, `chain.tvl.history`, `protocol.list`, `protocol.tvl.history`, `chain.supply`, `gas.price`, `chain.transactions`, `protocol.incidents` | ~15_000      | — (free-only route)                               | single-free-adapter tier: one adapter, one attempt, no composite sub-calls, and every hop bounded by its adapter's own `REQUEST_TIMEOUT_MS` |
+  | `pairs.active`                                                                                                                                                                                                                                        | ~30_000      | — (free-only route)                               | **Two sequential round trips through ONE adapter — the tier is about the call's shape.**                                                    |
+  | `wallet.balances.native`                                                                                                                                                                                                                              | ~15_000      | — (free-only route)                               | single-free-adapter tier: each of its two routes (`rpc-evm` XOR `rpc-solana`) is a single free adapter                                      |
+  | `token.holders`                                                                                                                                                                                                                                       | ~60_000      | — (free-only route)                               | **Single free adapter, MEASURED slow route — a tier of its own, not the paid one it shares a number with.**                                 |
+  | `privacy.shielded_pool`, `platform.identities/contracts/documents/credits`                                                                                                                                                                            | ~15_000      | — (free-only route)                               | **OVERRIDE, not an alignment:** single-LIVE-adapter route (`platform-explorer` alone)                                                       |
+  | `privacy.shielded_pool.history`, `platform.metrics.history`                                                                                                                                                                                           | ~30_000      | — (free-only route)                               | ≤2-free-adapters tier: `platform-explorer` + `pg-history` in sequence                                                                       |
+  | `smart-money.flows`                                                                                                                                                                                                                                   | ~60_000      | **~180_000** (measured: 2 × E-HTTP15)             | paid-composite tier, cancellable head (nansen-only route, free `/account` resync before reservation)                                        |
+  | `token.risk`                                                                                                                                                                                                                                          | ~60_000      | **~180_000** (measured: 2 × E-HTTP15)             | same shape as `smart-money.flows`                                                                                                           |
+  | `entity.labels`                                                                                                                                                                                                                                       | ~60_000      | **~270_000** (derived, OD-3 worked example above) | blockscout free call stage + nansen free resync = cancellable head                                                                          |
+
+  **Derivation detail, keyed by the capability that opens the row.** Each entry below carries the
+  text its Derivation cell no longer holds.
+
+  - **`pairs.active`** — the tier is about the call's shape, not about how many adapters it takes.
+    Task 014-32c gave this route a second `dexscreener` search, issued when the first returns fewer
+    on-chain rows than `limit` (19 of 49 chains at the default limit, L-19). It kept the ~15_000
+    tier, which equals `safeFetch`'s default hop bound. So the budget for the whole call equalled
+    the budget for one of its two hops and the second could not start — arithmetic, not latency
+    (L-22, task 014-33). The hop is now bounded at `SEARCH_TIMEOUT_MS = 12_000` for this route ⇒
+    envelope **2 × E-HTTP12 = 156_000**, applied 30_000, cuts 126_000.
+  - **`wallet.balances.native`** — also `shape: 'set'`, same M-5 note.
+  - **`token.holders`** — `blockscout`'s holders aggregate answered in 1.1–45.8 s across its five
+    chains while `/api/v2/stats` on the same chain answered in 0.4–1.0 s (task 014-42, 2026-08-21,
+    `raw/blockscout-holders-latency-2026-08-21.json`). The hop bound is
+    `HOLDERS_TIMEOUT_MS = 60_000` for this route alone ⇒ envelope **E-HTTP60 = 270_000**, applied
+    60_000, cuts 210_000. Back to the ~15_000 tier when a probe shows the index fast again.
+  - **`privacy.shielded_pool`, `platform.identities/contracts/documents/credits`** —
+    `dash-platform.isAvailable()` is unconditionally false ⇒ zero attempts ⇒ single-LIVE-adapter
+    route (`platform-explorer` alone). Back to ~30_000 when live gRPC lands.
+  - **`privacy.shielded_pool.history`, `platform.metrics.history`** — the two adapters are **not**
+    two HTTP call stages. The second speaks the Postgres wire protocol, so its envelope is
+    **E-PG = 50_000** (30_000 limiter + the 20_000 in-process query bound), not the HTTP template.
+    Measured envelope 140_000, applied 30_000, cuts 110_000 (WI-34/WI-35).
+  - **`smart-money.flows`** — 2 paid sub-calls (netflow+holders) under one reservation, measured at
+    2 × 90_000.
+  - **`token.risk`** — 2 paid sub-calls (indicators+token-information) under one reservation,
+    measured at 2 × 90_000.
+  - **`entity.labels`** — 3 nansen sub-calls at `30+4×15`s each = the uncancellable call stage,
+    reusing `blockscout/index.ts`'s own historical derivation rather than re-measuring.
 
 - **Hot layer bounded by BYTES, not only by entry count (WI-11).** `LruHotLayer`'s `max: 500` was
   sized when the largest cached value was a ~200 B `ProtocolTvlResult`, so the implied ceiling was
   ~100 KB. TASK-007's `dex.volume.history` result at `days: 1825` is ~95 KB, which moved that ceiling
   to ~47.5 MB **without one line changing in `lru.ts`** — a bound that holds only while nobody caches
   anything large. The layer now carries a second, independent `maxSize` budget of **16 MB of
-  SERIALIZED bytes** (retained heap for object-heavy JSON runs ~1.6–2.2× that, so ~26–35 MB — the
-  ratio is named rather than folded into one misleading number), plus `ttlAutopurge` so an expired
-  entry does not sit resident until something happens to touch it. A value larger than the whole
-  budget is simply not hot-cached: the persistent layer still has it, and the write path — which the
-  Registry treats as best-effort — never throws.
+  SERIALIZED bytes**. Retained heap for object-heavy JSON runs ~1.6–2.2× that, so ~26–35 MB — the
+  ratio is named rather than folded into one misleading number. The layer also sets `ttlAutopurge`,
+  so an expired entry does not sit resident until something happens to touch it. A value larger than
+  the whole budget is simply not hot-cached: the persistent layer still has it, and the write path —
+  which the Registry treats as best-effort — never throws.
 
 - **Hit/miss counters** (`src/cache/stats.ts`) — a `Map<capability, { hit: number; miss: number }>`
   in process, incremented inside `TwoLevelStore.get()` (not by editing `registry.ts` — the same
   `CacheStore` seam, zero changes in the Registry) on every capability resolution. Exposed through
-  `getCacheStats()` and used in two places, deliberately: (a) one stderr line per call
-  (`cache=hit|miss provider=<id> capability=<cap> ageMs=<n>` — never arg values or secrets), which is
-  greppable for dev/CI assertions without changing the protocol (the §7.3 M0 invariant holds — this
-  is not stdout); and (b) `_meta.cache` in the tool response, giving the calling agent direct
-  visibility without log parsing and testable in E2E through `result._meta.cache`, without growing
-  `structuredContent` or the output schema. R-15's "verifiable in a test or debug output" is closed
+  `getCacheStats()` and used in two places, deliberately. (a) One stderr line per call
+  (`cache=hit|miss provider=<id> capability=<cap> ageMs=<n>` — never arg values or secrets). That
+  line is greppable for dev/CI assertions without changing the protocol (the §7.3 M0 invariant
+  holds — this is not stdout). (b) `_meta.cache` in the tool response, giving the calling agent
+  direct visibility without log parsing and testable in E2E through `result._meta.cache`, without
+  growing `structuredContent` or the output schema. R-15's "verifiable in a test or debug output" is closed
   by both paths.
 - **`SqliteCacheStore` implementation hardening.** The four repeated SQL statements (`get()` SELECT,
   `get()` stale DELETE, `set()` upsert, sweep DELETE) are `prepare()`d **once** in the constructor
   rather than on every call. An **opportunistic sweep of expired rows** runs on every
   `sweepEveryNWrites`-th `set()` (default 50), deleting rows with `expires_at <= now` through the
-  existing index — a documented default: this is **not** retention or a size cap (there is no bound
-  on row count or disk size), only the removal of already-expired keys that will never be read again.
-  The constructor is **leak-safe**: every step after the connection is opened (PRAGMA / DDL /
-  bootstrap / prepare) is wrapped in try/catch, so a throw best-effort closes the already-open
-  `better-sqlite3` handle before re-throwing instead of leaking a file descriptor; the
+  existing index — a documented default. This is **not** retention or a size cap (there is no bound
+  on row count or disk size). It removes only already-expired keys that will never be read again.
+  The constructor is **leak-safe**. Every step after the connection is opened (PRAGMA / DDL /
+  bootstrap / prepare) is wrapped in try/catch. A throw therefore best-effort closes the already-open
+  `better-sqlite3` handle before re-throwing, instead of leaking a file descriptor. The
   `postOpenTestHook` seam (never used in production) lets `test/cache.test.ts` simulate an arbitrary
-  post-open failure. Finally, `ageMs` stays honest across LRU promotion: when `TwoLevelStore`
+  post-open failure. Finally, `ageMs` stays honest across LRU promotion. When `TwoLevelStore`
   promotes a cold hit into the hot layer it passes `createdAt = Date.now() - coldHit.ageMs`, not the
-  moment of promotion — otherwise every subsequent hot hit would report `_meta.cache.ageMs` reset to
-  ~0 and under-state the real age of the value.
+  moment of promotion. Without that, every subsequent hot hit would report `_meta.cache.ageMs` reset
+  to ~0 and under-state the real age of the value.
 
 **`BudgetStore` — the interface** (the same `CacheStore` pattern, R-35):
 
@@ -2502,9 +2608,9 @@ export interface BudgetStore {
 `checkAndReserve` rests on the transaction **body** being synchronous. `SqliteBudgetStore` wraps
 `db.transaction(fn)` where `fn` contains no `await` at all: it reads `usage`, compares, and writes
 through the synchronous `better-sqlite3` API, the same technique as `throttle()`. **Explicit warning
-for a future Postgres implementation (D7):** if its `checkAndReserve` performs genuinely
-asynchronous work (a network round-trip to the database) **between** reading `usage` and writing the
-reservation inside one "transaction", it loses the guarantee that synchronicity provides here. The
+for a future Postgres implementation (D7).** The guarantee that synchronicity provides here is lost
+if its `checkAndReserve` performs genuinely asynchronous work (a network round-trip to the database)
+**between** reading `usage` and writing the reservation inside one "transaction". The
 correct Postgres equivalent must use a real SQL transaction with an isolation level equivalent to
 `SELECT ... FOR UPDATE` inside a single `BEGIN`/`COMMIT`, not two separate awaited queries.
 
@@ -2525,7 +2631,7 @@ live-ceiling source next to itself, not in a shared table.
 `providers` row for `'nansen'` already exists on **that** connection — and the only place M1 code
 upserts it is `SqliteCacheStore.bootstrapProviders()` (a different class, a different connection).
 Relying on construction order ("`SqliteCacheStore` first, then `SqliteBudgetStore`") is temporal
-coupling that no test would catch, and the first stub-first development task constructing
+coupling that no test would catch. The first stub-first development task constructing
 `SqliteBudgetStore({dbPath: ':memory:'})` in isolation would meet it as a baffling FK error that
 looks like a budget bug. So `SqliteBudgetStore` upserts `providers` itself:
 
@@ -2543,23 +2649,23 @@ prepared statement) **before** any write to `usage`. Both stores now idempotentl
 insert-only) but independence: neither has to be constructed first.
 
 **The budget-warning threshold is named config, not a hardcoded number** (R-37, "the threshold is
-config"): `NANSEN_BUDGET_WARN_RATIO` (optional env, `z.coerce.number().min(0).max(1).optional()`,
-default `0.8`) is a fraction of `ceiling` rather than an absolute credit count, because the ceiling
-itself is live and may change between resyncs. When
+config"). `NANSEN_BUDGET_WARN_RATIO` (optional env, `z.coerce.number().min(0).max(1).optional()`,
+default `0.8`) is a fraction of `ceiling` rather than an absolute credit count. The ceiling itself
+is live and may change between resyncs. When
 `spentSinceAnchor/creditsRemainingAtObserve >= NANSEN_BUDGET_WARN_RATIO` (or the analogous ratio for
 `NANSEN_DAILY_CREDIT_CAP`, when set), one stderr line is emitted — the same channel as the M1 cache
-metrics (§9.3 of the index) — at most once per threshold crossing per bucket (a simple boolean flag
-in `NansenAccountState`, reset on the next resync).
+metrics (§9.3 of the index). The line is emitted at most once per threshold crossing per bucket (a
+simple boolean flag in `NansenAccountState`, reset on the next resync).
 
 **Where `clearUnreconciled()` is called, and what happens when a cold-start resync fails.** The flag
 is cleared **only** by a successful `refreshAccount()` resync (the one that reads `/account` +
-`usageAtObserve`), never by a successful paid call: a successful reconciliation leaves the flag as it
-is, because the flag means "between this moment and the next resync the live counter cannot be
+`usageAtObserve`), never by a successful paid call. A successful reconciliation leaves the flag as
+it is. The flag means "between this moment and the next resync the live counter cannot be
 trusted", not "this particular call failed". If the resync itself fails (the network is unavailable
 for `/account`) — on either the cold-start or the unreconciled trigger — `fetch()` throws in full
-**before** `checkAndReserve` (there is no valid ceiling, so there is nothing to compute), which is
-the same R-24/R-40 `isError` path as "the key is not set". Fail-closed, never fail-open on a stale
-or zero ceiling.
+**before** `checkAndReserve`. There is no valid ceiling, so there is nothing to compute. That throw
+is the same R-24/R-40 `isError` path as "the key is not set". Fail-closed, never fail-open on a
+stale or zero ceiling.
 
 **Module: `src/net/*`** (SSRF, R-25 + rate limiting, R-26)
 
@@ -2639,9 +2745,9 @@ export function throttle(
 `Map`.** The comment is accurate for the code as it stands
 (`packages/core/src/net/rate-limit.ts:255`, `const buckets = new Map<string, BucketState>();`).
 Once the state lives in shared storage the decision includes a round trip, so the guarantee is
-restated rather than kept: atomicity moves from the event loop into one
-`INSERT … ON CONFLICT DO UPDATE … RETURNING` statement (data-model.md §4.5.6). §3.4.4 carries the
-full design and the two consequences that follow for the deadline arithmetic.
+restated rather than kept. Atomicity moves from the event loop into one
+`INSERT … ON CONFLICT DO UPDATE … RETURNING` statement (data-model.md §4.5.6). The full design and
+the two consequences that follow for the deadline arithmetic are in §3.4.4.
 
 **Module: `src/pg/read-client.ts`** (R-12, used **only** by `adapters/pg-history/index.ts` — not a
 separate side channel)
@@ -2662,17 +2768,18 @@ which made this the only I/O path in the package with no upper bound at all whil
 carried an `AbortSignal.timeout`.
 
 - **`statement_timeout: 5_000`** — a `pg` config field, sent as a startup parameter. **Server-side**:
-  Postgres cancels the statement and the pooled connection is returned. Derived rather than chosen —
+  Postgres cancels the statement and the pooled connection is returned. Derived rather than chosen.
   `EXPLAIN (ANALYZE, BUFFERS)` over the dev VM's `onchain.snapshots` (2 390 rows, 2026-08-05)
-  measured 0.87 ms for the four-metric query and 0.23 ms for the one-metric one, so the bound is
-  ~5 700× the worst measurement; the margin covers a cold buffer cache, a much larger table and an
-  unlucky plan (the four-metric query is already on a Seq Scan).
+  measured 0.87 ms for the four-metric query and 0.23 ms for the one-metric one. The bound is
+  therefore ~5 700× the worst measurement. The margin covers a cold buffer cache, a much larger
+  table and an unlucky plan (the four-metric query is already on a Seq Scan).
 - **`DEFAULT_QUERY_TOTAL_TIMEOUT_MS = 20_000`** — an in-process race owned by this module.
   **Client-side**: it stops the ENGINE waiting, which is the only bound that survives a server that
-  goes silent after the connection was established — the failure `statement_timeout` cannot reach,
-  and the one that hangs a single-threaded stdio server whole rather than one capability. The number
-  is a **sum constraint**: it must exceed `connectionTimeoutMillis` + `statement_timeout` (10 000 +
-  5 000) or the two inner bounds become unreachable and three diagnosable failures collapse into one.
+  goes silent after the connection was established. That is the failure `statement_timeout` cannot
+  reach, and the one that hangs a single-threaded stdio server whole rather than one capability.
+  The number is a **sum constraint**: it must exceed `connectionTimeoutMillis` +
+  `statement_timeout` (10 000 + 5 000) or the two inner bounds become unreachable and three
+  diagnosable failures collapse into one.
   `pg`'s own `query_timeout` is deliberately NOT also set — a second client-side timer with the same
   job and no discriminator between them.
 
@@ -2680,7 +2787,7 @@ It raises **`PgQueryTimeoutError`**, kept distinct from the sanitized failure me
 database answered with an error" and "the database did not answer at all" are different facts about
 an installation. `ReadQueryOptions.deadlineAtMs` (WI-37) narrows the in-process bound to whatever the
 caller has left, never widens it, and an already-spent deadline refuses before the pool is
-constructed; which of the two bounds is binding also decides the class — `DeadlineExceededError`
+constructed. Which of the two bounds is binding also decides the class — `DeadlineExceededError`
 (ours, ends the walk) versus `PgQueryTimeoutError` (this source's, the walk continues). Both are
 rethrown UNFLATTENED past the sanitizer, for the reason WI-36 gives one transport over: sanitize what
 came from outside, never what this module constructed.
@@ -2689,11 +2796,11 @@ Together these make **E-PG = 50_000** (30_000 limiter + 20_000 query bound) — 
 `*.history` capabilities' `deadlineMs` is derived from, recorded row-by-row in
 `packages/core/src/capability-manifest.ts`.
 
-**Pool hardening.** `pool.on('error', ...)` is attached immediately after `new Pool(...)`: an idle
+**Pool hardening.** `pool.on('error', ...)` is attached immediately after `new Pool(...)`. An idle
 connection can drop independently of `query()`, and an unhandled `'error'` on an `EventEmitter`
 would otherwise take down the whole process (logged to stderr, then ignored).
-`connectionTimeoutMillis: 10000`, `max: 3` and `statement_timeout: 5000` are **always** passed
-explicitly, never left to `pg`'s defaults. **All** failure paths — `pool.query(...)` and the
+Each of `connectionTimeoutMillis: 10000`, `max: 3` and `statement_timeout: 5000` is **always**
+passed explicitly, never left to `pg`'s defaults. **All** failure paths — `pool.query(...)` and the
 **construction** of `new Pool(...)`
 itself (a constructor throw on an invalid DSN used to bypass the query try/catch and could leak
 host/port/user to the caller) — are sanitized, with `{cause: error}` attached. The raw detail goes to
@@ -2706,7 +2813,7 @@ answered with a Postgres ErrorResponse, carrying its **validated** SQLSTATE and 
 (`pg-history: database reachable, request rejected (SQLSTATE 42P01, ERROR)`), and
 `'pg-history: database unavailable'` (`SANITIZED_QUERY_FAILURE_MESSAGE`) only when nothing answered.
 The discriminator is `severity` together with a SQLSTATE-shaped `code`, chosen from a live probe of
-five real failures rather than from the docs: `code` alone would classify Node's `EPIPE` — a socket
+five real failures rather than from the docs. `code` alone would classify Node's `EPIPE` — a socket
 dying, the opposite fact — as an answer. It is deliberately NOT a claim that the query was wrong;
 `28P01` and Supavisor's `XX000` are the server rejecting the CALLER, and both are equally "someone
 was home". The server's own message stays unsurfaced: it quotes the DSN's username back.
@@ -2740,94 +2847,95 @@ was home". The server's own message stays unsurfaced: it quotes the DSN's userna
   D7).** Every tool module exports a `ToolSpec` — `name`, `title?`, `description`, the served
   `capability` (`null` for the two that serve none), both zod schemas, and a handler — and
   `createServer` registers by iterating `toolSpecs`. `title?` is OPTIONAL in the type because it
-  described a split when written — 4 of the 13 tools carried one and 9 did not, and a spec without
-  it would silently drop four titles from `tools/list`. **Today all 22 carry one** (measured while
+  described a split when written: 4 of the 13 tools carried one and 9 did not. A spec without it
+  would silently drop four titles from `tools/list`. **Today all 22 carry one** (measured while
   closing WI-48), so the optionality is now a tolerance the type still permits, not a state it
-  describes; whether to require it is a separate decision, deliberately not taken here. One helper (`defineTool`) is the only place that touches `server.registerTool`, so
-  a tool's name is **declared** exactly once.
-  - 🔴 **DESIGNED, corrected (T-013) — `capability` does NOT widen to a union. A new, additive
+  describes. Whether to require it is a separate decision, deliberately not taken here. One helper
+  (`defineTool`) is the only place that touches `server.registerTool`, so a tool's name is
+  **declared** exactly once.
+  - **DESIGNED, corrected (T-013) — `capability` does NOT widen to a union. A new, additive
     field carries the second capability instead.** A first draft of this entry proposed
     `capability: string | string[] | null` and called it "the one change" and "backward-compatible".
-    Measured against the tree, it is neither: **three** type declarations name the field
-    (`packages/mcp-server/src/tools/registry.ts:110`, `readonly capability: string | null;` — in
+    Measured against the tree, it is neither. **Three** type declarations name the field:
+    `packages/mcp-server/src/tools/registry.ts:110`, `readonly capability: string | null;` in
     `ToolDefinition`; the same line at `:139` in `ToolSpec`; **and**
     `packages/mcp-server/scripts/gen-tool-inventory.ts:42`, `readonly capability: string | null;`
-    in `ToolInventoryEntry` — the schema of the
-    _committed artifact_ `tool-inventory.json`, read by `smoke-dist.mjs` and the eval); and a
-    `string[]` value is not equal to any string, so every reader that compares `capability` with
-    `===` or as a `Set` member goes from "matches" to "silently never matches" — a hard, offline
-    failure (`eval/capabilities.mjs`'s `toolFor()` throws AT IMPORT), not a compile error a reviewer
+    in `ToolInventoryEntry`. The third is the schema of the _committed artifact_
+    `tool-inventory.json`, read by `smoke-dist.mjs` and the eval. A `string[]` value is not equal
+    to any string, so every reader that compares `capability` with `===` or as a `Set` member goes
+    from "matches" to "silently never matches". That is a hard, offline failure
+    (`eval/capabilities.mjs`'s `toolFor()` throws AT IMPORT), not a compile error a reviewer
     would catch.
-  - 🔴 **Decision: `capability: string | null` is UNCHANGED — same type, same meaning ("the ONE
+  - **Decision: `capability: string | null` is UNCHANGED — same type, same meaning ("the ONE
     capability this tool serves, or `null` for none"). A new, optional field,
     `servedCapabilities?: readonly string[]`, is added to all three declarations above, present
     ONLY on a tool serving more than one capability** (today: only the 14th tool,
-    `['privacy.shielded_pool.history', 'platform.metrics.history']`); `capability` itself is `null`
-    for it, same value it already carries for `ping`/`list-chains`, but a DIFFERENT fact — disjoint
-    from "serves none", which is why the readers below cannot treat `capability === null` as one
-    case any more. Additive at the type level (every existing literal recompiles unchanged) — the
-    honesty this buys is that no reader capable of comparing a scalar is handed an array it was
-    never written to expect.
+    `['privacy.shielded_pool.history', 'platform.metrics.history']`). `capability` itself is `null`
+    for it, same value it already carries for `ping`/`list-chains`, but a DIFFERENT fact. It is
+    disjoint from "serves none", which is why the readers below cannot treat `capability === null`
+    as one case any more. Additive at the type level (every existing literal recompiles
+    unchanged) — the honesty this buys is that no reader capable of comparing a scalar is handed an
+    array it was never written to expect.
   - **Readers enumerated by grep — corrected round 2 (MJ-1): FIVE require a behaviour change, not
     three. The two missed both fail SILENTLY, which is the one failure mode this design cannot
     afford to reproduce.**
     (1) `eval/capabilities.mjs`'s `toolFor(capability)` — extend the match to
-    `tool.capability === capability || tool.servedCapabilities?.includes(capability)`; (2)
-    `docs-counts.test.ts`'s R-119 pairing gate — `documented` becomes `Map<string, string[]>` (one
-    tool name can attribute more than one anchor, M-3/BL-1 below), the equality check becomes a SET
-    comparison against `spec.servedCapabilities ?? [spec.capability]`, and the `served` Set must
-    flatten `servedCapabilities` too or the 14th tool's anchors read as orphaned; (3)
-    `tool-spec.test.ts`'s two existing assertions — the "serves no capability" sorted-list check
-    (`capability === null`) now also catches the 14th tool and must be told apart by
-    `servedCapabilities === undefined`, and the "routes every declared capability" check
+    `tool.capability === capability || tool.servedCapabilities?.includes(capability)`.
+    (2) `docs-counts.test.ts`'s R-119 pairing gate — `documented` becomes `Map<string, string[]>`
+    (one tool name can attribute more than one anchor, M-3/BL-1 below), and the equality check
+    becomes a SET comparison against `spec.servedCapabilities ?? [spec.capability]`. The `served`
+    Set must flatten `servedCapabilities` too or the 14th tool's anchors read as orphaned.
+    (3) `tool-spec.test.ts`'s two existing assertions — the "serves no capability" sorted-list
+    check (`capability === null`) now also catches the 14th tool and must be told apart by
+    `servedCapabilities === undefined`. The "routes every declared capability" check
     (`routed.has(spec.capability)`) silently skips a `capability: null` entry today and must gain an
-    `OR`-clause walking `servedCapabilities` or the 14th tool's two routes are never checked to
-    exist.
-    🔴 (4) `test/eval-capability-coverage.test.ts`'s `capabilitiesServedByTools()` — this is RF-5's
-    OWN guard (`dex.volume.history` shipped with no eval case and a green run read as "the free
-    contour is verified"; this test exists so that never happens again silently). Today it does
+    `OR`-clause walking `servedCapabilities`. Without it the 14th tool's two routes are never
+    checked to exist.
+    (4) `test/eval-capability-coverage.test.ts`'s `capabilitiesServedByTools()` — this is RF-5's
+    OWN guard. `dex.volume.history` shipped with no eval case and a green run read as "the free
+    contour is verified"; this test exists so that never happens again silently. Today it does
     `if (spec.capability !== null) byCapability.set(spec.capability, spec.name)` — a tool with
     `capability: null` is invisible to it BY THE SAME CONSTRUCTION that makes `ping`/`list-chains`
     invisible on purpose. **`capabilitiesServedByTools()` MUST also flatten `servedCapabilities`** —
-    for each entry, map EVERY member to the tool's name — or the 14th tool's two capabilities are
-    never required in `CAPABILITY_TOOLS`/`CAPABILITY_EXCLUSIONS` and RF-5's own gate stays green
-    over exactly the hole it was built to close. `test/inventory-channels.ts`'s channel description
-    ("fires only when the tool serves a capability") is also wrong for a tool serving two and needs
-    the same correction in prose.
-    🔴 (5) `test/eval-checks-coverage.test.ts`'s `serverLevelTools` — `toolSpecs.filter(spec =>
+    for each entry, map EVERY member to the tool's name. Without that, the 14th tool's two
+    capabilities are never required in `CAPABILITY_TOOLS`/`CAPABILITY_EXCLUSIONS`, and RF-5's own
+    gate stays green over exactly the hole it was built to close. `test/inventory-channels.ts`'s
+    channel description ("fires only when the tool serves a capability") is also wrong for a tool
+    serving two and needs the same correction in prose.
+    (5) `test/eval-checks-coverage.test.ts`'s `serverLevelTools` — `toolSpecs.filter(spec =>
 spec.capability === null)` reads "answers without a provider" from the SAME bit `null` now
     carries a second meaning under. Left unfixed, it classifies the 14th tool as server-level (like
-    `ping`), demands an `eval/checks.mjs` entry FOR THE WRONG REASON (it is capability-routed, just
-    through two capabilities), and — since it is also absent from `CAPABILITY_TOOLS` under this
-    misreading — produces a LOUD failure, just not the true one; unlike (4), the danger here is
-    noise, not silence, but the fix is the same source of truth: filter on
+    `ping`) and demands an `eval/checks.mjs` entry FOR THE WRONG REASON (it is capability-routed,
+    just through two capabilities). Since it is also absent from `CAPABILITY_TOOLS` under this
+    misreading, it produces a LOUD failure, just not the true one. Unlike (4), the danger here is
+    noise, not silence. The fix is the same source of truth: filter on
     `spec.capability === null && spec.servedCapabilities === undefined`.
-    **Verified unaffected, not merely unmentioned:** `readme-tool-table.test.ts`'s
+    **Verified unaffected, not left unexamined:** `readme-tool-table.test.ts`'s
     `CAPABILITY_OF`/`PAID_CAPABILITIES` (neither of the 14th tool's capabilities routes through
     `nansen`, so its README pricing cell is never consulted) and `smoke-dist.mjs` (does not read
     `capability` at all).
-  - 🔴 **MN-2 — the artifact mapper is a SIXTH site, and it is the one reader (1) reads through.**
+  - **MN-2 — the artifact mapper is a SIXTH site, and it is the one reader (1) reads through.**
     `gen-tool-inventory.ts`'s `buildToolInventory()` maps `toolSpecs` to `{name, title, capability}`
     literally; adding `servedCapabilities` to the TYPE (above) does not make this mapper emit it —
     it compiles unchanged and silently drops the field. Readers (2)-(5) import `toolSpecs` directly
-    in TypeScript and are unaffected by this mapper; reader (1), `eval/capabilities.mjs`, is plain
-    `.mjs` and can ONLY read the generated `tool-inventory.json` — so a mapper that drops the field
-    defeats reader (1)'s fix above by itself, silently, downstream of it. The mapper needs the same
-    field added to its object literal: `capability: spec.capability, servedCapabilities:
+    in TypeScript and are unaffected by this mapper. Reader (1), `eval/capabilities.mjs`, is plain
+    `.mjs` and can ONLY read the generated `tool-inventory.json`. A mapper that drops the field
+    therefore defeats reader (1)'s fix above by itself, silently, downstream of it. The mapper needs
+    the same field added to its object literal: `capability: spec.capability, servedCapabilities:
 spec.servedCapabilities`.
-  - 🔴 **Least privilege stays a RUNTIME fact, not a type-level promise.** Today `server.ts` hands
+  - **Least privilege stays a RUNTIME fact, not a type-level promise.** Today `server.ts` hands
     each tool a fresh literal (`{version}`, `{registry}`, `{registry, budgetStore}`), so a free
     tool has no reference to the budget store at all. A uniform loop that passed one wide context
-    to all twenty-two would replace that with self-restraint — and self-restraint is weak here,
-    because `budgetStore` is declared **optional** in all three M2 contexts, so any tool could add
+    to all twenty-two would replace that with self-restraint. Self-restraint is weak here:
+    `budgetStore` is declared **optional** in all three M2 contexts, so any tool could add
     `budgetStore?: BudgetStore` to its own context type and read it, compiling silently. So the
     spec declares the context keys it needs (`needs: ['registry', 'budgetStore']`), the handler
     receives `Pick<ToolContext, K>`, and **the loop projects the object before calling** —
-    `pick(ctx, spec.needs)`. Two properties, not one: the type narrows with no assertion anywhere
+    `pick(ctx, spec.needs)`. Two properties, not one. The type narrows with no assertion anywhere
     (`ToolContext` is assignable to `Pick<ToolContext, K>` by construction — verified by compiling
-    it), and the object a tool receives genuinely lacks the keys it did not ask for, which a test
-    can assert. `needs` is data, so "what this tool depends on" is inspectable rather than inferred.
-  - 🔴 **Schemas: one form, and picking it changes the contract for four tools.** Nine tools pass a
+    it). The object a tool receives genuinely lacks the keys it did not ask for, which a test can
+    assert. `needs` is data, so "what this tool depends on" is inspectable rather than inferred.
+  - **Schemas: one form, and picking it changes the contract for four tools.** Nine tools pass a
     full zod schema to `registerTool`; four (`chain-tvl`, `chain-supply`, `dex-volume`,
     `list-chains` — the same four that carry `title`) pass `.shape`. The SDK wraps a raw shape in a
     NON-strict object, so those four declare `.strict()` and do not get it: in the captured
@@ -2842,7 +2950,7 @@ spec.servedCapabilities`.
     the eval's capability axis and the documentation gates all derive the list from the registry.
     Non-TypeScript readers go through a committed generated artifact, following
     `gen-blockscout-chains.ts` + `blockscout-chains-in-sync.test.ts` (the generator is an exported
-    pure function, regenerated into a tmpdir by a test and compared) — **not**
+    pure function, regenerated into a tmpdir by a test and compared). They do **not** go through
     `registry.data.json`, whose generator hits three live vendor catalogues and carries
     hand-curated columns, and whose committed file has no freshness gate at all. The artifact is
     read with `readFileSync`, never imported from `src/`: `resolveJsonModule` is core-only and
@@ -2853,19 +2961,19 @@ spec.servedCapabilities`.
     The four independent observation channels of
     [WI-20](../backlog/wi-20-three-tool-inventory-lists.md) all remain — what stops being
     duplicated is the _data_, not the _checking_.
-  - 🔴 **Three independent guards against a tool DISAPPEARING**, because deriving every reader from
-    the registry would otherwise leave zero (the documentation gate iterates _registered_ tools, so
-    a vanished one is simply not iterated): (1) a hand-written lower bound,
+  - **Three independent guards against a tool DISAPPEARING.** Deriving every reader from the
+    registry would otherwise leave zero. The documentation gate iterates _registered_ tools, so a
+    vanished one is simply not iterated. (1) A hand-written lower bound,
     `expect(toolSpecs.length).toBeGreaterThanOrEqual(13)` — the idiom `docs-counts.test.ts` already
-    uses, and the only one **no command can regenerate**; (2) orphan-name detection — any
-    `onchain_*` token in a gated document must exist in the registry; (3) the artifact in-sync
+    uses, and the only one **no command can regenerate**. (2) Orphan-name detection — any
+    `onchain_*` token in a gated document must exist in the registry. (3) The artifact in-sync
     test. The frozen `tools/list` snapshot proves the refactor changed no byte, but it is
-    deliberately **not** the sole deletion guard: its byte comparison reddens on every SDK/zod bump
-    and is healed by re-running the snapshot command, and a routine that says "red → regenerate →
-    green" would eventually bless a disappearance too.
-  - **Response shape is not uniform today** and the loop has to name that rather than assume it:
-    `ping` and `list-chains` are synchronous and emit no `_meta`; the M1 tools are async with
-    `_meta.cache`; the M2 tools add `_meta.budget` on a miss. A canonical outcome type covers all
+    deliberately **not** the sole deletion guard. Its byte comparison reddens on every SDK/zod bump
+    and is healed by re-running the snapshot command. A routine that says "red → regenerate →
+    green" would eventually accept a disappearance as conforming too.
+  - **Response shape is not uniform today** and the loop has to name that rather than assume it.
+    `ping` and `list-chains` are synchronous and emit no `_meta`. The M1 tools are async with
+    `_meta.cache`. The M2 tools add `_meta.budget` on a miss. A canonical outcome type covers all
     three, and the two synchronous tools are brought to it.
 - **The M1 `src/tools/*.ts`** (`get-token.ts`, `wallet-balances.ts`, `active-pairs.ts`,
   `protocol-tvl.ts`) follow the `ping.ts` pattern: a pure handler (unit-testable without a
@@ -2882,35 +2990,36 @@ spec.servedCapabilities`.
   characters of a vendor's own response body. It reaches the model as `isError` text with none of
   the success path's sanitizing, so a new failure path must treat it as untrusted input. No secret
   reaches it: adapters that embed a vendor body redact keys first, and `safeFetch` reduces URLs to
-  origin+pathname. _(This bullet asserted the opposite until adversarial cycle 4 — the fourth place
-  the same claim lived, corrected one file at a time across three cycles.)_
+  origin+pathname. _(This bullet asserted the opposite until adversarial cycle 4. That was the
+  fourth place the same claim lived, corrected one file at a time across three cycles.)_
 - `src/env.ts` — four optional keys (R-23): `COINGECKO_API_KEY`, `DUNE_API_KEY`, `ONCHAIN_PG_URL`
   (`z.string().url().optional()` — WHATWG URL parsing accepts `postgres://`), and `DATA_DIR`
   (`z.string().optional()`). `EnvSchema.parse({})` still does not throw (R-23). A fifth optional key,
   `COINGECKO_PRO_API_KEY`, exists because a CoinGecko Pro subscription is a **separate**
-  authentication circuit (host `pro-api.coingecko.com` + header `x-cg-pro-api-key`; the pro host
-  ignores the demo header — confirmed by a live probe), not "the same key with higher limits". Key
-  formats are identical across tiers (`CG-…`), so the circuit is declared by which variable is set
-  and never guessed from the format; when both are set, Pro wins.
+  authentication circuit, not "the same key with higher limits". The circuit is host
+  `pro-api.coingecko.com` + header `x-cg-pro-api-key`; the pro host ignores the demo header —
+  confirmed by a live probe. Key formats are identical across tiers (`CG-…`), so the circuit is
+  declared by which variable is set and never guessed from the format; when both are set, Pro wins.
 
 #### Test suite
 
 **1161 tests** — `packages/core` 876, `packages/mcp-server` 285 (D11, R-21/R-22).
-_(measured 2026-08-02, TASK-011; ungated — no test can count both packages from inside one of them,
+_(measured 2026-08-02, TASK-011; ungated. No test can count both packages from inside one of them,
 so this figure is a dated snapshot in the manner of ADR-002's counts, not a checked claim. It read
 1106/230 until cycle 4 of TASK-011's adversarial review.)_
 
 Two of them are **documentation** gates, added in TASK-009's doc pass because the drift they catch
-had twice been caught by a human instead: `core/test/ttl-coverage.test.ts` (every routed capability
-has an EXPLICIT TTL row, never the fallback) and `mcp-server/test/docs-counts.test.ts` (the counts
-these documents state, and the tool/adapter names they must contain, compared against the code).
+had twice been caught by a human instead. The first is `core/test/ttl-coverage.test.ts` (every
+routed capability has an EXPLICIT TTL row, never the fallback). The second is
+`mcp-server/test/docs-counts.test.ts` (the counts these documents state, and the tool/adapter names
+they must contain, compared against the code).
 
 - **`packages/core/test/`:** one `*.contract.test.ts` per adapter that has a live/fixture/mock path
   — golden normalization from "raw fixture response" to "canonical object" (D11).
   `test/fixtures/<adapter>/*.json` are committed: `coingecko`, `dexscreener`, `defillama`,
-  `rpc-evm`, `rpc-solana`, `platform-explorer` and `nansen` are real HTTP fixtures; `dash-platform`
-  is a hand-built fixture shaped after the addendum; `pg-history` is not an HTTP fixture but a
-  mocked pg client with fixed rows; `dune` has no fixture and no contract test.
+  `rpc-evm`, `rpc-solana`, `platform-explorer` and `nansen` are real HTTP fixtures. `dash-platform`
+  is a hand-built fixture shaped after the addendum. `pg-history` is not an HTTP fixture but a
+  mocked pg client with fixed rows. `dune` has no fixture and no contract test.
   `registry.fallback.test.ts` covers R-11: `dash-platform.isAvailable()` is deterministically
   `false` (the real configuration, not a mocked unavailability), so the capability answers through
   `platform-explorer` — a run of a genuine, not simulated, fallback path. `cache.test.ts` covers
@@ -2927,8 +3036,8 @@ these documents state, and the tool/adapter names they must contain, compared ag
   exactly the **twenty-two** tools **derived from `toolSpecs`** — `toHaveLength(expected.length)` at
   `packages/mcp-server/test/e2e.stdio.test.ts:162`, `expect(tools, ADD_A_TOOL).toHaveLength(expected.length);`, not a hand-written literal, since TASK-011 made the inventory data — and keeps running
   `onchain_ping` end to end. It deliberately does **not** call the other tools over this transport:
-  the `registry` injection is in-process, and using the real registry inside a spawned process
-  would mean live network calls under CI — a violation of R-21.
+  the `registry` injection is in-process. Using the real registry inside a spawned process would
+  mean live network calls under CI — a violation of R-21.
 - **`packages/mcp-server/test/e2e.inprocess.test.ts`** — no process spawn: the SDK's
   `InMemoryTransport.createLinkedPair()` (part of `@modelcontextprotocol/sdk`, no new dependency)
   plus `Client` and `createServer({ env, version, registry: fixtureRegistry })` **in the test's own
@@ -2936,7 +3045,8 @@ these documents state, and the tool/adapter names they must contain, compared ag
   assembled from `packages/core/test/fixtures/`. It exercises the M1 tools and the M2 paid tools
   fully through the MCP protocol (input validation, `structuredContent`, `_meta.cache`,
   `_meta.budget`, the `isError` path when a capability is unavailable) with **zero network calls**
-  (R-21), because the injection is physically possible with no process boundary. This — not the
+  (R-21). That count is reachable because the injection is physically possible with no process
+  boundary. This — not the
   spawn suite — is the actual "E2E extended to the tools with a fixture-backed registry".
 - **`scripts/smoke-dist.mjs`** stays ping-only. Its job is to prove that the _built_
   `dist/index.js` starts at all and speaks the wire protocol (M0's post-build blind spot).
@@ -3539,7 +3649,7 @@ value loses the count T-015 charges from.
 
 1. The follower's `vendor_credits` and `vendor_calls` are both `NULL`. Its `vendor_provider` names
    the leader's provider. Postcondition: `sum(vendor_credits)` per provider still reconciles
-   against `usage` (`docs/architectures/data-model.md:1281`,
+   against `usage` (`docs/architectures/data-model.md:1304`,
    `row carries no vendor spend of its own`).
 2. A per-principal charge query counts `'coalesced'` beside `'cache'` and `'vendor'`.
    Postcondition: no client is billed less for having arrived second.
@@ -3551,7 +3661,7 @@ row. `NULL` states that no spend is attributable here. A missing measurement tha
 confident zero is the defect class L-10 records.
 
 **The `served_from` CHECK constraint already admits this value**
-(`docs/architectures/data-model.md:1254`,
+(`docs/architectures/data-model.md:1277`,
 `CHECK (served_from IN ('cache','coalesced','vendor','none')),`). No widening is outstanding.
 
 **OQ-T014-SA-2 — is the session ceiling global, or per principal?** Blocks: admitting a second
@@ -3623,7 +3733,7 @@ the two.
 two roles and their table privileges. `security.md` §7.3 states which tables the read DSN may reach.
 
 **The three names are values of one key, and `deployment.md` §10.3 owns that key.** Its row lists
-all three (`docs/architectures/deployment.md:191`, ``| `ONCHAIN_PROFILE`                  | bootstrap |``).
+all three (`docs/architectures/deployment.md:194`, ``| `ONCHAIN_PROFILE`                  | bootstrap |``).
 
 **Why a third profile name rather than a second key.** Two keys make the fourth combination —
 stdio over Postgres — settable, and this document designs no such mode.

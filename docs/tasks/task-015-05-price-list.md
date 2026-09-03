@@ -27,7 +27,7 @@
 **Файл `packages/mcp-server/src/billing/price-list.ts`:**
 
 - Объявить `DEFAULT_PRICE_RAW` со значением `'1'` (R-4.6;
-  `docs/architectures/data-model.md:1949` — `export const DEFAULT_PRICE_RAW = '1'`)
+  `docs/architectures/data-model.md:1972` — `export const DEFAULT_PRICE_RAW = '1'`)
 - Объявить `PRICE_LIST` типом `Readonly<Record<string, string>>` через `Object.freeze`
 - Объявить функцию поиска цены; её параметры — статическая способность, имя тула и перечень цен
 - Перечень цен по умолчанию — `PRICE_LIST`; параметр объявлен ради теста, а не ради конфигурации
@@ -46,7 +46,7 @@
 | статическую способность | значение `capability` |
 | `capability === null`   | имя тула на проводе   |
 
-`docs/architectures/data-model.md:1958` — подстрока `The lookup key is`.
+`docs/architectures/data-model.md:1981` — подстрока `The lookup key is`.
 
 **Why статическая способность, а не разрешённая.** Резерв стоит до `resolve()` (R-2.1), а
 `resolvedCapability` известна только после возврата обработчика. На момент поиска цены существует
@@ -73,7 +73,7 @@
 ### Цена — значение, а не идентификатор
 
 Модуль отдаёт строку цены. Резерв копирует её в `client_usage.price_raw`
-(`docs/architectures/data-model.md:1733` — `price_raw          TEXT NOT NULL`).
+(`docs/architectures/data-model.md:1756` — `price_raw          TEXT NOT NULL`).
 
 **Why копия, а не ссылка на строку прайс-листа.** Ссылка позже разрешилась бы другим числом, и
 запись `settled` изменила бы цену задним числом (R-4.2, R-4.3, AC-8, AC-9).
@@ -84,7 +84,7 @@
 ### Модуль не несёт поля версии
 
 **Why.** Версию прайс-листа никто не читает независимо от `price_raw` самой строки. Второе поле было
-бы вторым источником того же факта (`docs/architectures/data-model.md:1974` —
+бы вторым источником того же факта (`docs/architectures/data-model.md:1997` —
 `**Why this module carries no version field.**`).
 
 <!-- contract:tests -->

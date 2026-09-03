@@ -17,7 +17,7 @@
 
 **Why пустые таблицы.** Перенос строк — отдельное обязательство R-8.11 и отдельная задача 015-23.
 Миграция сама по себе создаёт таблицы пустыми
-(`docs/architectures/deployment.md:794` — `#### 10.9.2. The migration, applied to an empty container
+(`docs/architectures/deployment.md:798` — `#### 10.9.2. The migration, applied to an empty container
 (R-8.2)`).
 
 <!-- contract:changes -->
@@ -150,7 +150,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 `sql/migrations/002_t014_network_profile.sql:289` — `GRANT SELECT, INSERT, UPDATE, DELETE ON`.
 
 Три формы запрещены и в этом файле не встречаются
-(`docs/architectures/deployment.md:830` — подстрока `The same three prohibited forms`):
+(`docs/architectures/deployment.md:834` — подстрока `The same three prohibited forms`):
 
 - `GRANT … ON ALL TABLES IN SCHEMA onchain`
 - `ALTER DEFAULT PRIVILEGES IN SCHEMA onchain GRANT …`
@@ -166,7 +166,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 
 Ролей на контейнере две: суперпользователь образа (`postgres`) и роль состояния, создаваемая
 оператором до применения файла. Третьей роли не существует
-(`docs/architectures/deployment.md:812` — подстрока `Which roles exist on this container, named
+(`docs/architectures/deployment.md:816` — подстрока `Which roles exist on this container, named
 explicitly`).
 
 Перечень снимается запросом, а не переписывается из этого документа:
@@ -303,7 +303,7 @@ the password`.
 **Предусловие среды.** dev-VM обязана быть доступной. На момент планирования `ssh vm` отвечал
 таймаутом устойчиво.
 
-Проектные координаты: `docs/architectures/deployment.md:794` (§10.9.2, миграция) и
-`docs/architectures/deployment.md:818` (§10.9.3, гранты).
+Проектные координаты: `docs/architectures/deployment.md:798` (§10.9.2, миграция) и
+`docs/architectures/deployment.md:822` (§10.9.3, гранты).
 
 Требования: R-8.2, R-8.5, R-8.6, R-8.7.

@@ -4,19 +4,20 @@
 
 ### 5.1. External API — 22 MCP tools
 
-`onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, three paid
-Nansen-backed tools in M2 (§5.1.2), two registry-backed tools with TASK-006 (§5.1.3), one free
-DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one free
-BTC-supply tool with TASK-009 (§5.1.5).
+`onchain_ping` (M0, unchanged, R-20) — §5.1.1. Four read tools arrived in M1, and three paid
+Nansen-backed tools in M2 (§5.1.2). Two registry-backed tools arrived with TASK-006 (§5.1.3), one
+free DEX-volume tool with TASK-007 (§5.1.4), one free holders tool with TASK-008 (§5.1.4a), and one
+free BTC-supply tool with TASK-009 (§5.1.5).
 
 **Both tools designed by §5.1.7 and §5.1.8 are registered and SERVED** — task 014-32b registered them, 014-32c and 014-32d replaced their stubs with logic. `onchain_pool_info` resolves `pool.info`,
 and its contract is §5.1.7 (T-014, R-21.1). `onchain_token_pools` resolves `token.pools`, and its
 contract is §5.1.8 (T-014, R-34). Every present-tense count in this section states the registered
 inventory, and none of them moves until those tools land.
 
-**The `chain` parameter, stated once.** Nineteen of the twenty-two tools take a chain, and every one of them
-declares `chain: ChainInputSchema` (§3.2): an open string validated against the chain registry and
-resolved to the canonical slug inside the handler, before the value reaches the cache key (§4.2.2).
+**The `chain` parameter, stated once.** Nineteen of the twenty-two tools take a chain, and every one
+of them declares `chain: ChainInputSchema` (§3.2). That schema is an open string validated against
+the chain registry and resolved to the canonical slug inside the handler, before the value reaches
+the cache key (§4.2.2).
 `ethereum` and `solana` are aliases and stay valid indefinitely. What a tool can actually serve is
 **coverage** (§4.2.3), never a narrower parameter — the schema accepts the chain and the coverage
 matrix refuses the pair with a message naming what IS available. The full contract — schema cost,
@@ -48,12 +49,12 @@ the two refusal shapes, backward compatibility — is in §5.1.3.
 //  "on this chain, but the vendor publishes no plain-TVL figure for it")
 ```
 
-`address`/`protocolSlug` carry explicit `.max()` bounds: `address.max(64)` (a real EVM address is
-≤42, a Solana base58 pubkey ≤44) plus a length guard at the top of `superRefine`, and
-`protocolSlug.max(128)` as a cheap cut before the value can reach a URL or a cache key. The length
-guard is not a second rejection — `.max()` has already failed the parse — it is what actually
-guarantees the expensive `isValidAddress`/`bs58.decode` work is skipped for a pathologically long
-input, instead of being performed and only then discarded.
+`address`/`protocolSlug` carry explicit `.max()` bounds: `address.max(64)` plus a length guard at
+the top of `superRefine`, and `protocolSlug.max(128)` as a cheap cut before the value can reach a
+URL or a cache key. A real EVM address is ≤42, and a Solana base58 pubkey ≤44. The length guard is
+not a second rejection — `.max()` has already failed the parse. It is what actually guarantees the
+expensive `isValidAddress`/`bs58.decode` work is skipped for a pathologically long input, instead of
+being performed and only then discarded.
 
 `onchain_protocol_tvl`'s handler validates the provider response with `safeParse`, not `parse`: a
 failure returns `{ok:false, reason}` per the contract and never throws. `defillama.normalize()`
@@ -141,12 +142,12 @@ nothing can have been spent and `_meta.budget` is **absent entirely** rather tha
 `0`/`null` — the same principle as `_meta.cache.ageMs` on a miss (§3.2).
 
 The condition used to read "paid AND actually executed (`_meta.cache.status === 'miss'`)". That is
-a statement about the ANSWERING adapter, and the two part company on the H-1 return (§9.1): the
+a statement about the ANSWERING adapter, and the two part company on the H-1 return (§9.1). The
 registry hands back the first unsatisfying answer, which on a warm cache is a `'hit'` built for the
 free source, while the walk behind it entered and paid. The `'miss'` reading then dropped
 `_meta.budget` on a call that had just spent credits (T-012 adversarial cycle 3, F-A) — an
-under-report, which is the expensive direction, because an agent that believes a call was free
-repeats it. Cache status no longer appears in the rule; a pure hit satisfies it by entering nobody.
+under-report, which is the expensive direction. An agent that believes a call was free repeats it.
+Cache status no longer appears in the rule; a pure hit satisfies it by entering nobody.
 
 **`_meta.timing` — the call answered past its own ceiling (OQ-T012-6, owner decision 2026-08-05):**
 
@@ -157,9 +158,9 @@ export interface TimingMeta {
 ```
 
 Present **only** when a walk crossed `deadlineMs` and still returned. That happens in exactly one
-branch: every source was entered, every one answered, and the last of them ran long — so nothing was
+branch: every source was entered, every one answered, and the last of them ran long. Nothing was
 prevented and nothing was aborted, and the H-1 return (§9.1) hands back a complete answer. The owner
-resolved that such an answer is returned rather than discarded; the time and, on a paid route, the
+resolved that such an answer is returned rather than discarded. The time and, on a paid route, the
 credit are already spent, and only the caller can judge whether a late-but-complete answer is still
 useful.
 
@@ -189,18 +190,18 @@ unchanged by the axis the profile selects.
 role is `admin` (R-6.1). The rule that governs every `_meta` field, present and future, is stated
 once in §5.4.4.
 
-**Which paid id (T-012 012-3, corrected by adversarial cycle 2's F-4).** 012-3 replaced the
+**Which paid id (T-012 012-3, corrected by adversarial cycle 2's F-4).** Task 012-3 replaced the
 hardcoded `getUsage('nansen')` with a reading keyed on the ANSWERING provider
-(`CapabilityResolution.source`), which under-reports on the only route where a free adapter comes
-first: on `entity.labels` the walk enters and PAYS `nansen`, `nansen`'s answer is unsatisfying too,
-and the registry returns `blockscout`'s — so a call that spent credits reported none. `resolve()`
-therefore also returns **`attempted`**, the adapter ids whose `fetch()` the traversal actually
-entered (a traversal fact, tier-free — the registry never classifies paidness), and the handlers pass
-it to `budgetMeta()`, which reports the paid adapter among them. Under-reporting is the expensive
-direction: an agent that believes a call was free repeats it (R-41). The WIRE shape is unchanged;
-`attempted` never reaches a client. `tier` itself is NEVER added to this object, or to `_meta`
-anywhere else, on any of the 22 tools (R-152) — the internal cost-tier classification is our unit
-economics, not part of the client's contract (ADR-002 D8, ADR-003 D4).
+(`CapabilityResolution.source`). That reading under-reports on the only route where a free adapter
+comes first. On `entity.labels` the walk enters and PAYS `nansen`, `nansen`'s answer is unsatisfying
+too, and the registry returns `blockscout`'s — so a call that spent credits reported none.
+`resolve()` therefore also returns **`attempted`**, the adapter ids whose `fetch()` the traversal
+actually entered (a traversal fact, tier-free — the registry never classifies paidness). The
+handlers pass it to `budgetMeta()`, which reports the paid adapter among them. Under-reporting is
+the expensive direction: an agent that believes a call was free repeats it (R-41). The WIRE shape is
+unchanged; `attempted` never reaches a client. `tier` itself is NEVER added to this object, or to
+`_meta` anywhere else, on any of the 22 tools (R-152). The internal cost-tier classification is our
+unit economics, not part of the client's contract (ADR-002 D8, ADR-003 D4).
 
 #### 5.1.3 The two registry-backed tools (TASK-006) — free
 
@@ -333,13 +334,13 @@ truncated and narrow the filter, instead of concluding there are only 50 chains.
 ```
 
 **Why the vendor's aggregates are passed through instead of recomputed (R-67, OQ-1).** `total24h`
-and friends are already in the document at no extra cost, and recomputing them from the series would
-mean quietly disagreeing with the vendor on rounding and on which protocols are double-counted — the
+and friends are already in the document at no extra cost. Recomputing them from the series would
+mean quietly disagreeing with the vendor on rounding and on which protocols are double-counted. The
 vendor already excludes 54 aggregator protocols from its own total. They are `number | null`, never
-`0`-for-missing: a chain outside the vendor's active set answers HTTP 200 with `change_1d: null` and
-a **narrower key set** (measured on `litecoin`, 2026-07-27), and — measured on a chain this
-capability actually covers — `doge` answers HTTP 200 with `total24h: null` (274-chain echo probe,
-2026-07-28). A missing key rendered as `0` would be a fabricated number rather than an absent one.
+`0`-for-missing. A chain outside the vendor's active set answers HTTP 200 with `change_1d: null` and
+a **narrower key set** (measured on `litecoin`, 2026-07-27). Measured on a chain this capability
+actually covers, `doge` answers HTTP 200 with `total24h: null` (274-chain echo probe, 2026-07-28). A
+missing key rendered as `0` would be a fabricated number rather than an absent one.
 
 **Why gaps are counted rather than stitched (R-67c, OQ-5).** A missing day inside the covered window
 is reported as `gapDays`, and the series simply lacks that point. Interpolating would produce a
@@ -351,21 +352,22 @@ chains must return 92 points per chain with `gapDays === 0`.
 logic L-1). Deriving the expected count from the first and last returned points makes any gap at the
 window's _leading_ edge arithmetically unreachable — and a chain younger than the window then reports
 "five years, nothing missing". Two cases that look identical in the data are separated by asking
-whether the vendor has any point _before_ the window: if it does, the window lies inside the chain's
-lifetime and a missing first day is a real gap; if it does not, the history simply starts later and
+whether the vendor has any point _before_ the window. If it does, the window lies inside the chain's
+lifetime and a missing first day is a real gap. If it does not, the history simply starts later and
 `window.days` shrinks to the range actually covered. The invariant a caller can check is
 `points + gapDays === window.days`.
 
 **Points are day-bucketed and unique per day** (cycle 3, logic L-2/L-4). The window anchor is floored
-to a day boundary, so the points must be too — otherwise a vendor that stops publishing exactly at
+to a day boundary, so the points must be too. Otherwise a vendor that stops publishing exactly at
 midnight drops the very point that defined the window, and `days: 1` returns an empty series. Two
 points landing in one day are folded (last wins) and the fold raises `truncated.series` with a reason,
 because silently collapsing them let a duplicate mask exactly one genuine missing day.
 
 **Why `truncated` is not set by ordinary windowing (R-67d).** Slicing a 2825-point series down to the
 requested 90 days is the tool doing its job, not a truncation. `truncated.series` is set only when a
-hard cap was hit — the request asked for more points than the transport or the point cap will carry —
-so the flag keeps meaning "you did not get what you asked for" instead of degrading into decoration.
+hard cap was hit — the request asked for more points than the transport or the point cap will carry.
+The flag therefore keeps meaning "you did not get what you asked for" instead of degrading into
+decoration.
 
 #### 5.1.4a The token-holders tool (TASK-008) — free
 
@@ -380,8 +382,8 @@ so the flag keeps meaning "you did not get what you asked for" instead of degrad
 **`truncated` and `droppedRows` are the contract, not decoration.** The first says the list is not
 the complete tail — either the vendor paged, or rows were dropped; the second counts rows the
 adapter refused to publish (a malformed balance, a `value_truncated` marker). "50 holders" and "the
-first 50 of many" are different answers to a concentration question, and a hole in the middle is a
-different defect from a cut at the end — which is why the two are separate fields and not one flag.
+first 50 of many" are different answers to a concentration question. A hole in the middle is a
+different defect from a cut at the end. That is why the two are separate fields and not one flag.
 
 `holders[].amountRaw` is an exact decimal string in base units, bounded to 78 digits (the width of
 2^256−1). It is never parsed into a number: token balances routinely exceed what a JSON number
@@ -407,17 +409,17 @@ holds without losing digits, and losing them silently is worse than refusing.
 
 **Two supply numbers, because there are two facts.** `emission` and `circulating` differ by the
 coinbase subsidy miners never claimed (~29–32 BTC, 0.00016%). Serving either one under the other's
-name would be a fabrication invisible to any reader. §3.2 records the measurement that separates
-them, including the test that settles it: the formula-derived figure sits at an INTEGER number of
-subsidies past the halving boundary, the claimed one at a fractional one.
+name would be a fabrication invisible to any reader. The measurement that separates them is
+recorded in §3.2, including the test that settles it. The formula-derived figure sits at an INTEGER
+number of subsidies past the halving boundary, the claimed one at a fractional one.
 
-**🔴 The cross-check compares HEIGHTS, not supply (R-89).** Re-deriving `emission` from the halving
+**The cross-check compares HEIGHTS, not supply (R-89).** Re-deriving `emission` from the halving
 schedule can never contradict the vendor, because the vendor derives it the same way — measured
 bit-exact at both probed heights. The one thing an independent source can genuinely refute is the
 **block height**, which the deterministic formula then propagates into supply. So the eval fetches
 `mempool.space`'s tip height as a second, unrelated vendor and grades the difference **in blocks of
-subsidy** — never in percent, where one block is 0.000016% and a full day of vendor staleness still
-rounds to zero.
+subsidy**. It is never graded in percent, where one block is 0.000016% and a full day of vendor
+staleness still rounds to zero.
 
 **`mempool.space` is deliberately NOT an adapter.** It is the reference, and a source the engine
 answers from cannot be the independent check on that answer. The vendor's wider surface (hashrate,
@@ -427,14 +429,15 @@ no consumer is the "advertised everywhere, served nowhere" defect TASK-008 spent
 **The reference source is DATA (R-88).** `eval/probes.json` gains a `referenceSources` block — url,
 how to read the body, why this source, when it was last verified — and `eval/run.mjs` learns to
 fetch such a source **once, generically**. Adding the next one is a config edit. Two rules keep the
-axis honest, both inherited from the eval's existing doctrine: only `https`, with the host living in
-the reviewed data file rather than being computed at run time; and a reference source that fails to
-answer yields `no-probe`, **never** a provider failure — an eval that scores its own missing test
-data as a vendor defect is lying, and a report that cries wolf stops being read.
+axis honest, both inherited from the eval's existing doctrine. The first: only `https`, with the
+host living in the reviewed data file rather than being computed at run time. The second: a
+reference source that fails to answer yields `no-probe`, **never** a provider failure. The reason is
+that an eval that scores its own missing test data as a vendor defect is lying, and a report that
+cries wolf stops being read.
 
 **The `chain` parameter contract (R-50), shared by all seventeen chain-taking tools** — eleven at
-TASK-006, re-measured 2026-08-13: of the 20 tool modules under `packages/mcp-server/src/tools/`,
-17 import `ChainInputSchema` (the directory holds 26 files; 6 are shared helpers, not tools)**:**
+TASK-006, re-measured 2026-08-13. Of the 20 tool modules under `packages/mcp-server/src/tools/`, 17
+import `ChainInputSchema`; the directory holds 26 files, and 6 are shared helpers, not tools**:**
 
 ```ts
 // One shared import; zero chain literals anywhere in mcp-server:
@@ -445,11 +448,11 @@ chain: ChainInputSchema, // §3.2 — accepts slug | alias | caip2, resolves to 
   closed enum, 458 chains would have cost **≈8.7k tokens in every single request to the model**
   (measured, TASK §0). That is the reason for the owner's decision of 2026-07-26, not aesthetics. The
   correctness the enum bought is not lost, only moved into the runtime resolve — which fails with a
-  "did you mean" list, zero network calls and zero credits, because a mistyped chain name is the
-  most common way an agent misses on a paid route.
+  "did you mean" list, zero network calls and zero credits. The reason is that a mistyped chain
+  name is the most common way an agent misses on a paid route.
 - **Validation here, canonicalization in the handler, deliberately not a `.transform()`.** The MCP
   SDK renders every tool input schema to JSON Schema for `tools/list`, and a zod transform has no
-  JSON Schema representation — the SDK would answer `tools/list` with
+  JSON Schema representation. The SDK would answer `tools/list` with
   `-32603 Transforms cannot be represented in JSON Schema`, taking down tool discovery, i.e. the
   whole server. So the schema only validates, and `canonicalizeChain()` resolves one line into the
   handler, still well ahead of `deriveArgsHash`.
@@ -472,9 +475,9 @@ chain: ChainInputSchema, // §3.2 — accepts slug | alias | caip2, resolves to 
   ```
 
   Both lists are computed from the coverage matrix (§4.2.3), so they cannot drift from actual
-  behavior, and both are capped at ten entries plus an honest `+N more` — an error meant to save the
+  behavior. Both are capped at ten entries plus an honest `+N more` — an error meant to save the
   caller a wasted call must not itself dump 458 slugs into the context. When the "available instead"
-  list was not computed, it renders nothing: an empty list would read as "nothing works here", which
+  list was not computed, it renders nothing. An empty list would read as "nothing works here", which
   is a false statement that talks an agent out of calls that would have succeeded.
 
 **Backward compatibility (R-59).** `"ethereum"` and `"solana"` remain valid **indefinitely** — as
@@ -485,13 +488,14 @@ aliases, not as a transitional mode. Response shapes do not change: tools still 
 
 **Owner decision `OQ-T013-1` (2026-08-05): merging is ON for both eligible capabilities, and the
 tool's answer groups by `metric`, never a flat point array.** Modelled on `onchain_dex_volume`
-(§5.1.4) for the input/window idiom, but the OUTPUT shape is grouped, not flat, because the merged
+(§5.1.4) for the input/window idiom. But the OUTPUT shape is grouped, not flat, because the merged
 `series` can legitimately carry more than one metric under one capability name (§4.2.3-adjacent
-finding, `docs/tasks/task-013-series-merge-and-history-tool.md` §1.3): `privacy.shielded_pool.history`'s two adapters write two DIFFERENT
-metrics (`platform-explorer` → `shielded_pool_shield_amount`, an inflow; `pg-history` → the n8n
-snapshotter's `shielded_pool_balance_credits`, a balance) under the same capability name, so a flat
-array would silently read as one series when it is two. `platform.metrics.history` is the case the
-merge mechanism was built for: `identities_total` is genuinely the same series from both adapters
+finding, `docs/tasks/task-013-series-merge-and-history-tool.md` §1.3).
+`privacy.shielded_pool.history`'s two adapters write two DIFFERENT metrics (`platform-explorer` →
+`shielded_pool_shield_amount`, an inflow; `pg-history` → the n8n snapshotter's
+`shielded_pool_balance_credits`, a balance) under the same capability name. A flat array would
+silently read as one series when it is two. `platform.metrics.history` is the case the merge
+mechanism was built for. `identities_total` is genuinely the same series from both adapters
 (conflict resolved by the compiled rank, system-architecture.md "Merge mechanism"), and
 `documents_total`/`data_contracts_total`/`platform_total_credits` exist ONLY on `pg-history` — the
 gap-filling D6 reason 3 names directly.
@@ -524,80 +528,82 @@ gap-filling D6 reason 3 names directly.
 // Capability: platform.metrics.history
 ```
 
-- `groups[].points` is a direct projection of the merged `Snapshot[]` the registry returns — `valueRaw`
-  stays a string (DB-SCHEMA §1.7; never parsed to `Number`, R-167d), and grouping by `metric` (R-171b)
-  is what keeps `shielded_pool_shield_amount` and `shielded_pool_balance_credits` visibly two
-  different quantities instead of one misleadingly-continuous series (AC-32, AC-49).
+- `groups[].points` is a direct projection of the merged `Snapshot[]` the registry returns.
+  `valueRaw` stays a string (DB-SCHEMA §1.7; never parsed to `Number`, R-167d), and grouping by
+  `metric` (R-171b) is what keeps `shielded_pool_shield_amount` and `shielded_pool_balance_credits`
+  visibly two different quantities instead of one misleadingly-continuous series (AC-32, AC-49).
 - `series:'shielded_pool'` always answers with exactly the metric groups actually present (one or
-  two, never a synthetic empty group for a metric neither adapter wrote this call);
+  two, never a synthetic empty group for a metric neither adapter wrote this call).
   `series:'platform_metrics'` can carry up to four groups, three of which exist only when
   `ONCHAIN_PG_URL` is configured and `pg-history` answered (AC-43, AC-49).
-- 🔴 **`limit` bounds the TOOL's output, never the underlying fetch (M-4, corrected round 2 —
-  MJ-3).** `pg-history`'s own query is not rewritten by this task (R-180c) — it always applies its
+- **`limit` bounds the TOOL's output, never the underlying fetch (M-4, corrected round 2 —
+  MJ-3).** `pg-history`'s own query is not rewritten by this task (R-180c). It always applies its
   OWN hardcoded `DEFAULT_HISTORY_LIMIT = 100`, `ORDER BY ts DESC` (`packages/core/src/adapters/pg-history/index.ts:37`, `const DEFAULT_HISTORY_LIMIT = 100;`,
-  `:142-145`), and it is the SAME query, same cap, for **both** capabilities — not only
+  `:142-145`). It is the SAME query, same cap, for **both** capabilities — not only
   `platform_metrics` (where the 100 rows are additionally shared across four metrics). A first
   draft scoped the always-on disclosure to `platform_metrics` alone, which left
   `series:'shielded_pool'` with `limit: 300` returning a pg-capped 100-point group and
-  `truncated.series === false` — a source-truncated answer reported as complete, because no
+  `truncated.series === false`. That is a source-truncated answer reported as complete, because no
   TOOL-side slicing ever ran to trigger clause (1) below. `limit` therefore does two things, both
-  named, both selector-independent: (1) it slices each group in `groups[]` down to its `limit`
+  named, both selector-independent. (1) It slices each group in `groups[]` down to its `limit`
   most-recent points (newest first, mirroring `pg-history`'s own ordering) — `truncated.series:
-true` when that slicing actually cut a group; (2) `truncated.series` is ALSO `true`,
+true` when that slicing actually cut a group. (2) `truncated.series` is ALSO `true`,
   unconditionally, whenever `pg-history` is among the contributors AND the requested `limit`
-  EXCEEDS its own 100-row cap — on EITHER selector, not only `platform_metrics` — a coarse, honest,
-  always-on signal for a cap the tool cannot measure precisely (matching the `_meta.cache`
+  EXCEEDS its own 100-row cap — on EITHER selector, not only `platform_metrics`. That is a coarse,
+  honest, always-on signal for a cap the tool cannot measure precisely (matching the `_meta.cache`
   aggregate's same "coarse but true" discipline, system-architecture.md "Merge mechanism"). The
   ceiling stays 500, not 100: `platform-explorer` alone (no `ONCHAIN_PG_URL`, R-164(b)'s UC-12) is
-  not bound by `pg-history`'s cap, and lowering the tool's own ceiling to 100 would needlessly
-  starve that composition too. **`truncated.reason` (MN-4): when only clause (2) fires, it names
-  the source-side cap ("pg-history's own query returns at most 100 rows … request narrowed to that
-  many" — for `platform_metrics`, additionally naming that the 100 rows are shared across four
-  metrics); when clause (1) also fires (the tool's own slicing cut a group), the reason states BOTH
-  facts in one sentence rather than picking one — a caller seeing only the source-side sentence
-  when its own `limit` was smaller than 100 would wrongly conclude pg-history, not its own request,
-  is why the group is short.
+  not bound by `pg-history`'s cap. Lowering the tool's own ceiling to 100 would restrict that
+  composition too. **`truncated.reason` (MN-4): when only clause (2) fires, it names the
+  source-side cap ("pg-history's own query returns at most 100 rows … request narrowed to that
+  many"). For `platform_metrics`, that clause-(2) reason additionally names that the 100 rows are
+  shared across four metrics. When clause (1) also fires (the tool's own slicing cut a group), the
+  reason states BOTH facts in one sentence rather than picking one. A
+  caller seeing only the source-side sentence when its own `limit` was smaller than 100 would
+  wrongly conclude pg-history, not its own request, is why the group is short.
 - The handler calls `resolveCapability()` (§5.2, extended additively — `sources`/`missingSources`/
   `perSourceCache` are new optional fields on `ResolveSuccess`, R-175b) and reads `outcome.missingSources`
-  to populate the field above; it does not reimplement `CapabilityUnavailableError`/
+  to populate the field above. It does not reimplement `CapabilityUnavailableError`/
   `CapabilityDeadlineExceededError` translation — that stays the ONE place it already lives.
-- 🔴 **`_meta.cache` is this tool's OWN shape, not the shared `CacheMeta` (M-5 — naming the reader
-  `sources`/`perSourceCache` otherwise reach and stop at).** `{ status: 'hit' | 'miss', perSource:
-Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built directly from
-  `outcome.sources`/`outcome.perSourceCache` — the one case R-174(e) names as legal ("a new tool
-  builds its own `_meta`, not reusing `resolveCapability()`'s shape literally"). The 11 existing
-  tools' `_meta.cache` is untouched (R-175). **Diverges from `CacheMeta` in both directions, named
-  (MN-3):** `provider` is DROPPED — genuinely ambiguous for a merge (`perSource[]` already answers
-  "which adapter, which status" per contributor, and a single `provider` string would just be
-  `source` repeated under a worse name); `capability` is ALSO dropped, but for the opposite reason —
-  it is NOT ambiguous (one call resolves exactly one of the two, R-170a), so it is redundant with
-  the top-level `series`/output `Capability:` pairing rather than informative, and omitting it is a
-  choice, not an oversight this bullet leaves unstated.
+- **`_meta.cache` is this tool's OWN shape, not the shared `CacheMeta` (M-5 — naming the reader
+  `sources`/`perSourceCache` otherwise reach and stop at).** The shape is `{ status: 'hit' |
+'miss', perSource: Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built
+  directly from `outcome.sources`/`outcome.perSourceCache`. This is the one case R-174(e) names as
+  legal ("a new tool builds its own `_meta`, not reusing `resolveCapability()`'s shape literally").
+  The 11 existing tools' `_meta.cache` is untouched (R-175). **Diverges from `CacheMeta` in both
+  directions, named (MN-3):** `provider` is DROPPED — genuinely ambiguous for a merge.
+  `perSource[]` already answers "which adapter, which status" per contributor, and a single
+  `provider` string would just be `source` repeated under a worse name. `capability` is ALSO
+  dropped, but for the opposite reason: it is NOT ambiguous (one call resolves exactly one of the
+  two, R-170a). It is therefore redundant with the top-level `series`/output `Capability:` pairing
+  rather than informative, and omitting it is a choice, not an oversight this bullet leaves
+  unstated.
 - _Narrowed by T-013 013-3 (2026-08-06)._ "which adapter, which status" per contributor, above, is
-  the pre-013-3 reading; `perSourceCache` (and this bullet's own `perSource[]`, built directly from
-  it) instead covers every participant that ANSWERED, R-174(c) — full argument in
+  the pre-013-3 reading. `perSourceCache` (and this bullet's own `perSource[]`, built directly from
+  it) instead covers every participant that ANSWERED, R-174(c). Full argument in
   `docs/architectures/open-questions.md` "T-013 task 013-3".
 - `capability` on this tool's `ToolSpec` stays `string | null`, UNCHANGED — set to `null`, same value
   `ping`/`list-chains` already use, but a DIFFERENT fact (system-architecture.md, "Decision:
   `capability` is UNCHANGED"). A new, additive field, `servedCapabilities: ['privacy.shielded_pool.history',
 'platform.metrics.history']`, is what R-170(b)'s "both capabilities listed, not null" actually
-  reaches — the eval axis and the doc-pairing gate are updated to read it (system-architecture.md
+  reaches. The eval axis and the doc-pairing gate are updated to read it (system-architecture.md
   enumerates the three readers that need an actual behaviour change).
-- ✅ **The two `// Capability:` anchors are PRESENT since 013-8** — bare, one per capability, both
+- **The two `// Capability:` anchors are PRESENT since 013-8** — bare, one per capability, both
   inside the block above and therefore within the attribution window. What follows is the design
   note that governed their absence until the `ToolSpec` existed; it is kept because it records two
   wrong shapes that were tried, and both remain wrong today.
-- 🔴 **(Historical, until 013-8.) The `// Capability:` anchor is deliberately ABSENT here, corrected after round 2 (BL-1).**
+- **(Historical, until 013-8.) The `// Capability:` anchor is deliberately ABSENT here, corrected
+  after round 2 (BL-1).**
   Round 1 tried a quoted/conjoined anchor and round 2's fix tried TWO bare ones — both wrong in
-  opposite directions: quoted defeats the gate's regex (`/^\/\/ Capability: ([a-z][a-z0-9._-]*)/`)
-  SILENTLY (documents nothing, gate stays green), while two bare anchors both attribute to
+  opposite directions. Quoted defeats the gate's regex (`/^\/\/ Capability: ([a-z][a-z0-9._-]*)/`)
+  SILENTLY (documents nothing, gate stays green). Two bare anchors instead both attribute to
   `onchain_dash_platform_history` and inflate `documented.size` to 12 against
-  `withCapability.length === 11` (13 tools minus 2 `capability: null`) — `docs-counts.test.ts`'s
-  R-119 pairing gate fails on a tree where the 14th tool is not even registered yet, and would fail
+  `withCapability.length === 11` (13 tools minus 2 `capability: null`). `docs-counts.test.ts`'s
+  R-119 pairing gate fails on a tree where the 14th tool is not even registered yet. It would fail
   differently at its `stale` check (`:318`, not `orphanAnchors`) the moment the count was patched:
   no tool exists for a `served` capability to compare against. **The anchors land in the SAME
   commit that registers the `ToolSpec`** (Development, two bare lines then, one per capability,
-  each within the 25-line attribution window) — until then this block carries none, and
+  each within the 25-line attribution window). Until then this block carries none, and
   `docs-counts.test.ts` needs no rework: both its checks already tolerate an undocumented capability
   that no tool serves yet. When that commit lands, the gate's `documented` map becomes
   `Map<string, string[]>` so one tool name can attribute more than one anchor, and its equality
@@ -605,7 +611,7 @@ Array<{ adapterId: string, status: 'hit' | 'miss', ageMs?: number }> }`, built d
 - `.strict()` on both schemas, the same discipline as the 13 shipped tools (R-171c). Both real
   merge routes carry no `policy` (`{kind:'any'}`), so `missingSources` in practice is populated only
   by UC-12/UC-19/UC-21's compositions (a genuinely unreachable `pg-history`), never by a policy
-  exclusion — R-171(e)'s field exists for both causes, but only one is reachable in shipped scope.
+  exclusion. R-171(e)'s field exists for both causes, but only one is reachable in shipped scope.
 
 **The counts inside §5.1.6 describe the tree T-013 was built on, not today's** (R-23.6). They name
 13 tools and 11 capability-bearing ones. Measured 2026-08-12: `toolSpecs` holds 20 entries and
@@ -926,15 +932,15 @@ nothing recovers. This is the L-14 contract the `pairs.active` route already car
 
 **The 30-row cap on these two routes is measured, not inherited.** `VENDOR_PAGE_SIZE` was measured
 for `/latest/dex/search`. Task 014-32d recorded its own evidence for `token-pairs/v1` and
-`/latest/dex/tokens/` and gave them their own constant, `TOKEN_ROUTE_PAGE_SIZE`: both cap at 30, and
-a CONTROL address nothing deploys returns 0 rows on both — which is what makes a 30-row answer
+`/latest/dex/tokens/` and gave them their own constant, `TOKEN_ROUTE_PAGE_SIZE`. Both cap at 30, and
+a CONTROL address nothing deploys returns 0 rows on both. That is what makes a 30-row answer
 readable as a cap rather than as a fixed-size response. Two constants holding the same number today
 is deliberate; if the vendor moves one cap and not the other, two constants report it and one hides
 it.
 
 **Row order is STABLE and is NOT a size ranking — measured 2026-08-21 (task 014-32d).** Two samples
 of the same address 300 s apart returned the same set in the same order, and neither was sorted by
-liquidity: the second row of the USDC sample held $9.9M behind a first row of $89k
+liquidity. The second row of the USDC sample held $9.9M behind a first row of $89k
 (`packages/core/test/fixtures/dexscreener/token-routes.evidence.md`).
 
 So a `limit` cut takes an ARBITRARY subset rather than the largest pools, and `truncated.reason`
@@ -1416,8 +1422,8 @@ L-10 failure class the data model states as canon (§4.5).
 `CapabilityRegistry.resolve()` binds ONE store for the call —
 `manifest.shareable === false ? this.uncached : this.cache` — and the six cache call sites of the
 two walks use that binding. The tool boundary (`mcp-server/src/tools/resolve-capability.ts`) was
-considered and rejected: it is the single funnel into `resolve()`, and it sits ABOVE both cache
-legs, so a check there could refuse the call and could not make it uncached.
+considered and rejected. It is the single funnel into `resolve()`, and it sits ABOVE both cache
+stores, so a check there could refuse the call and could not make it uncached.
 
 **The negative cache is covered.** A negative entry carries no vendor data and still decides what a
 LATER caller is told, so the arm is read without a carve-out. Declared price: a non-shareable

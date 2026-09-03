@@ -59,8 +59,9 @@
   `tokenSymbol`, `netflow1hUsd`/`netflow24hUsd`/`netflow7dUsd`/`netflow30dUsd`
   (`SmartMoneyNetflow.net_flow_{1h,24h,7d,30d}_usd`), `traderCount?`/`tokenAgeDays?`/
   `tokenSectors?[]` (`SmartMoneyNetflow.trader_count`/`token_age_days`/`token_sectors`),
-  `topHolders[]` (from `TGMHolder[]`: `{address, addressLabel?, tokenAmount?, valueUsd?,
-ownershipPercentage?}` — a subset of `TGMHolder`'s fields, not the full DTO), `source`, `fetchedAt`.
+  `topHolders[]`, `source`, `fetchedAt`. Each entry of `topHolders[]` is `{address, addressLabel?,
+tokenAmount?, valueUsd?, ownershipPercentage?}` (from `TGMHolder[]`) — a subset of `TGMHolder`'s
+  fields, not the full DTO.
 - **Four fixed windows, not one generic `windowStart`/`windowEnd`:** the live response does not
   offer an arbitrary window, it offers a fixed set. R-31's `netflowUsd` is read as a floor —
   `netflow24hUsd` satisfies it and the other three are extra precision.
@@ -71,18 +72,19 @@ ownershipPercentage?}` — a subset of `TGMHolder`'s fields, not the full DTO), 
 #### Entity: `EntityLabel` (M2, TASK-005, D5 extension, R-32)
 
 - **Description:** the label of an address or entity (wallet, fund, exchange, known trader) —
-  consumed by `onchain_entity_label`. The source depends on the call tier (§3.2 `costOf()` table):
-  the default tier is `POST /search/general` → `GeneralSearchResponse.{tokens[], entities[]}`
-  (`TokenSearchResult`/`EntitySearchResult`); token-scoped enrichment comes from
-  `TGMHolder.address_label`; the exhaustive escalation is `POST /profiler/address/labels` (its
+  consumed by `onchain_entity_label`. The source depends on the call tier (§3.2 `costOf()` table).
+  The default tier is `POST /search/general` → `GeneralSearchResponse.{tokens[], entities[]}`
+  (`TokenSearchResult`/`EntitySearchResult`). Token-scoped enrichment comes from
+  `TGMHolder.address_label`. The exhaustive escalation is `POST /profiler/address/labels` (its
   response shape is fixtured from a live call on first real use, R-44).
 - **Key attributes:** `chain?` and `address?` are both optional — `EntitySearchResult` carries
   neither, because an entity can be cross-chain (a name and tags with no particular address);
   results derived from `TokenSearchResult`/`TGMHolder` do carry them. Plus `name?`, `tags[]`
   (default `[]`, from `EntitySearchResult.tags`), `labels[]` (default `[]`, from
-  `TGMHolder.address_label` wrapped in an array — **an empty array is a valid result**, "no
-  labels", not an error, R-32), `premiumRequested: boolean` (an explicit flag — `true` only when
-  the call went through the `exhaustive: true` path, R-42), `source`, `fetchedAt`.
+  `TGMHolder.address_label` wrapped in an array), `premiumRequested: boolean`, `source`,
+  `fetchedAt`. For `labels[]`, **an empty array is a valid result** — "no labels", not an error
+  (R-32). `premiumRequested` is an explicit flag: `true` only when the call went through the
+  `exhaustive: true` path (R-42).
 - **Business rule:** neither `chain` nor `address` is mandatory (unlike `Token`/`Wallet`) — the only
   M2 type where that holds, and it holds because of the real shape of `EntitySearchResult`. Golden
   tests on a fixture with ≥1 label AND on a fixture with 0 labels (R-32 acceptance).
@@ -97,9 +99,9 @@ ownershipPercentage?}` — a subset of `TGMHolder`'s fields, not the full DTO), 
   (`TGMIndicatorTokenInfo`), and `riskIndicators[]`/`rewardIndicators[]` as **separate** arrays
   (R-33: not flattened into one list). Each element is `{indicatorType, score?, signal?,
 signalPercentile?, lastTriggerOn?}` (`TGMIndicator`), where `score` is qualitative per the spec —
-  risk → low/medium/high, reward → bearish/neutral/bullish — and `signal`/`signalPercentile` are
-  `number`, not strings (R-33: these are not wei-like on-chain integers, so a JS `number`/`REAL` is
-  safe). Plus `source`, `fetchedAt`.
+  risk → low/medium/high, reward → bearish/neutral/bullish. The `signal` and `signalPercentile`
+  fields are `number`, not strings (R-33: these are not wei-like on-chain integers, so a JS
+  `number`/`REAL` is safe). Plus `source`, `fetchedAt`.
 - **Business rule:** anti-corruption layer, golden test on a fixture (R-33 acceptance).
 
 #### Entity: `ChainSupply` (TASK-009, D5 extension, R-83)
@@ -111,7 +113,7 @@ signalPercentile?, lastTriggerOn?}` (`TGMIndicator`), where `score` is qualitati
   **satoshi strings**, each with a lossy `…Btc` number projection for charts and comparison;
   `blockCount` (the height the vendor's own emission figure is consistent with); `source`,
   `fetchedAt`.
-- **Why two supply fields and not one:** they are different quantities and the difference is real —
+- **Why two supply fields and not one:** they are different quantities and the difference is real.
   `emission` is what the halving schedule has released, `circulating` is what miners actually
   claimed, and ~29–32 BTC of subsidy was never claimed (§3.2, measured 2026-07-29). Collapsing them
   would mean serving one under the other's name at a 0.00016% error — invisible, and a fabrication.
@@ -129,19 +131,33 @@ signalPercentile?, lastTriggerOn?}` (`TGMIndicator`), where `score` is qualitati
   table and not a network call (rationale — §4.2.1).
 - **Key attributes:**
 
-| Field            | Type                                                        | Purpose                                                                                                                                                                                                                                                             |
-| ---------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `caip2`          | `string` **PK**                                             | Canonical id in CAIP-2 form: `eip155:80094`, `solana:5eykt4Xh…`. The registry's stable primary key.                                                                                                                                                                 |
-| `slug`           | `string` UNIQUE                                             | Human-readable canonical slug (`berachain`) — what an agent writes in `chain`, what `onchain_list_chains` returns, and what goes into the cache key (§4.2.2).                                                                                                       |
-| `name`           | `string`                                                    | Display name (`Berachain`).                                                                                                                                                                                                                                         |
-| `family`         | `'evm' \| 'svm' \| 'move' \| 'cosmos' \| 'utxo' \| 'other'` | Determines **address validation** (R-55) and whether `rpc-evm` can serve the chain.                                                                                                                                                                                 |
-| `aliases`        | `string[]`                                                  | Every other accepted spelling, including the legacy `ethereum`/`solana` (R-59a) and vendor ids. Globally unique.                                                                                                                                                    |
-| `nativeSymbol`   | `string \| null`                                            | Symbol of the **gas** token (`BERA`, `XDAI`) — consumed by `pairs.active` (R-57a) and `wallet.balances.native` instead of a hardcode.                                                                                                                               |
-| `nativeDecimals` | `number \| null`                                            | Decimals of that same gas token.                                                                                                                                                                                                                                    |
-| `vendors`        | `Record<vendorId, string \| null>`                          | **Naming only:** what this chain is called at each vendor. `defillama`→`"Berachain"`, `coingecko`→`"berachain"`, `dexscreener`→`"berachain"`. `null` = **we hold no confirmed identifier**, which is NOT the same as the vendor not having the chain — see §4.2.3a. |
-| `rpcHosts`       | `string[] \| null`                                          | The curated SSRF allowlist for this chain (R-56a). `null` = `wallet.balances.native` is honestly uncovered, see §7.2.                                                                                                                                               |
-| `tvlUsdAtSync`   | `number \| null`                                            | TVL **as of the registry sync**, knowingly stale. Exists **solely** to filter and rank in `onchain_list_chains` without a network call.                                                                                                                             |
-| `deprecated`     | `boolean`                                                   | The chain disappeared from the vendors, but the row is kept (R-49f) — references and cache keys do not break.                                                                                                                                                       |
+| Field            | Type                                                        | Purpose                                                                                                               |
+| ---------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `caip2`          | `string` **PK**                                             | Canonical id in CAIP-2 form: `eip155:80094`, `solana:5eykt4Xh…`.                                                      |
+| `slug`           | `string` UNIQUE                                             | Human-readable canonical slug (`berachain`).                                                                          |
+| `name`           | `string`                                                    | Display name (`Berachain`).                                                                                           |
+| `family`         | `'evm' \| 'svm' \| 'move' \| 'cosmos' \| 'utxo' \| 'other'` | Determines **address validation** (R-55) and whether `rpc-evm` can serve the chain.                                   |
+| `aliases`        | `string[]`                                                  | Every other accepted spelling, including the legacy `ethereum`/`solana` (R-59a) and vendor ids.                       |
+| `nativeSymbol`   | `string \| null`                                            | Symbol of the **gas** token (`BERA`, `XDAI`).                                                                         |
+| `nativeDecimals` | `number \| null`                                            | Decimals of that same gas token.                                                                                      |
+| `vendors`        | `Record<vendorId, string \| null>`                          | **Naming only:** what this chain is called at each vendor.                                                            |
+| `rpcHosts`       | `string[] \| null`                                          | The curated SSRF allowlist for this chain (R-56a). `null` = `wallet.balances.native` is honestly uncovered, see §7.2. |
+| `tvlUsdAtSync`   | `number \| null`                                            | TVL **as of the registry sync**, knowingly stale.                                                                     |
+| `deprecated`     | `boolean`                                                   | The chain disappeared from the vendors, but the row is kept (R-49f) — references and cache keys do not break.         |
+
+**Details by field** — the detail moved out of the cells above, keyed by the same field name:
+
+- **`caip2`** — the registry's stable primary key.
+- **`slug`** — what an agent writes in `chain`, what `onchain_list_chains` returns, and what goes
+  into the cache key (§4.2.2).
+- **`aliases`** — globally unique.
+- **`nativeSymbol`** — consumed by `pairs.active` (R-57a) and `wallet.balances.native` instead of
+  a hardcode.
+- **`vendors`** — `defillama`→`"Berachain"`, `coingecko`→`"berachain"`,
+  `dexscreener`→`"berachain"`. `null` = **we hold no confirmed identifier**, which is NOT the same
+  as the vendor not having the chain — see §4.2.3a.
+- **`tvlUsdAtSync`** — exists **solely** to filter and rank in `onchain_list_chains` without a
+  network call.
 
 The two native-token columns carry the failure they prevent:
 
@@ -149,8 +165,9 @@ The two native-token columns carry the failure they prevent:
   `ETH`, not `ARB`. `null` means we do not know, and the capability that needs it is honestly
   uncovered rather than silently wrong.
 - `nativeDecimals` is required because `eth_getBalance` returns an integer in the minimal unit —
-  with no decimals there is nothing to label it with. 18 is an EVM convention, not a rule: 29 chains
-  in the EIP-155 catalog use something else, and a hardcoded 18 is a wrong answer that looks right.
+  with no decimals there is nothing to label it with. The value 18 is an EVM convention, not a
+  rule: 29 chains in the EIP-155 catalog use something else. A hardcoded 18 is a wrong answer that
+  looks right.
   For non-EVM families the value comes from the generator's curated table
   (`CURATED_NATIVE_DECIMALS`), because EIP-155 knows nothing about them.
 
@@ -184,17 +201,18 @@ The two native-token columns carry the failure they prevent:
 
 ##### 4.2.3a. What a `null` in `vendors.<id>` means, stated once
 
-**Two readings of this `null` were in circulation and they contradicted each other**: the column
-table above read it as "the vendor does not have the chain", while the probe rule three lines down
-reads an absent probe as `unverified`. The second is authoritative, and the first was the defect:
-DexScreener's column was populated on 3 rows of 458, so the first reading declared 455 chains
-unserved — false for 62 of them, filed as L-18 and fixed by task 014-32a.
+**Two readings of this `null` were in circulation and they contradicted each other.** The
+description of the `vendors` column above read it as "the vendor does not have the chain", while the
+probe rule three lines down reads an absent probe as `unverified`. The second is authoritative, and
+the first was the defect. DexScreener's column was populated on 3 rows of 458, so the first reading
+declared 455 chains unserved. That was false for 62 of them, filed as L-18 and fixed by task
+014-32a.
 
 **The column names, it does not cover.** `vendors.<id>` answers "what is this chain called at vendor
 X". A `null` means we hold no confirmed name — because nobody probed, or because a probe reached the
-vendor and could not confirm the identifier. Coverage is decided by the adapter's predicate, and WHY
-a pair is uncovered is answered by `CoverageStatus` (R-33.5), which distinguishes "the vendor does
-not serve this chain" from "no confirmed vendor identifier" from "the vendor serves it and this
+vendor and could not confirm the identifier. Coverage is decided by the adapter's predicate. WHY a
+pair is uncovered is answered by `CoverageStatus` (R-33.5). It distinguishes "the vendor does not
+serve this chain" from "no confirmed vendor identifier" from "the vendor serves it and this
 capability is not built on it".
 
 #### Artifact: `CapabilityManifest` + `PolicyDescriptor` (T-012, ADR-002 D2/D3) — compiled facts, not tables
@@ -202,85 +220,91 @@ capability is not built on it".
 **SHIPPED (T-012, commit `6af4b19`, 2026-08-05).**
 
 - **Description:** like `ChainInfo` above, these are **not** canonical domain types in the D5
-  sense (they describe how a capability is ROUTED, not an observation obtained from a provider) —
-  committed TypeScript literals (`capabilityManifests` in `src/capability-manifest.ts`, the policy
-  class dictionary in `src/adapters/policy.ts`), validated once at `CapabilityRegistry` construction
-  and held in process memory, never in the cache DB or in Postgres (D1 — tier-1 config in the
-  commit).
+  sense: they describe how a capability is ROUTED, not an observation obtained from a provider.
+  They are committed TypeScript literals (`capabilityManifests` in `src/capability-manifest.ts`,
+  the policy class dictionary in `src/adapters/policy.ts`). They are validated once at
+  `CapabilityRegistry` construction and held in process memory, never in the cache DB or in
+  Postgres (D1 — tier-1 config in the commit).
 - **Key attributes:** `CapabilityManifest` is a DISCRIMINATED union, not a flat interface (H4,
-  architecture review 2026-08-03 — a flat shape would let a future `merge` field attach to a
-  `point` manifest with no compiler objection): `{shape:'point', ttlSeconds, deadlineMs,
-shareable?}` or `{shape:'set'|'series', ttlSeconds, deadlineMs, shareable?}`, both variants also
-  carrying an optional `paidLegMs` — present only when the capability's route can reach a
-  `tier:'paid'` adapter, documenting the UNCANCELLABLE tail past a committed credit reservation
-  (OD-3, owner 2026-08-03; worst case for such a capability is `deadlineMs + paidLegMs`, never
-  `deadlineMs` alone). `PolicyDescriptor` — a discriminated union, `{ kind: 'any' }` or `{ kind:
-'someElementHasAny', fields: string[] }`.
+  architecture review 2026-08-03). A flat shape would let a future `merge` field attach to a
+  `point` manifest with no compiler objection. The union has two variants:
+  `{shape:'point', ttlSeconds, deadlineMs, shareable?}` or
+  `{shape:'set'|'series', ttlSeconds, deadlineMs, shareable?}`. Both variants also carry an
+  optional `paidLegMs`, present only when the capability's route can reach a `tier:'paid'` adapter.
+  That field documents the UNCANCELLABLE tail past a committed credit reservation (OD-3, owner
+  2026-08-03; worst case for such a capability is `deadlineMs + paidLegMs`, never `deadlineMs`
+  alone). `PolicyDescriptor` is a discriminated union: `{ kind: 'any' }` or
+  `{ kind: 'someElementHasAny', fields: string[] }`.
 - **Relationships:** every `CapabilityRoute.capability` must resolve to exactly one
   `CapabilityManifest` entry, and every `CapabilityRoute.policy.kind`, when present, must resolve
-  against the policy dictionary — both are enforced the same way the chain registry enforces its
-  own invariants (§4.2.1: at construction, never at first request), in a FIXED order (manifest
-  presence checked before policy `kind`) so a negative test can isolate exactly one failure (C2,
-  architecture review 2026-08-03). 🔴 **M-6 correction (architecture review round 2, 2026-08-03):**
-  only the MANIFEST map is an injected, defaulted constructor parameter on `CapabilityRegistry`
+  against the policy dictionary. Both are enforced the same way the chain registry enforces its
+  own invariants (§4.2.1: at construction, never at first request). The order is FIXED — manifest
+  presence is checked before policy `kind` — so a negative test can isolate exactly one failure
+  (C2, architecture review 2026-08-03).
+  **M-6 correction (architecture review round 2, 2026-08-03):** only the MANIFEST map is an
+  injected, defaulted constructor parameter on `CapabilityRegistry`
   (`manifests: Readonly<Record<string, CapabilityManifest>> = capabilityManifests` —
-  system-architecture.md, "Capability Registry") — the same seam the chain registry already uses one
-  parameter to the left — so a test route table with synthetic capabilities supplies its own small
-  manifest map instead of inheriting the real 20-row one. The POLICY class dictionary is a
-  **module-level registry** (`src/adapters/policy.ts`, system-architecture.md "Policy descriptor +
-  class registry"), not a constructor parameter, and needs no injection of its own: a test exercising
-  an unregistered `kind` expresses the bad value in the ROUTE itself (`{ policy: { kind: 'bogus' } }`),
-  which is the thing under test either way — there is no scenario where a test needs a DIFFERENT
-  policy dictionary, only a route referencing a `kind` the real one does not have. (An earlier draft
-  of this section said "both maps are injected... one parameter to the left" — two maps cannot both
-  occupy one parameter position, and the code only injects the one that has a real reason to vary.)
-- **Business rules:** manifest carries no `chains`/`providers`/`price` (those are derived from
+  system-architecture.md, "Capability Registry"). It is the same seam the chain registry already
+  uses one parameter to the left. A test route table with synthetic capabilities therefore supplies
+  its own small manifest map instead of inheriting the real 20-row one. The POLICY class dictionary
+  is a **module-level registry** (`src/adapters/policy.ts`, system-architecture.md
+  "Policy descriptor + class registry"), not a constructor parameter, and needs no injection of its
+  own. A test exercising an unregistered `kind` expresses the bad value in the ROUTE itself
+  (`{ policy: { kind: 'bogus' } }`), which is the thing under test either way. There is no scenario
+  where a test needs a DIFFERENT policy dictionary, only a route referencing a `kind` the real one
+  does not have. (An earlier draft of this section said "both maps are injected... one parameter to
+  the left" — two maps cannot both occupy one parameter position, and the code only injects the
+  one that has a real reason to vary.)
+- **Business rules:** manifest carries no `chains`/`providers`/`price`. Those are derived from
   `chainSupport()`, `routes`, `costOf()` respectively — the identical "one fact, one place" rule the
-  chain registry already applies to coverage, §4.2.3); a `policy.kind` or `capability` unresolved
+  chain registry already applies to coverage (§4.2.3). A `policy.kind` or `capability` unresolved
   against either artifact is a construction-time failure, never a silent default.
 
 **DESIGNED, not built (T-013, ADR-002 D5/D6, 2026-08-05) — the merge-eligibility field, and how
 `CapabilityResolution` grows to carry a merged answer.** The `set | series` arm of `CapabilityManifest`
 gains one optional field (illustrative name `mergeable?: boolean`; final name is Development's
-choice, R-159a) discharging the obligation the union's own docstring already names for T-013
-(`packages/core/src/capability-manifest.ts:158-159`, `the obligation the paragraphs below used to describe as future is discharged.`)
-— declaring it on the `point` arm is a compile error (R-159/R-160).
+choice, R-159a). That field discharges the obligation the union's own docstring already names for
+T-013 (`packages/core/src/capability-manifest.ts:158-159`,
+`the obligation the paragraphs below used to describe as future is discharged.`).
+Declaring it on the `point` arm is a compile error (R-159/R-160).
 Eligibility is a fact about the CAPABILITY's identity key (`Snapshot.metric`/`asset`/`ts`, D6 reason
-1); it is deliberately NOT sufficient to activate collection by itself — `CapabilityRoute` gains a
+1). It is deliberately NOT sufficient to activate collection by itself: `CapabilityRoute` gains a
 second, independent field (`merge?: boolean`) checked against `mergeable` at construction
 (`OQ-T013-2`, full reasoning in [system-architecture.md](system-architecture.md) "Merge mechanism").
-Two gates, not one: (1) a route flag is a literal deviation from D5's text, which R-181 already
-budgets for at exactly two deviations elsewhere — a third would go unrecorded; (2) UC-20 phrases the
+Two gates, not one. (1) A route flag is a literal deviation from D5's text, which R-181 already
+budgets for at exactly two deviations elsewhere — a third would go unrecorded. (2) UC-20 phrases the
 failure as an act the ROUTE performs, which manifest-only activation cannot even construct. **A
-capability with more than one `CapabilityRoute` is explicitly OUT OF SCOPE** — no construction-time
-check enforces that sibling routes agree on `merge`, and the two-gate design does not, on its own,
-let one route of a capability merge while another does not (system-architecture.md states this
-plainly rather than implying selectivity the design cannot deliver).
+capability with more than one `CapabilityRoute` is explicitly OUT OF SCOPE.** No construction-time
+check enforces that sibling routes agree on `merge`. The two-gate design does not, on its own, let
+one route of a capability merge while another does not. system-architecture.md states this plainly
+rather than implying selectivity the design cannot deliver.
 
 `CapabilityRegistry.resolve()`'s return shape gains three OPTIONAL fields, all populated ONLY on a
-merge-enabled walk (R-174d/R-175) — `sources?: string[]` (CONTRIBUTORS: participants whose points
-are actually present in `result`, not merely everyone who answered — the distinction matters because
-an "answered" reading would attribute a merged payload to a participant that returned nothing of its
-own), `missingSources?: {adapterId, reason}[]`, `perSourceCache?: {adapterId, cache, ageMs?}[]` — the
-18 non-merge capabilities and their tools see no shape change, and no existing field type changes;
-`source`'s MEANING does not change either, on a merge walk or off one — it is, and stays, the
-highest-ranked adapter among those whose data is IN `result` (`sources`, the CONTRIBUTORS above) —
-never simply the first to answer. Corrected here after round 2 (MJ-2): stating only the fallback
-below without this primary rule reads as "unchanged" = "first answerer", which on the ordinary
-composition where `platform-explorer` answers `[]` and `pg-history` returns 40 points would publish
-`source: 'platform-explorer'` over a payload containing none of its data — exactly the defect B-2
-raised. `source` falls back to the highest-ranked ANSWERED participant ONLY in the corner case
-where `sources` is empty (everyone answered with zero points, so there is no contributor to rank).
+merge-enabled walk (R-174d/R-175): `sources?: string[]`, `missingSources?: {adapterId, reason}[]`
+and `perSourceCache?: {adapterId, cache, ageMs?}[]`. `sources` names the CONTRIBUTORS — participants
+whose points are actually present in `result`, rather than everyone who answered. The distinction
+matters because an "answered" reading would attribute a merged payload to a participant that
+returned nothing of its own. The 18 non-merge capabilities and their tools see no shape change, and
+no existing field type changes. `source`'s MEANING does not change either, on a merge walk or off
+one. It is, and stays, the highest-ranked adapter among those whose data is IN `result` (`sources`,
+the CONTRIBUTORS above) — never simply the first to answer. Corrected here after round 2 (MJ-2):
+stating only the fallback below without this primary rule reads as "unchanged" = "first answerer".
+On the ordinary composition where `platform-explorer` answers `[]` and `pg-history` returns 40
+points, that reading would publish `source: 'platform-explorer'` over a payload containing none of
+its data — exactly the defect B-2 raised. `source` falls back to the highest-ranked ANSWERED
+participant ONLY in the corner case where `sources` is empty (everyone answered with zero points, so
+there is no contributor to rank).
 The compiled conflict rank on a dedup collision (`(metric, asset, HOUR of ts)` — bucketed
 2026-08-07 by owner decision, R-161(e); the stored point keeps its own `ts`) reuses the
-route's own `adapterIds` order rather than adding a rank table or reading `AdapterRegistration.trust`
-or `onchain.metrics.source_priority` (`OQ-T013-3`; `TC-GATE-02` and R-180 both forbid the latter two
-readers) — a narrow, provisional reuse pending T-016's real per-row trust axis, reasoned in full in
-[system-architecture.md](system-architecture.md). **Enforced, not merely documented:** a new
-construction-time assertion requires every participant of a `merge: true` route to be `tier: 'free'`
-(reading `AdapterRegistration.tier`, never `.trust`) — a paid, presumably-authoritative participant
-would sit last in spend order and therefore lowest in this reused rank, silently losing every dedup
-collision; the assertion turns that hazard into a startup failure until T-016.
+route's own `adapterIds` order. It does not add a rank table, and it reads neither
+`AdapterRegistration.trust` nor `onchain.metrics.source_priority` (`OQ-T013-3`; `TC-GATE-02` and
+R-180 both forbid the latter two readers). This is a narrow, provisional reuse pending T-016's real
+per-row trust axis, reasoned in full in [system-architecture.md](system-architecture.md).
+**Enforced, not only documented:** a new construction-time assertion requires every
+participant of a `merge: true` route to be `tier: 'free'` (reading `AdapterRegistration.tier`, never
+`.trust`). A paid, presumably-authoritative participant would sit last in spend order and therefore
+lowest in this reused rank, silently losing every dedup collision. The assertion turns that hazard
+into a startup failure until T-016.
 
 ### 4.2. Logical model — the cache DB (`DATA_DIR/cache.sqlite3`)
 
@@ -298,9 +322,9 @@ read that ONE field on the same registration; before 012-3 they disagreed — on
 private `PAID_PROVIDER_IDS` set, the other hardcoded `'unknown'` (system-architecture.md, "Provider
 tier"). **Their conflict clauses are also identical now (adversarial cycle 2, F-3):**
 `ON CONFLICT (id) DO UPDATE SET kind = excluded.kind`, updating the column both writers OWN and
-leaving `notes` alone. The cache store used to add `notes = excluded.notes` with a literal `NULL`, so
-merely constructing it erased an operator's note while constructing the budget store preserved it —
-the same file's content depending on which store opened it last.
+leaving `notes` alone. The cache store used to add `notes = excluded.notes` with a literal `NULL`.
+Construction alone was enough to erase an operator's note, while constructing the budget store
+preserved it — the same file's content depending on which store opened it last.
 
 **M2 addition (TASK-005, R-34): `usage(provider FK, day, credits_used)`** — the same cache DB, the
 same `providers` registry as the FK target, and **no migration** of `providers`/`cache_entries` (the
@@ -341,7 +365,7 @@ that costs 0 credits: `used + 0 > ceiling` is false for the whole life of the bu
 That is not a defect of the ceiling, it is what its unit of measure means — so it is cured with a
 different unit, not with a stricter number. The column sits on the same row rather than in a second
 table: same provider, same window, same transaction, and one read instead of two. The counter is
-**monotonic** — reconciliation corrects credits and never the number of calls: the vendor was
+**monotonic** — reconciliation corrects credits and never the number of calls. The vendor was
 called, and "giving one back" would let a run of cheap-and-refunded calls slip past the very limit
 it exists to enforce.
 
@@ -355,7 +379,7 @@ a project" kind of migration DB-SCHEMA-CONCEPT §1 demands.
 It is read and written **inside the same transaction** as the daily reservation (`checkAndReserve`).
 Otherwise two processes sharing one `cache.sqlite3` — a supported topology, several stdio sessions
 on one machine — would each pass its own window check against a stale read. Rows older than an hour
-are deleted opportunistically in that same transaction: only the CURRENT window is ever read, the
+are deleted opportunistically in that same transaction. Only the CURRENT window is ever read, the
 rest is retention for post-mortem analysis, and one row per minute per provider forever is a slow
 leak into `DATA_DIR`.
 
@@ -388,14 +412,14 @@ leak into `DATA_DIR`.
   **reconciliation** — `@delta = actual − reserved` (a signed delta, possibly negative, R-38). The
   same SQL pattern serves both phases; a replacing write would double-count or lose spend instead
   (§3.2 works this through in detail). **`day` in both phases of one call is literally the same
-  value** (`dayBucketMs`, pinned at reservation, §3.2 "atomic check+reserve") — reconciliation never
-  recomputes the bucket from the response's arrival time, so a response that arrives after midnight
-  for a call reserved before it still lands in the ORIGINAL day bucket, not a new one.
+  value** (`dayBucketMs`, pinned at reservation, §3.2 "atomic check+reserve"). Reconciliation never
+  recomputes the bucket from the response's arrival time. A response that arrives after midnight for
+  a call reserved before it still lands in the ORIGINAL day bucket, not a new one.
 
 - `SqliteBudgetStore` (`cache/budget-store.ts`, implementing the `BudgetStore` interface — the same
   injection pattern as `CacheStore`/`SqliteCacheStore`, §3.2/§5.2) opens its **own** `better-sqlite3`
-  connection to the same file (`cacheDbPath()`, reusing the existing `cache/data-dir.ts`), runs
-  `db.exec(CACHE_DDL)` idempotently (the same string, which now also carries `usage`), and
+  connection to the same file (`cacheDbPath()`, reusing the existing `cache/data-dir.ts`). It runs
+  `db.exec(CACHE_DDL)` idempotently (the same string, which now also carries `usage`). It
   **necessarily** reissues `PRAGMA foreign_keys=ON` on THAT connection — the pragma is
   connection-scoped and is not persisted in the file (DB-SCHEMA §1.6; R-34 explicitly requires
   "every" connection, not a global). A `pragma_foreign_keys`/`sqlite_master` query test confirms it
@@ -477,9 +501,9 @@ A deprecated chain is covered by nothing: `covered()` refuses it before consulti
 **The `dexscreener` row was accurate about the intent and not about the code, until 2026-08-21.** The
 adapter also required `c.nativeSymbol !== null`, because its only query was the native symbol. Task
 014-32c planned to relax that for the two address-addressed capabilities and found it did not need
-to: fixing L-19 replaced the query with the vendor's own chain id, so no capability requires a native
-symbol and the predicate is uniform. Measured the same day: all 49 covered chains carry a
-`nativeSymbol`, so the code and this row described the same 49 chains throughout — the drift changed
+to. Fixing L-19 replaced the query with the vendor's own chain id, so no capability requires a
+native symbol and the predicate is uniform. Measured the same day: all 49 covered chains carry a
+`nativeSymbol`, so the code and this row described the same 49 chains throughout. The drift changed
 no coverage, which is exactly why nothing caught it.
 
 **Why a predicate and not a list column:** a column would mean maintaining coverage in two places
@@ -503,30 +527,30 @@ review recorded as H-1 (coverage widened, transport not). So:
 
 `DEFILLAMA_DEX_CHAINS` is a **generated, committed build artifact**, produced by
 `scripts/gen-defillama-dex-chains.ts` from a recorded raw response under
-`docs/onchain-analytics/raw/` — the same doctrine, and the same emit-time token guard, as
-`gen-nansen-coverage.ts`: read the evidence we already hold, emit code, review the diff. It is not
-fetched at startup, for the three reasons the chain registry itself is a build artifact (§4.2.1):
-the offline-run gate, CI determinism, and reviewability. The 13 chains the vendor serves that our
-registry does not know are recorded in the raw evidence and covered by nothing — an honest gap beats
-a phantom row.
+`docs/onchain-analytics/raw/`. It follows the same doctrine, and carries the same emit-time token
+guard, as `gen-nansen-coverage.ts`: read the evidence we already hold, emit code, review the diff.
+It is not fetched at startup, for the three reasons the chain registry itself is a build artifact
+(§4.2.1): the offline-run gate, CI determinism, and reviewability. The 13 chains the vendor serves
+that our registry does not know are recorded in the raw evidence and covered by nothing — an honest
+gap beats a phantom row.
 
 **`nansen` coverage is per capability, and a composite capability is an intersection.** The recorded
 coverage comes from the committed vendor spec (`raw/nansen-openapi-2026-07-23.json`), which
 enumerates the chains per endpoint, plus a small live spot-check confirming the spec has not
-drifted — evidence at zero credits, which meets R-58a's intent more strictly than probing 25 chains
-live would. `smart-money.flows` issues two sub-calls (`/smart-money/netflow`, 17 chains, and
-`/tgm/holders`, 25), so its coverage is the **intersection**: a union would admit 8 chains where the
+drifted. That is evidence at zero credits, which meets R-58a's intent more strictly than probing 25
+chains live would. `smart-money.flows` issues two sub-calls (`/smart-money/netflow`, 17 chains, and
+`/tgm/holders`, 25), so its coverage is the **intersection**. A union would admit 8 chains where the
 first sub-call succeeds, the second is refused, and the credits for the first are already spent. On
-top of that the adapter requires the chain's family to have a real address validator — without one
-we cannot tell a valid `tokenAddress` from arbitrary text, cannot canonicalize it into a stable cache
-key, and cannot know how the vendor cases its address column, on a route that charges for every
-attempt. The cost of that condition is stated rather than absorbed silently: after it the covered
-counts are `smart-money.flows` 16, `entity.labels` 18 and `token.risk` 18 chains, dropping
-`bitcoin`, `near`, `sei`, `starknet`, `sui`, `ton` and `tron`. Each returns the moment its family
-gets a validator. One predicate serves all three readers of that answer — what the matrix
-advertises, what the transport will build a request for, and what the refusal message lists as
-available — because an adapter that answers the same question in two places eventually answers it
-two different ways.
+top of that the adapter requires the chain's family to have a real address validator. Without one we
+cannot tell a valid `tokenAddress` from arbitrary text, canonicalize it into a stable cache key, or
+know how the vendor cases its address column, on a route that charges for every attempt. The cost of
+that condition is stated rather than absorbed silently: after it the covered counts are
+`smart-money.flows` 16, `entity.labels` 18 and `token.risk` 18 chains, dropping `bitcoin`, `near`,
+`sei`, `starknet`, `sui`, `ton` and `tron`. Each returns the moment its family gets a validator.
+One predicate serves all three readers of that answer — what the matrix advertises, what the
+transport will build a request for, and what the refusal message lists as available. The reason is
+that an adapter that answers the same question in two places eventually answers it two different
+ways.
 
 **Three different refusals that must not be merged (R-51b, and D4/R-145 since T-012):**
 
@@ -759,8 +783,8 @@ erDiagram
 cache rows kept matching, because the canonical value fed into `args_hash` was already what the old
 tools accepted (§4.2.2). The registry is versioned by being a file under git: its "version" is the
 commit. There is no schema-version field in v1 (YAGNI: the only consumer is this same process from
-the same build), but the loader must validate the structure at startup (R-60c), so an incompatible
-file fails loudly rather than silently.
+the same build). The loader must validate the structure at startup (R-60c), so an incompatible file
+fails loudly rather than silently.
 
 **M2 (TASK-005):** `usage(provider FK, day, credits_used, updated_at)` was added to the same cache
 DB; `providers`/`cache_entries` are unchanged (R-14/R-34 acceptance) — a mechanical
@@ -1403,10 +1427,10 @@ whose own deadline expires before the leader committed its reservation has no co
 the leader may still be inside its `/account` resync, and R-27.7 forbids revising the row later.
 That row carries `vendor_provider` and two NULL coordinates. `vendor_provider` is what keeps it
 distinguishable from a request that involved no vendor at all — the latter has no vendor column
-filled. Rejected: delaying the row until the leader settles (it would stop being one write at
-completion), and writing a coordinate derived from the follower's own clock (a velocity window is
-60 000 ms wide and the nansen capabilities declare `deadlineMs: 60_000`, so the derived bucket would
-routinely hold none of the spend).
+filled. Rejected: delaying the row until the leader settles — it would stop being one write at
+completion. Also rejected: writing a coordinate derived from the follower's own clock. A velocity
+window is 60 000 ms wide and the nansen capabilities declare `deadlineMs: 60_000`, so the derived
+bucket would routinely hold none of the spend.
 
 **Every component of the dedup key is `NOT NULL`.** In both engines a NULL never equals a NULL in a
 unique index, so one nullable component would disable dedup entirely. The server mints
@@ -1878,7 +1902,7 @@ The existing `idx_client_usage_terminal (terminal_at)` already serves this read;
 added for it.
 
 **A supplementary diagram, scoped to this table alone** — the existing diagram of §4.3 is left
-unchanged, so every coordinate already cited into it (`data-model.md:1240-1245`, `:1337`, `:1347`
+unchanged, so every coordinate already cited into it (`data-model.md:1263-1268`, `:1360`, `:1370`
 and others) keeps resolving where it does today:
 
 ```mermaid

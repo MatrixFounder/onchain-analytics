@@ -1,14 +1,14 @@
 # ARCHITECTURE — `onchain-intel`
 
-| Field             | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Document type** | Living document — updated **in place**, never archived per task                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **Delivered**     | M0 ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md)) · M1 ✅ ([task-003](tasks/task-003-m1-read-layer.md)) · M2 ✅ ([task-005](tasks/task-005-m2-alpha-paid.md)) · TASK-006 `universal-chain-registry` ✅ ([task-006](tasks/task-006-universal-chain-registry.md)) · TASK-007 `defillama-dex-volumes` ✅ ([task-007](tasks/task-007-defillama-dex-volumes.md)) · TASK-008 `blockscout-free-tier` ✅ ([task-008](tasks/task-008-blockscout-free-tier.md)) — 2026-07-29 · TASK-009 `btc-supply-independent-verification` ✅ ([task-009](tasks/task-009-btc-supply-independent-verification.md)) — 2026-07-29 · TASK-010 `adr-routing-and-transport` ✅ ([task-010](tasks/task-010-adr-routing-and-transport.md)) — 2026-07-31 · TASK-011 `single-tool-registry` ✅ ([task-011](tasks/task-011-single-tool-registry.md)) — 2026-08-02 · T-012 `capability-manifest-policy-tier-deadline` ✅ ([task-012](tasks/task-012-capability-manifest-and-call-deadline.md)) — 2026-08-04 · T-013 `series-merge-and-history-tool` ✅ ([task-013](tasks/task-013-series-merge-and-history-tool.md)) — 2026-08-10 · T-014 `network-transport-and-billing` ✅ ([TASK.md](TASK.md), 47 задач: [PLAN.md](PLAN.md)) — 2026-08-24                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **ADR**           | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20, decisions D1–D12                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **Data schema**   | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable conventions, applied here to the cache DB and the `usage` ledger                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **Roadmap**       | [ROADMAP.md](onchain-analytics/ROADMAP.md) — phases M0–M6                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **Updated**       | 2026-08-26, **v4.12.1** — T-015 `phase0-billing-blockscout-budget`: design phase, ahead of code; `ADR-003` `OQ-G` (the replay-window mechanism) closed the same pass. Full entry (kept short here per §5.1 — detail moved out, not lost): [architectures/version-history.md](architectures/version-history.md). Below that, v4.11 as written: T-013 `series-merge-and-history-tool` **SHIPPED 2026-08-10**; the capability manifest carries **26** rows and the server publishes **20** tools (both measured, not quoted; T-014 task 014-32b moved them to **27** and **22**). Below that, v4.10 as written: the merge mechanism (ADR-002 D5/D6) gets its activation model (two independent gates — manifest `mergeable` eligibility plus a route-level `merge` flag), its compiled conflict rank (reuses `adapterIds` order, narrowly and provisionally), and its policy-evaluation point (per participant); `CapabilityResolution` gains three optional, merge-only fields; the 14th tool `onchain_dash_platform_history` is contracted. Three questions the task left open (`OQ-T013-2`/`3`/`4`) are closed in [architectures/open-questions.md](architectures/open-questions.md). Below that: T-012 BUILT 2026-08-04, hardened over three adversarial cycles plus a fix pass, and OQ-T012-6 resolved (ten tasks, suite 1195 → 1473, zero credits spent) — the answer-sufficiency policy is a serialisable descriptor resolved against a class registry and validated at construction (D2); capabilities carry a manifest of 26 rows, each deadline number recorded with its measured envelope and the applied ceiling (D3); an absolute call deadline threads resolve→fetch→throttle→safeFetch with real cancellation, and stops at the credit reservation (D4); `tier` collapsed four disagreeing classifications of paidness into one (D8); `trust` is declared with the validator as its only reader (D9 slice); `CapabilityRoute.chains` is deleted (OQ-C); expiry does not throw in every branch — a walk where every source was entered and every one answered returns that answer past the ceiling, marked with `_meta.timing.overrunMs` (OQ-T012-6: the ceiling bounds SPENDING, not the moment of delivery). Full changelog: [architectures/version-history.md](architectures/version-history.md) |
-| **Format**        | **Index mode** (skill `architecture-format-core`): section bodies live in [docs/architectures/](architectures/); this file holds the table of contents, one-line summaries, and the sections small enough to keep inline                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Field             | Value                                                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Document type** | Living document — updated **in place**, never archived per task                                                        |
+| **Delivered**     | Milestone list with task files, and dates where recorded — below the table                                             |
+| **ADR**           | [ADR-001-tech-stack.md](onchain-analytics/ADR-001-tech-stack.md) — **Accepted**, sign-off 2026-07-20, decisions D1–D12 |
+| **Data schema**   | [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1 — portable conventions, details below                |
+| **Roadmap**       | [ROADMAP.md](onchain-analytics/ROADMAP.md) — phases M0–M6                                                              |
+| **Updated**       | 2026-08-26, **v4.12.1** — T-015 `phase0-billing-blockscout-budget`; full entry below the table                         |
+| **Format**        | **Index mode** (skill `architecture-format-core`) — details below                                                      |
 
 ---
 
@@ -16,20 +16,87 @@
 > the one-line summary here in sync (`architecture-format-core` §After the Split). Section numbers
 > are stable — a cross-reference like "§3.2" still means chapter 3 (`system-architecture.md`).
 
-> **Register note on the header table (T-015 pass).** `scan_register.py` still flags every row of
-> the table above under §5.1 (`cell_width`, and `cell_sentences` on **Updated**). Most of it is
-> pre-existing, measured at HEAD before this pass touched the file — `Delivered` alone was 1978 raw
-> characters there.
+> **Register note on the header table (T-015 pass).** `scan_register.py` flagged every row of the
+> table above under §5.1 (`cell_width`, and `cell_sentences` on **Updated**) at that pass. Most of
+> it was pre-existing, measured at HEAD before that pass touched the file — `Delivered` alone was
+> 1978 raw characters there.
 >
-> **Not all of it — architecture review round 1 MINOR-10 measured the part that is not.** The
+> **Not all of it — architecture review round 1 MINOR-10 measured the part that was not.** The
 > **Updated** cell itself grew 1877 → 2116 `cell_width` characters and 5 → 7 `cell_sentences` under
-> this pass, even after the marker below shrank it from a longer first draft. That growth is this
-> pass's own contribution, named rather than folded into "inherited."
+> that pass, even after the marker below shrank it from a longer first draft. That growth was the
+> T-015 pass's own contribution, named rather than folded into "inherited."
 >
-> The **Updated** cell's own T-015 addition is now a one-line marker. It points at
+> The **Updated** cell's own T-015 addition became a one-line marker there. It points at
 > [architectures/version-history.md](architectures/version-history.md), which carries the full entry
-> in register-conforming prose. The accumulated T-012/T-013/T-014 text below it is untouched
-> inherited content (WI-43 class), left as found rather than rewritten under this task.
+> in register-conforming prose. The accumulated T-012/T-013/T-014 text below it was untouched
+> inherited content (WI-43 class), left as found rather than rewritten under that task.
+>
+> **WI-67 pass, 2026-09-03.** The three paragraphs above are the T-015-pass record, restated in the
+> past tense: they report what that pass measured, not the state this one leaves. Four cells were
+> reduced to a one-line marker here: **Delivered**, **Data schema**, **Updated** and **Format**. The detail of each moved into the per-field block of the same name below the table,
+> the `version-history.md` pointer included. **Document type**, **ADR** and **Roadmap** are
+> unchanged, each already one sentence inside the 120-character bound. Out of the cell, the
+> T-012/T-013/T-014 text became prose, where the 35-word sentence bound of §5.5 applies, so this
+> pass split its sentences too. That text was relocated and re-sentenced, not relocated alone.
+> Measured after both changes, `scan_register.py` reported no `cell_width` and no `cell_sentences`
+> finding on this file.
+
+**Details by field.** Each block below carries the detail moved out of the header-table cell of the
+same name (§5.1).
+
+**Delivered** — the milestones, their task files, and a date on the seven rows that carry one.
+
+| Milestone                                        | Delivered                                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| M0                                               | ✅ ([task-001](tasks/task-001-m0-discovery-skeleton.md))                              |
+| M1                                               | ✅ ([task-003](tasks/task-003-m1-read-layer.md))                                      |
+| M2                                               | ✅ ([task-005](tasks/task-005-m2-alpha-paid.md))                                      |
+| TASK-006 `universal-chain-registry`              | ✅ ([task-006](tasks/task-006-universal-chain-registry.md))                           |
+| TASK-007 `defillama-dex-volumes`                 | ✅ ([task-007](tasks/task-007-defillama-dex-volumes.md))                              |
+| TASK-008 `blockscout-free-tier`                  | ✅ ([task-008](tasks/task-008-blockscout-free-tier.md)) — 2026-07-29                  |
+| TASK-009 `btc-supply-independent-verification`   | ✅ ([task-009](tasks/task-009-btc-supply-independent-verification.md)) — 2026-07-29   |
+| TASK-010 `adr-routing-and-transport`             | ✅ ([task-010](tasks/task-010-adr-routing-and-transport.md)) — 2026-07-31             |
+| TASK-011 `single-tool-registry`                  | ✅ ([task-011](tasks/task-011-single-tool-registry.md)) — 2026-08-02                  |
+| T-012 `capability-manifest-policy-tier-deadline` | ✅ ([task-012](tasks/task-012-capability-manifest-and-call-deadline.md)) — 2026-08-04 |
+| T-013 `series-merge-and-history-tool`            | ✅ ([task-013](tasks/task-013-series-merge-and-history-tool.md)) — 2026-08-10         |
+| T-014 `network-transport-and-billing`            | ✅ ([TASK.md](TASK.md), 47 задач: [PLAN.md](PLAN.md)) — 2026-08-24                    |
+
+**Data schema** — [DB-SCHEMA-CONCEPT.md](onchain-analytics/DB-SCHEMA-CONCEPT.md) §1: portable
+conventions, applied here to the cache DB and the `usage` ledger.
+
+**Updated** — 2026-08-26, **v4.12.1** — T-015 `phase0-billing-blockscout-budget`: design phase,
+ahead of code; `ADR-003` `OQ-G` (the replay-window mechanism) closed the same pass. Full entry (kept
+short here per §5.1 — detail moved out, not lost):
+[architectures/version-history.md](architectures/version-history.md).
+
+Below that, v4.11 as written: T-013 `series-merge-and-history-tool` **SHIPPED 2026-08-10**. The
+capability manifest carries **26** rows and the server publishes **20** tools, both measured, not
+quoted. T-014 task 014-32b moved them to **27** and **22**.
+
+Below that, v4.10 as written: the merge mechanism (ADR-002 D5/D6) gets its activation model — two
+independent gates, manifest `mergeable` eligibility plus a route-level `merge` flag. It also gets
+its compiled conflict rank, which reuses `adapterIds` order, narrowly and provisionally, and its
+policy-evaluation point, per participant. Also, `CapabilityResolution` gains three optional,
+merge-only fields, and the 14th tool `onchain_dash_platform_history` is contracted. Three questions
+the task left open (`OQ-T013-2`/`3`/`4`) are closed in
+[architectures/open-questions.md](architectures/open-questions.md).
+
+Below that: T-012 BUILT 2026-08-04, hardened over three adversarial cycles plus a fix pass, and
+OQ-T012-6 resolved (ten tasks, suite 1195 → 1473, zero credits spent). The answer-sufficiency policy
+is a serialisable descriptor resolved against a class registry and validated at construction (D2).
+Capabilities carry a manifest of 26 rows, each deadline number recorded with its measured envelope
+and the applied ceiling (D3). An absolute call deadline threads resolve→fetch→throttle→safeFetch
+with real cancellation, and stops at the credit reservation (D4). Also, `tier` collapsed four
+disagreeing classifications of paidness into one (D8), `trust` is declared with the validator as its
+only reader (D9 slice), and `CapabilityRoute.chains` is deleted (OQ-C). Expiry does not throw in
+every branch: a walk where every source was entered and every one answered returns that answer past
+the ceiling, marked with `_meta.timing.overrunMs`. OQ-T012-6: the ceiling bounds SPENDING, not the
+moment of delivery. Full changelog:
+[architectures/version-history.md](architectures/version-history.md)
+
+**Format** — **Index mode** (skill `architecture-format-core`): section bodies live in
+[docs/architectures/](architectures/). This file holds the table of contents, one-line summaries,
+and the sections small enough to keep inline.
 
 ## Contents
 
@@ -54,15 +121,17 @@ Requirements and the RTM live in [docs/TASK.md](TASK.md); the milestone exit cri
 [ROADMAP.md](onchain-analytics/ROADMAP.md). This section summarizes what the system is and which
 decisions constrain it.
 
-`onchain-intel` is an on-chain analytics engine: provider adapters (Nansen / Dune / CoinGecko /
-DexScreener / DeFiLlama / RPC / Dash DAPI / …) → normalization into canonical zod types → cache +
-credit budget → an aggregating MCP server of our own. The stack and its twelve decisions (D1–D12)
-are **Accepted** in ADR-001; this document does not revisit them, it makes them concrete.
+`onchain-intel` is an on-chain analytics engine. Its pipeline: provider adapters (Nansen / Dune /
+CoinGecko / DexScreener / DeFiLlama / RPC / Dash DAPI / …) → normalization into canonical zod
+types. From there → cache + credit budget → an aggregating MCP server of our own. The stack and
+its twelve decisions (D1–D12) are **Accepted** in ADR-001; this document does not revisit them, it
+makes them concrete.
 
-**What the engine is today** — twelve provider adapters behind one hot-swappable interface (eleven
-of them serving something; `dune` is a config stub), a chain registry of 458 networks, a two-level
-cache, an SSRF gate and per-provider rate limiting, a credit budget guard on the single paid
-provider, and twenty-two workflow-oriented MCP tools served over local stdio. **T-013 (shipped 2026-08-10)** added a compiled multi-source merge to two `series` capabilities and
+**What the engine is today** — twelve provider adapters behind one hot-swappable interface, eleven
+of them serving something, with `dune` as a config stub. A chain registry of 458 networks, a
+two-level cache, an SSRF gate, and per-provider rate limiting. A credit budget guard on the single
+paid provider, and twenty-two workflow-oriented MCP tools served over local stdio.
+**T-013 (shipped 2026-08-10)** added a compiled multi-source merge to two `series` capabilities and
 the tool publishing the merged history — see §3/§11. The server publishes twenty-two tools; the
 capability manifest carries twenty-seven rows.
 
@@ -74,9 +143,9 @@ capability manifest carries twenty-seven rows.
   (`onchain_get_token`, `onchain_wallet_balances`, `onchain_active_pairs`, `onchain_protocol_tvl`).
   `dash-platform` ships as an interface + fixture contract (live gRPC transport is backlog) and
   `platform-explorer` carries all real Dash traffic; `dune` is an interface/config stub.
-- **M2** — the first paid slice: the tenth adapter `nansen` over REST `api.nansen.ai`, three paid
-  capabilities with no free fallback (`smart-money.flows`, `entity.labels`, `token.risk`), three
-  canonical types, three tools (`onchain_smart_money_flows`, `onchain_entity_label`,
+- **M2** — the first paid slice: the tenth adapter `nansen` over REST `api.nansen.ai`, plus three
+  paid capabilities with no free fallback (`smart-money.flows`, `entity.labels`, `token.risk`).
+  Also three canonical types, three tools (`onchain_smart_money_flows`, `onchain_entity_label`,
   `onchain_token_risk`), and the credit budget guard (`usage` ledger + `BudgetStore`).
 - **TASK-006** — chains stop being code. A network is a registry row: the canonical id is CAIP-2,
   vendor ids are mapping columns, and coverage of a (capability, chain) pair is **derived** from
@@ -84,15 +153,16 @@ capability manifest carries twenty-seven rows.
   literal that used to be duplicated across five layers is gone; both names remain valid aliases
   indefinitely. Two free tools were added (`onchain_list_chains`, `onchain_chain_tvl`).
 - **TASK-007** — the free DEX-volume tier: `dex.volume.history` on the existing keyless `defillama`
-  adapter, one tool (`onchain_dex_volume`), and coverage derived from the vendor's own DEX chain
+  adapter, plus one tool (`onchain_dex_volume`). Coverage is derived from the vendor's own DEX chain
   list rather than from `vendors.defillama` — which covers 458 chains for TVL but only 274 for
   volume. `safeFetch`'s response-size cap became real for responses with no `Content-Length`
   (R-47(1)), because the host this tier talks to sends none.
 - **TASK-008** — the free explorer tier: the eleventh adapter `blockscout` over the keyless REST
   facade, `token.holders` retargeted off the dead `dune` stub and `entity.labels` put in front of
   paid Nansen, plus `onchain_token_holders`. It is where the vendor free text addressed **at a
-  language model** (`instructions`) had to be dropped rather than truncated, and where a route
-  learned `isSatisfying` so a truthful "I have nothing" stops shadowing the provider behind it.
+  language model** (`instructions`) had to be dropped rather than truncated. It is also where a
+  route learned `isSatisfying`, so a truthful "I have nothing" stops shadowing the provider behind
+  it.
 - **TASK-009** — independent verification of BTC numbers: the twelfth adapter `blockchain-info`
   (keyless), `chain.supply` on `bitcoin` with `onchain_chain_supply`, and a **reference-source axis
   in the eval** — a second, unrelated vendor declared as DATA in `probes.json`. Its finding shaped
@@ -128,9 +198,9 @@ These are owner decisions, not architecture preferences. They bind every future 
    458 networks costs roughly 8.7k schema tokens in every model request (measured), which is the
    whole reason for the decision.
 4. **Uncovered pairs are served by the coverage matrix and soft degradation**, never by a false
-   promise of universality. There is no shared chain vocabulary between vendors — the live probe of
-   2026-07-26 measured 461 ≠ 461, with 235 matches on the explicit cross-reference key and 255 on
-   normalized names — so the canonical id has to be ours.
+   promise of universality. There is no shared chain vocabulary between vendors. The live probe of
+   2026-07-26 measured 461 ≠ 461: 235 matches on the explicit cross-reference key, and 255 on
+   normalized names. The canonical id therefore has to be ours.
 5. **The engine never writes to the snapshotter's tables.** `pg-history` is SELECT-only, and the
    database role it connects with should be SELECT-only server-side as well (§7).
    > **Scope corrected by T-014.** The network profile writes its OWN eight tables into schema
@@ -141,8 +211,8 @@ These are owner decisions, not architecture preferences. They bind every future 
 ## 2. Functional architecture
 
 Functional components — Chain Registry, chain/address normalization by address family, Provider
-Adapters + Capability Registry, canonicalization into zod types (D5), the two-level cache (D6),
-the SSRF gate and rate limiter, `pg-history`, and the MCP server — with the component diagram and
+Adapters + Capability Registry, canonicalization into zod types (D5). Also the two-level cache (D6),
+the SSRF gate and rate limiter, `pg-history`, and the MCP server. Plus the component diagram and
 the use cases. → [architectures/functional-architecture.md](architectures/functional-architecture.md)
 
 ## 3. System architecture
@@ -151,14 +221,15 @@ the use cases. → [architectures/functional-architecture.md](architectures/func
 > interception point and the daily call gate — see `architectures/system-architecture.md` §3.5.
 
 > **T-013 SHIPPED 2026-08-10.** The design below is what was built; the merge is live on both
-> `*.history` routes and proven by a live call. The merge mechanism (ADR-002 D5/D6) gets its
-> full design: activation needs two independent gates (manifest `mergeable` eligibility, R-159 —
-> already decided — plus a new route-level `merge` flag, closing `OQ-T013-2`); the compiled conflict
-> rank reuses the route's own `adapterIds` order rather than a new table (`OQ-T013-3`); `policy` is
-> evaluated per participant (`OQ-T013-4`). `CapabilityResolution` gains three optional fields visible
-> only on a merge walk; the tool `onchain_dash_platform_history` is contracted. It was the 14th when
-> that sentence was written and the server publishes 20 today (R-23.3, AC-17b). See
-> "Merge mechanism" in [architectures/system-architecture.md](architectures/system-architecture.md)
+> `*.history` routes and proven by a live call. The merge mechanism (ADR-002 D5/D6) gets its full
+> design. Activation needs two independent gates: manifest `mergeable` eligibility, R-159 — already
+> decided — plus a new route-level `merge` flag, closing `OQ-T013-2`. The compiled conflict rank
+> reuses the route's own `adapterIds` order rather than a new table (`OQ-T013-3`). `policy` is
+> evaluated per participant (`OQ-T013-4`). `CapabilityResolution` gains three optional fields
+> visible only on a merge walk; the tool `onchain_dash_platform_history` is contracted. It was the
+> 14th when that sentence was written and the server publishes 20 today (R-23.3, AC-17b).
+> See "Merge mechanism" in
+> [architectures/system-architecture.md](architectures/system-architecture.md)
 > and the three closed entries in
 > [architectures/open-questions.md](architectures/open-questions.md).
 
@@ -172,35 +243,36 @@ the use cases. → [architectures/functional-architecture.md](architectures/func
 > One T-012 claim is **narrower than this document once stated**: expiry does not throw in every
 > branch. A walk in which every source was asked and every one answered returns that answer even
 > past the ceiling, because H-1 reaches its return first. Measured, reproduced, and **resolved by the
-> owner on 2026-08-05** (OQ-T012-6): that answer is returned rather than discarded — the time and, on
+> owner on 2026-08-05** (OQ-T012-6): that answer is returned rather than discarded. The time and, on
 > a paid route, the credit are already spent, and only the caller can judge whether a late-but-complete
 > answer is still useful. Two conditions came with it: the deadline is documented as a bound on
 > SPENDING rather than on answering, and the overrun is reported as `_meta.timing.overrunMs` instead of
 > being silent.
 
-Two packages (`core` + `mcp-server`) and the detailed contracts of `@onchain-intel/core`: canonical
-zod types, `ProviderAdapter` / `CapabilityRegistry` (cache faults are best-effort; construction
-validates every route's policy descriptor and manifest entry, T-012), the chain registry and
-coverage modules, `providers.config.ts` (routes, allowlists, rate limits, provider `tier`/`trust`),
-the capability manifest (`shape`/`ttlSeconds`/`deadlineMs`/`shareable`) and its policy-class registry
-(D2/D3), a real call deadline threaded resolve→fetch→throttle→safeFetch (D4), the twelve adapters and
-their input hardening, cache DDL + TTL table (`ttlFor()` reads the manifest), the credit budget
-gate (ceiling formula anchored on `usageAtObserve`, atomic check-and-reserve, singleflight, post-call
-reconciliation, the velocity window), `safeFetch` / `throttle`, the read-only PG client, the MCP tool
-registry (`ToolSpec` / `defineTool` — the inventory is data, and `needs` makes least privilege a
-runtime fact), the test suite, and the component diagram.
+Two packages (`core` + `mcp-server`) and the detailed contracts of `@onchain-intel/core`. Canonical
+zod types; `ProviderAdapter` / `CapabilityRegistry`, where cache faults are best-effort and
+construction validates every route's policy descriptor and manifest entry (T-012). The chain
+registry and coverage modules; `providers.config.ts` with routes, allowlists, rate limits and
+provider `tier`/`trust`. The capability manifest (`shape`/`ttlSeconds`/`deadlineMs`/`shareable`) and
+its policy-class registry (D2/D3); a real call deadline threaded resolve→fetch→throttle→safeFetch
+(D4). The twelve adapters and their input hardening; cache DDL + TTL table, where `ttlFor()` reads
+the manifest. The credit budget gate: ceiling formula anchored on `usageAtObserve`, atomic
+check-and-reserve, singleflight, post-call reconciliation, and the velocity window. Also `safeFetch`
+/ `throttle`; the read-only PG client; the MCP tool registry (`ToolSpec` / `defineTool` — the
+inventory is data, and `needs` makes least privilege a runtime fact). The test suite and the
+component diagram.
 → [architectures/system-architecture.md](architectures/system-architecture.md)
 
 ## 4. Data Model (Conceptual)
 
 Canonical entities (`Token`, `Wallet`/`Balance`, `Pool`, `OHLCV`, `Snapshot`, `SmartMoneyFlow`,
 `EntityLabel`, `TokenRiskScore`), plus `ChainInfo`, `CoverageProbe`, and — since T-012 — the
-`CapabilityManifest`/`PolicyDescriptor` pair, all as **compiled artifacts rather than tables**
-(offline gate, CI determinism, a reviewable security surface). The logical model of the cache DB —
-`providers` ← `cache_entries`, `usage`, `usage_window` — with the ER diagram, the coverage-matrix
-definition, and the three failure types (a call-deadline expiry is the third) that must never be
-merged. **Shipped (T-013, 2026-08-10):** the manifest's `set | series` arm carries a merge-eligibility
-field, and `CapabilityResolution` carries three optional, merge-only fields.
+`CapabilityManifest`/`PolicyDescriptor` pair. All of them are **compiled artifacts rather than
+tables** (offline gate, CI determinism, a reviewable security surface). The logical model of the
+cache DB — `providers` ← `cache_entries`, `usage`, `usage_window` — with the ER diagram, the
+coverage-matrix definition, and the three failure types (a call-deadline expiry is the third) that
+must never be merged. **Shipped (T-013, 2026-08-10):** the manifest's `set | series` arm carries a
+merge-eligibility field, and `CapabilityResolution` carries three optional, merge-only fields.
 
 **T-014 adds eight persistent tables** (§4.5): `users`, `access_profiles`, `api_tokens`,
 `access_audit` for identity; `provider_buckets` for the shared vendor limiter; `request_trace`,
@@ -226,11 +298,12 @@ registered — `onchain_pool_info`, which gives `pool.info` its first consumer a
 `ChainInputSchema` contract shared by every chain-accepting tool, the public API of
 `packages/core`, and the provider integration table that is the source of the per-adapter SSRF
 allowlist, including T-013's `onchain_dash_platform_history`. **Plus the three free tools added
-2026-08-11 over documents the engine already loads (WI-49/WI-50): `onchain_list_protocols` — the
-protocol POPULATION on a chain, ranked by TVL or by 1d/7d/30d growth, so a protocol question no
-longer has to start from a slug the caller already knows — and `onchain_chain_tvl_history` /
-`onchain_protocol_tvl_history`, daily TVL runs carrying the same `window`/`gapDays`/`truncated`
-contract `onchain_dex_volume` publishes, produced by the same shaper.** **Plus WI-51's two network-
+2026-08-11 over documents the engine already loads (WI-49/WI-50). The first is
+`onchain_list_protocols` — the protocol POPULATION on a chain, ranked by TVL or by 1d/7d/30d growth.
+A protocol question therefore no longer has to start from a slug the caller already knows. The other
+two are `onchain_chain_tvl_history` / `onchain_protocol_tvl_history`, daily TVL runs carrying the
+same `window`/`gapDays`/`truncated` contract `onchain_dex_volume` publishes, produced by the same
+shaper.** **Plus WI-51's two network-
 activity tools: `onchain_gas_price` — served by a NODE where one is curated and by Blockscout
 otherwise, so the capability does not die with one vendor's auth decision (L-6) — and
 `onchain_chain_transactions`. Active addresses remain unserved and are named as such in that tool's
@@ -238,9 +311,10 @@ own description rather than being answered with the cumulative all-time count th
 
 **WI-52 — the risk layer, partially:** `onchain_protocol_incidents` attaches DeFiLlama's recorded
 security incidents to a protocol. It is EDITORIAL data, not on-chain, so it carries its own age
-(`feedThroughTs`) instead of inheriting a TVL number's freshness, and it distinguishes four
-different meanings of "no incidents" so an empty list can never be read as "safe". Developer
-activity and funding rounds stay unserved and are named in the tool's description.**
+(`feedThroughTs`) instead of inheriting a TVL number's freshness. For the same reason it
+distinguishes four different meanings of "no incidents", so an empty list can never be read as
+"safe". Developer activity and funding rounds stay unserved and are named in the tool's
+description.**
 → [architectures/interfaces.md](architectures/interfaces.md)
 
 ## 6. Technology stack
@@ -251,18 +325,19 @@ the pnpm build topology. Neither the paid slice nor the chain registry added an 
 
 ## 7. Security
 
-Secrets (D10), a cache key that provably excludes env values, stdout discipline, the SSRF gate
-including the curated `rpcHosts` column for multichain RPC — the one non-trivial risk in the chain
-work, since a gate whose allowlist is set by an untrusted source is not a gate — rate limiting plus
-the independent budget guard, PG SELECT-only, supply chain and licences, and the provenance manifest
-that pins live-recorded fixtures.
+Secrets (D10), a cache key that provably excludes env values, stdout discipline, and the SSRF gate
+including the curated `rpcHosts` column for multichain RPC. That column is the one non-trivial risk
+in the chain work, since a gate whose allowlist is set by an untrusted source is not a gate. Also:
+rate limiting plus the independent budget guard, PG SELECT-only, supply chain and licences, and the
+provenance manifest that pins live-recorded fixtures.
 
 **Everything above is the OUTBOUND half.** Until T-014 there was no inbound control at all, because
-there was no remote caller. §7.5 designs the inbound trust boundary: bearer verification before
-routing, the principal and its two roles (`admin` sees `_meta.budget`, `user` does not), the
-perimeter (`allowedHosts`, `allowedOrigins`, inbound DNS-rebinding protection, loopback bind, CORS
-denied, TLS at the proxy), the SSRF gate re-read under untrusted input, and two renderings of every
-refusal — full to the server log, sanitised to the client.
+there was no remote caller. The inbound trust boundary is what §7.5 designs: bearer verification
+before routing, the principal and its two roles (`admin` sees `_meta.budget`, `user` does not), and
+the perimeter. The perimeter is `allowedHosts`, `allowedOrigins`, inbound DNS-rebinding protection,
+loopback bind, CORS denied, and TLS at the proxy. The same section also designs the SSRF gate re-read
+under untrusted input, and two renderings of every refusal — full to the server log, sanitised to the
+client.
 
 **T-015 adds one consumer, no new mechanism (§7.5.9).** The credit check reads
 `credits_mode`/`credits_balance_raw` through the same `AccessProfileReader` §7.5.3a already designs;
@@ -307,8 +382,9 @@ later.
 throttle is injected. The network profile stops taking it: `index.ts` injects a throttle built over
 the limiter store instead.
 
-The chain registry is the only large in-memory structure, and it is not a scaling concern: 458 rows
-are tens of kilobytes, indexed once at load into three maps, and resolved in O(1) on an exact match.
+The chain registry is the only large in-memory structure, and it is not a scaling concern. Its 458
+rows are tens of kilobytes, indexed once at load into three maps, and resolved in O(1) on an exact
+match.
 The O(n) path exists only when building "did you mean" candidates for a miss.
 
 **Per-session memory is bounded by a declared ceiling, not by demand.** The network profile holds
@@ -345,12 +421,12 @@ in ADR-003 D4, so coalescing changes the second without changing the first.
 
 ## 9. Reliability and fault tolerance
 
-Hot-swap fallback along a route and explicit unavailability instead of a silent `undefined`; an
-uncovered (capability, chain) pair raised as its own error type; since T-012, a call-deadline expiry
-as a THIRD distinct type (reusing the existing `tried`-list diagnostics) and an unregistered policy
-`kind`/missing manifest entry failing loudly at `CapabilityRegistry` construction, the same
-discipline a corrupt chain registry already gets at startup; retry/circuit breakers deliberately
-absent; paid failures travelling the same thread as any other unavailability; observability through
+Hot-swap fallback along a route and explicit unavailability instead of a silent `undefined`. An
+uncovered (capability, chain) pair raised as its own error type. Since T-012, a call-deadline expiry
+as a THIRD distinct type, reusing the existing `tried`-list diagnostics. Also since T-012, an
+unregistered policy `kind`/missing manifest entry failing loudly at `CapabilityRegistry`
+construction, the same discipline a corrupt chain registry already gets at startup. Retry/circuit breakers deliberately
+absent. Paid failures travelling the same thread as any other unavailability. Observability through
 stderr plus `_meta`. **Shipped (T-013, 2026-08-10):** a merge-enabled route refines this into three
 participant states, layered on top of the three failure types rather than merged with them.
 **Designed (T-015):** three new refusal classes — `ClientCreditsExhaustedError`,
@@ -365,14 +441,14 @@ CI step order — `core` is built before typecheck and test because the package 
 `dist/` — configuration (`EnvSchema`, `providers.config.ts`), and the deployment instructions.
 
 **T-014 replaces "dev only, local" with two axes and their named combinations** (§10.1.1). Transport
-is stdio or Streamable HTTP; storage is SQLite or Postgres. `local` is stdio plus SQLite, `network`
-is HTTP plus Postgres, and `network-sqlite` exists so the transport can be debugged without standing
-up Postgres. §10.3.1 classifies every setting by where it is ALLOWED to live: secrets and bootstrap
-values stay in `.env` permanently — the second because a Postgres connection setting cannot be read
-from Postgres — and only narrowing settings may move to a database later. §10.5 makes schema
-qualification a correctness condition rather than a connection setting, because `search_path` did
-not survive the pooler (WI-47). §10.6 routes diagnostics to the container log and a table whose
-cleanup is a named job with a recorded row count.
+is stdio or Streamable HTTP; storage is SQLite or Postgres. The `local` profile is stdio plus
+SQLite, and the `network` profile is HTTP plus Postgres. The `network-sqlite` profile exists so the
+transport can be debugged without standing up Postgres. §10.3.1 classifies every setting by where it
+is ALLOWED to live. Secrets and bootstrap values stay in `.env` permanently — the second because a
+Postgres connection setting cannot be read from Postgres. Only narrowing settings may move to a
+database later. §10.5 makes schema qualification a correctness condition rather than a connection
+setting, because `search_path` did not survive the pooler (WI-47). Finally, §10.6 routes diagnostics
+to the container log and a table whose cleanup is a named job with a recorded row count.
 
 **T-015 / WI-62 (§10.9, DESIGNED, not built).** The thirteen engine tables move to a dedicated
 Postgres container on the dev VM. It is a container, not the separated host WI-62's literal text
@@ -391,21 +467,21 @@ beside `onchain-retention`. Installation needs the same explicit owner approval.
 ## 11. Open questions
 
 What is genuinely open: the live DAPI gRPC transport (backlog), a second keyless Solana RPC
-endpoint, the `dashpay/platform` licence check, ERC-20/SPL balances, who runs the registry sync and
-how often (OQ-6), how n8n will call engine capabilities at M3 (OQ-M3-1, settled by ADR-003 at M3
-kickoff), and — new with T-012 — **one** item: the `shape` of 12 of 20 capabilities. **Resolved with
-T-012:** `CapabilityRoute.chains` (OQ-C) is deleted; a self-contradiction in ADR-002's own staging of
-D9 (`trust`) is recorded rather than silently patched; and three owner decisions of 2026-08-03 close
-what the design had left open — **OD-4** (a deadline expiry always throws, naming answered and
-never-asked sources, and never returns the surviving partial), **OD-5** (the two contested `trust`
-values: `platform-explorer` = `authoritative`, `pg-history` = `community` as a declared placeholder
-replaced in T-016), and **OD-6** (the `safeFetchImpl` seam is built, rather than the H3 guarantee
-narrowed to the limiter path). **Resolved with T-013's design (2026-08-05):** `OQ-T013-2` (a route
-needs its own `merge` activation flag, on top of manifest eligibility — two independent gates, not
-one), `OQ-T013-3` (the compiled conflict rank reuses `adapterIds` order, not a new table), and
-`OQ-T013-4` (route `policy` is evaluated per participant, preserving H-1's existing cache-hit
-application). **T-015 closes all seven of its own open questions plus one eighth decision** — the
-owner's 2026-08-25 resolution of `docs/TASK.md` §5, recorded again at the architecture layer with
-where each shaped a design decision. Everything else is recorded as resolved, with the reasoning
-that keeps it closed.
+endpoint, the `dashpay/platform` licence check, and ERC-20/SPL balances. Also open: who runs the
+registry sync and how often (OQ-6), and how n8n will call engine capabilities at M3 (OQ-M3-1,
+settled by ADR-003 at M3 kickoff). New with T-012 is **one** item: the `shape` of 12 of 20
+capabilities. **Resolved with T-012:** `CapabilityRoute.chains` (OQ-C) is deleted. A
+self-contradiction in ADR-002's own staging of D9 (`trust`) is recorded rather than silently
+patched. Three owner decisions of 2026-08-03 close what the design had left open. **OD-4** — a
+deadline expiry always throws, naming answered and never-asked sources, and never returns the
+surviving partial. **OD-5** — the two contested `trust` values: `platform-explorer` =
+`authoritative`, `pg-history` = `community` as a declared placeholder replaced in T-016. **OD-6** —
+the `safeFetchImpl` seam is built, rather than the H3 guarantee narrowed to the limiter path.
+**Resolved with T-013's design (2026-08-05).** A route needs its own `merge` activation flag, on top
+of manifest eligibility — two independent gates, not one (`OQ-T013-2`). The compiled conflict rank
+reuses `adapterIds` order, not a new table (`OQ-T013-3`). Route `policy` is evaluated per
+participant, preserving H-1's existing cache-hit application (`OQ-T013-4`). **T-015 closes all seven
+of its own open questions plus one eighth decision** — the owner's 2026-08-25 resolution of
+`docs/TASK.md` §5, recorded again at the architecture layer with where each shaped a design
+decision. Everything else is recorded as resolved, with the reasoning that keeps it closed.
 → [architectures/open-questions.md](architectures/open-questions.md)

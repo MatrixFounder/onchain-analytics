@@ -33,17 +33,17 @@
   записи на каждого **ответившего** участника, а не только на вкладчика.
 
 **Отклонение от архитектурных строк, записанное как решение.** Узкое чтение несут ЧЕТЫРЕ
-предложения: `system-architecture.md:982-983` («one entry per member of `sources`, same set, so it
-is never populated for a non-contributor either»), `:992` («the granular per-contributor truth»),
-`interfaces.md:474-481` (собственный `_meta.cache` тула — буллет «which adapter, which status» per
-contributor) и `system-architecture.md:949-951` («or into neither (answered but policy-excluded,
+предложения: `system-architecture.md:1013-1014` («one entry per member of `sources`, same set, so it
+is never populated for a non-contributor either»), `:1023` («the granular per-contributor truth»),
+`interfaces.md:477-484` (собственный `_meta.cache` тула — буллет «which adapter, which status» per
+contributor) и `system-architecture.md:980-982` («or into neither (answered but policy-excluded,
 tracked only in `tried`)», связывающее `perSourceCache` с тем же условием `satisfied`, что и
 `sources`/дедуп-`Map`; найдено роастом раунда 1, B-4, а не в первой редакции). **Свод — не
 предположение**: `rg -n "perSource" docs/architectures/*.md`, каждое вхождение прочитано на предмет
 утверждения о членстве; чисто (ни узкое, ни широкое чтение) — `data-model.md` (только тип поля),
 `version-history.md` (только «populated ONLY on a merge walk», без утверждения КТО именно), код-блок
-`system-architecture.md:648` (отсылает к «Merge mechanism» ниже, сам не утверждает). `data-model.md`
-(текущая координата `:242-264`, было `:242-255`) этого правила НЕ содержит — там `sources`
+`system-architecture.md:668` (отсылает к «Merge mechanism» ниже, сам не утверждает). `data-model.md`
+(текущая координата `:244-266`, было `:244-257`) этого правила НЕ содержит — там `sources`
 поясняется как вкладчики, а `perSourceCache` назван только типом; ссылка на него в первой редакции
 плана была неверной. План читает шире — по каждому ответившему.
 
@@ -58,16 +58,16 @@ tracked only in `tried`)», связывающее `perSourceCache` с тем ж
 — координата этой самой ссылки в этом самом файле уже дважды устарела за один раунд правок, роаст
 раунда 1, C-1: `:385-395`→`:441-451`→ и снова мимо; искать по цитате) опроверг ДОВОД и прямо сказал,
 что поправка к архитектуре не требуется. Здесь меняется поставляемая форма, и после `013-4`
-`system-architecture.md:982-983` (координата сдвигалась ТРИЖДЫ за одни сутки: `:957-958`→`:969-970`
-при коррекции 013-2, затем `:969-970`→`:980-981` вставкой записи `open-questions.md` этой же задачи
-(роаст раунда 1, C-2), затем `:980-981`→`:982-983` правкой цитаты на `:924` того же файла при
+`system-architecture.md:1013-1014` (координата сдвигалась ТРИЖДЫ за одни сутки: `:957-958`→`:1000-1001`
+при коррекции 013-2, затем `:1000-1001`→`:1011-1012` вставкой записи `open-questions.md` этой же задачи
+(роаст раунда 1, C-2), затем `:1011-1012`→`:1013-1014` правкой цитаты на `:952` того же файла при
 закрытии цикла 2 — **ищи по цитате, номер вторичен**) становится ложным о дереве. Поэтому задача
 делает три вещи:
 
-1. Четыре названных предложения (`system-architecture.md:982-983`, `:992`, `:949-951`,
-   `interfaces.md:474-481`) получают однострочную пометку на месте: множество — ответившие, причина
+1. Четыре названных предложения (`system-architecture.md:1013-1014`, `:1023`, `:980-982`,
+   `interfaces.md:477-484`) получают однострочную пометку на месте: множество — ответившие, причина
    — R-174(c), задача T-013 `013-3`. Буквальный текст остаётся видимым рядом с пометкой — тот же
-   приём, что пункт 9.3 применяет к двум фрагментам D5. Четвёртое (`:949-951`) найдено роастом
+   приём, что пункт 9.3 применяет к двум фрагментам D5. Четвёртое (`:955-957`) найдено роастом
    раунда 1 (B-4), не в первой редакции — см. `open-questions.md` "T-013 task 013-3" для полного
    свода, откуда взят счёт «четыре».
 2. Запись в `docs/architectures/open-questions.md` называет отклонение, дату и композицию UC-19,
@@ -164,9 +164,9 @@ literal`** — отрицательный сосед TC-UNIT-04 в том же �
 - [ ] `source` остаётся required, `cache` остаётся двухлитеральным
 - [ ] `resolveCapability()` пробрасывает три поля дословно, когда реестр их выставил
 - [ ] `perSourceCache` покрывает ответивших участников
-- [ ] Четыре названных предложения (`system-architecture.md:982-983` «one entry per member of
-      `sources`», `:992` «the granular per-contributor truth», `:949-951` «or into neither
-      (answered but policy-excluded...)» — найдено роастом раунда 1, B-4, `interfaces.md:474-481`
+- [ ] Четыре названных предложения (`system-architecture.md:1013-1014` «one entry per member of
+      `sources`», `:1023` «the granular per-contributor truth», `:980-982` «or into neither
+      (answered but policy-excluded...)» — найдено роастом раунда 1, B-4, `interfaces.md:477-484`
       буллет `_meta.cache`) несут пометку на месте; запись в `open-questions.md` сделана;
       `data-model.md` не правится — правила он не содержит
 - [ ] 13 существующих тулов проходят без диффа, `tool-response-shape.test.ts` без правок

@@ -26,7 +26,7 @@
 | `token.holders` на любой сети | Двухслойно: сначала coverage-гейт (`chainSupport → false` ⇒ `routeCoversChain` false ⇒ `CapabilityNotCoveredOnChainError`), и только потом — `isAvailable() === {ok:false}` | `dune/index.ts:25`, `dune/index.ts:39`, `chain/coverage.ts:70-79`, `adapters/registry.ts:213-225` |
 | Любой произвольный аналитический вопрос («топ-10 кошельков по X за 30 дней», «дневной объём DEX») | Отказ **отсутствием**: маршрута нет ⇒ `matching.length === 0` ⇒ `CapabilityUnavailableError` с пустым `tried` и строкой «no route registered for this capability/chain» | `adapters/registry.ts:196`, `:22` |
 | Тот же вопрос на уровне MCP | Его **нельзя даже задать**: зарегистрировано 10 тулов, каждая входная схема `.strict()` (17 вхождений), незнакомое поле режет zod до хендлера | `mcp-server/src/server.ts:67-79`, `mcp-server/src/tools/*.ts` |
-| Балансы ERC-20/SPL (в отличие от нативных) | Не бросает — просто никогда не наполняет: слот `assetType: z.enum(['native','token'])` есть, M1 пишет только `native`. Архитектура прямо называет Dune одним из трёх выходов | `types/wallet.ts:17`, `docs/architectures/system-architecture.md:600-608` |
+| Балансы ERC-20/SPL (в отличие от нативных) | Не бросает — просто никогда не наполняет: слот `assetType: z.enum(['native','token'])` есть, M1 пишет только `native`. Архитектура прямо называет Dune одним из трёх выходов | `types/wallet.ts:17`, `docs/architectures/system-architecture.md:620-628` |
 | Незнакомая сеть | `UnknownChainError` **до** сети и до резервирования кредитов — «платить за опечатку» запрещено сознательно | `chain/errors.ts:23-50` |
 | Повтор запроса, чей ответ не распарсился | Негативный кэш на 60 с, ноль сетевых вызовов и ноль кредитов, метка `[cached negative]` | `cache/ttl.ts:83`, `adapters/registry.ts:274` |
 
@@ -71,7 +71,7 @@
 9. **Стаб Dune объявляет себя бесплатным.** `costOf: () => ({ credits: 0 })` — прямая инверсия fail-closed правила R-37, по которому неизвестная capability обязана давать `Number.POSITIVE_INFINITY`. Пока `costOf` не читается реестром, это спящая мина, а не активный баг. → `dune/index.ts:28`, ср. `nansen/cost-of.ts:71`
 10. **Ключ кэша не различает два разных SQL**, если сам SQL (или query id + параметры) не попал в `args`. И тогда текст SQL становится частью sha256-ключа и `JSON.stringify` — без какого-либо ограничения длины, в отличие от сознательно обрезаемого ввода сети. → `net/args-hash.ts:44-47`, ср. `chain/errors.ts:37-40`
 11. **Нет ни одной capability query-образной формы.** Таблица маршрутов — 17 сущностных capability; `CapabilityDescriptor.id` — открытая строка (добавить дёшево), но каждый потребитель ниже по течению (TTL, матрица покрытия, схема выхода тула) предполагает ровно одну фиксированную каноническую сущность. → `providers.config.ts:23-76`, `adapters/types.ts:9-12`
-12. **Работа не заведена.** `grep -i dune docs/BACKLOG.md docs/KNOWN_ISSUES.md` — пусто, а `open-questions.md:100` фиксирует, что после ухода `token.risk` к Nansen «точный query id / SQL для `token.holders` не для кого авторить». Единственная capability, которую резервирует стаб, — сирота.
+12. **Работа не заведена.** `grep -i dune docs/BACKLOG.md docs/KNOWN_ISSUES.md` — пусто, а `open-questions.md:101` фиксирует, что после ухода `token.risk` к Nansen «точный query id / SQL для `token.holders` не для кого авторить». Единственная capability, которую резервирует стаб, — сирота.
 
 ---
 
@@ -96,16 +96,16 @@
 
 ## 5. Ограничения, которые связывают дизайн (не рекомендации)
 
-- **Пять standing constraints владельца** (`ARCHITECTURE.md:67-90`) — прямо помечены «These are owner
+- **Пять standing constraints владельца** (`ARCHITECTURE.md:137-160`) — прямо помечены «These are owner
   decisions… They bind every future change». Из них бьют по этому дизайну: автономный цикл живёт
   только в n8n (значит расписание/ожидание — не в MCP-сервере); кэш только локальный;
   `chain` — открытая строка, не enum; **никаких ложных обещаний универсальности**.
 - **Прецедент против проксирования вендорского MCP.** Проект уже **отказался** проксировать
   официальный MCP Nansen, потому что «several of its tools return markdown text, which is unusable
-  for canonical zod normalization» (`docs/architectures/system-architecture.md:610-614`).
+  for canonical zod normalization» (`docs/architectures/system-architecture.md:630-634`).
   Это прямо релевантно развилке по Dune MCP: решение «просто подключить官 MCP» противоречит
   действующему прецеденту, и отступление от него нужно обосновывать явно.
-- **D4/D5 анти-коррупционный слой** (`ADR-001:71`, `:89`): вендорский DTO не имеет права дойти до
+- **D4/D5 анти-коррупционный слой** (`ADR-001:71`, `:91`): вендорский DTO не имеет права дойти до
   вызывающего; всё, что отдают тулы и хранит кэш, — в канонических типах. Произвольная таблица
   из чужого SQL — это лобовое столкновение с D5, и его надо разрешить осознанно.
 - **D10** (`ADR-001:159`): секреты не логируются и не попадают в ключи кэша.

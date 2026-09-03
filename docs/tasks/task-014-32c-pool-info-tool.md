@@ -93,7 +93,7 @@ JSON-числами, уже округлёнными вендором. `reserveB
 **Файл `packages/core/src/adapters/rpc-evm/index.ts` — владелец вывода:**
 
 - `eth_call` становится третьим методом адаптера, рядом с `eth_gasPrice` и `eth_getBalance`
-- Владелец назван архитектурой, а не выбран здесь: `docs/architectures/interfaces.md:720`,
+- Владелец назван архитектурой, а не выбран здесь: `docs/architectures/interfaces.md:726`,
   `` 1. `eth_call` becomes a third method on `rpc-evm`. The adapter calls `eth_gasPrice` ``
 
 **Why это названо отдельным пунктом списка.** `eth_call` не встречается ни в одном файле под
@@ -188,7 +188,7 @@ DexScreener обслуживает 65, пересечение — 16. Семей
 
 Гейт сравнивает ключи `capabilityManifests` с объединением `capability` и `servedCapabilities` по
 `toolSpecs`. Постусловие: **каждый ключ манифеста либо обслуживается тулом, либо назван в
-объявленном списке с причиной** (`docs/architectures/interfaces.md:810`,
+объявленном списке с причиной** (`docs/architectures/interfaces.md:816`,
 `by a registered tool, or named in a declared list with a reason.`).
 
 **Замер на дереве до T-014:** 26 ключей манифеста, 20 тулов, семь ключей не обслуживает никто —
@@ -212,7 +212,7 @@ DexScreener обслуживает 65, пересечение — 16. Семей
 его ложным, — тот же класс, что и числа выше.
 
 **Шесть оставшихся закрывает R-21.3, и это объём этой задачи**
-(`docs/architectures/interfaces.md:817`,
+(`docs/architectures/interfaces.md:823`,
 `R-21.1 removes one of the seven. R-21.3 covers the other six: each gets a tool or a declared row`).
 Каждый получает строку объявленного списка с причиной; причина пишется по существу, а не
 механически.
