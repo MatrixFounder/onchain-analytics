@@ -62,7 +62,7 @@
 
 - Гейт вызовов построен (задачи 015-13, 015-14, 015-15).
 - Продуктивный порог blockscout несёт пометку происхождения «оценка `ADR-003` D6, не замер»
-  (R-10.1, AC-22; `docs/architectures/data-model.md:2070`).
+  (R-10.1, AC-22; `docs/architectures/data-model-billing-ledger.md:347`).
 - Ключ `BLOCKSCOUT_DAILY_CALL_CAP` объявлен в `EnvSchema` (задача 015-16).
 - Прогон идёт по бесплатному провайдеру; кредиты Nansen не расходуются (R-12.2, AC-27).
 
@@ -84,11 +84,11 @@
 Первый признак — момент отказа относительно сетевого запроса.
 
 Отказ гейта происходит до сетевого запроса: `ensureCallBudget` вызывается рядом с `throttle()`
-перед обращением к вендору (`docs/architectures/system-architecture.md:4436-4438`). Три открытых
+перед обращением к вендору (`docs/architectures/system-architecture-billing.md:384-386`). Три открытых
 дефекта наблюдаются после отправки запроса.
 
 Второй признак — текст отказа. Сообщение гейта начинается с `daily call ceiling reached:`
-(`docs/architectures/system-architecture.md:4521`).
+(`docs/architectures/system-architecture-billing.md:469`).
 
 Третий признак — **изменение** суточного счётчика этим вызовом, а не его абсолютное значение.
 
@@ -103,8 +103,8 @@
 
 **Why изменение, а не абсолютное значение.** Счётчик увеличивается **на допуске**, до сетевой
 попытки: `ensureCallBudget` вызывает `budgetStore.checkAndReserve(...)`
-(`docs/architectures/system-architecture.md:4430-4434`). Колонка объявлена монотонной и
-невозвращаемой (`docs/architectures/data-model.md:2024`, `Monotonic, never refunded`). То же в коде
+(`docs/architectures/system-architecture-billing.md:378-382`). Колонка объявлена монотонной и
+невозвращаемой (`docs/architectures/data-model-billing-ledger.md:301`, `Monotonic, never refunded`). То же в коде
 существующего аналога: `packages/core/src/cache/vendor-spend.ts:103` — «a call is not refundable the
 way a credit is». Значит вызов, упавший у вендора, счётчик уже увеличил и назад не получил.
 

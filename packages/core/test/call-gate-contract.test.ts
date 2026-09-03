@@ -355,7 +355,7 @@ it('TC-UNIT-07 (MINOR-7): the `dailyCalls` docstring states why VelocityLimit.ma
 
 it('TC-DOC-01: system-architecture.md §3.5.4 declares the SAME signature as the module', () => {
   const doc = readFileSync(
-    path.join(repoRoot, 'docs', 'architectures', 'system-architecture.md'),
+    path.join(repoRoot, 'docs', 'architectures', 'system-architecture-billing.md'),
     'utf8',
   );
   const sectionStart = doc.indexOf('#### 3.5.4.');

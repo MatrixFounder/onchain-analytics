@@ -17,7 +17,7 @@
 
 **Why значение приходит инъекцией.** `packages/core` не читает `process.env` напрямую (R-13.3a).
 Ключ парсится в `mcp-server` и передаётся параметром
-(`docs/architectures/system-architecture.md:4565` — подстрока `The key is EnvSchema's, narrowing
+(`docs/architectures/system-architecture-billing.md:513` — подстрока `The key is EnvSchema's, narrowing
 class`).
 
 <!-- contract:changes -->
@@ -87,7 +87,7 @@ Readonly<Record<keyof Env, SettingClass>> = Object.freeze({`)
 
 **Why сентинела отключения нет.** R-9.6 делает объявленный потолок обязательным для этого
 провайдера, поэтому отключение гейта не является допустимой конфигурацией
-(`docs/architectures/system-architecture.md:4561` — подстрока `No `off` sentinel is offered here`).
+(`docs/architectures/system-architecture-billing.md:509` — подстрока `No `off` sentinel is offered here`).
 
 **Why значение только сужает.** Класс настройки — `narrowing`, а он означает, что любое допустимое
 значение ограничивает поведение движка. То же правило уже применено к трём тормозам nansen:

@@ -441,7 +441,7 @@ non-secret value would be a weaker credential wearing the same table.
 **The stored value.** `api_tokens.token_hash` holds `sha256(pepper || presented)` as lowercase hex,
 where `pepper` is the token hashing salt R-29.1 keeps in `.env` permanently.
 
-**The column declaration carries the same expression** (`docs/architectures/data-model.md:1042`,
+**The column declaration carries the same expression** (`docs/architectures/data-model-network-state.md:160`,
 `sha256(pepper || presented), lowercase hex`). No deviation is recorded here.
 
 **Why the agreement is recorded.** Review round 1 found this column commented as an unsalted

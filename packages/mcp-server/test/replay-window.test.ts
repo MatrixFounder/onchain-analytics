@@ -341,7 +341,7 @@ describe('TC-UNIT-05 (AC-50): _meta.cache.ageMs on a replay', () => {
 
 describe('TC-DOC-01: system-architecture.md §3.5.2a names the field refusalClass, not errorClass', () => {
   it('the section between §3.5.2a and §3.5.3 carries no errorClass substring', () => {
-    const doc = read('docs/architectures/system-architecture.md');
+    const doc = read('docs/architectures/system-architecture-billing.md');
     const start = doc.indexOf('#### 3.5.2a.');
     const end = doc.indexOf('#### 3.5.3.');
     expect(start).toBeGreaterThan(-1);
@@ -360,7 +360,7 @@ describe('TC-DOC-01: system-architecture.md §3.5.2a names the field refusalClas
     // exact line for task 015-09 to touch — its own prior docstring said so — and 015-09 is the
     // reader of `reserved.refusalClass` (`registry.ts`'s interception point), so it is the one that
     // renamed the pseudocode to match what it actually reads.
-    const doc = read('docs/architectures/system-architecture.md');
+    const doc = read('docs/architectures/system-architecture-billing.md');
     const start = doc.indexOf('#### 3.5.2.');
     const end = doc.indexOf('#### 3.5.2a.');
     const section = doc.slice(start, end);

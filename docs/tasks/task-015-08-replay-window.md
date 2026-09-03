@@ -37,13 +37,13 @@
 
 - Объявить третий класс модуля — `ReplayWindowExpiredError`
 
-**Файл `docs/architectures/system-architecture.md`, §3.5.2a** (документная половина этой задачи):
+**Файл `docs/architectures/system-architecture-billing.md`, §3.5.2a** (документная половина этой задачи):
 
 - Псевдокод ветви конфликта возвращает поле под именем `refusalClass`
-  (`docs/architectures/system-architecture.md:4272` — подстрока
+  (`docs/architectures/system-architecture-billing.md:220` — подстрока
   `errorClass: 'ReplayWindowExpiredError'`)
 - Абзац об уже подразумеваемом поле неуспешной ветви называет его тем же именем
-  (`docs/architectures/system-architecture.md:4282` — подстрока `already needs an `; `:4284` —
+  (`docs/architectures/system-architecture-billing.md:230` — подстрока `already needs an `; `:232` —
   подстрока `reserved.errorClass`)
 - После правки подстроки `errorClass` в §3.5.2a не остаётся ни одной
 

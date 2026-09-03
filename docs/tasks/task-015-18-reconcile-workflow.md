@@ -62,7 +62,7 @@
 
 ### Один оператор перехода и возврата
 
-Форму объявляет задача 015-10 (`docs/architectures/data-model.md` §4.6.5). Здесь она получает
+Форму объявляет задача 015-10 (`docs/architectures/data-model-billing-ledger.md` §4.6.5). Здесь она получает
 границу батча и предикат по режиму профиля:
 
 ```sql
@@ -107,7 +107,7 @@ SELECT (SELECT count(*) FROM closed)::bigint    AS rows_affected,
 
 **Why `AND c.state = 'reserved'` во втором операторе.** Строку, закрытую путём завершения в тот же
 момент, `UPDATE` не находит: он совпадает с нулём строк, никогда с двумя
-(`docs/architectures/data-model.md` §4.6.5).
+(`docs/architectures/data-model-billing-ledger.md` §4.6.5).
 
 **Why `FOR UPDATE SKIP LOCKED`.** Прогон, не уложившийся в каденцию, пересекается со следующим. Две
 пересекающиеся выборки берут разные строки.
@@ -172,7 +172,7 @@ SELECT (SELECT count(*) FROM closed)::bigint    AS rows_affected,
 
 Прогон без единой найденной строки пишет строку с `rows_affected = 0` и `outcome = 'ok'` (R-14.3).
 
-**Why `target_table` записан без имени схемы.** `data-model.md:2171` называет значение
+**Why `target_table` записан без имени схемы.** `data-model-billing-ledger.md:448` называет значение
 `'client_usage'`. Три работы `onchain-retention` пишут туда имя со схемой. Расхождение записано, а не
 приведено к одному виду молча: правка чужих строк — отдельное решение.
 

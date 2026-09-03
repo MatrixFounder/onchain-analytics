@@ -46,16 +46,16 @@
 (`packages/core/src/pg/budget-store.ts:145`). Расширенный интерфейс без правки второй реализации не
 компилируется.
 
-**Файл `docs/architectures/system-architecture.md`, §3.5.4** (документная половина этой задачи):
+**Файл `docs/architectures/system-architecture-billing.md`, §3.5.4** (документная половина этой задачи):
 
 - Объявление `createCallGate` получает поле `provider: string`
-  (`docs/architectures/system-architecture.md:4488-4495` — блок `export function createCallGate(deps:
+  (`docs/architectures/system-architecture-billing.md:436-443` — блок `export function createCallGate(deps:
 {`)
 - `ensureCallBudget` принимает один параметр
-  (`docs/architectures/system-architecture.md:4496` — подстрока
+  (`docs/architectures/system-architecture-billing.md:444` — подстрока
   `ensureCallBudget(now: () => number)`)
 - Комментарий тела читает провайдера из `deps.provider`, а не из параметра вызова
-  (`docs/architectures/system-architecture.md:4498-4506` — подстроки `for THIS provider` и
+  (`docs/architectures/system-architecture-billing.md:446-454` — подстроки `for THIS provider` и
   `checkAndReserve(deps.provider,`)
 - Названо, что отказ на объявлении `'none'` — отказ КОНСТРУКЦИИ, потому что провайдер известен
   конструктору
@@ -263,8 +263,8 @@ export class ProviderCallCeilingExceededError extends Error {
 Ключ окружения `BLOCKSCOUT_DAILY_CALL_CAP` и его класс настройки — задача 015-16. Здесь объявлена
 только точка инъекции.
 
-Текст §3.5.4 разделён между двумя владельцами: объявление (`docs/architectures/system-architecture.md:4486-4508`)
-правит эта задача, точка вызова (`docs/architectures/system-architecture.md:4510-4513`) принадлежит
+Текст §3.5.4 разделён между двумя владельцами: объявление (`docs/architectures/system-architecture-billing.md:434-456`)
+правит эта задача, точка вызова (`docs/architectures/system-architecture-billing.md:458-461`) принадлежит
 задаче 015-15 и правки не требует — правка m-8 её не касалась.
 
 **Точку ПОСТРОЕНИЯ гейта в продуктивной сборке эта задача не заводит.** `createCallGate(...)`

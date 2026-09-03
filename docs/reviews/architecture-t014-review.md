@@ -40,13 +40,13 @@
 R-21.1 требует отгрузить тул для `pool.info`; это MVP-строка RTM по решению владельца
 (`OQ-T014-F`, вариант 1), и она разблокирует WI-56. Ни один раздел его не проектирует.
 `interfaces.md:710` открывается словами «The twenty tool contracts of §5.1 do not change», а
-`system-architecture.md:1670` по-прежнему числит `pool.info` как «no tool consumer yet». План,
+`system-architecture-chain-normalization.md:1378` по-прежнему числит `pool.info` как «no tool consumer yet». План,
 построенный на такой архитектуре, сдаст T-014 с открытым L-15, а AC-2 будет выполнен снимком
 `tools/list`, который был обязан измениться.
 
 **BLOCKING-2 — у кеша и бюджета сетевого профиля есть DDL, но нет компонента, а атомарность
 денежного гейта сформулирована через движок, которого в этом профиле нет.**
-`data-model.md:682-684` создаёт в Postgres счётчики `providers`, `cache_entries`, `usage`,
+`data-model.md:42-44` создаёт в Postgres счётчики `providers`, `cache_entries`, `usage`,
 `usage_window`; `deployment.md:39` относит кеш и `usage` к Postgres. Ни один раздел не проектирует
 компоненты, которые их читают и пишут. При этом гарантия конкурентности всё ещё заявлена как
 SQLite'овая: `system-architecture.md:3284` предлагает `checkAndReserve` под `BEGIN IMMEDIATE`
@@ -57,11 +57,11 @@ SQLite'овая: `system-architecture.md:3284` предлагает `checkAndRes
 
 ## MAJOR
 
-1. **`Principal` объявлен дважды с разными полями.** `system-architecture.md:3293-3298` даёт
+1. **`Principal` объявлен дважды с разными полями.** `system-architecture-network-profile.md:189-194` даёт
    `{id, userId, role, accessProfileId}`; `security.md:409` — `{principalId, userId, role,
    accessProfileId, transport}`. Поле `transport` не декоративно: `request_trace.transport` объявлен
    `NOT NULL`.
-2. **Хеш токена задан тремя способами, и канонический — небезопасный.** `data-model.md:873` — чистый
+2. **Хеш токена задан тремя способами, и канонический — небезопасный.** `data-model.md:233` — чистый
    sha256 без соли; `security.md:346-351` — `sha256(pepper || presented)` с обоснованием и
    стоимостью ротации; `deployment.md:327-331` выносит это в `OQ-T014-DEP-3`, хотя `deployment.md:135`
    уже выделил ключ `ONCHAIN_TOKEN_HASH_SALT`. Вопрос не открыт — решён в §7.5.2; открыта правка
@@ -101,7 +101,7 @@ SQLite'овая: `system-architecture.md:3284` предлагает `checkAndRes
 Возврат архитектору. BLOCKING-1 — контракт тула в `interfaces.md` §5.1 плюс гейт AC-29.
 BLOCKING-2 — либо спроектировать компоненты Postgres-хранилища с переформулированной атомарностью
 `checkAndReserve` по диалектам, либо сузить OQ-8 решением владельца так, чтобы кеш и `usage` остались
-на SQLite в обоих профилях; во втором случае вместе с ним переезжают `data-model.md:682-684`,
+на SQLite в обоих профилях; во втором случае вместе с ним переезжают `data-model.md:42-44`,
 `deployment.md:39` и `deployment.md:240`.
 
 MAJOR-1…5 и MAJOR-7 — односекционные правки. MAJOR-6 не правка: семь вопросов

@@ -33,11 +33,11 @@
 
 **Файл `docs/architectures/data-model.md`** (MINOR-3, MINOR-4 раунда 2):
 
-- `docs/architectures/data-model.md:1775` — подстрока `for the reconciliation scan` — номер
+- `docs/architectures/data-model-billing-ledger.md:52` — подстрока `for the reconciliation scan` — номер
   раздела в следующей строке заменяется на §4.6.5
-- `docs/architectures/data-model.md:1819` — `reconciliation job it shares a discipline with
+- `docs/architectures/data-model-billing-ledger.md:96` — `reconciliation job it shares a discipline with
 (§4.6.4).` — тот же номер заменяется на §4.6.5
-- `docs/architectures/data-model.md:2149` — подстрока `carries 28 declarations` — число
+- `docs/architectures/data-model-billing-ledger.md:426` — подстрока `carries 28 declarations` — число
   заменяется на результат прогона с названной командой
 
 **Файл `docs/architectures/open-questions.md`** (MINOR-8 раунда 2, MINOR-11 раунда 1):
@@ -59,9 +59,9 @@ four-part verify gate is named` — оба термина раскрываютс
 
 ### MINOR-3 — две ссылки ведут в раздел сверки
 
-Раздел фоновой сверки — §4.6.5 (`docs/architectures/data-model.md:2143` —
+Раздел фоновой сверки — §4.6.5 (`docs/architectures/data-model-billing-ledger.md:420` —
 `#### 4.6.5. Background reconciliation of a stuck `reserved` row (R-14)`). Раздел §4.6.4 —
-`#### 4.6.4. Route pricing behind the ≈625 estimate` (`docs/architectures/data-model.md:2111`).
+`#### 4.6.4. Route pricing behind the ≈625 estimate` (`docs/architectures/data-model-billing-ledger.md:395`).
 
 Обе ссылки смещены на один раздел и обе внесены этой фазой.
 
@@ -93,7 +93,7 @@ grep -c 'deadlineMs:' packages/core/src/capability-manifest.ts               # 2
 Перепись объявляет себя полной и перечисляет два прочтения. Денежное третье в ней отсутствует.
 
 §4.6.1 читает R-6.1 как связывающее РЕЖИМ, а не атомарную запись баланса
-(`docs/architectures/data-model.md:1869` — подстрока `Why this reads R-6.1 as`). Само R-6.1
+(`docs/architectures/data-model-billing-ledger.md:146` — подстрока `Why this reads R-6.1 as`). Само R-6.1
 называет обе колонки и запрещает отдельный путь (`docs/TASK.md:178`).
 
 Третий пункт — одна строка того же вида, что два существующих: что прочитано, как прочитано,
@@ -161,7 +161,7 @@ original`. Английская передача получает ту же фо
 ### Проверки документов
 
 1. **TC-DOC-01 (MINOR-3):** обе ссылки ведут в раздел сверки
-   - Входные данные: `docs/architectures/data-model.md:1775` и `:1819`
+   - Входные данные: `docs/architectures/data-model-billing-ledger.md:52` и `:96`
    - Ожидаемый результат: обе называют §4.6.5; вхождений §4.6.4 в контексте сверки нет
 2. **TC-DOC-02 (MINOR-4):** число деклараций подтверждается прогоном
    - Входные данные: две команды из раздела MINOR-4
@@ -218,7 +218,7 @@ docs/architectures/open-questions.md docs/ARCHITECTURE.md docs/BACKLOG.md` — �
 
 ### Третья ссылка того же дефекта, задачей не названная
 
-`docs/architectures/data-model.md:2102` лежит внутри §4.6.3 и ссылается вперёд на §4.6.5 за тем,
+`docs/architectures/data-model-billing-ledger.md:379` лежит внутри §4.6.3 и ссылается вперёд на §4.6.5 за тем,
 «на чём стоит число и на чём не стоит». §4.6.5 — фоновая сверка зависшей строки `reserved`; число
 625 разбирает §4.6.4, следующий за §4.6.3 раздел. Смещение то же самое, направление обратное.
 

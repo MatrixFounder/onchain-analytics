@@ -153,7 +153,7 @@ REPLAY_AND_RECONCILE_CEILING_MS)`, класс `ReplayWindowExpiredError`, вет
   вызова обработчика; `ToolContext.billing` без `?`; отказ рождает синтетический `outcome`
   - Требования: R-2, R-3 · Приоритет: критический · Зависимости: 015-04, 015-05, 015-06, 015-07
   - Читает поле класса отказа, объявленное задачей 015-04 (вторая половина MAJOR-D); правит псевдокод
-    `system-architecture.md:4226` на то же имя
+    `system-architecture-billing.md:174` на то же имя
   - Зависимость от 015-05 — источник `priceRaw` на границе тула
   - [tasks/task-015-09-interception-point-reserve.md](tasks/task-015-09-interception-point-reserve.md)
 

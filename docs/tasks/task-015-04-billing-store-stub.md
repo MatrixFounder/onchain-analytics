@@ -18,8 +18,8 @@
 задача 014-02.
 
 **Why класс отказа объявляется здесь.** Псевдокод перехвата читает `reserved.errorClass`
-(`system-architecture.md:4226`), а объявленная неуспешная ветвь несёт только `reason`
-(`system-architecture.md:4094`). Поле объявляется там, где его читает потребитель, — иначе первый
+(`system-architecture-billing.md:174`), а объявленная неуспешная ветвь несёт только `reason`
+(`system-architecture-billing.md:42`). Поле объявляется там, где его читает потребитель, — иначе первый
 `tsc` останавливает разработку на ошибке компиляции (MAJOR-D раунда 2).
 
 <!-- contract:changes -->
@@ -42,13 +42,13 @@
 - Дополнить заголовочный комментарий третьим репозиторием операционной стороны
 
 **Why пакет `mcp-server`.** `client_usage` несёт `principal_id` и `access_profile_id`, поэтому
-таблица принадлежит семье `request_trace`/`diagnostics` (`data-model.md:1735-1742`). `packages/core`
-нового экспорта не получает (`system-architecture.md:4140-4143`).
+таблица принадлежит семье `request_trace`/`diagnostics` (`data-model-billing-ledger.md:12-19`). `packages/core`
+нового экспорта не получает (`system-architecture-billing.md:88-91`).
 
-**Файл `docs/architectures/system-architecture.md`, §3.5.1** (документная половина MAJOR-D раунда 2):
+**Файл `docs/architectures/system-architecture-billing.md`, §3.5.1** (документная половина MAJOR-D раунда 2):
 
 - Возвращаемый тип `reserve()` получает поле класса отказа
-  (`docs/architectures/system-architecture.md:4094` — подстрока `{ ok: false; reason: string }`)
+  (`docs/architectures/system-architecture-billing.md:42` — подстрока `{ ok: false; reason: string }`)
 - Имя поля в тексте корпуса — `refusalClass`, то же, что в этом файле задачи
 
 **Why текст корпуса правится задачей, объявляющей контракт.** Ревью плана нашло, что поведенческая
@@ -69,10 +69,10 @@
 Формы взяты из `system-architecture.md` §3.5.1 (`:3957-3995`) дословно.
 
 Вход `reserve` несёт шесть полей: `principalId`, `accessProfileId`, `clientRequestId`, `tool`,
-`capability`, `priceRaw` (`system-architecture.md:4087-4094`).
+`capability`, `priceRaw` (`system-architecture-billing.md:35-42`).
 
 **Why `accessProfileId` допускает пустое значение.** У локального принципала профиля доступа нет
-(R-7.5, `data-model.md:1752`).
+(R-7.5, `data-model-billing-ledger.md:29`).
 
 **Why `priceRaw` — строка.** Цена хранится как `TEXT` по канону `DB-SCHEMA-CONCEPT` §1 п.7
 (R-4.5). Резерв сравнивает две строки-целых, а не строку и число.
@@ -91,8 +91,8 @@ export interface BillingReservation {
 
 Поле `existing` объявлено обязательным и без слова «Present only when» в докстринге.
 
-**Why обязательное, а не опциональное.** Объявленная форма (`system-architecture.md:4075`) требует
-поле, докстринг (`:4074`) описывает его как присутствующее лишь иногда — два прочтения одной
+**Why обязательное, а не опциональное.** Объявленная форма (`system-architecture-billing.md:23`) требует
+поле, докстринг (`:22`) описывает его как присутствующее лишь иногда — два прочтения одной
 строки (MINOR-4 раунда 1). Опциональное поле дало бы потребителю третье значение `undefined`,
 которому смысла в этом контракте не назначено.
 
@@ -118,7 +118,7 @@ export type BillingReserveResult =
 CHECK-ограничение. Здесь действует то же основание.
 
 **Why значений три, а не два.** `ReplayWindowExpiredError` — третье значение того же поля
-(`system-architecture.md:4275-4286`), а не отдельный носитель.
+(`system-architecture-billing.md:223-234`), а не отдельный носитель.
 
 **Why тип-объединение, а не `string`.** Обёртка 015-09 обязана читать значение, а не подставлять
 литерал. Объединение делает четвёртое значение ошибкой компиляции, а не строкой в леджере.
@@ -130,11 +130,11 @@ CHECK-ограничение. Здесь действует то же основ
 
 **Why это записано, а не подразумевается.** При броске не отработали бы ни строка следа, ни событие
 `tool.refused` — та самая тишина, которую сняло закрытие BLOCKING-3 раунда 1
-(`system-architecture.md:4212-4216`).
+(`system-architecture-billing.md:160-164`).
 
 **Why классы всё-таки объявляются как `class … extends Error`.** Их имена — значения колонки
 `request_trace.refusal_class`, и объявление класса держит имя в одном месте с его текстом
-(`system-architecture.md:4202-4209`).
+(`system-architecture-billing.md:150-157`).
 
 ### Четвёртый класс: отказ чтения вне оси Postgres
 
@@ -146,7 +146,7 @@ export class LedgerReadNotAuthoritativeError extends Error {
 ```
 
 `sumSettled` объявлен обязательным методом интерфейса и существует только на оси Postgres
-(`system-architecture.md:4101-4103`). Реализация оси SQLite бросает этот класс.
+(`system-architecture-billing.md:49-51`). Реализация оси SQLite бросает этот класс.
 
 **Why бросок, а не `'0'`.** Уверенный ноль — законное отрицание, которым оплачен L-10: читатель
 AC-4 не отличил бы «нечего суммировать» от «эта ось не авторитетна» (MINOR-5 раунда 2).
@@ -249,9 +249,9 @@ export function createBillingStoreStub(options?: {
 потому, что контракт объявляется до этих задач и связывает их.
 
 Имя поля — `refusalClass` во всех файлах плана. В корпусе архитектуры написание `errorClass` стоит в
-четырёх координатах, и они разложены по трём владельцам: `system-architecture.md:4094` (объявление
-типа, §3.5.1) — эта задача, `:4226` (чтение в обёртке, §3.5.2) — задача 015-09, `:4272`, `:4282` и
-`:4284` (ветвь конфликта, §3.5.2a) — задача 015-08.
+четырёх координатах, и они разложены по трём владельцам: `system-architecture-billing.md:42` (объявление
+типа, §3.5.1) — эта задача, `:174` (чтение в обёртке, §3.5.2) — задача 015-09, `:220`, `:230` и
+`:232` (ветвь конфликта, §3.5.2a) — задача 015-08.
 
 Регистрация имени `client_usage` в перечне `STATE_TABLES`
 (`packages/core/src/pg/state-client.ts:87` — `export const STATE_TABLES = [`) принадлежит задаче

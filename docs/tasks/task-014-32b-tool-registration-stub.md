@@ -175,11 +175,11 @@
 `capability manifest carries twenty-six rows.`), и цифра рассогласовала бы русский документ с
 английскими.
 
-- Словарь `WORDS` (`packages/mcp-server/test/docs-counts.test.ts:43`, `const WORDS: Record<string, number> = {`)
+- Словарь `WORDS` (`packages/mcp-server/test/docs-counts.test.ts:58`, `const WORDS: Record<string, number> = {`)
   получает `'twenty-two'` и `'двадцать два'`; `toNumber` нормализует внутренний пробел
 
 **Why расширения словаря недостаточно.** `WORDS` читается только из `toNumber`
-(`packages/mcp-server/test/docs-counts.test.ts:76`, `function toNumber(token: string): number {`), а
+(`packages/mcp-server/test/docs-counts.test.ts:91`, `function toNumber(token: string): number {`), а
 `toNumber` вызывается на `match[1]` **уже совпавшего** шаблона. `\w` — это `[A-Za-z0-9_]`: на строке
 «of the twenty-two tools take a chain» захват берёт `twenty`, упирается в дефис вместо ` tools` и
 совпадение не состоится вовсе. Утверждение не станет неверным — оно **исчезнет**, и упадёт
@@ -188,7 +188,7 @@
 
 **Why якоря правятся тем же коммитом.** Оба входа областей перечисления литеральны намеренно, и оба
 перестают находиться при переходе на новое числительное. Отказ громкий и самоназывающий:
-`packages/mcp-server/test/docs-counts.test.ts:325`, `region cannot be located, so this gate would check nothing. Re-anchor it.`.
+`packages/mcp-server/test/docs-counts.test.ts:340`, `region cannot be located, so this gate would check nothing. Re-anchor it.`.
 Переякоривание — работа задачи, а не побочный эффект.
 
 **Файл `docs/ARCHITECTURE.md`:**
@@ -408,16 +408,16 @@ author should know it exists». Эта задача — тот самый сле
 - `packages/mcp-server/test/readme-tool-table.test.ts:412`,
   `expect(rows.length).toBe(21); // the exact row count of §3.2's table, not a floor` — становится
   22: §3.2 обязана нести строку TTL на **каждую** маршрутизируемую способность
-- `docs/architectures/system-architecture.md:1418`, `holds **27 routes** over 26` — 28 над 27;
+- `docs/architectures/system-architecture-chain-normalization.md:1126`, `holds **27 routes** over 26` — 28 над 27;
   читает `packages/mcp-server/test/docs-counts.test.ts:329`
-- `docs/architectures/system-architecture.md:2463` — первая строка данных таблицы дедлайнов
+- `docs/architectures/system-architecture-call-budget.md:322` — первая строка данных таблицы дедлайнов
   перечисляет способности поимённо, и `token.pools` в ней нет. Это **вторая** проверка полноты в том
   же тестовом файле, отдельная от таблицы TTL §3.2:
   `packages/mcp-server/test/readme-tool-table.test.ts:602`,
   `` `${capability}: the manifest gives it a deadlineMs the table never documents`, `` над живым
   `routed`. Восьмой строкой не чинится — `packages/mcp-server/test/readme-tool-table.test.ts:619`,
   `expect(deadlineRows(markdown, routed).length).toBe(7); // the exact row count, not a floor`;
-  правка одна: расширить перечень на `:2387`
+  правка одна: расширить перечень на `:246`
 
 **Две замороженные таблицы получают не строку, а именованное исключение.** Это решение, а не правка.
 

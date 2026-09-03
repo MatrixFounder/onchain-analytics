@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -30,6 +30,21 @@ import { createServer } from '../src/server.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
+
+/**
+ * Chapter 3's body is one file per section since `system-architecture.md` passed the 1500-line
+ * split threshold; the index that keeps the name holds only §3.1, §3.3 and the links.
+ *
+ * A claim about "chapter 3" therefore has to be read over the FAMILY. Reading the index alone
+ * would leave the two guards below green while the text they watch sits in another file — the
+ * failure mode where a gate stops covering anything and says nothing about it.
+ */
+const readChapter3 = (): string =>
+  readdirSync(path.join(repoRoot, 'docs/architectures'))
+    .filter((name) => name === 'system-architecture.md' || name.startsWith('system-architecture-'))
+    .sort()
+    .map((name) => read(`docs/architectures/${name}`))
+    .join('\n');
 
 /**
  * Number words the docs use for these counts, so every spelling is comparable to a digit.
@@ -143,7 +158,7 @@ describe('documentation counts match the code they describe (WI-21)', () => {
       // after TASK-011).
       ...claimsWithSource('docs/ARCHITECTURE.md', /the (\w+)\s*\n?adapters and their input/g),
       ...claimsWithSource(
-        'docs/architectures/system-architecture.md',
+        'docs/architectures/system-architecture-core-package.md',
         /Capability Registry, (\w+) provider adapters/g,
       ),
       ...claimsWithSource(
@@ -229,18 +244,18 @@ describe('documentation counts match the code they describe (WI-21)', () => {
         /on any of the (\d+) tools \(R-152\)/g,
       ),
       ...claimsWithSource(
-        'docs/architectures/system-architecture.md',
+        'docs/architectures/system-architecture-mcp-server-package.md',
         /to all ([\w-]+) would replace that/g,
       ),
       ...claimsWithSource(
-        'docs/architectures/system-architecture.md',
+        'docs/architectures/system-architecture-test-suite.md',
         /exactly the \*\*([\w-]+)\*\* tools/g,
       ),
       // The `title?` sentence stated "4 of the 13 tools carry one and 9 do not". Measured while
       // closing WI-48: all 14 carry one, so the sentence was wrong about the FACT as well as the
       // number, and its replacement is anchored here so it cannot drift back.
       ...claimsWithSource(
-        'docs/architectures/system-architecture.md',
+        'docs/architectures/system-architecture-mcp-server-package.md',
         /Today all (\d+) carry one/g,
       ),
     ];
@@ -345,7 +360,7 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     // literals that TASK-006 had deleted from the code, and four routes it never grew. The copy is
     // gone; what replaced it is a count plus a shape, and the count is checked here.
     const claims = claimedCounts(
-      'docs/architectures/system-architecture.md',
+      'docs/architectures/system-architecture-chain-normalization.md',
       /holds \*\*(\d+) routes\*\*\s+over\s+\d+\s+distinct\s+capabilities/g,
     );
     expect(claims.length).toBeGreaterThanOrEqual(1);
@@ -355,7 +370,7 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     // `wallet.balances.native`), so it is derived rather than assumed equal to the route count.
     const distinct = new Set(routes.map((route) => route.capability)).size;
     const capabilityClaims = claimedCounts(
-      'docs/architectures/system-architecture.md',
+      'docs/architectures/system-architecture-chain-normalization.md',
       /routes\*\*\s+over\s+(\d+)\s+distinct\s+capabilities/g,
     );
     expect(capabilityClaims.length).toBeGreaterThanOrEqual(1);
@@ -364,7 +379,7 @@ describe('documentation counts match the code they describe (WI-21)', () => {
     // The reason the count is checkable at all is that the table is no longer duplicated. Guard the
     // property itself, not just today's numbers: a re-pasted literal would bring back `chains:`,
     // which no route has set since TASK-006 and which ADR-002 D2 deletes outright.
-    expect(read('docs/architectures/system-architecture.md')).not.toContain("chains: ['");
+    expect(readChapter3()).not.toContain("chains: ['");
   });
 
   it('states how many tools take a chain, counted from the real input schemas', async () => {
@@ -501,7 +516,7 @@ describe('documentation counts match the code they describe (WI-21)', () => {
   });
 
   it('names every registered adapter id in the system-architecture adapter table', () => {
-    const systemArchitecture = read('docs/architectures/system-architecture.md');
+    const systemArchitecture = readChapter3();
     for (const { id } of adapterRegistrations) {
       expect(systemArchitecture, `adapter '${id}' is registered but absent from §3.2`).toContain(
         id,

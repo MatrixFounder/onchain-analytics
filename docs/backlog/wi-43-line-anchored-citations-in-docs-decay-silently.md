@@ -126,7 +126,7 @@ resolved_by: 'перенос в agentic-development — TASK 103 (ed2af74, v3.27
   снимает 10 из 19 ложных падений §1.
 
 Голое `registry.ts:944` перестаёт быть допустимой формой. Правило одинаково для ссылок на
-документы (`system-architecture.md:348`, `docs/TASK.md:681-688`) — таких в живом корпусе 18 из 182,
+документы (`system-architecture-chain-normalization.md:56`, `docs/TASK.md:681-688`) — таких в живом корпусе 18 из 182,
 две из них съехали; якорем служит заголовок или цитата предложения.
 
 Эта запись пишет свои координаты в этой форме начиная с §1 — иначе она требует того, чего сама не
@@ -246,7 +246,7 @@ resolved_by: 'перенос в agentic-development — TASK 103 (ed2af74, v3.27
 и **+119/+154** в `adapters/types.ts`, обесценив за один коммит **25** ссылок:
 
 - 20 в `docs/architectures/system-architecture.md` (кластер о `registry.ts`), исправлены разработчиком;
-- `system-architecture.md:348` (`types.ts:214-262`), пропущена: свод был ограничен ссылками на
+- `system-architecture-chain-normalization.md:56` (`types.ts:214-262`), пропущена: свод был ограничен ссылками на
   `registry.ts` внутри одного документа;
 - четыре координаты в `docs/PLAN.md`, по которым **спланированы следующие задачи**:
   `registry.ts:944` дважды (одна из них — цель мутационного протокола задачи 013-5),
@@ -260,7 +260,7 @@ resolved_by: 'перенос в agentic-development — TASK 103 (ed2af74, v3.27
 `args: Record<string, unknown>,`.
 
 Ещё шесть известны и не исправлены: `reliability.md:143/144/147/153/155` и
-`system-architecture.md:983` — последняя делегирует в `reliability.md` дословно ради того, «чтобы
+`system-architecture-chain-normalization.md:691` — последняя делегирует в `reliability.md` дословно ради того, «чтобы
 две копии не разъезжались», и разъезжается.
 
 **Why it matters.** Дважды за один прогон это стоило не аккуратности, а корректности:

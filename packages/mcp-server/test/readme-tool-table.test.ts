@@ -370,7 +370,9 @@ describe('the two language editions state the same numbers (WI-28)', () => {
  * selection for a reader, an authority is not allowed to be selective.
  */
 describe('the architecture TTL table is complete and matches the code (WI-28)', () => {
-  const ARCHITECTURE = 'docs/architectures/system-architecture.md';
+  // §3.2's body moved into its own files when system-architecture.md passed 1500 lines; the TTL
+  // table went with the caching section. The gate is unchanged — only the file it opens.
+  const ARCHITECTURE = 'docs/architectures/system-architecture-call-budget.md';
 
   /** `| \`a\`, \`b.*\` | 3600s | … |` → the capability ids it covers, expanded. */
   function architectureRows(): { stated: string; covered: string[]; ttl: number | null }[] {
@@ -606,7 +608,8 @@ function deadlineDefects(
 }
 
 describe('the architecture deadline table states the numbers the manifest applies (WI-28, AC-13)', () => {
-  const ARCHITECTURE = 'docs/architectures/system-architecture.md';
+  // Same split: the `deadlineMs`/`paidLegMs` table lives beside the TTL table it is measured with.
+  const ARCHITECTURE = 'docs/architectures/system-architecture-call-budget.md';
   const routed = [...new Set(routes.map((route) => route.capability))];
 
   it('documents every routed capability, at the deadline the manifest applies', () => {

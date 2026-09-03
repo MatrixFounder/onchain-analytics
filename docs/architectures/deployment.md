@@ -942,7 +942,7 @@ round 3 MAJOR-2). The table carries no natural `UNIQUE` dedup key by design
 
 **Citation fix (closes architecture review round 1 MINOR-1).** An earlier draft pinned the quote
 "Two identical events one millisecond apart are two facts" to the SQL address above. It actually
-lives at `data-model.md:1674`, and is corrected here rather than left standing.
+lives at `data-model-network-state.md:792`, and is corrected here rather than left standing.
 
 An `ON CONFLICT DO NOTHING` has no column to key on, so re-running the copy above duplicates every
 row.

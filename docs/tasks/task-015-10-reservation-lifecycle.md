@@ -65,8 +65,8 @@ R-2.4 и R-3 на той оси, где леджер объявлен пишущ
 - Докстринг `refund` называет условие кредитования тем же словом, что и шаг 2 резерва
 
 **Why условие обязано быть записано.** Симметричная оговорка для резерва сформулирована буквально:
-`docs/architectures/system-architecture.md:4131` — `Only when step 1 inserted a NEW row`. Для
-`refund` её нет: `docs/architectures/system-architecture.md:4098` — подстрока
+`docs/architectures/system-architecture-billing.md:79` — `Only when step 1 inserted a NEW row`. Для
+`refund` её нет: `docs/architectures/system-architecture-billing.md:46` — подстрока
 `PLUS crediting`. Асимметрия оставляет прочтение «кредитуем безусловно».
 
 **Why два `refund` по одной строке — штатный путь.** UC-2 ведёт оба ретрая через полный обработчик,
@@ -79,7 +79,7 @@ R-2.4 и R-3 на той оси, где леджер объявлен пишущ
 ответ отдаётся клиенту; расхождение наблюдаемо>`.
 
 Правило выводится из уже принятой формы, а не выбирается заново: `settle` — условный `UPDATE`
-с охраной `WHERE state = 'reserved'` (`docs/architectures/system-architecture.md:4388` — подстрока
+с охраной `WHERE state = 'reserved'` (`docs/architectures/system-architecture-billing.md:336` — подстрока
 `Idempotent completion — first completer wins`). По закрытой строке он совпадает с нулём строк.
 
 Наблюдаемый след — два признака, ни один из которых не требует нового словаря событий:
@@ -93,7 +93,7 @@ R-2.4 и R-3 на той оси, где леджер объявлен пишущ
 (`data-model.md` §4.5.8). Девятое значение — правка словаря, а не наблюдаемость этой задачи.
 
 **Why строка не перезаряжается вторым резервом.** Ключ дедупликации `(principal_id,
-client_request_id)` уникален (`docs/architectures/data-model.md:1763` — `UNIQUE (principal_id,
+client_request_id)` уникален (`docs/architectures/data-model-billing-ledger.md:40` — `UNIQUE (principal_id,
 client_request_id)`). Второй резерв по тому же ключу невозможен по построению хранилища.
 
 **Отвергнутая альтернатива — повторное списание по тому же ключу.** Оно потребовало бы времени в
@@ -111,27 +111,27 @@ client_request_id)`). Второй резерв по тому же ключу н
 
 - Тест-кейсы TC-UNIT-01 … TC-UNIT-08 ниже
 
-**Файл `docs/architectures/data-model.md`, §4.6.5** (MAJOR-A раунда 2):
+**Файл `docs/architectures/data-model-billing-ledger.md`, §4.6.5** (MAJOR-A раунда 2):
 
 - Дописать второй оператор перехода: кредитование `access_profiles.credits_balance_raw` на
   `price_raw` закрываемой строки
 - Кредитование исполняется только при `access_profile_id IS NOT NULL`
 - Форма — ОДИН оператор SQL, не пара узлов
 
-**Файл `docs/architectures/data-model.md`, §4.6.1** (документная половина MAJOR-C раунда 2):
+**Файл `docs/architectures/data-model-billing-ledger.md`, §4.6.1** (документная половина MAJOR-C раунда 2):
 
 - Условие кредитования: возврат исполняется только тогда, когда условный `UPDATE` вернул строку
-  (`docs/architectures/data-model.md:1836` — подстрока `credits the SAME amount back`)
+  (`docs/architectures/data-model-billing-ledger.md:113` — подстрока `credits the SAME amount back`)
 
-**Файл `docs/architectures/system-architecture.md`, §3.5.1** (документная половина MAJOR-C раунда 2):
+**Файл `docs/architectures/system-architecture-billing.md`, §3.5.1** (документная половина MAJOR-C раунда 2):
 
 - Докстринг `refund` получает ту же оговорку о непустом `RETURNING`
-  (`docs/architectures/system-architecture.md:4098` — подстрока `PLUS crediting`)
+  (`docs/architectures/system-architecture-billing.md:46` — подстрока `PLUS crediting`)
 
-**Файл `docs/architectures/system-architecture.md`, §3.5.3** (документная половина MAJOR-B раунда 2):
+**Файл `docs/architectures/system-architecture-billing.md`, §3.5.3** (документная половина MAJOR-B раунда 2):
 
 - Размещение завершения: тело обёртки после вычисления `outcome`, а не замыкание `withTrace`
-  (`docs/architectures/system-architecture.md:4356` — подстрока `Folded into the existing`)
+  (`docs/architectures/system-architecture-billing.md:304` — подстрока `Folded into the existing`)
 
 **Why три текста корпуса берёт одна задача.** Все три утверждают то, что эта задача исполняет
 кодом: место вызова и условие кредитования. Один и тот же факт, разложенный по двум владельцам,
@@ -142,7 +142,7 @@ client_request_id)`). Второй резерв по тому же ключу н
 ### Сверка возвращает кредиты одним оператором
 
 Сегодняшний проект сверки описывает переход тремя колонками
-(`docs/architectures/data-model.md:2164` — `Each matched row transitions`), а исполнителем назначен
+(`docs/architectures/data-model-billing-ledger.md:441` — `Each matched row transitions`), а исполнителем назначен
 SQL-узел n8n. `credits_balance_raw` в §4.6.5 не встречается ни разу.
 
 **Why один оператор, а не два узла.** n8n не даёт транзакции между узлами. Пара «узел перехода,

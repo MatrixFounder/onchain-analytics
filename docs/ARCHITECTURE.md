@@ -98,22 +98,30 @@ moment of delivery. Full changelog:
 [docs/architectures/](architectures/). This file holds the table of contents, one-line summaries,
 and the sections small enough to keep inline.
 
+**Chapters 3 and 4 are indexes of their own.** Both passed the 1500-line threshold, so their
+section bodies were split the same way this file was. The chapter file keeps its heading, a
+one-line summary and a link per section. The body lives in a sibling named
+`<chapter>-<section>.md`. Section numbers did not change — §3.5.2a still means §3.5.2a. What changed is
+which file declares one: the sibling, not the chapter. Files stay FLAT in `docs/architectures/`.
+A subdirectory would leave them unchecked: the register scanner and the format gate are both
+invoked over `docs/architectures/*.md`, which does not descend.
+
 ## Contents
 
-| §   | Section                                                             | Location      |
-| --- | ------------------------------------------------------------------- | ------------- |
-| 1   | [Task description](#1-task-description)                             | inline        |
-| 2   | [Functional architecture](architectures/functional-architecture.md) | separate file |
-| 3   | [System architecture](architectures/system-architecture.md)         | separate file |
-| 4   | [Data Model (Conceptual)](architectures/data-model.md)              | separate file |
-| 5   | [Interfaces](architectures/interfaces.md)                           | separate file |
-| 6   | [Technology stack](architectures/technology-stack.md)               | separate file |
-| 7   | [Security](architectures/security.md)                               | separate file |
-| 8   | [Scalability and performance](#8-scalability-and-performance)       | inline        |
-| 9   | [Reliability and fault tolerance](architectures/reliability.md)     | separate file |
-| 10  | [Deployment](architectures/deployment.md)                           | separate file |
-| 11  | [Open questions](architectures/open-questions.md)                   | separate file |
-| —   | [Version history (changelog)](architectures/version-history.md)     | separate file |
+| §   | Section                                                             | Location        |
+| --- | ------------------------------------------------------------------- | --------------- |
+| 1   | [Task description](#1-task-description)                             | inline          |
+| 2   | [Functional architecture](architectures/functional-architecture.md) | separate file   |
+| 3   | [System architecture](architectures/system-architecture.md)         | index + 7 files |
+| 4   | [Data Model (Conceptual)](architectures/data-model.md)              | index + 4 files |
+| 5   | [Interfaces](architectures/interfaces.md)                           | separate file   |
+| 6   | [Technology stack](architectures/technology-stack.md)               | separate file   |
+| 7   | [Security](architectures/security.md)                               | separate file   |
+| 8   | [Scalability and performance](#8-scalability-and-performance)       | inline          |
+| 9   | [Reliability and fault tolerance](architectures/reliability.md)     | separate file   |
+| 10  | [Deployment](architectures/deployment.md)                           | separate file   |
+| 11  | [Open questions](architectures/open-questions.md)                   | separate file   |
+| —   | [Version history (changelog)](architectures/version-history.md)     | separate file   |
 
 ## 1. Task description
 

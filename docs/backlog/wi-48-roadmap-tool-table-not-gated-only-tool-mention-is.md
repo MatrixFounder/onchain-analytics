@@ -80,8 +80,8 @@ resolved_by: 'вариант 1 — построчная проверка в docs
 | `mcp-server/.AGENTS.md:35` | «The **thirteen** tools today» — **при списке из 14 имён** | 14 |
 | `mcp-server/.AGENTS.md:1299` | «capture of all **13** tools» | 14 |
 | `interfaces.md:186` | «on any of the **13** tools (R-152)» | 14 |
-| `system-architecture.md:2871` | «to all **thirteen**» | 14 |
-| `system-architecture.md:2977` | «exactly the **thirteen** tools» | 14 |
+| `system-architecture-mcp-server-package.md:55` | «to all **thirteen**» | 14 |
+| `system-architecture-mcp-server-package.md:161` | «exactly the **thirteen** tools» | 14 |
 | `functional-architecture.md:167` | «**14** tools» — **при перечислении из 13 имён** | 14 |
 
 **Правое число ≠ правый список, и обе половины отказали независимо.** `.AGENTS.md` нёс все
@@ -97,7 +97,7 @@ rewrote history to match today's counts would be worse than no test»), поэт
 матчит это предложение. Отделить настоящее время от исторического может только чтение, не regexp
 пошире.
 
-**Побочная находка — устарело не число, а довод.** `system-architecture.md:2794` объяснял
+**Побочная находка — устарело не число, а довод.** `system-architecture-call-budget.md:653` объяснял
 необязательность `title?` тем, что «4 из 13 тулов несут title, 9 не несут». Замерено: **title
 несут все 14**. Предложение переписано, факт закреплён паттерном; вопрос «не сделать ли `title`
 обязательным» сознательно НЕ решён здесь и остаётся владельцу.

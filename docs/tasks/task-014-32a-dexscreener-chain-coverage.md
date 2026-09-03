@@ -14,7 +14,7 @@
 **Требование.** R-33, критерий AC-51.
 
 **Why.** Колонка не проставлена на 455 строках из 458, и рантайм читает `null` по первому из двух
-определений — `docs/architectures/data-model.md:143`,
+определений — `docs/architectures/data-model-entities.md:143`,
 `` `null` = the vendor does not have the chain. ``. Замер 2026-08-18: вендор обслуживает 65 наших
 сетей.
 62 строки отказывают утверждением, которое вендор опровергает. Дефект зарегистрирован как
@@ -257,7 +257,7 @@
 
 **Why умолчание `excluded` было бы воспроизведением L-18.** Непокрытие у соседей вендорским фактом
 не является: `packages/core/src/adapters/rpc-evm/index.ts:117`, `chain.rpcHosts !== null &&`, а
-`docs/architectures/data-model.md:144` читает этот `null` как нашу
+`docs/architectures/data-model-entities.md:144` читает этот `null` как нашу
 кураторскую дыру, не как отсутствие сети у вендора; `packages/core/src/adapters/dune/index.ts:25`,
 `chainSupport: (): boolean => false,` — сплошной отказ уровня M1, и «у вендора нет этой сети» ложно
 про каждую сеть, которую Dune обслуживает. Правило прямое:
@@ -274,7 +274,7 @@
 генератор падает при числе сетей ниже порога (TC-UNIT-02), а не эмитит каталог из одних
 `unverified`. Это запись M6 памяти.
 
-**Why.** Сегодня три состояния сходятся в один `null`, а `docs/architectures/data-model.md:143` читает `null` как
+**Why.** Сегодня три состояния сходятся в один `null`, а `docs/architectures/data-model-entities.md:143` читает `null` как
 «вендор не имеет сети» ⇒ дефект L-18 воспроизводится внутри задачи, которая его чинит. R-58d требует
 `unverified`, не `unsupported`.
 

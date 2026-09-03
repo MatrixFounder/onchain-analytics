@@ -321,13 +321,13 @@ unaffected, since bucketing changes WHICH points collide, never HOW a collision 
 ### T-013 task 013-3 (2026-08-06, Development) — `perSourceCache` covers every ANSWERED participant, not only contributors
 
 **A deviation from four sentences of the delivered architecture text, recorded as a decision — not a
-document alignment.** The first two are `docs/architectures/system-architecture.md:1013-1014`,
+document alignment.** The first two are `docs/architectures/system-architecture-chain-normalization.md:721-722`,
 `happens on branch (a) when every participant answered with zero` ("`perSourceCache` carries one
 entry per member of `sources`, same set, so it is never populated for a non-contributor either"),
-and `:1023` ("the granular per-contributor truth"). The third is
+and `:731` ("the granular per-contributor truth"). The third is
 `docs/architectures/interfaces.md:474-481`, `is this tool's OWN shape, not the shared` (the 14th
 tool's own `_meta.cache` bullet, "which adapter, which status" per contributor). The fourth is
-`docs/architectures/system-architecture.md:980-982`,
+`docs/architectures/system-architecture-chain-normalization.md:688-690`,
 `satisfying answer; the merge loop never returns mid-walk — for` ("or into neither (answered but
 policy-excluded, tracked only in `tried`)"). It couples `perSourceCache` to the same `satisfied`
 condition as `sources`/the dedup `Map`, and was found by roast round 1, B-4 — not in the first draft
@@ -336,12 +336,12 @@ contributors only. **Search scope, stated because a count without one is indisti
 complete one (roast round 1's own lesson, B-4).** The scope is every `perSource`/`perSourceCache`
 occurrence in `system-architecture.md`, `interfaces.md`, `data-model.md` and `version-history.md`
 (`rg -n "perSource" docs/architectures/*.md`), each read in context for a membership claim. In
-`docs/architectures/data-model.md:262-284`,
+`docs/architectures/data-model-entities.md:282-304`,
 `'s return shape gains three OPTIONAL fields, all populated ONLY` does **not** carry this rule — it
 names `perSourceCache`'s shape (`{adapterId, cache, ageMs?}[]`) but never its membership. In
 `docs/architectures/version-history.md:36-38`, `gains three optional fields** (` states only that
 the three fields are "populated ONLY on a merge walk", without saying WHO specifically populates
-`perSourceCache` — neutral. In `docs/architectures/system-architecture.md:668`,
+`perSourceCache` — neutral. In `docs/architectures/system-architecture-chain-normalization.md:376`,
 `perSourceCache?: { adapterId: string; cache: 'hit' | 'miss';` (the code-block listing) defers to
 "Merge mechanism below" rather than asserting a rule itself — neutral.
 
@@ -382,7 +382,7 @@ outcome, not a failure. But literal UC-19 has `pg-history` entirely UNAVAILABLE 
 membership rule is UC-19's own participants under a wider precondition. `ONCHAIN_PG_URL` is
 **configured**, `platform-explorer` still answers `[]` (served from ITS OWN cache — a `'hit'`), and
 `pg-history` additionally answers with real points (a `'miss'`, fresh from the network). That is the
-same "one empty, one non-empty" shape `docs/architectures/system-architecture.md:1008`,
+same "one empty, one non-empty" shape `docs/architectures/system-architecture-chain-normalization.md:716`,
 `names every participant whose points are actually present in` ("composition TASK §1.5 names as
 ordinary") already uses for `sources`'s own CONTRIBUTORS rule, with a cache-status axis added. On
 that composition: `sources: ['pg-history']` (correct, unaffected by this decision) while the
@@ -407,13 +407,13 @@ this same entry's OWN citation to it went stale twice in one editing session, ro
 Quote it to find it), and why it covers less than it looks like.** That earlier entry refuted an
 ARGUMENT for a design decision while stating explicitly that the DECISION and the DELIVERED shape
 both stood, and no architecture amendment was required. This case is not that. Once the merge walk
-(013-4) populates `perSourceCache`, `docs/architectures/system-architecture.md:1013-1014`,
+(013-4) populates `perSourceCache`, `docs/architectures/system-architecture-chain-normalization.md:721-722`,
 `happens on branch (a) when every participant answered with zero` becomes literally false about
 the shipped tree — a false statement, not a weak argument. That is why the text is marked in place
 rather than left to this registry entry alone.
 
 **Scope.** Confined to `perSourceCache`'s membership rule. `sources` — CONTRIBUTORS, not
-"answered" (`docs/architectures/system-architecture.md:1004-1010`, `sibling citations found nearby (see the task's own review`, opens "`CapabilityResolution` shape... corrected
+"answered" (`docs/architectures/system-architecture-chain-normalization.md:712-718`, `sibling citations found nearby (see the task's own review`, opens "`CapabilityResolution` shape... corrected
 after review: `sources` is CONTRIBUTORS") — is unaffected; so are `source`'s two-tier fallback
 rule, `cache`'s two-literal type (R-175b forbids widening it), and the 11 existing tools'
 `_meta.cache` (R-175).

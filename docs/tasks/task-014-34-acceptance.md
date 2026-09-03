@@ -130,7 +130,7 @@ without validating it against their own schema». Заглушка вывода 
 4. **TC-E2E-04:** рядом с исторической записью о тринадцати тулах стоит действующее число (R-23.6)
    - Входные данные: вхождения `13 tools` в `docs/architectures/interfaces.md` и
      `docs/architectures/system-architecture.md` (замер 2026-08-19: три — `interfaces.md:601`,
-     `interfaces.md:617`, `system-architecture.md:2845`); действующее число тулов читается как длина
+     `interfaces.md:617`, `system-architecture-mcp-server-package.md:29`); действующее число тулов читается как длина
      массива `tools` в `packages/mcp-server/tool-inventory.json`
    - Ожидаемый результат: раздел каждого вхождения называет прочитанное число; текст исторической
      записи не изменён

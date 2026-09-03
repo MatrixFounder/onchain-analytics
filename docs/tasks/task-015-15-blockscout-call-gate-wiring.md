@@ -64,7 +64,7 @@
 | `token.holders`      | `packages/core/src/providers.config.ts:149` | `blockscout`            |
 | `entity.labels`      | `packages/core/src/providers.config.ts:172` | `blockscout`, `nansen`  |
 
-Проект называет это правило прямо: `docs/architectures/system-architecture.md:4510` — подстрока
+Проект называет это правило прямо: `docs/architectures/system-architecture-billing.md:458` — подстрока
 `Called once per network attempt`.
 
 **Порядок двух сторожей.** Гейт вызывается первым, `throttle()` — вторым. Оба исполняются, и любой
@@ -110,10 +110,10 @@
 
 ### Различимость двух отказов по значению текста
 
-| Класс                              | Текст                                    | Координата                                       |
-| :--------------------------------- | :--------------------------------------- | :----------------------------------------------- |
-| `RateLimitRejectedError`           | `throttle: rejected for provider "…": …` | `packages/core/src/net/rate-limit.ts:274`        |
-| `ProviderCallCeilingExceededError` | `daily call ceiling reached: …`          | `docs/architectures/system-architecture.md:4521` |
+| Класс                              | Текст                                    | Координата                                              |
+| :--------------------------------- | :--------------------------------------- | :------------------------------------------------------ |
+| `RateLimitRejectedError`           | `throttle: rejected for provider "…": …` | `packages/core/src/net/rate-limit.ts:274`               |
+| `ProviderCallCeilingExceededError` | `daily call ceiling reached: …`          | `docs/architectures/system-architecture-billing.md:469` |
 
 **Why проверяется текст, а не класс.** Класс до вызывающего не доходит:
 `resolve-capability.ts` записывает в `refusal_class` имя той ошибки, которую бросил маршрут, и на
@@ -242,7 +242,7 @@ limit` и `bucket` в тексте гейта отсутствуют
 `dailyCallCeilingOverride`.
 
 Текст §3.5.4 корпуса, объявляющий сигнатуру `createCallGate`, правит задача 015-13. Эта задача
-опирается на утверждение точки вызова (`docs/architectures/system-architecture.md:4436` — подстрока
+опирается на утверждение точки вызова (`docs/architectures/system-architecture-billing.md:458` — подстрока
 `Called once per network attempt`), которое правки не требует.
 
 Диффа `providers.config.ts` эта задача не даёт: поле `dailyCallCeiling` объявляет задача 015-12.

@@ -96,7 +96,7 @@ R-8, R-9, R-12, R-13, R-14, R-15, R-17, R-19, R-21 и под-требовани�
 декоративна: после R-7 локальный процесс и сетевой сервер над одним `DATA_DIR` делят корзину.
 
 **MINOR-5.** R-23.4 не называет координаты. Найдены `interfaces.md:584`,
-`system-architecture.md:2800`, `ARCHITECTURE.md:119`, `ARCHITECTURE.md:10`.
+`system-architecture-call-budget.md:659`, `ARCHITECTURE.md:119`, `ARCHITECTURE.md:10`.
 
 **MINOR-6.** Пять `info` регистра оставлены без письменного решения.
 

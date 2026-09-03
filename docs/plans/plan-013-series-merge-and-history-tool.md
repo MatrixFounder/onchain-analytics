@@ -361,8 +361,8 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   реализацию `resolve()`; подставной реестр возвращает три поля, тест утверждает, что
   `resolveCapability()` отдаёт их без потери формы. Реальный обход для этого не нужен.
 - **Пункт плана 3.4 — `perSourceCache` покрывает ОТВЕТИВШИХ, а не вкладчиков.** Узкое чтение несут
-  четыре предложения: `docs/architectures/system-architecture.md:1013-1014`, `when every participant answered with zero points` («one entry per member of `sources`, same
-  set»), `:1023` («the granular per-contributor truth»), `:980-982` («or into neither (answered but
+  четыре предложения: `docs/architectures/system-architecture-chain-normalization.md:721-722`, `when every participant answered with zero points` («one entry per member of `sources`, same
+  set»), `:731` («the granular per-contributor truth»), `:688-690` («or into neither (answered but
   policy-excluded, tracked only in `tried`)» — найдено роастом раунда 1, B-4, связывает
   `perSourceCache` с тем же условием `satisfied`, что и `sources`) и `docs/architectures/interfaces.md:474-481`, `is this tool's OWN shape, not the shared`
   (буллет `_meta.cache`). Свод: `rg -n "perSource" docs/architectures/*.md`, каждое вхождение
@@ -373,9 +373,9 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   `_meta.cache` целиком — тогда как R-174(c) требует, чтобы факт «один из кеша, другой с сети» не
   терялся.
 - **Пункт плана 3.4a — форма записи: пометка на месте, а не только реестр вопросов.** После `013-4`
-  предложение `docs/architectures/system-architecture.md:1013-1014`, `when every participant answered with zero points` (координата сдвигалась ТРИЖДЫ: `:957-958`→`:1000-1001`
-  при коррекции 013-2, затем `:1000-1001`→`:1011-1012` вставкой самой записи `open-questions.md` этой
-  задачи (роаст раунда 1, C-2), затем `:1011-1012`→`:1013-1014` правкой цитаты на `:952` в том же файле
+  предложение `docs/architectures/system-architecture-chain-normalization.md:721-722`, `when every participant answered with zero points` (координата сдвигалась ТРИЖДЫ: `:665-666`→`:708-709`
+  при коррекции 013-2, затем `:708-709`→`:719-720` вставкой самой записи `open-questions.md` этой
+  задачи (роаст раунда 1, C-2), затем `:719-720`→`:721-722` правкой цитаты на `:660` в том же файле
   при закрытии цикла 2 — **поэтому ищи по цитате, а не по номеру**) становится ложным о дереве, поэтому
   все четыре получают однострочную пометку на месте, рядом с сохранённым буквальным текстом
   (дисциплина пункта 9.3), и сопровождаются записью в `open-questions.md`. Прецедент T-012 слабее:
@@ -384,7 +384,7 @@ const SERVED_CAPABILITIES = ['privacy.shielded_pool.history', 'platform.metrics.
   `perSourceCache` — `'hit'`; расширение множества делает этот агрегат строже, а не слабее.
 - **Пункт плана 3.6 — регрессия 13 тулов на границе задачи.** `tool-response-shape.test.ts`
   остаётся зелёным без правки своего кода; ни один из 11 тулов на `resolveCapability()` не получает
-  диффа. Утверждение действует до `013-8`: там же лежит литерал `toHaveLength(13)` (`:106`), который
+  диффа. Утверждение действует до `013-8`: там же лежит литерал `toHaveLength(13)` (`:64`), который
   правит регистрация тула, а не эта задача.
 
 **Чек-лист RTM:**

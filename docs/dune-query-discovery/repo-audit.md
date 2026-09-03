@@ -26,7 +26,7 @@
 | `token.holders` на любой сети | Двухслойно: сначала coverage-гейт (`chainSupport → false` ⇒ `routeCoversChain` false ⇒ `CapabilityNotCoveredOnChainError`), и только потом — `isAvailable() === {ok:false}` | `dune/index.ts:25`, `dune/index.ts:39`, `chain/coverage.ts:70-79`, `adapters/registry.ts:213-225` |
 | Любой произвольный аналитический вопрос («топ-10 кошельков по X за 30 дней», «дневной объём DEX») | Отказ **отсутствием**: маршрута нет ⇒ `matching.length === 0` ⇒ `CapabilityUnavailableError` с пустым `tried` и строкой «no route registered for this capability/chain» | `adapters/registry.ts:196`, `:22` |
 | Тот же вопрос на уровне MCP | Его **нельзя даже задать**: зарегистрировано 10 тулов, каждая входная схема `.strict()` (17 вхождений), незнакомое поле режет zod до хендлера | `mcp-server/src/server.ts:67-79`, `mcp-server/src/tools/*.ts` |
-| Балансы ERC-20/SPL (в отличие от нативных) | Не бросает — просто никогда не наполняет: слот `assetType: z.enum(['native','token'])` есть, M1 пишет только `native`. Архитектура прямо называет Dune одним из трёх выходов | `types/wallet.ts:17`, `docs/architectures/system-architecture.md:620-628` |
+| Балансы ERC-20/SPL (в отличие от нативных) | Не бросает — просто никогда не наполняет: слот `assetType: z.enum(['native','token'])` есть, M1 пишет только `native`. Архитектура прямо называет Dune одним из трёх выходов | `types/wallet.ts:17`, `docs/architectures/system-architecture-chain-normalization.md:328-336` |
 | Незнакомая сеть | `UnknownChainError` **до** сети и до резервирования кредитов — «платить за опечатку» запрещено сознательно | `chain/errors.ts:23-50` |
 | Повтор запроса, чей ответ не распарсился | Негативный кэш на 60 с, ноль сетевых вызовов и ноль кредитов, метка `[cached negative]` | `cache/ttl.ts:83`, `adapters/registry.ts:274` |
 
@@ -102,10 +102,10 @@
   `chain` — открытая строка, не enum; **никаких ложных обещаний универсальности**.
 - **Прецедент против проксирования вендорского MCP.** Проект уже **отказался** проксировать
   официальный MCP Nansen, потому что «several of its tools return markdown text, which is unusable
-  for canonical zod normalization» (`docs/architectures/system-architecture.md:630-634`).
+  for canonical zod normalization» (`docs/architectures/system-architecture-chain-normalization.md:338-342`).
   Это прямо релевантно развилке по Dune MCP: решение «просто подключить官 MCP» противоречит
   действующему прецеденту, и отступление от него нужно обосновывать явно.
-- **D4/D5 анти-коррупционный слой** (`ADR-001:71`, `:91`): вендорский DTO не имеет права дойти до
+- **D4/D5 анти-коррупционный слой** (`ADR-001:71`, `:49`): вендорский DTO не имеет права дойти до
   вызывающего; всё, что отдают тулы и хранит кэш, — в канонических типах. Произвольная таблица
   из чужого SQL — это лобовое столкновение с D5, и его надо разрешить осознанно.
 - **D10** (`ADR-001:159`): секреты не логируются и не попадают в ключи кэша.

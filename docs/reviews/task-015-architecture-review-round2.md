@@ -40,17 +40,17 @@
 1. **BLOCKING-2 закрыт в форме «три вопроса — три ответа, каждый один раз»**
    (`data-model.md:1827-1868`). Дебет перенесён на `reserve()` — и этим же ходом снят второй вопрос
    («already reserved» больше не нужно агрегировать: `:1845-1848`), а гонка закрыта внутри одного
-   оператора — `WHERE id = $1 AND credits_balance_raw::numeric >= $2::numeric` (`:1857`).
+   оператора — `WHERE id = $1 AND credits_balance_raw::numeric >= $2::numeric` (`:134`).
    Канон «BigInt, never Number» исполнен буквально: `numeric` в Postgres, `BigInt` в приложении
    (`:1827-1844`).
 2. **BLOCKING-1 закрыт тотальным полем с записанной причиной у каждого носителя**
-   (`data-model.md:2000-2002`), а не выдуманным числом: таблица `:2027-2047` даёт значение и причину
+   (`data-model-billing-ledger.md:277-279`), а не выдуманным числом: таблица `:2027-2047` даёт значение и причину
    всем десяти регистрациям `tier:'free'`, стартовое правило сведено к механически проверяемому
-   условию (`:2012-2013`).
+   условию (`:289-290`).
 3. **BLOCKING-3 закрыт без нового кода вниз по течению**: денежный отказ больше не коротит путь, он
-   строит синтетический `outcome` до вызова обработчика (`system-architecture.md:4223-4230`), и
+   строит синтетический `outcome` до вызова обработчика (`system-architecture-billing.md:171-178`), и
    `escalation check` / `withTrace` / `diagnostics.emit('tool.refused')` исполняются неизменёнными
-   (`:4231-4237`).
+   (`:179-185`).
 
 **Блокирующих замечаний нет.** Общий класс новых находок один и он — прямое следствие главной правки
 раунда 2: до неё баланс клиента не двигался нигде, после — двигается на каждом допуске, и **три из
@@ -66,16 +66,16 @@
 
 | Замечание раунда 1                                   | Вердикт                       | Координата закрытия                                                                                                                                                          | Остаток                            |
 | :--------------------------------------------------- | :---------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------- |
-| **BLOCKING-1** — правило R-9.6 не даёт процессу стартовать | **Закрыто**                   | `data-model.md:2000-2002` (`dailyCallCeiling: number \| 'none'`, тотально над `tier:'free'`), `:2004-2015` (замер: десять `free`, одно объявление в черновике), `:2027-2047` (значение + причина каждому), `:2048-2052` (платные — вне класса, гейт проверяет ровно присутствие) | MINOR-1, MINOR-2 (ниже)            |
-| **BLOCKING-2** — арифметика баланса `metered` не определена | **Закрыто**                   | `data-model.md:1827-1831` (постановка), `:1832-1844` (дебет на `reserve()`, возврат на `refund()`, `settle()` баланс не трогает), `:1845-1848` (аггрегат не нужен), `:1827-1844` (`numeric`/`BigInt`, разбор `'9' > '10'`), `:1857` (гонка в одном операторе) | MAJOR-A, MAJOR-C, MINOR-7, MINOR-8 |
-| **BLOCKING-3** — денежные отказы без следа            | **Закрыто**                   | `system-architecture.md:4210-4216` (прецедент раунда 1 признан ошибочным), `:4217-4230` (синтетический `outcome` вместо abort-ветки), `:4231-4237` (downstream неизменён), `:4239-4243` (что именно пишется: `request_trace` + `tool.refused`) | MAJOR-B, MAJOR-D                   |
-| **MAJOR-1** — у `BillingStore` нет операции чтения    | **Закрыто**                   | `system-architecture.md:4101-4103` (`sumSettled(periodFromMs, periodToMs): Promise<string>`, MANDATORY), `data-model.md:1883-1890` (SQL агрегата по `terminal_at`)             | MINOR-5                            |
-| **MAJOR-3** — объявление поля делает AC-42 непроверяемым | **Закрыто в записанной форме** | `open-questions.md:943-959` — отдельный раздел «AC-42 vs. `dailyCallCeiling`»: расхождение записано как вопрос владельца, спецификация не правится; `data-model.md:2058-2068`   | MINOR-6 (вторая половина)          |
-| **MAJOR-4** — `BLOCKSCOUT_DAILY_CALL_CAP` не заведён  | **Закрыто**                   | `deployment.md:208` (строка таблицы env-ключей, класс `narrowing`), `:210-215` (валидация `EnvSchema` как положительное целое, `.env.example` в том же коммите), `system-architecture.md:4313`/`:4317-4319` (инъекция через `dailyCallCeilingOverride`), `:4374-4385` (никакого `process.env` в `packages/core`) | MINOR-2 (диапазон объявленного значения) |
-| **MAJOR-8** — не сказано, что `BillingStore` обязателен | **Закрыто**                   | `system-architecture.md:4156-4163` — «MANDATORY — no `?`», с разбором отличия от `ctx.requestTrace` (`OD-014-30-6`) и обязательством конструировать на всех трёх профилях       | MAJOR-B (обязательность подорвана в §3.5.3) |
-| **MINOR-1** — цитата пришпилена не к тому адресу      | **Закрыто**                   | `deployment.md:874-876` — «Citation fix», цитата перенесена на `data-model.md:1674`                                                                                            | —                                  |
-| **MINOR-2** — `resolve-capability.ts:320-328` описан не тем действием | **Закрыто**                   | `system-architecture.md:4265-4270` — «does something narrower. It RECORDS whatever class name the thrown error already carries», с разбором следствия для `refusal_class`       | —                                  |
-| **MINOR-3** — чем минтуется `client_request_id`       | **Закрыто**                   | `system-architecture.md:4174-4180` — тот же `traceId`, что и у строки трассы, с обоснованием через `buildRequestTraceRow`                                                       | —                                  |
+| **BLOCKING-1** — правило R-9.6 не даёт процессу стартовать | **Закрыто**                   | `data-model-billing-ledger.md:277-279` (`dailyCallCeiling: number \| 'none'`, тотально над `tier:'free'`), `:281-292` (замер: десять `free`, одно объявление в черновике), `:2027-2047` (значение + причина каждому), `:325-329` (платные — вне класса, гейт проверяет ровно присутствие) | MINOR-1, MINOR-2 (ниже)            |
+| **BLOCKING-2** — арифметика баланса `metered` не определена | **Закрыто**                   | `data-model.md:1827-1831` (постановка), `:1832-1844` (дебет на `reserve()`, возврат на `refund()`, `settle()` баланс не трогает), `:1845-1848` (аггрегат не нужен), `:1827-1844` (`numeric`/`BigInt`, разбор `'9' > '10'`), `:134` (гонка в одном операторе) | MAJOR-A, MAJOR-C, MINOR-7, MINOR-8 |
+| **BLOCKING-3** — денежные отказы без следа            | **Закрыто**                   | `system-architecture-billing.md:158-164` (прецедент раунда 1 признан ошибочным), `:165-178` (синтетический `outcome` вместо abort-ветки), `:179-185` (downstream неизменён), `:187-191` (что именно пишется: `request_trace` + `tool.refused`) | MAJOR-B, MAJOR-D                   |
+| **MAJOR-1** — у `BillingStore` нет операции чтения    | **Закрыто**                   | `system-architecture-billing.md:49-51` (`sumSettled(periodFromMs, periodToMs): Promise<string>`, MANDATORY), `data-model-billing-ledger.md:160-167` (SQL агрегата по `terminal_at`)             | MINOR-5                            |
+| **MAJOR-3** — объявление поля делает AC-42 непроверяемым | **Закрыто в записанной форме** | `open-questions.md:943-959` — отдельный раздел «AC-42 vs. `dailyCallCeiling`»: расхождение записано как вопрос владельца, спецификация не правится; `data-model-billing-ledger.md:335-345`   | MINOR-6 (вторая половина)          |
+| **MAJOR-4** — `BLOCKSCOUT_DAILY_CALL_CAP` не заведён  | **Закрыто**                   | `deployment.md:208` (строка таблицы env-ключей, класс `narrowing`), `:210-215` (валидация `EnvSchema` как положительное целое, `.env.example` в том же коммите), `system-architecture-billing.md:261`/`:265-267` (инъекция через `dailyCallCeilingOverride`), `:322-333` (никакого `process.env` в `packages/core`) | MINOR-2 (диапазон объявленного значения) |
+| **MAJOR-8** — не сказано, что `BillingStore` обязателен | **Закрыто**                   | `system-architecture-billing.md:104-111` — «MANDATORY — no `?`», с разбором отличия от `ctx.requestTrace` (`OD-014-30-6`) и обязательством конструировать на всех трёх профилях       | MAJOR-B (обязательность подорвана в §3.5.3) |
+| **MINOR-1** — цитата пришпилена не к тому адресу      | **Закрыто**                   | `deployment.md:874-876` — «Citation fix», цитата перенесена на `data-model-network-state.md:792`                                                                                            | —                                  |
+| **MINOR-2** — `resolve-capability.ts:320-328` описан не тем действием | **Закрыто**                   | `system-architecture-billing.md:213-218` — «does something narrower. It RECORDS whatever class name the thrown error already carries», с разбором следствия для `refusal_class`       | —                                  |
+| **MINOR-3** — чем минтуется `client_request_id`       | **Закрыто**                   | `system-architecture-billing.md:122-128` — тот же `traceId`, что и у строки трассы, с обоснованием через `buildRequestTraceRow`                                                       | —                                  |
 | **MINOR-10** — примечание о регистре не раскрывает свой вклад | **Закрыто**                   | `docs/ARCHITECTURE.md:24-27` — измерено и названо: ячейка **Updated** 1877 → 2116 знаков, 5 → 7 предложений «под этот проход»                                                   | —                                  |
 | **MAJOR-2, MAJOR-5, MAJOR-6, MAJOR-7, MAJOR-9, MAJOR-10; MINOR-4…MINOR-9, MINOR-11…MINOR-14** | **Отложено раундом 1, не предмет этого раунда** | —                                                                                                                                                                              | Обязаны войти в бриф планировщика   |
 
@@ -97,16 +97,16 @@
 **Утверждение.** Правка BLOCKING-2 перенесла списание на допуск: `access_profiles.credits_balance_raw`
 уменьшается в той же транзакции, что вставка строки (`data-model.md:1832-1834`), а возврат средств
 записан **как свойство метода** — «`refund()` credits the SAME amount back, in the same transaction as
-the row's transition to `'refunded'`» (`data-model.md:1836-1837`, `system-architecture.md:4097-4099`).
+the row's transition to `'refunded'`» (`data-model-billing-ledger.md:113-114`, `system-architecture-billing.md:45-47`).
 Фоновая сверка `refund()` не вызывает и вызвать не может: она исполняется вне серверного процесса
-(`data-model.md:2132-2136`). Её собственный проект — `data-model.md:2123-2126` — описывает переход
+(`data-model-billing-ledger.md:409-413`). Её собственный проект — `data-model-billing-ledger.md:400-403` — описывает переход
 ровно **тремя колонками** `client_usage` (`state`, `refund_reason='expired'`, `terminal_at`), а
 исполнителем назначен SQL-узел n8n: «one Postgres node transitioning each matched row, followed by its
 `retention_runs` insert» (`deployment.md:733`). Поиск по корпусу: `credits_balance_raw` не встречается
 ни в §4.6.5, ни в §10.8 (`deployment.md:715-749`) ни разу.
 
-**Координата.** `docs/architectures/data-model.md:2123-2126`; `docs/architectures/deployment.md:733`
-(правило — `data-model.md:1832-1837`, `system-architecture.md:4097-4100`).
+**Координата.** `docs/architectures/data-model-billing-ledger.md:400-403`; `docs/architectures/deployment.md:733`
+(правило — `data-model.md:1832-1837`, `system-architecture-billing.md:45-48`).
 
 **Почему важно.** R-3 объявлен тотальной функцией над исходами, но после правки раунда 2 «refunded» —
 это **два** действия, а не одно: строка леджера и баланс профиля. Единственный путь, ради которого
@@ -133,22 +133,22 @@ R-14 существует (процесс умер между резервом �
 
 ### MAJOR-B — `settle`/`refund` посажены внутрь `withTrace`, который на профиле `local` возвращает управление до них
 
-**Утверждение.** `system-architecture.md:4246-4248`: «Folded into the existing `withTrace` closure…
+**Утверждение.** `system-architecture-billing.md:194-196`: «Folded into the existing `withTrace` closure…
 One call after the trace row's own write: `outcome.ok ? billing.settle(rowId) : billing.refund(rowId,
 refusalClass)`». Первая строка `withTrace` — `packages/mcp-server/src/tools/registry.ts:623`:
 `if (ctx.requestTrace === undefined) return result;`. А `requestTrace` кладётся в контекст только при
 наличии движка: `packages/mcp-server/src/index.ts:235`
 (`...(identity === null ? {} : { requestTrace: … })`), при том что `identity === null` — это ровно
 `transport !== 'http'` (`index.ts:119-127`), то есть профиль `local`. Оба выхода обработчика проходят
-через `withTrace` (`registry.ts:684`, `:729`).
+через `withTrace` (`registry.ts:684`, `:437`).
 
-**Координата.** `docs/architectures/system-architecture.md:4246-4248` против
+**Координата.** `docs/architectures/system-architecture-billing.md:194-196` против
 `packages/mcp-server/src/tools/registry.ts:623` и `packages/mcp-server/src/index.ts:235`.
 
 **Почему важно.** На профиле `local` ни одна строка `client_usage` не покидает состояния `'reserved'`
 никогда, а закрыть их некому: воркфлоу сверки ходит только в Postgres. Это противоречит R-2.4 (леджер
 пишется и для локального stdio-принципала) и R-3 (тотальная функция над исходами), и — прямее всего —
-**собственному доводу проекта**: `system-architecture.md:4156-4163` обосновывает обязательность
+**собственному доводу проекта**: `system-architecture-billing.md:104-111` обосновывает обязательность
 `ctx.billing` тем, что `ctx.requestTrace` может отсутствовать, не останавливая трафик. Обязательная
 операция помещена под охрану необязательной.
 
@@ -161,15 +161,15 @@ refusalClass)`». Первая строка `withTrace` — `packages/mcp-server
 
 ### MAJOR-C — кредитование баланса в `refund()` не обусловлено совпадением условного `UPDATE`: второй вызов создаёт кредиты
 
-**Утверждение.** `system-architecture.md:4097-4099`: «Conditional `UPDATE … WHERE state = 'reserved'`,
+**Утверждение.** `system-architecture-billing.md:45-47`: «Conditional `UPDATE … WHERE state = 'reserved'`,
 PLUS crediting `priceRaw` back onto the profile's balance under `metered`, in the same transaction as
 the state transition». Оговорки «кредитовать только если переход состоялся» нет ни здесь, ни в
-`data-model.md:1836-1837`. Для резерва симметричная оговорка сформулирована буквально — «Only when
-step 1 inserted a NEW row» (`system-architecture.md:4131`), а для `settle()` сказано «No balance
-effect». Абзац «Idempotent completion — first completer wins» (`system-architecture.md:4278-4287`)
+`data-model-billing-ledger.md:113-114`. Для резерва симметричная оговорка сформулирована буквально — «Only when
+step 1 inserted a NEW row» (`system-architecture-billing.md:79`), а для `settle()` сказано «No balance
+effect». Абзац «Idempotent completion — first completer wins» (`system-architecture-billing.md:226-235`)
 говорит только о состоянии `client_usage`: «the second `UPDATE` matches zero rows».
 
-**Координата.** `docs/architectures/system-architecture.md:4097-4099` против `:4131`.
+**Координата.** `docs/architectures/system-architecture-billing.md:45-47` против `:79`.
 
 **Почему важно.** Два `refund()` по одной строке — **штатный** путь, а не экзотика: UC-2 описан здесь
 же — оба ретрая исполняют полный обработчик и оба доходят до этого шага (`:4170-4172`); при отказе оба
@@ -190,21 +190,21 @@ effect». Абзац «Idempotent completion — first completer wins» (`system
 
 ### MAJOR-D — `reserve()` не отдаёт носителя класса отказа, а перехватчик его читает; способ доставки класса не определён
 
-**Утверждение.** Контракт — `system-architecture.md:4094`:
+**Утверждение.** Контракт — `system-architecture-billing.md:42`:
 `Promise<{ ok: true; reservation: BillingReservation } | { ok: false; reason: string }>`; поля класса
-нет. Псевдокод перехвата — `system-architecture.md:4226`:
+нет. Псевдокод перехвата — `system-architecture-billing.md:174`:
 `outcome = { ok: false, reason: reserved.reason, refusalClass: reserved.errorClass };`.
-`grep -rn errorClass docs/` даёт **ровно одно** вхождение — саму строку `:4226`. Вторая половина: оба
-класса объявлены `class … extends Error` (`system-architecture.md:4202-4209`), а ветка `if
-(!reserved.ok)` (`:4224`) работает с возвращаемым значением, не с броском.
+`grep -rn errorClass docs/` даёт **ровно одно** вхождение — саму строку `:174`. Вторая половина: оба
+класса объявлены `class … extends Error` (`system-architecture-billing.md:150-157`), а ветка `if
+(!reserved.ok)` (`:172`) работает с возвращаемым значением, не с броском.
 
-**Координата.** `docs/architectures/system-architecture.md:4226` против `:3984` и `:4202-4209`.
+**Координата.** `docs/architectures/system-architecture-billing.md:174` против `:880` и `:150-157`.
 
 **Почему важно.** Это подрывает ровно тот результат, ради которого закрывался BLOCKING-3. Цепочка
 следствий прочитана целиком: `registry.ts:646` приводит отсутствующий класс к `null`,
 `request-trace-row.ts:190` кладёт `null` при `outcome='refusal'`, `CHECK ((outcome = 'refusal') =
 (refusal_class IS NOT NULL))` отвергает INSERT на обеих осях (`packages/core/src/cache/ddl.ts:268`,
-`data-model.md:1384`), а отказ INSERT гасится `catch`-ем в одну строку `stderr`
+`data-model-network-state.md:502`), а отказ INSERT гасится `catch`-ем в одну строку `stderr`
 (`registry.ts:673-681`). AC-5, AC-13, AC-35 и AC-38 читают `request_trace.refusal_class`.
 Неопределённость «бросается или возвращается» опаснее опечатки в имени поля: при броске не отработают
 ни строка трассы, ни `tool.refused` — то есть вернётся ровно та тишина, которую снял BLOCKING-3.
@@ -225,19 +225,19 @@ effect». Абзац «Idempotent completion — first completer wins» (`system
 ### MAJOR-E — ретенция `client_usage` (R-7.6) не имеет ни job'а, ни окна, ни параметра; AC-40 меряет конфиг, которого проект не создаёт
 
 **Утверждение.** §4.6.1 объявляет якорь и индекс под него — «`terminal_at` is the retention anchor»
-(`data-model.md:1811-1813`), `(terminal_at)` «for the retention job» (`:1774-1775`) — и заканчивает
+(`data-model.md:1811-1813`), `(terminal_at)` «for the retention job» (`:51-52`) — и заканчивает
 отсылкой «The retention job is designed beside the reconciliation job it shares a discipline with
-(§4.6.4)» (`:1818-1819`). §4.6.4 — это «Route pricing behind the ≈625 estimate» (`:2070`); §4.6.5
+(§4.6.4)» (`:95-96`). §4.6.4 — это «Route pricing behind the ≈625 estimate» (`:347`); §4.6.5
 проектирует только сверку зависших резервов. В `deployment.md` таблица окон несёт три строки
 (`:328-333`), таблица работ — те же три (`:652-656`), текст по-прежнему говорит «the three retention
 windows» (`:298`); трёхлетнего окна (1095 дней) в корпусе нет, `grep client_usage
 docs/architectures/deployment.md` не даёт ни одного попадания в ретенционных разделах.
 
-**Координата.** `docs/architectures/data-model.md:1818-1819`; `docs/architectures/deployment.md:308-313`
+**Координата.** `docs/architectures/data-model-billing-ledger.md:95-96`; `docs/architectures/deployment.md:308-313`
 и `:629-633`.
 
 **Почему важно.** AC-40 проверяется «конфиг-замером параметра ретенции», а носитель окон корпус
-назначил сам — параметр-узел воркфлоу `onchain-retention` (`data-model.md:1626-1627`, `deployment.md`
+назначил сам — параметр-узел воркфлоу `onchain-retention` (`data-model-network-state.md:744-745`, `deployment.md`
 §10.3.1). Замерять нечего, значит критерий недостижим названным методом. Содержательно: финансовая
 запись — единственная таблица T-015, чей срок хранения владелец назвал прямо, и единственная, у
 которой нет исполнителя удаления; §4.6.1 при этом утверждает, что job спроектирован, а ссылка ведёт в
@@ -257,13 +257,13 @@ docs/architectures/deployment.md` не даёт ни одного попадан
 the new container starts serving — there is no source to copy it from (it exists nowhere before this
 task)» (`deployment.md:840-844`). Единственная нумерованная миграция, создающая таблицу в Postgres, —
 `sql/migrations/<n>_wi62_dedicated_container.sql` — применяется к **новому** контейнеру
-(`deployment.md:789-795`). При этом `data-model.md:1975-1976` для `usage.calls_made` говорит «On the
+(`deployment.md:789-795`). При этом `data-model-billing-ledger.md:252-253` для `usage.calls_made` говорит «On the
 network axis: the Postgres migration's own `ALTER TABLE`», то есть предполагает миграцию T-015 по
 **уже существующей** базе (Supabase). Ни один раздел не связывает инвариант §10.9.4 с выкаткой кода
 сетевого профиля.
 
 **Координата.** `docs/architectures/deployment.md:840-844` (против `:789-795` и
-`docs/architectures/data-model.md:1975-1976`).
+`docs/architectures/data-model-billing-ledger.md:252-253`).
 
 **Почему важно.** Планирование получит две одинаково законные трактовки. (а) T-015 выпускается до
 переезда: сетевой профиль пишет в `ONCHAIN_STATE_PG_URL`, указывающий на Supabase, где таблицы нет —
@@ -287,12 +287,12 @@ Supabase не применяется. Либо противоположный в
 ## MINOR
 
 **MINOR-1 — форма `dailyCallCeiling` в снипете не компилируется в объявленном виде.**
-`data-model.md:2000-2001` говорит «not optional», снипет `:2023` даёт `dailyCallCeiling: number |
-'none';` без `?`, а `:2048-2049` требует, чтобы `nansen`/`dune` «carry no `dailyCallCeiling` field at
+`data-model-billing-ledger.md:277-278` говорит «not optional», снипет `:300` даёт `dailyCallCeiling: number |
+'none';` без `?`, а `:325-326` требует, чтобы `nansen`/`dune` «carry no `dailyCallCeiling` field at
 all». `AdapterRegistration` — плоский интерфейс без дискриминации по `tier`
 (`packages/core/src/adapters/types.ts:162-202`), массив один (`providers.config.ts:215`), платные
 литералы — `:293-304` и `:476`. Разрешение диктует сам документ: стартовое правило `tier === 'free' &&
-dailyCallCeiling === undefined` (`:2012-2013`) и проверка «presence of the field on every `tier:'free'`
+dailyCallCeiling === undefined` (`:289-290`) и проверка «presence of the field on every `tier:'free'`
 row» (`:2027-2029`) осмысленны только при опциональном поле с рантайм-тотальностью. Правка — один
 символ `?`, тотальность BLOCKING-1 сохраняется гейтом старта. *Следствие для приёмки:* при
 опциональном поле AC-33 проверяется синтетической регистрацией без поля; при формулировке «not
@@ -301,32 +301,32 @@ optional» «провайдер без потолка» перестаёт бы�
 
 **MINOR-2 — объявленное значение потолка не проверяется на диапазон, хотя env-переопределение того же
 числа проверяется.** `BLOCKSCOUT_DAILY_CALL_CAP` валидируется `EnvSchema` как положительное целое
-(`deployment.md:208`, `:210-215`; `system-architecture.md:4376`), а единственное стартовое правило для
-объявленного значения — `data-model.md:2012-2013` — проверяет только отсутствие поля: `0`,
+(`deployment.md:208`, `:210-215`; `system-architecture-billing.md:324`), а единственное стартовое правило для
+объявленного значения — `data-model-billing-ledger.md:289-290` — проверяет только отсутствие поля: `0`,
 отрицательное и дробное проходят. `dailyCallCeiling: 0` для blockscout инвертирует смысл — гейт
 отклоняет первый же вызов, и по §3.5.4 бросок из `blockscout.fetch()` на `entity.labels` уходит
-фолбэком на **платный** nansen (`system-architecture.md:4361-4365`). *Предложение:* добавить в
+фолбэком на **платный** nansen (`system-architecture-billing.md:309-313`). *Предложение:* добавить в
 `assertValidAdapterRegistrations()` проверку `Number.isInteger(v) && v > 0` с именем провайдера в
 отказе.
 
 **MINOR-3 — две внутренние ссылки на сверку ведут в §4.6.4 «Route pricing».**
-`data-model.md:1774-1776` («`(state, reserved_at)` for the reconciliation scan (§4.6.4)») и `:1818-1819`
-(«…beside the reconciliation job it shares a discipline with (§4.6.4)»); сверка — §4.6.5 (`:2102`),
-а §4.6.4 — «Route pricing behind the ≈625 estimate» (`:2070`). Обе ссылки добавлены этой фазой и обе
+`data-model-billing-ledger.md:51-53` («`(state, reserved_at)` for the reconciliation scan (§4.6.4)») и `:95-96`
+(«…beside the reconciliation job it shares a discipline with (§4.6.4)»); сверка — §4.6.5 (`:379`),
+а §4.6.4 — «Route pricing behind the ≈625 estimate» (`:347`). Обе ссылки добавлены этой фазой и обе
 смещены на один раздел; вторая ведёт читателя за несуществующим job'ом ретенции (MAJOR-E).
 
-**MINOR-4 — замер числа деклараций `deadlineMs` не сходится: 28 против 27.** `data-model.md:2108`:
+**MINOR-4 — замер числа деклараций `deadlineMs` не сходится: 28 против 27.** `data-model-billing-ledger.md:385`:
 «Measured: `packages/core/src/capability-manifest.ts` carries 28 declarations, the largest
 `deadlineMs: 60_000`». Из 28 совпадений одно — объявление поля интерфейса
 (`capability-manifest.ts:158`); значений в строках манифеста ровно 27 (20×15_000, 3×30_000, 4×60_000,
-`:324`…`:894`), что подтверждает и собственный корпус (`deployment.md:219`, `ARCHITECTURE.md:10`).
+`:20`…`:12`), что подтверждает и собственный корпус (`deployment.md:219`, `ARCHITECTURE.md:10`).
 Несущая часть верна — максимум 60_000, порог 120_000 не затронут, — но слово «Measured» ставит замер в
 позицию доказательства, а `CLAUDE.md` §Working discipline запрещает захардкоженные счётчики.
 
 **MINOR-5 — `sumSettled` объявлен обязательным и одновременно существующим только на оси Postgres.**
-`system-architecture.md:4101-4103` — «Postgres axis only (R-7.3). MANDATORY, not optional», при том что
-§3.5.2 (`:4161-4163`) требует конструировать `BillingStore` безусловно на `local`, `network`,
-`network-sqlite`, а `data-model.md:1883-1890` даёт только Postgres-SQL. Поведение реализации на SQLite
+`system-architecture-billing.md:49-51` — «Postgres axis only (R-7.3). MANDATORY, not optional», при том что
+§3.5.2 (`:109-111`) требует конструировать `BillingStore` безусловно на `local`, `network`,
+`network-sqlite`, а `data-model-billing-ledger.md:160-167` даёт только Postgres-SQL. Поведение реализации на SQLite
 не названо: бросить, вернуть `'0'` или посчитать по неавторитетным строкам — три разных ответа, и
 молчаливый `'0'` даёт читателю AC-4 уверенный ноль, то самое «законное отрицание», которым оплачен
 L-10. *Предложение:* одна строка в §3.5.1 — SQLite-реализация бросает именованную ошибку «ledger reads
@@ -343,7 +343,7 @@ budget gate», тогда как T-015 заводит и колонку `usage.c
 **MINOR-7 — у `credits_balance_raw` нет доменного ограничения, а `numeric` в Postgres принимает `NaN`
 и сортирует его выше всего.** Колонка объявлена TEXT без ограничения формата
 (`packages/core/src/cache/ddl.ts:155`; единственный CHECK связывает присутствие с режимом, `:171`), а
-проверка баланса — `credits_balance_raw::numeric >= $2::numeric` (`data-model.md:1857`). Значение
+проверка баланса — `credits_balance_raw::numeric >= $2::numeric` (`data-model-billing-ledger.md:134`). Значение
 `'NaN'` делает условие истинным при любой цене, а `('NaN' - price)::text` снова `'NaN'` — неограниченное
 бесплатное обслуживание без единого отказа. Зеркалируемый `checkAndReserve` несёт на этот случай явный
 fail-closed («a `>` test must not authorise spend when it has no answer»,
@@ -353,7 +353,7 @@ fail-closed («a `>` test must not authorise spend when it has no answer»,
 формата в миграции T-015 + правило fail-closed на неразрешимое сравнение.
 
 **MINOR-8 — сужение R-6.1 не попало в перепись, объявляющую себя полной.** §4.6.1 читает R-6.1 как
-«the MODE, not the atomic write, goes through `AccessProfileReader`» (`data-model.md:1869-1877`), тогда
+«the MODE, not the atomic write, goes through `AccessProfileReader`» (`data-model-billing-ledger.md:146-154`), тогда
 как R-6.1 называет **обе** колонки и запрещает «отдельный путь» (`docs/TASK.md:156-157`). Перепись
 T-015 заявляет «Nothing raised by this architecture phase itself is left open» и перечисляет ровно два
 прочтения (`open-questions.md:932-941`); денежного третьего там нет, при том что расхождение с AC-42
@@ -373,8 +373,8 @@ against the NEW container (step 6) only after this section's verify gate (below)
 
 **MINOR-10 — у job'а сверки не задан размер батча и нет цикла дренажа.** §10.8 обещает границу «A row
 can be visibly stuck for at most threshold-plus-cadence, ≤135 000 ms» (`deployment.md:736-737`), запрос
-— «§4.6.5's scan, batched» (`:731`), сам скан несёт `LIMIT :batchSize` (`data-model.md:2120`), значение
-нигде не задано, писатель — «one Postgres node» (`:752`), узла цикла нет. После инцидента, оставившего
+— «§4.6.5's scan, batched» (`:731`), сам скан несёт `LIMIT :batchSize` (`data-model-billing-ledger.md:397`), значение
+нигде не задано, писатель — «one Postgres node» (`:112`), узла цикла нет. После инцидента, оставившего
 больше строк, чем батч, остаток ждёт следующие 15 минут за каждый батч, и объявленная граница
 перестаёт быть границей — при том что архитектура подала её как «bound rather than a guess».
 *Предложение:* задать `batchSize` в форме `applied` (как каденцию) и назвать поведение при
@@ -392,15 +392,15 @@ can be visibly stuck for at most threshold-plus-cadence, ≤135 000 ms» (`deplo
 
 ### Переносится в фазу планирования
 
-1. **MAJOR-A** — фоновая сверка не возвращает баланс (`data-model.md:2123-2126`, `deployment.md:733`).
+1. **MAJOR-A** — фоновая сверка не возвращает баланс (`data-model-billing-ledger.md:400-403`, `deployment.md:733`).
 2. **MAJOR-B** — `settle`/`refund` под охраной `withTrace`, на `local` строки не закрываются
-   (`system-architecture.md:4246-4248`).
+   (`system-architecture-billing.md:194-196`).
 3. **MAJOR-C** — безусловное кредитование в `refund()`: повторный вызов создаёт кредиты
-   (`system-architecture.md:4097-4099`).
+   (`system-architecture-billing.md:45-47`).
 4. **MAJOR-D** — контракт `reserve()` без носителя класса отказа; «бросается или возвращается» не
-   определено (`system-architecture.md:4226` против `:3984`).
+   определено (`system-architecture-billing.md:174` против `:880`).
 5. **MAJOR-E** — ретенция `client_usage`: нет job'а, окна и параметра, AC-40 нечем мерить
-   (`data-model.md:1818-1819`, `deployment.md:308-313`, `:629-633`).
+   (`data-model-billing-ledger.md:95-96`, `deployment.md:308-313`, `:629-633`).
 6. **MAJOR-F** — дом `client_usage` между выкаткой и переездом не назван (`deployment.md:840-844`).
 7. **MINOR-1…MINOR-10** — выше; каждое лечится строкой-двумя текста.
 
