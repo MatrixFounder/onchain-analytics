@@ -3,7 +3,8 @@ id: L-23
 type: known-issue
 status: fixed
 opened_at: 2026-08-24
-fixed_at: 2026-09-04
+resolved_at: 2026-09-04
+resolved_by: прогон живого гейта 2026-09-04 с изъятым подтверждением `L-23/pairs.active` — ноль отказов из девяти в двух прогонах подряд
 category: logic
 severity: SEV-2
 slug: l-23-dexscreener-stopped-answering-entirely-and-took-three-capabilities-with-it

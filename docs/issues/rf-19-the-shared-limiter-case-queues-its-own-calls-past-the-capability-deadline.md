@@ -3,7 +3,8 @@ id: RF-19
 type: known-issue
 status: fixed
 opened_at: 2026-09-04
-fixed_at: 2026-09-04
+resolved_at: 2026-09-04
+resolved_by: мерящее плечо опущено до `2 × capacity`; подтверждено прогоном `eval-gate: pass`, `ok 152 · error 2`
 category: workflow-docs
 severity: SEV-3
 slug: rf-19-the-shared-limiter-case-queues-its-own-calls-past-the-capability-deadline

@@ -3,7 +3,8 @@ id: RF-18
 type: known-issue
 status: fixed
 opened_at: 2026-09-04
-fixed_at: 2026-09-04
+resolved_at: 2026-09-04
+resolved_by: `eval/cases/pairs-active.mjs` переведён на `limit: 1`, где разрез делает сам движок
 category: workflow-docs
 severity: SEV-3
 slug: rf-18-the-pairs-active-case-reads-the-cross-chain-page-and-asserts-on-the-filtered-one

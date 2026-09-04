@@ -3,7 +3,8 @@ id: RF-17
 type: known-issue
 status: fixed
 opened_at: 2026-09-04
-fixed_at: 2026-09-04
+resolved_at: 2026-09-04
+resolved_by: `emit()` возвращает `string | null`; правки в `engine/diagnostics.ts` и `interfaces.md` §5.4.3
 category: workflow-docs
 severity: SEV-2
 slug: rf-17-a-refusal-hands-out-an-event-id-after-the-diagnostics-write-failed-so-the-id-resolves-to-no-row
