@@ -187,3 +187,35 @@ where the declared per-hop budget is larger than the bound, because `blockscout`
 
 This does not diagnose the four rows retroactively. It makes the next occurrence of THIS mechanism
 name itself instead of arriving as `fetch failed`.
+
+---
+
+**Update 2026-09-04 — two runs, no occurrence, and one item of the list above rests on a premise
+this machine does not satisfy.**
+
+Two live-gate runs (10:48 and 10:56 UTC) produced no failure anywhere near ten seconds. The link
+probe called the channel stable in both: median connect 15–22 ms across 24 and 30 probes, zero
+failures. The three rows that did fail are named in their own records and none of them is this
+class. So this record has no new capture, and the instrumentation added since is untested against a
+live occurrence.
+
+**Item 2 of the list above cannot distinguish anything as written.** It proposes running the gate
+with a resolver that has a single nameserver, expecting the signature to fall from ten seconds to
+five, on the reading that ten is two nameservers times five seconds. Measured 2026-09-04: the
+DEFAULT resolver on this machine already has exactly one nameserver, `198.18.0.2` on `utun8`, and
+`/etc/resolv.conf` carries that one address. The two-nameserver block this record cites is a
+different, `en0`-scoped resolver in the same `scutil --dns` output. Ten seconds from a single
+nameserver is five seconds across the two attempts libresolv makes by default. The arithmetic
+therefore survives and the experiment does not: it asks for the configuration that was already in
+force when the four failures were recorded.
+
+**What replaces it.** Switching resolvers on this machine also switches whether traffic crosses the
+tunnel that answers with synthesized addresses. The experiment worth running is therefore the whole
+path, not the nameserver count: run the gate with the tunnel down, and compare. That is a change to
+the operator's environment rather than to this repository, and it is recorded here as the next
+measurement rather than performed.
+
+**Still true, and now the only route to a verdict.** The next occurrence names itself. A connect
+bound raises `RuntimeConnectTimeoutError` with the runtime's own number; a resolver stall raises
+`EAI_AGAIN` or `ENOTFOUND` beside a slow `DNS-TIMING` line. Both channels are in place, and neither
+has been exercised by a live failure yet.

@@ -1,8 +1,9 @@
 ---
 id: L-23
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-08-24
+fixed_at: 2026-09-04
 category: logic
 severity: SEV-2
 slug: l-23-dexscreener-stopped-answering-entirely-and-took-three-capabilities-with-it
@@ -204,3 +205,35 @@ on demand, so requiring one would make this record uncloseable. It belongs to
 [L-30](l-30-four-failures-three-vendors-all-at-ten-seconds-points-at-our-side.md), which is the
 record about that number, and which now has both axes instrumented: DNS timing per call, and an
 error class that names the connect bound when it fires.
+
+---
+
+**Closed 2026-09-04 — the acknowledgement was retired and the gate was run, which is this record's
+own method.**
+
+`L-23/pairs.active` was removed from `eval/acknowledged.json` and the live gate ran twice on a link
+the gate measured stable:
+
+| run | `pairs.active` failing, of 9 | blocked by |
+| :-- | :-- | :-- |
+| 2026-09-02 20:23 | 1 — `bsc`, at 10 152 ms | that row |
+| 2026-09-04 10:48 | 0 | `berachain`, a false positive of the eval case |
+| 2026-09-04 10:56 | 0 | an unrelated transport probe |
+
+Two consecutive runs, zero failures across all nine chains, which is the maximum the owner's rule of
+2026-08-24 asks for. The vendor also answered five direct probes of the reproduction URL in
+0.41–0.45 s on 2026-09-04.
+
+**The `berachain` row was never this vendor's fault, and retiring the entry is what exposed it.**
+The eval case asserted that `limit: 5` against a page the vendor caps at 30 always truncates. That
+reasoning reads the CROSS-CHAIN page while the assertion reads the FILTERED one. Measured three
+times on 2026-09-04: `q=berachain` returns 13 rows of which 5 carry `chainId: berachain`, so at
+`limit: 5` nothing was cut, the page was not full, and `truncated.pairs: false` was correct.
+`q=ethereum` returns the full 30 with one ethereum row, which is why that chain kept passing. Filed
+and fixed as its own defect; the case now asks for one row, where the cut is this engine's own.
+
+**What this record does not claim.** That the vendor was the cause of the outage of 2026-08-24. Its
+central probe was taken through a resolver that answers with synthesized addresses, so it isolated
+the failure to the path reaching DexScreener and not to the vendor at the end of that path. The
+update of 2026-09-04 above states that in full. This record closes because the SYMPTOM is gone and
+the acknowledgement that hid it is gone with it, not because the cause was established.
