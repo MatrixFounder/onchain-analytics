@@ -1,8 +1,9 @@
 ---
 id: RF-19
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-09-04
+fixed_at: 2026-09-04
 category: workflow-docs
 severity: SEV-3
 slug: rf-19-the-shared-limiter-case-queues-its-own-calls-past-the-capability-deadline
@@ -58,7 +59,21 @@ removes it when the run ends. The event id in the refusal therefore resolves to 
 is over — not through RF-17's mechanism, which is fixed, but because the store itself is ephemeral.
 An operator reading a red gate row cannot obtain the operator rendering it names.
 
-**Options, none of them free.**
+**Fixed 2026-09-04 — option 1, chosen by the owner.** The measure arm is `2 × capacity` = 10 calls.
+The queue wait falls to 5 000 ms and the wire budget rises to 10 000 ms. Confirmed by the gate run
+of 2026-09-04 12:05 UTC: `eval-gate: pass`, `ok 152 · error 2`, no new failures, with the L-23
+acknowledgement still retired.
+
+**What it gave up, and where that is written.** The first term was `2 × capacity + 2`, and the two
+extra calls existed to keep the per-session floor strictly above zero, so that BOTH hypotheses
+predicted a wait. That floor is now 0 ms: the per-session hypothesis predicts no wait at all. The
+hypotheses stay separated by the full 5 000 ms of the shared floor, which is above the case's own
+2 000 ms noise bound, and the INCONCLUSIVE arm still refuses to call a run decided when the control
+latency alone could explain it. Two assertions in `test/eval-transport-cases.test.ts` pinned the
+stricter property (`calls > 2 × capacity`, `splitFloorMs > 0`) and were relaxed to `>=` with the
+reason beside them, so a later reader does not read the change as a red run tuned green.
+
+**The options as they stood.**
 
 1. Lower the measure arm to `2·capacity` = 10 calls. The queue wait falls to 5 000 ms and the wire
    budget rises to 10 000 ms. The gap between the two hypotheses falls from 6 000 ms to 5 000 ms,

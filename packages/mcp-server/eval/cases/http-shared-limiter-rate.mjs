@@ -91,11 +91,25 @@ const MAX_CALLS = 24;
  * With `n` distinct calls split evenly over two sessions, one shared bucket forces
  * `(n - capacity)/refill` seconds of wait and two per-session buckets force
  * `(n/2 - capacity)/refill` — so the separation between the hypotheses is exactly
- * `n / (2 × refill)` seconds. `n > 2 × capacity` is what keeps the per-session floor above zero,
- * and the second term is what keeps the separation above the noise bound.
+ * `n / (2 × refill)` seconds. `n >= 2 × capacity` is what keeps the per-session floor from going
+ * negative, and the second term is what keeps the separation above the noise bound.
+ *
+ * **The first term was `2 × capacity + 2` and the two extra calls were removed (RF-19).** Their
+ * purpose was to keep the per-session floor strictly ABOVE zero, so that both hypotheses predicted
+ * a wait rather than one predicting none. They cost more than they bought, and the price is a
+ * number: every call carries `wallet.balances.native`'s deadline of 15 000 ms, absolute and
+ * computed once, while the whole arm is issued at once. At twelve calls the last one waited
+ * 7 000 ms in the bucket and had 8 000 ms left for the wire; a free public RPC answering a
+ * twelve-way burst exceeded that twice in eight runs, and an incomplete arm withholds the timing
+ * verdict. At ten the wait is 5 000 ms and the wire gets 10 000 ms.
+ *
+ * What that gives up: the per-session floor is now exactly 0 ms, so that hypothesis predicts "no
+ * wait" rather than "a shorter wait". The two are still separated by the full 5 000 ms of the
+ * shared floor, which is above `MIN_SEPARATION_MS`, and the INCONCLUSIVE arm below still refuses to
+ * call a run decided when the control latency alone could explain it.
  */
 const CALLS = (() => {
-  const overCapacity = 2 * capacity + 2;
+  const overCapacity = 2 * capacity;
   const forSeparation = Math.ceil((2 * refillPerSec * MIN_SEPARATION_MS) / 1000);
   const n = Math.max(overCapacity, forSeparation);
   return n % 2 === 0 ? n : n + 1;

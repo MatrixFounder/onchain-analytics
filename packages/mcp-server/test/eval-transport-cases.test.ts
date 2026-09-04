@@ -157,13 +157,21 @@ describe('TC-UNIT-16 — the shared-limiter rate case decides between two hypoth
   });
 
   it('sizes the probe so the two hypotheses are actually separable', () => {
-    // The three properties that make the verdict mean something: the control arm fits inside the
-    // bucket, the per-session floor is above zero (so "no wait at all" is not the shared answer
-    // too), and the gap between the hypotheses clears the noise bound.
+    // The properties that make the verdict mean something: the control arm fits inside the bucket,
+    // the per-session floor is not negative, and the gap between the hypotheses clears the noise
+    // bound.
+    //
+    // Two of these were STRICTER until RF-19, and the change is deliberate rather than a
+    // relaxation to make a red run green. `calls > 2 × capacity` and `splitFloorMs > 0` together
+    // said that the per-session hypothesis must predict a wait of its own. Buying that cost two
+    // extra calls, and the calls cost queue time out of a 15 000 ms capability deadline that runs
+    // while a call waits: at twelve the tail had 8 000 ms left for the wire and a free endpoint
+    // exceeded it in two of eight runs. The separation itself is untouched — the last assertion
+    // still holds the gap above `minSeparationMs`, and at ten calls it is 5 000 ms.
     expect(PLAN.controlCalls).toBeLessThanOrEqual(PLAN.capacity);
-    expect(PLAN.calls).toBeGreaterThan(2 * PLAN.capacity);
+    expect(PLAN.calls).toBeGreaterThanOrEqual(2 * PLAN.capacity);
     expect(PLAN.calls % 2).toBe(0);
-    expect(PLAN.splitFloorMs).toBeGreaterThan(0);
+    expect(PLAN.splitFloorMs).toBeGreaterThanOrEqual(0);
     expect(PLAN.gapMs).toBe(PLAN.sharedFloorMs - PLAN.splitFloorMs);
     expect(PLAN.gapMs).toBeGreaterThanOrEqual(PLAN.minSeparationMs);
   });
