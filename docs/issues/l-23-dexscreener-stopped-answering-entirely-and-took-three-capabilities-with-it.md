@@ -194,7 +194,13 @@ refusals from the run this record cites carry event ids that resolve to no row i
 none in `request_trace`, so their original cause is unrecoverable.
 
 **Status stays open, and the reason is the record's own rule.** Twelve green runs did not close it
-before, and today's five probes are a smaller sample than that. Two things would close it. One gate run whose
-`pairs.active` rows are green with the acknowledgement retired. And a recurrence of the 10 s class
-that names itself under the new error class: that is what tells a vendor problem from ours, and it
-is what this record never had.
+before, and today's five probes are a smaller sample than that. One gate run closes it: the
+`L-23/pairs.active` entry retired from `acknowledged.json`, and the rows green without it. That is
+the method this record used in September, when nine runs WITH the entries reported zero and the
+first run without them found `bsc/pairs.active`.
+
+The 10 s class does not belong to this record's closing condition. A recurrence cannot be produced
+on demand, so requiring one would make this record uncloseable. It belongs to
+[L-30](l-30-four-failures-three-vendors-all-at-ten-seconds-points-at-our-side.md), which is the
+record about that number, and which now has both axes instrumented: DNS timing per call, and an
+error class that names the connect bound when it fires.
