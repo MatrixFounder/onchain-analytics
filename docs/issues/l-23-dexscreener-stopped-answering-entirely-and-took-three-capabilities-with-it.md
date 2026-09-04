@@ -163,3 +163,38 @@ capability whose vendor withdrew, and the precedent for what direction 2 costs.
 [L-24](l-24-defillamas-two-per-call-history-routes-answer-erratically.md) — a DIFFERENT vendor
 degrading on the same day, filed separately because it was measured separately: same-minute probes
 are what keep two coincident outages from being written up as one.
+
+---
+
+**Update 2026-09-04 — the one row keeping this open belongs to another record's class, and this
+record's central measurement has a confound.**
+
+The vendor answers. Five probes of the reproduction URL from this machine on 2026-09-04: HTTP 200 in
+0.41, 0.42, 0.44, 0.41 and 0.45 s.
+
+The row that kept this open is `bsc/pairs.active`, failing once in twelve runs at 10 152 ms. That
+number is the L-30 signature. A ten-second bound in the request path has now been measured: the
+runtime's default connect timeout, 10 000 ms. This repository does not set it and cannot set it
+without an `undici` dispatcher. The probe and the arithmetic are in
+[L-30](l-30-four-failures-three-vendors-all-at-ten-seconds-points-at-our-side.md).
+
+**The confound applies to this record's own evidence.** The section above reads "It is the vendor,
+and that was measured rather than assumed", on four hosts probed from the same machine in the same
+minute. That machine resolves every name through `198.18.0.2` on `utun8`. That resolver answers with
+synthesized addresses: `api.dexscreener.com` maps to `198.18.0.255`. So the probe isolated the
+failure to the path reaching DexScreener, and that path contains a tunnel hop this record does not
+name. It did not isolate it to the vendor. The evidence still separates one destination
+from three others, which is what made the entry worth filing; it does not decide whose side the
+destination stopped answering on.
+
+**What this changes, and what it does not.** `safeFetch` now raises `RuntimeConnectTimeoutError`
+where the connect-bound signature appears, so a recurrence of the 10 s class names itself instead of
+arriving as `fetch failed` attributed to the vendor. It diagnoses nothing retroactively: the two
+refusals from the run this record cites carry event ids that resolve to no row in `diagnostics` and
+none in `request_trace`, so their original cause is unrecoverable.
+
+**Status stays open, and the reason is the record's own rule.** Twelve green runs did not close it
+before, and today's five probes are a smaller sample than that. Two things would close it. One gate run whose
+`pairs.active` rows are green with the acknowledgement retired. And a recurrence of the 10 s class
+that names itself under the new error class: that is what tells a vendor problem from ours, and it
+is what this record never had.

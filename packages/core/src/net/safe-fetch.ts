@@ -124,6 +124,62 @@ const MAX_REDIRECTS = 3;
 export const DEFAULT_TIMEOUT_MS = 15_000;
 
 /**
+ * The connect bound the RUNTIME applies to every `fetch`, in ms — recorded here, never set here
+ * (issue L-30).
+ *
+ * **Measured on this machine, Node v24.15.0.** `fetch('http://10.255.255.1/')` was issued against a
+ * non-routable IPv4 literal, so no name had to be resolved and the packets were dropped rather
+ * than refused. The call failed after 10 558 ms of wall time with `TypeError: fetch failed`. Its `cause`
+ * was `ConnectTimeoutError: Connect Timeout Error (attempted address: 10.255.255.1:80, timeout:
+ * 10000ms)`, carrying `code = 'UND_ERR_CONNECT_TIMEOUT'`. The `10000ms` in that text is this
+ * constant. The remaining 558 ms is call overhead outside the bound.
+ *
+ * **This repository does not set the bound and cannot currently set it.** Changing it means passing
+ * a `dispatcher` to `fetch`, and a dispatcher can only be constructed from `undici`. `undici` is
+ * neither a dependency of this package nor a Node builtin, so no dispatcher can be passed today.
+ * The value is therefore written down rather than declared: it is the client default, and a reader
+ * of this file had no other way to learn that it exists. Whether to OWN the bound by adding that
+ * dependency is a separate decision, recorded outside this file.
+ *
+ * **What this constant claims, and nothing beyond it.** The bound exists. It belongs to the
+ * runtime, not to this code. It ends a hop before a declared per-hop budget LARGER than itself;
+ * `DEFAULT_TIMEOUT_MS` is 15 000 ms. Two shipped adapters declare 5 000 ms
+ * (`blockscout/index.ts`, `blockchain-info/index.ts`), and there the order is the other way round.
+ * Its signature is the `code` above, which `isRuntimeConnectTimeout` matches.
+ *
+ * **UNRESOLVED: whether the four L-30 failures were this bound.** L-30 records them at 10 152,
+ * 10 507, 10 010 and 10 510 ms across three vendors. It also states that no 10-second bound was
+ * FOUND in the request path. It calls four samples inside a 500 ms band suggestive of a fixed
+ * bound and not proof of one. This constant does not upgrade that finding.
+ *
+ * **A second mechanism yields the same ten seconds, and it is L-30's own candidate.** A resolver
+ * stall reaches ten seconds as five seconds across two attempts, which is libresolv's default and
+ * not a value either resolver here prints. Its signature differs — `EAI_AGAIN` or `ENOTFOUND` —
+ * and `isRuntimeConnectTimeout` does not match it.
+ *
+ * **Both readings are measured against a confounded path, which neither record accounts for.**
+ * `scutil --dns` on 2026-09-04 shows the default resolver as ONE nameserver, `198.18.0.2`, on
+ * `utun8`, flagged `Transient Connection`; `/etc/resolv.conf` carries the same single address. That
+ * address is inside the benchmarking range 198.18.0.0/15. It ANSWERS WITH SYNTHESIZED addresses:
+ * `api.dexscreener.com` resolves to `198.18.0.255` and `::ffff:198.18.0.255`, `api.llama.fi` to
+ * `198.18.0.253`. Those are not the vendors' addresses. Every vendor call from this machine
+ * therefore crosses a tunnel that maps the destination, so a measurement here cannot separate a
+ * vendor outage from a stall in that tunnel. A SECOND resolver block in the same output lists two
+ * nameservers on `en0`, and that is the one L-30's arithmetic cites.
+ *
+ * **Why the records cannot decide between the two.** The refusals reached the client as
+ * `capability unavailable … (event <id>)`. The two ids checked resolve to no row in `diagnostics`
+ * and to no row in `request_trace`. The full text an event id promises was never persisted, so the
+ * original `cause` cannot be read back. Deciding this needs the next occurrence instrumented in
+ * advance, which is L-30's own "what would settle it" list.
+ *
+ * Nothing in this module starts a timer from this constant. It is the value
+ * `RuntimeConnectTimeoutError` falls back to when the runtime's own error carries no
+ * `timeout: <n>ms` text, and it is read nowhere else.
+ */
+export const RUNTIME_CONNECT_TIMEOUT_MS = 10_000;
+
+/**
  * Default response-size cap in bytes (adversarial cycle 1, finding B2; made real in TASK-007 task
  * 007-3, R-65 — item (1) of the R-47 carry-over).
  *
@@ -213,6 +269,76 @@ export class SafeFetchTimeoutError extends Error {
     this.url = safe;
     this.name = 'SafeFetchTimeoutError';
   }
+}
+
+/**
+ * Thrown when the runtime's own connect bound ended a hop — issue L-30. Whether it got there before
+ * the declared per-hop budget depends on which of the two is larger; see `declaredTimeoutMs` below.
+ *
+ * **It corrects an attribution; it does not change a behaviour.** The hop ends at the same moment
+ * either way, and no retry is added. What changes is the sentence an operator reads.
+ * `raceWithTimeout` used to reject with the runtime's raw `TypeError: fetch failed`, and the
+ * traversal row then read `capability unavailable: … tried: <adapter> (fetch failed)`. That row
+ * names the vendor and names nothing else. L-23 was read that way from 2026-08-24 until its own
+ * update of 2026-09-02 — nine days — and that update now calls the attribution one reading of two.
+ * The vendor is healthy today: THIS session probed the L-23 reproduction URL five times on
+ * 2026-09-04 and got HTTP 200 in 0.41–0.45 s each. Those are this session's probes, not the five
+ * L-23 records.
+ *
+ * **Why not `SafeFetchTimeoutError`.** That class means "the vendor did not answer within the
+ * per-hop timeout", and the per-hop signal has not fired when this error is raised. Reusing it
+ * would state a measurement nobody took, on the same side of the wire as the row it was meant to
+ * correct.
+ *
+ * `declaredTimeoutMs` is the per-hop budget carried alongside, so both numbers stand in one line
+ * and the ordering between them is checkable. The message states that ordering ONLY where the
+ * declared budget is larger than the bound that fired; two shipped adapters declare 5 000 ms,
+ * below the measured bound, and for them the claim would be false.
+ *
+ * `connectTimeoutMs` is the bound the RUNTIME named, parsed from the `cause`'s own
+ * `timeout: <n>ms` text, and `RUNTIME_CONNECT_TIMEOUT_MS` only when the cause carries no such text.
+ * A headline that contradicts its own `cause` after a Node upgrade is the failure this class was
+ * added to prevent.
+ *
+ * The runtime's own error is kept as `cause`, so its text survives verbatim.
+ *
+ * `url` is the REDACTED form (no query string) — see `redactUrl`.
+ */
+export class RuntimeConnectTimeoutError extends Error {
+  public readonly url: string;
+  public readonly connectTimeoutMs: number;
+  constructor(
+    url: string,
+    public readonly declaredTimeoutMs: number,
+    options?: { cause?: unknown },
+  ) {
+    const safe = redactUrl(url);
+    const bound = reportedConnectTimeoutMs(options?.cause);
+    super(runtimeConnectTimeoutMessage(safe, bound, declaredTimeoutMs), options);
+    this.url = safe;
+    this.connectTimeoutMs = bound;
+    this.name = 'RuntimeConnectTimeoutError';
+  }
+}
+
+/**
+ * The message text, split on the one thing that is not always true.
+ *
+ * "The bound ended the hop BEFORE the declared budget" holds only where the declared budget is
+ * larger. `DEFAULT_TIMEOUT_MS` is 15 000 ms and satisfies it; `REQUEST_TIMEOUT_MS = 5_000` in
+ * `blockscout` and `blockchain-info` does not. On that side the two numbers are still both named,
+ * and no ordering between them is asserted.
+ */
+function runtimeConnectTimeoutMessage(
+  safeUrl: string,
+  boundMs: number,
+  declaredTimeoutMs: number,
+): string {
+  const owner = 'The bound belongs to this runtime, not to the vendor.';
+  if (declaredTimeoutMs > boundMs) {
+    return `safeFetch: the runtime connect bound of ${boundMs}ms ended the hop to ${safeUrl} before the declared ${declaredTimeoutMs}ms per-hop budget. ${owner}`;
+  }
+  return `safeFetch: the runtime connect bound of ${boundMs}ms ended the hop to ${safeUrl}. The declared ${declaredTimeoutMs}ms per-hop budget is not larger, so no ordering between the two is claimed. ${owner}`;
 }
 
 /**
@@ -377,7 +503,7 @@ export class SafeFetchResponseTooLargeError extends Error {
  * credential channel (D10).
  *
  * **What makes the list safe is a property of the classes, not a judgement by the adapter.** Every
- * member redacts its own context AT CONSTRUCTION — `redactUrl` for the two that carry a URL,
+ * member redacts its own context AT CONSTRUCTION — `redactUrl` for those that carry a URL,
  * `redactContext` for `DeadlineExceededError`, and `SsrfBlockedError` never receives more than a
  * hostname. So "safe to rethrow" is decided once, here, beside the classes, instead of being
  * re-decided by each adapter that catches them; `test/safe-fetch.test.ts` holds the property with an
@@ -392,6 +518,10 @@ export class SafeFetchResponseTooLargeError extends Error {
 export const PASS_THROUGH_TRANSPORT_ERRORS = [
   SsrfBlockedError,
   SafeFetchTimeoutError,
+  // L-30. On the list for the same reason as its neighbours: it redacts its own URL at
+  // construction. One reason is its own — the class names which side owns the bound that ended the
+  // hop, and a wrapper would replace that sentence in `tried[].reason`.
+  RuntimeConnectTimeoutError,
   DeadlineExceededError,
   SafeFetchResponseTooLargeError,
   RedirectLimitExceededError,
@@ -404,6 +534,94 @@ export const PASS_THROUGH_TRANSPORT_ERRORS = [
  */
 export function isPassThroughTransportError(error: unknown): boolean {
   return PASS_THROUGH_TRANSPORT_ERRORS.some((constructor) => error instanceof constructor);
+}
+
+/** The error code the runtime sets when its connect bound fires. Measured — see
+ * `RUNTIME_CONNECT_TIMEOUT_MS` for the probe. On a dual-stack failure it sits on the aggregate's
+ * MEMBERS rather than on the cause itself; `causeCandidates` flattens the two into one list. */
+const RUNTIME_CONNECT_TIMEOUT_CODE = 'UND_ERR_CONNECT_TIMEOUT';
+
+/** The `cause.name` observed in the same probe. Read only where `code` is absent — see
+ * `isConnectTimeoutShape` for why that restriction is deliberate. */
+const RUNTIME_CONNECT_TIMEOUT_NAME = 'ConnectTimeoutError';
+
+/** The `timeout: <n>ms` the runtime writes into its own connect-timeout message — the probe on
+ * `RUNTIME_CONNECT_TIMEOUT_MS` recorded `timeout: 10000ms`. Read so the headline reports the
+ * runtime's number rather than this file's copy of it. */
+const RUNTIME_CONNECT_TIMEOUT_TEXT = /\btimeout:\s*(\d+)ms/;
+
+/**
+ * ONE level of `cause`, flattened: the cause itself, plus the members of its `errors` array when it
+ * has one.
+ *
+ * The array is the dual-stack shape, and it is handled defensively rather than because it was
+ * observed. No probe in this change produced an `AggregateError`; the only measured rejection is
+ * the single-cause one recorded on `RUNTIME_CONNECT_TIMEOUT_MS`. What IS measured is that every
+ * name here resolves to both an A and an AAAA answer, so a dual-stack connect is reachable — those
+ * answers come from the synthesizing resolver described on that constant, not from the vendors.
+ * Node attempts both families by default. Where a connect then fails on both, the runtime reports
+ * an `AggregateError` whose `errors[]` carry the per-family failures, and the code this predicate
+ * needs sits on the members rather than on the aggregate.
+ *
+ * **One level, and no recursion.** Deeper nesting has not been observed here, and a walk that
+ * descends until it finds something is a walk that eventually finds something.
+ */
+function causeCandidates(error: unknown): unknown[] {
+  if (!(error instanceof Error)) return [];
+  const cause: unknown = error.cause;
+  if (typeof cause !== 'object' || cause === null) return [];
+  const nested: unknown = (cause as { errors?: unknown }).errors;
+  return Array.isArray(nested) ? [cause, ...(nested as unknown[])] : [cause];
+}
+
+/**
+ * `true` for one candidate carrying the runtime's connect-bound signature.
+ *
+ * The decisive field is `code`. It is the runtime's own error code and it was observed in the probe
+ * recorded on `RUNTIME_CONNECT_TIMEOUT_MS`. Which other failures may carry the same code was not
+ * enumerated here, so the predicate is narrow by choice rather than by proof of exclusivity.
+ *
+ * `name` is the SECONDARY signal. It came out of the same probe, and it is admitted only where
+ * `code` is absent, because a name is a plain string that any library may set on any error.
+ * Accepting the name beside a code that says something else would widen what this predicate matches
+ * (memory M6), and the class it selects exists to fix an attribution.
+ */
+function isConnectTimeoutShape(candidate: unknown): boolean {
+  if (typeof candidate !== 'object' || candidate === null) return false;
+  const { code, name } = candidate as { code?: unknown; name?: unknown };
+  if (code === RUNTIME_CONNECT_TIMEOUT_CODE) return true;
+  return code === undefined && name === RUNTIME_CONNECT_TIMEOUT_NAME;
+}
+
+/**
+ * `true` when `error` is the runtime's connect-bound rejection, and for nothing else.
+ *
+ * Every other rejection returns `false` and travels on untouched. A failure this predicate cannot
+ * identify stays the runtime's own: relabelling it would repeat the defect this change fixes, under
+ * a different wrong name.
+ */
+function isRuntimeConnectTimeout(error: unknown): boolean {
+  return causeCandidates(error).some(isConnectTimeoutShape);
+}
+
+/**
+ * The bound in milliseconds as the RUNTIME named it, read from the matching candidate's own text.
+ *
+ * `RUNTIME_CONNECT_TIMEOUT_MS` is the fallback and only that: it is this file's record of one probe
+ * on one Node version, and a runtime that changes its default would otherwise be reported with a
+ * number its own `cause` contradicts.
+ */
+function reportedConnectTimeoutMs(error: unknown): number {
+  for (const candidate of causeCandidates(error)) {
+    if (!isConnectTimeoutShape(candidate)) continue;
+    const { message } = candidate as { message?: unknown };
+    if (typeof message !== 'string') continue;
+    const digits = RUNTIME_CONNECT_TIMEOUT_TEXT.exec(message)?.[1];
+    if (digits === undefined) continue;
+    const parsed = Number(digits);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return RUNTIME_CONNECT_TIMEOUT_MS;
 }
 
 function isRedirectStatus(status: number): boolean {
@@ -558,11 +776,20 @@ function composeHopAbort(inputs: {
  * because a `.then` handler can only run in a later microtask. The settled promise's `reject(...)`
  * is then a no-op on an already-rejected one — which is precisely how the rejection becomes handled
  * rather than swallowed.
+ *
+ * **The rejection branch is the one place a raw `fetchImpl` failure passes through** (L-30). One
+ * such failure is reclassified here and no other: the runtime's connect bound, identified by
+ * `isRuntimeConnectTimeout` and rewritten as `RuntimeConnectTimeoutError` with the original kept as
+ * `cause`. It is reclassified in this branch rather than in `safeFetch` because the abort branch
+ * above cannot produce it — the hop signal has not fired when the runtime gives up on the
+ * connection. `context` carries the two facts the new class needs and this function did not
+ * previously hold: the hop's URL, and the declared per-hop budget that did not get to fire.
  */
 function raceWithTimeout(
   fetchPromise: Promise<Response>,
   signal: AbortSignal,
   abortReason: () => unknown,
+  context: { url: string; declaredTimeoutMs: number },
 ): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     const onAbort = (): void => reject(abortReason());
@@ -573,7 +800,14 @@ function raceWithTimeout(
       },
       (error: unknown) => {
         signal.removeEventListener('abort', onAbort);
-        reject(error instanceof Error ? error : new Error(String(error)));
+        const raised = error instanceof Error ? error : new Error(String(error));
+        reject(
+          isRuntimeConnectTimeout(raised)
+            ? new RuntimeConnectTimeoutError(context.url, context.declaredTimeoutMs, {
+                cause: raised,
+              })
+            : raised,
+        );
       },
     );
     if (signal.aborted) {
@@ -740,6 +974,8 @@ function capResponseStream(response: Response, url: string, maxBytes: number): R
  *
  * @throws {SsrfBlockedError} for the initial URL or any redirect hop outside `allowlist`.
  * @throws {SafeFetchTimeoutError} if any hop doesn't settle within the timeout.
+ * @throws {RuntimeConnectTimeoutError} if the runtime's own connect bound (10 000 ms as measured
+ *   here — see `RUNTIME_CONNECT_TIMEOUT_MS`) ends a hop.
  * @throws {DeadlineExceededError} if `options.deadlineAtMs` passes before the call completes.
  * @throws {SafeFetchResponseTooLargeError} if a response's `Content-Length` exceeds the cap.
  */
@@ -793,6 +1029,15 @@ export async function safeFetch(
     // the registry never sets `deadlineHit`, the traversal ends in `CapabilityUnavailableError`,
     // and OD-4/R-145 forbid exactly that outcome. The remainder is already carried by
     // `deadlineSignal`, so clamping buys nothing and costs the discriminator.
+    //
+    // A THIRD timer can settle before either of those two, and it is not ours (L-30): the
+    // runtime's connect bound, `RUNTIME_CONNECT_TIMEOUT_MS` = 10 000 ms, measured rather than
+    // configured. It gets there first only where `timeoutMs` EXCEEDS it — `DEFAULT_TIMEOUT_MS` is
+    // 15 000, while `blockscout` and `blockchain-info` declare 5 000 and are cut by their own hop
+    // signal instead. In the first case neither `hopSignal` nor the deadline signal fires, so the
+    // tie reasoned about above is never reached. No timer here is derived from that bound, because
+    // this repository cannot set it; the rejection it produces is reclassified as
+    // `RuntimeConnectTimeoutError` in `raceWithTimeout` so the row names the side that owns it.
     const effectiveHopMs = timeoutMs;
     const hop = composeHopAbort({
       hopSignal: AbortSignal.timeout(effectiveHopMs),
@@ -818,6 +1063,7 @@ export async function safeFetch(
         fetchImpl(currentUrl, { ...currentOpts, redirect: 'manual', signal: hop.signal }),
         hop.signal,
         hop.reason,
+        { url: currentUrl, declaredTimeoutMs: effectiveHopMs },
       );
     } finally {
       hop.release();

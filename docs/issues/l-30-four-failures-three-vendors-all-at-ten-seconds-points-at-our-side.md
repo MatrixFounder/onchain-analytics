@@ -133,3 +133,57 @@ established why the candidate above is written as a candidate.
 [WI-65](../backlog/wi-65-the-gate-cannot-tell-a-vendor-outage-from-a-stall-on-our-own-link.md) — the
 gate's link probe answers "was OUR egress healthy", and it said yes in both runs. It measures
 connect time to three control hosts and does not measure name resolution, so it cannot see this.
+
+---
+
+**Update 2026-09-04 — a ten-second bound DOES exist in the request path, and it is not ours to see.**
+This record says none was found. One was, by probing the runtime rather than by reading the
+repository:
+
+```
+node -e "fetch('http://10.255.255.1/')"     # non-routable IPv4 literal, no DNS involved
+-> failed after 10 558 ms
+   TypeError: fetch failed
+   cause: ConnectTimeoutError … (attempted address: 10.255.255.1:80, timeout: 10000ms)
+          code = UND_ERR_CONNECT_TIMEOUT
+```
+
+The bound is the runtime's default connect timeout. It is invisible to a reader grepping this
+repository because it is a client default, not a constant here. `safeFetch` declares
+`DEFAULT_TIMEOUT_MS = 15_000` per hop; where the declared budget is larger than 10 000 ms, this
+bound ends the hop first. Setting it requires an `undici` dispatcher, and `undici` is neither a
+dependency of `@onchain-intel/core` nor a Node builtin, so the bound cannot currently be changed.
+
+**This does not settle the four rows, and the difference matters.** The probe used an IPv4 literal,
+so it never resolved a name. The four failing rows named hosts. A resolver stall remains the
+candidate this record already carries, and it reaches the same ten seconds by a different route.
+The two mechanisms are distinguished by signature — `UND_ERR_CONNECT_TIMEOUT` against `EAI_AGAIN` or
+`ENOTFOUND` — and the signature of those four rows was never persisted (see the next paragraph).
+
+**A confound neither this record nor L-23 accounts for.** `scutil --dns` on 2026-09-04 shows the
+default resolver as a single nameserver, `198.18.0.2`, on interface `utun8`, flagged
+`Transient Connection`; `/etc/resolv.conf` carries the same one address. It answers with
+SYNTHESIZED addresses inside the benchmarking range 198.18.0.0/15:
+
+| host | A | AAAA |
+| :-- | :-- | :-- |
+| `api.dexscreener.com` | `198.18.0.255` | `::ffff:198.18.0.255` |
+| `api.llama.fi` | `198.18.0.253` | `::ffff:198.18.0.253` |
+
+Those are not the vendors' addresses. Every vendor call from this machine crosses a tunnel that maps
+the destination, so a measurement taken here cannot separate a vendor outage from a stall in that
+tunnel. The two-nameserver configuration this record's candidate cites is a DIFFERENT block of the
+same `scutil --dns` output, scoped to `en0`. Step 2 of the list above — run the gate with a
+single-nameserver resolver — therefore has a second reading: it also changes which path the traffic
+takes.
+
+**What changed in code.** `safeFetch` now recognises the connect-timeout signature and raises
+`RuntimeConnectTimeoutError` instead of letting `TypeError: fetch failed` reach the adapter as an
+opaque vendor failure. The message names which side owns the bound that fired, reports the number
+the runtime itself wrote, and carries the original error as `cause`. It claims an ordering only
+where the declared per-hop budget is larger than the bound, because `blockscout` and
+`blockchain-info` declare 5 000 ms and there the hop signal cuts first. The dual-stack
+`AggregateError` shape is matched one level deep, defensively: no probe here produced one.
+
+This does not diagnose the four rows retroactively. It makes the next occurrence of THIS mechanism
+name itself instead of arriving as `fetch failed`.

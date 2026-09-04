@@ -7,6 +7,8 @@ import {
   safeFetch,
   SafeFetchResponseTooLargeError,
   RedirectLimitExceededError,
+  RUNTIME_CONNECT_TIMEOUT_MS,
+  RuntimeConnectTimeoutError,
   SafeFetchTimeoutError,
   SsrfBlockedError,
 } from '../src/net/safe-fetch.js';
@@ -901,6 +903,238 @@ describe('M-14 — a secret in the query string never reaches an error message o
 });
 
 // =============================================================================================
+// L-30 — the runtime's connect bound is reported as ours, not as the vendor's
+// =============================================================================================
+
+/**
+ * The bound is the client default of the runtime's `fetch`: 10 000 ms, measured on Node v24.15.0
+ * against the non-routable `http://10.255.255.1/`, which failed after 10 558 ms of wall time. This
+ * repository does not set it and cannot set it without a dispatcher. Where the declared per-hop
+ * budget is LARGER than the bound, the bound ends the hop first; where it is smaller, the hop
+ * signal cuts before the bound can be reached.
+ *
+ * R-21 forbids network in CI, so no test here reaches a socket. The `fetchImpl` below rejects with
+ * an error shaped exactly like the measured one — message `fetch failed`, a `cause` carrying
+ * `code = 'UND_ERR_CONNECT_TIMEOUT'` and the runtime's own `timeout: 10000ms` text.
+ *
+ * Two shapes beyond that single measurement are pinned here as well. The DUAL-STACK one, because
+ * every host L-30 names resolves to both an A and an AAAA answer here, and a connect failing on
+ * both families arrives as an `AggregateError` whose `errors[]` hold the per-family causes. That
+ * shape is pinned defensively: no probe in this change produced one. And the
+ * SUB-BOUND one, because `blockscout` and `blockchain-info` declare `REQUEST_TIMEOUT_MS = 5_000`,
+ * for which "the bound fired before the declared budget" would be false.
+ */
+describe('L-30 — a runtime connect timeout is not reported as a vendor refusal', () => {
+  /** The measured rejection, reproduced field by field. `overrides` narrows or removes one field at
+   * a time, which is how the negative cases below stay one-variable changes. */
+  function connectTimeoutRejection(overrides: { code?: unknown; name?: string } = {}): TypeError {
+    const cause = new Error(
+      'Connect Timeout Error (attempted address: 10.255.255.1:80, timeout: 10000ms)',
+    );
+    cause.name = overrides.name ?? 'ConnectTimeoutError';
+    if (!('code' in overrides)) {
+      (cause as Error & { code?: unknown }).code = 'UND_ERR_CONNECT_TIMEOUT';
+    } else if (overrides.code !== undefined) {
+      (cause as Error & { code?: unknown }).code = overrides.code;
+    }
+    return new TypeError('fetch failed', { cause });
+  }
+
+  /** The dual-stack shape: an `AggregateError` cause whose members carry the per-family failures.
+   * The aggregate itself carries neither the code nor the name, which is the whole point — a
+   * predicate reading only `cause.code` returns `false` here. */
+  function dualStackRejection(members: Error[]): TypeError {
+    const aggregate = new AggregateError(members, 'connect failed on every address');
+    return new TypeError('fetch failed', { cause: aggregate });
+  }
+
+  /** One member of such an aggregate, as the runtime writes it: a per-address connect timeout. */
+  function connectTimeoutMember(address: string, timeoutMs: number): Error {
+    const member = new Error(
+      `Connect Timeout Error (attempted address: ${address}, timeout: ${String(timeoutMs)}ms)`,
+    );
+    member.name = 'ConnectTimeoutError';
+    (member as Error & { code?: unknown }).code = 'UND_ERR_CONNECT_TIMEOUT';
+    return member;
+  }
+
+  async function caught(fetchImpl: typeof fetch, timeoutMs?: number): Promise<unknown> {
+    return await safeFetch(
+      'https://api.dexscreener.com/latest/dex/pairs/bsc',
+      {},
+      ['api.dexscreener.com'],
+      fetchImpl,
+      timeoutMs === undefined ? {} : { timeoutMs },
+    ).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+  }
+
+  it('rejects with RuntimeConnectTimeoutError instead of the raw `fetch failed`', async () => {
+    const error = await caught(vi.fn<typeof fetch>().mockRejectedValue(connectTimeoutRejection()));
+
+    expect(error).toBeInstanceOf(RuntimeConnectTimeoutError);
+    expect((error as RuntimeConnectTimeoutError).declaredTimeoutMs).toBe(15_000);
+  });
+
+  it('the message names both bounds and says which side owns the one that fired', async () => {
+    const error = (await caught(
+      vi.fn<typeof fetch>().mockRejectedValue(connectTimeoutRejection()),
+    )) as RuntimeConnectTimeoutError;
+
+    // The bound that fired, and the declared budget that did not — the comparison L-30 could not
+    // make from the row it had.
+    expect(error.message).toContain(`${RUNTIME_CONNECT_TIMEOUT_MS}ms`);
+    expect(error.message).toContain('15000ms');
+    expect(error.message).toContain('belongs to this runtime, not to the vendor');
+    // The row stays diagnosable: host and path survive, as they do for every sibling class.
+    expect(error.message).toContain('api.dexscreener.com/latest/dex/pairs/bsc');
+  });
+
+  it("keeps the runtime's own error as `cause`, verbatim", async () => {
+    const raised = connectTimeoutRejection();
+    const error = (await caught(
+      vi.fn<typeof fetch>().mockRejectedValue(raised),
+    )) as RuntimeConnectTimeoutError;
+
+    expect(error.cause).toBe(raised);
+    expect((error.cause as Error).message).toBe('fetch failed');
+    expect(((error.cause as Error).cause as Error).message).toContain('timeout: 10000ms');
+  });
+
+  it('the declared per-hop budget it reports is the one actually in force', async () => {
+    const error = (await caught(
+      vi.fn<typeof fetch>().mockRejectedValue(connectTimeoutRejection()),
+      30_000,
+    )) as RuntimeConnectTimeoutError;
+
+    expect(error.declaredTimeoutMs).toBe(30_000);
+    expect(error.message).toContain('30000ms');
+  });
+
+  it('an unrecognised rejection passes through unchanged', async () => {
+    // No `cause` at all — the shape of every other `fetch` failure, DNS and TLS included.
+    const plain = new TypeError('fetch failed');
+    expect(await caught(vi.fn<typeof fetch>().mockRejectedValue(plain))).toBe(plain);
+
+    // A `cause` that carries a DIFFERENT code. The name matches, and that is deliberately not
+    // enough: the secondary signal is admitted only where the decisive field is absent.
+    const otherCode = connectTimeoutRejection({ code: 'UND_ERR_SOCKET' });
+    expect(await caught(vi.fn<typeof fetch>().mockRejectedValue(otherCode))).toBe(otherCode);
+
+    // A `cause` that is not an object at all.
+    const stringCause = new TypeError('fetch failed', { cause: 'UND_ERR_CONNECT_TIMEOUT' });
+    expect(await caught(vi.fn<typeof fetch>().mockRejectedValue(stringCause))).toBe(stringCause);
+  });
+
+  it('the name alone is accepted only where no code is present', async () => {
+    const nameOnly = connectTimeoutRejection({ code: undefined });
+    expect(await caught(vi.fn<typeof fetch>().mockRejectedValue(nameOnly))).toBeInstanceOf(
+      RuntimeConnectTimeoutError,
+    );
+
+    const neither = connectTimeoutRejection({ code: undefined, name: 'Error' });
+    expect(await caught(vi.fn<typeof fetch>().mockRejectedValue(neither))).toBe(neither);
+  });
+
+  it('a SafeFetchTimeoutError from the DECLARED hop bound is not reclassified', async () => {
+    // The hop signal fires here and the runtime never rejects, so the two paths cannot be confused:
+    // this one still says "the vendor did not answer in time", which is what was measured.
+    const error = await caught(
+      vi.fn<typeof fetch>(() => new Promise<Response>(() => {})),
+      20,
+    );
+
+    expect(error).toBeInstanceOf(SafeFetchTimeoutError);
+    expect(error).not.toBeInstanceOf(RuntimeConnectTimeoutError);
+    expect((error as SafeFetchTimeoutError).message).toContain('timed out after 20ms');
+  });
+
+  it('an adapter may rethrow it unwrapped', async () => {
+    const error = await caught(vi.fn<typeof fetch>().mockRejectedValue(connectTimeoutRejection()));
+    expect(isPassThroughTransportError(error)).toBe(true);
+  });
+
+  it('the dual-stack AggregateError is recognised through one level of `errors[]`', async () => {
+    // What a dual-stack host produces: one failure per family, neither of them the cause itself.
+    const raised = dualStackRejection([
+      connectTimeoutMember('104.26.0.1:443', 10_000),
+      connectTimeoutMember('[2606:4700::1]:443', 10_000),
+    ]);
+
+    const error = (await caught(
+      vi.fn<typeof fetch>().mockRejectedValue(raised),
+    )) as RuntimeConnectTimeoutError;
+
+    expect(error).toBeInstanceOf(RuntimeConnectTimeoutError);
+    expect(error.connectTimeoutMs).toBe(10_000);
+    expect(error.cause).toBe(raised);
+  });
+
+  it('an aggregate whose members carry another code passes through unchanged', async () => {
+    const refused = new Error('connect ECONNREFUSED 104.26.0.1:443');
+    refused.name = 'Error';
+    (refused as Error & { code?: unknown }).code = 'ECONNREFUSED';
+    const raised = dualStackRejection([refused]);
+
+    expect(await caught(vi.fn<typeof fetch>().mockRejectedValue(raised))).toBe(raised);
+  });
+
+  it('the walk stops after one level — a nested aggregate is not searched', async () => {
+    // Deeper nesting has not been measured here, so it is not matched. Pinned so that widening the
+    // walk is a deliberate edit with a measurement behind it, not a silent one.
+    const inner = dualStackRejection([connectTimeoutMember('104.26.0.1:443', 10_000)]);
+    const outer = new TypeError('fetch failed', { cause: new AggregateError([inner], 'outer') });
+
+    expect(await caught(vi.fn<typeof fetch>().mockRejectedValue(outer))).toBe(outer);
+  });
+
+  it('reports the number the RUNTIME named, not the repository constant', async () => {
+    // A Node whose default has moved. The headline must follow the `cause`, or it contradicts it.
+    const error = (await caught(
+      vi
+        .fn<typeof fetch>()
+        .mockRejectedValue(dualStackRejection([connectTimeoutMember('104.26.0.1:443', 3_000)])),
+    )) as RuntimeConnectTimeoutError;
+
+    expect(error.connectTimeoutMs).toBe(3_000);
+    expect(error.message).toContain('connect bound of 3000ms');
+    expect(error.message).not.toContain(`${RUNTIME_CONNECT_TIMEOUT_MS}ms`);
+  });
+
+  it('falls back to the repository constant when the cause names no timeout', async () => {
+    // `code` present, `timeout: <n>ms` absent from the text: matched, but with nothing to parse.
+    const bare = new Error('Connect Timeout Error');
+    bare.name = 'ConnectTimeoutError';
+    (bare as Error & { code?: unknown }).code = 'UND_ERR_CONNECT_TIMEOUT';
+
+    const error = (await caught(
+      vi.fn<typeof fetch>().mockRejectedValue(new TypeError('fetch failed', { cause: bare })),
+    )) as RuntimeConnectTimeoutError;
+
+    expect(error.connectTimeoutMs).toBe(RUNTIME_CONNECT_TIMEOUT_MS);
+    expect(error.message).toContain(`connect bound of ${RUNTIME_CONNECT_TIMEOUT_MS}ms`);
+  });
+
+  it('claims no ordering when the declared budget is NOT larger than the bound', async () => {
+    // `REQUEST_TIMEOUT_MS = 5_000` — what `blockscout` and `blockchain-info` declare. "The bound
+    // ended the hop before the declared budget" is false at 5 000 against a 10 000 ms bound.
+    const error = (await caught(
+      vi.fn<typeof fetch>().mockRejectedValue(connectTimeoutRejection()),
+      5_000,
+    )) as RuntimeConnectTimeoutError;
+
+    expect(error.declaredTimeoutMs).toBe(5_000);
+    expect(error.message).not.toContain('before the declared');
+    expect(error.message).toContain('The declared 5000ms per-hop budget is not larger');
+    // Both numbers still stand in the line, and the ownership sentence is unconditional.
+    expect(error.message).toContain(`connect bound of ${RUNTIME_CONNECT_TIMEOUT_MS}ms`);
+    expect(error.message).toContain('belongs to this runtime, not to the vendor');
+  });
+});
+
+// =============================================================================================
 // WI-36 — the pass-through list, and the property that makes it safe
 // =============================================================================================
 
@@ -931,6 +1165,9 @@ describe('WI-36 — every pass-through transport error redacts its own context',
     // HOST here, i.e. the most it could ever be given.
     ['SsrfBlockedError', new SsrfBlockedError('mcp.blockscout.com')],
     ['SafeFetchTimeoutError', new SafeFetchTimeoutError(URL_WITH_SECRET, 5_000)],
+    // L-30 joined the list. Handed the RAW credential-bearing URL, like its neighbours: the class
+    // redacts at construction, and its one call site is a rejection handler that holds the raw URL.
+    ['RuntimeConnectTimeoutError', new RuntimeConnectTimeoutError(URL_WITH_SECRET, 15_000)],
     [
       'DeadlineExceededError',
       new DeadlineExceededError(URL_WITH_SECRET, 1_700_000_000_000, 'wire'),
