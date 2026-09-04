@@ -1,8 +1,9 @@
 ---
 id: RF-17
 type: known-issue
-status: open
+status: fixed
 opened_at: 2026-09-04
+fixed_at: 2026-09-04
 category: workflow-docs
 severity: SEV-2
 slug: rf-17-a-refusal-hands-out-an-event-id-after-the-diagnostics-write-failed-so-the-id-resolves-to-no-row
@@ -49,11 +50,30 @@ reason: the attribution could not be checked.
 **Not established.** Why those two appends failed is unknown. The stderr lines that would say are
 not persisted anywhere queryable, which is the same gap one level up.
 
-**Fix direction — an owner decision, not a mechanical one.** Three options with different costs.
-(1) Return `null` when the append fails, and render the client text without an id. Honest, and it
-changes the client contract that AC-47/AC-50 pin. (2) Return the id with a marker the renderer
-prints, so the client is told the text was not persisted. (3) Keep the id and write the lost event
-to a second channel that survives. Option 1 is the smallest change and the one that cannot mislead.
+**Fixed 2026-09-04 — option 1, decided by the owner the same day.** Three options were open.
+(1) Return `null` when the append fails, and render the client text without an id. (2) Return the id
+with a marker the renderer prints. (3) Keep the id and write the lost event to a second channel.
+Option 1 shipped: it is the smallest change and the only one that cannot mislead.
+
+`emit()` now returns `string | null`. Three cases are kept apart. A stored event yields its id. A
+REFUSED append yields `null`, and `toClientText` then omits the `(event …)` suffix. A profile with
+no store at all still yields the id, because there the single operator reads stderr and the id was
+printed on it — a channel that does not exist is not a channel that refused a write.
+
+**What did not change.** The catch still never rethrows: a diagnostics outage may not refuse a
+request. Both stderr lines are untouched, and they still carry the generated id and the reason the
+table did not take it.
+
+**Two documents were disagreeing, and that was the defect.** `tools/registry.ts` said an identifier
+resolving to nothing is worse than no identifier; `TC-UNIT-05` pinned the opposite for the failure
+path. The test now pins `null` and says why it changed. `interfaces.md` §5.4.3 stated the
+identifier's travel unconditionally and now names the refused-write case and the no-store case.
+
+**Proven by mutation, not by a green run.** Restoring `return id` in the catch kills two tests.
+Collapsing the no-store case into `null` kills two others. A blanket `null` kills nine, including
+both AC-50 identifier cases. One defect surfaced inside the suite itself: a fixture pinned `newId`
+to one constant, so a second refusal's append was a primary-key conflict that the old code absorbed
+while still returning an id — the defect was reproducing in our own test and passing.
 
 **Reproduction.** Point the diagnostics store at an unreachable DSN, drive one refusal, and compare
 the id in the client text against `SELECT id FROM onchain.diagnostics`.

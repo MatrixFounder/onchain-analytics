@@ -13,7 +13,7 @@ import { STDIO_PRINCIPAL } from '../src/auth/principal.js';
 import { EnvSchema } from '../src/env.js';
 import { createBillingStoreStub } from '../src/engine/billing-store.js';
 import { createDiagnostics, type Diagnostics } from '../src/engine/diagnostics.js';
-import { createDiagnosticsStore } from '../src/engine/diagnostics-store.js';
+import { createDiagnosticsStore, type DiagnosticsStore } from '../src/engine/diagnostics-store.js';
 import { defineTool } from '../src/tools/registry.js';
 import {
   GENERIC_REFUSAL,
@@ -155,8 +155,9 @@ async function listen(
   overrides: Partial<Parameters<typeof startHttpTransport>[0]> = {},
   role: Role = 'user',
   reason: string = OPERATOR_TEXT,
+  store: DiagnosticsStore = createDiagnosticsStore(harness.engine),
 ): Promise<RunningHttpTransport> {
-  const diagnostics = channel();
+  const diagnostics = channel(store);
   running = await startHttpTransport({
     createSessionServer: () => refusingServer(diagnostics, reason),
     authenticate: acceptsRole(role),
@@ -302,8 +303,17 @@ describe('TC-E2E-01 / AC-47: no operator detail on the wire, at any role', () =>
     const asUser = await callRefusingTool(await listen({}, 'user'));
     await running?.close();
     running = undefined;
+    // The fixture writes both refusals into ONE table under the fixed `newId`, so the second append
+    // is a primary-key conflict on `diagnostics.id`. Before RF-17 that rejection was absorbed and
+    // `emit` handed back the id regardless, which is the defect itself and is what made the two
+    // renderings match. The row is removed so the second call has a store that accepts it, and the
+    // comparison measures the role again rather than the fixture.
+    harness.db.prepare('DELETE FROM diagnostics').run();
     const asAdmin = await callRefusingTool(await listen({}, 'admin'));
     expect(asUser).toBe(asAdmin);
+    // Both renderings carry the identifier — an equality between two texts that had lost it would
+    // pass while proving nothing.
+    expect(asUser).toContain(`(event ${FIXED_EVENT_ID})`);
   });
 
   it('the dictionaries are non-empty, or the gate above proves nothing', () => {
@@ -349,6 +359,42 @@ describe('TC-E2E-02 / AC-50: the identifier is present and resolves in diagnosti
       tool: 'onchain_probe',
       reason: OPERATOR_TEXT,
     });
+  });
+});
+
+/**
+ * RF-17 (2026-09-04) — the client text degrades with the write that failed.
+ *
+ * Measured on the live-gate run of 2026-09-02 20:23 UTC: three refusals reached the client with
+ * event ids, and two of them — `01M1HWAZ3FV3GM7SKDH3AAW1A9` and `01M1HWF65CJBNEXFN0W40BMJZ0` —
+ * matched no row in `onchain.diagnostics` and none in `request_trace`. The table held 96 rows
+ * spanning 2026-08-24 to 2026-09-04, seven of them from later minutes of the same run, so retention
+ * had not removed them. This case drives the whole refusal path in `tools/registry.ts`, because the
+ * defect was in what the CLIENT was handed, not in what `emit` returned in isolation.
+ */
+describe('RF-17: the identifier is offered only when it resolves', () => {
+  it('a stored refusal carries the suffix', async () => {
+    const payload = await callRefusingTool(await listen({}, 'user', PLAIN_OPERATOR_TEXT));
+
+    expect(payload).toContain(`(event ${FIXED_EVENT_ID})`);
+    expect(diagnosticRow('tool.refused')?.['id']).toBe(FIXED_EVENT_ID);
+  });
+
+  it('a refusal whose row was never written carries no suffix', async () => {
+    const broken: DiagnosticsStore = {
+      append: () => Promise.reject(new Error('state store unreachable')),
+    };
+    const payload = await callRefusingTool(await listen({}, 'user', PLAIN_OPERATOR_TEXT, broken));
+
+    // No handle at all rather than a handle resolving to nothing: an administrator given this id
+    // would query `onchain.diagnostics` and find no row, which is the RF-17 symptom.
+    expect(payload).not.toContain('(event ');
+    expect(payload).not.toContain(FIXED_EVENT_ID);
+    expect(diagnosticRow('tool.refused')).toBeUndefined();
+    // The bounded refusal itself survives — the client is still told what it asked for, and the
+    // operator signal is on stderr where the store failure is named.
+    expect(payload).toContain('capability unavailable: entity.labels on ethereum');
+    expect(stderr.some((line) => line.includes('store=unreachable'))).toBe(true);
   });
 });
 

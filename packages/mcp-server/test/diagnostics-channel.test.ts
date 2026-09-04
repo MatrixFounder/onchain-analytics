@@ -89,12 +89,39 @@ describe('AC-28 / AC-48: an event reaches both channels', () => {
 
     // Never rethrown: an emit is a side effect of some other decision, and letting a diagnostics
     // outage refuse a request would make the observability layer able to take the service down.
-    expect(id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    // Reaching this line is that assertion — a rethrow fails the test before any expect runs.
+    //
+    // **This assertion CHANGED, and the old one was wrong** (RF-17, 2026-09-04). Until then it read
+    // `expect(id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/)`, which pinned the id as returned after an
+    // append that rejected. On the live-gate run of 2026-09-02 20:23 UTC three refusals reached the
+    // client with event ids and two of them — `01M1HWAZ3FV3GM7SKDH3AAW1A9` and
+    // `01M1HWF65CJBNEXFN0W40BMJZ0` — matched no row in `onchain.diagnostics` and none in
+    // `request_trace`; the table held 96 rows spanning 2026-08-24 to 2026-09-04, so retention had
+    // not removed them. The property this case exists for is the absent rethrow, stated in its own
+    // rationale above, and that property is untouched by the return value.
+    expect(id).toBeNull();
     expect(lines).toHaveLength(2);
     expect(lines[0]).toContain('event=limiter.degraded');
     // The gap is NAMED rather than left to be inferred from a missing row.
     expect(lines[1]).toContain('store=unreachable');
     expect(lines[1]).toContain('state store unreachable');
+    // The stderr line still carries an id, and it is the id the append was attempted under: the two
+    // lines remain joinable by an operator reading the log.
+    const printed = /id=([0-9A-HJKMNP-TV-Z]{26})/.exec(lines[0] ?? '');
+    expect(printed?.[1]).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(lines[1]).toContain(`id=${String(printed?.[1])}`);
+  });
+
+  it('RF-17: a stored event still yields its id, so `null` names the failed append alone', async () => {
+    const id = await channel().emit('tool.refused', {
+      severity: 'warn',
+      detail: { tool: 'onchain_ping' },
+    });
+
+    // The other half of the contract above. Without it, `emit` returning `null` unconditionally
+    // would pass every RF-17 case while destroying the identifier AC-50 requires.
+    expect(id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(rows()[0]?.['id']).toBe(id);
   });
 
   it('writes the stderr line BEFORE the row, so a slow store does not delay the operator', async () => {
@@ -121,8 +148,13 @@ describe('AC-28 / AC-48: an event reaches both channels', () => {
       severity: 'warn',
       detail: { tool: 'onchain_ping' },
     });
+    // RF-17 makes a REFUSED append return `null`. A missing store is the other case and keeps the
+    // id: the id was printed on stderr, and stderr is the channel the one operator here reads, so
+    // it resolves for the only reader present. Collapsing the two would strip the identifier from
+    // the profile where nothing failed.
+    expect(id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain(`id=${id}`);
+    expect(lines[0]).toContain(`id=${String(id)}`);
     expect(rows()).toStrictEqual([]);
   });
 });

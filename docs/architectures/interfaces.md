@@ -1259,6 +1259,19 @@ defect.
 to nothing is a worse answer than no identifier, because it costs the operator a lookup to learn
 that.
 
+**When the write is REFUSED, the refusal carries no identifier** (RF-17, 2026-09-04). `emit()` never
+rethrows, because a diagnostics outage may not refuse a request. It returns `null` in place of the
+id it generated, and the client rendering then omits the `(event …)` suffix by the rule the previous
+paragraph states. The generated id and the reason for the gap stay on stderr, in two lines, and that
+is where an operator recovers what the table did not take. Before this rule the id travelled anyway:
+the live gate run of 2026-09-02 20:23 UTC handed a client three identifiers, and two of them
+resolved to no row.
+
+**A profile with NO store is a different case, and there the identifier still travels.** The `local`
+profile writes no rows at all (§4.5.8). Its single operator reads stderr, where the id was printed,
+so the id resolves for the only reader that exists. A channel that does not exist and a channel that
+refused one write are not collapsed into one answer.
+
 #### 5.4.4. `_meta` visibility is a function of the principal's role (R-6)
 
 **The rule.** Every `_meta` field carries exactly one visibility class. A `client` field goes to
